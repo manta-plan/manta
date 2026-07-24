@@ -1,0 +1,3 @@
+# Ignore the uv-managed virtual environment.
+/.venv
+/.python-version
