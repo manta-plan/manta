@@ -1,0 +1,99 @@
+# Contributing to Manta
+
+Manta is a monorepo containing a Python backend (`backend/`) and, a
+Javascript frontend (`frontend/`). This document is the canonical reference for coding
+standards on the project. It applies to everyone pushing code — core team,
+energy modelers, and outside contributors alike.
+
+If a file or module doesn't clearly fit the conventions below, raise it in your
+PR rather than guessing — conventions get updated by discussion, not by silent
+drift.
+
+## General
+
+### Commits
+
+We squash-merge PRs, so the **PR title** becomes the commit message — that's
+what needs to follow a convention, not individual commits. We use a reduced
+version of [Conventional Commits](https://www.conventionalcommits.org/), since
+the full spec assumes one type per commit, which doesn't hold once a PR's
+commits get squashed together:
+
+```
+<type>[!]: <imperative description>
+```
+
+- `type` is one of `feat`, `fix`, or `docs` — use `docs` only when the PR is
+  docs-only; a feature PR that happens to touch docs too is still `feat`.
+- No scope (e.g. no `(backend)`) — it's not worth the overhead.
+- Append `!` for breaking changes (e.g. `feat!:`), enough on its own to drive
+  a changelog.
+- The description should be imperative and descriptive — read it as
+  completing "If applied, this commit will...".
+
+- Open a PR against `main` for review before merging.
+- Style/formatting disputes are considered solved problems — defer to the
+  linter/formatter for the language you're working in rather than debating it
+  in review.
+
+## Backend (Python)
+
+The backend follows a **Model-Service-Controller (MSC)** pattern — essentially
+MVCS adapted for a JSON API, where the "view" is folded into the controller
+since we return data, not rendered pages. Background on the classic pattern:
+[MVCS introduction](https://pvha.hashnode.dev/mvcs-architecture);
+for how this maps onto FastAPI specifically, see
+[FastAPI's bigger-applications guide](https://fastapi.tiangolo.com/tutorial/bigger-applications/).
+
+| Layer               | Responsibility                                                                 |
+|---------------------|---------------------------------------------------------------------------------|
+| Route (Controller)  | Accept input (via a `Request` class), call a service, shape the output. **No business logic.** |
+| Service             | All business logic. Implemented as a class, returns dedicated `Result` objects rather than raw data. |
+| Model               | Business entities, kept separate from both of the above.                        |
+
+Cross-cutting concerns (auth, CORS, etc.) live in `middleware/`, not in services.
+
+### Directory structure
+
+Files are grouped by type (not feature) for discoverability.
+
+```
+backend/
+├── pyproject.toml
+├── uv.lock
+├── src/
+│   └── manta/
+│       ├── main.py            # app entrypoint
+│       ├── routes/            # *_route.py
+│       │   └── requests/      # *_request.py — input DTOs
+│       ├── services/          # *_service.py
+│       │   └── results/       # *_result.py — output DTOs
+│       ├── models/            # business entities
+│       └── middleware/        # cross-cutting concerns (auth, CORS, ...)
+└── tests/                     # mirrors src/manta/
+```
+
+### Naming
+
+Use explicit suffixes so a filename alone tells you the layer: `user_route.py`,
+`user_service.py`... Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`... 
+Models are named after the entity itself (e.g. `user.py` / `User`), no suffix needed.
+
+### Services & dependency injection
+
+Services are always classes, wired up via
+[FastAPI's dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/)
+rather than instantiated ad hoc — this gives consistent, predictable
+initialization instead of hand-rolled setup.
+
+### Linting & formatting
+
+TBD
+
+### Testing
+
+TBD
+
+## Frontend
+
+TBD
