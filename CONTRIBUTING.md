@@ -70,7 +70,7 @@ backend/
 │       │   └── results/       # *_result.py — output DTOs
 │       ├── models/            # business entities
 │       └── middleware/        # cross-cutting concerns (auth, CORS, ...)
-└── tests/                     # mirrors src/manta/
+└── tests/                     # pytest suite — see Testing below
 ```
 
 ### Naming
@@ -100,7 +100,18 @@ configured in `backend/pyproject.toml`.
 
 ### Testing
 
-TBD
+We use [pytest](https://docs.pytest.org/). `backend/tests/` is split by test
+type, mirroring `src/manta/` inside each:
+
+```
+backend/tests/
+├── unit/           # e.g. tests/unit/services/
+└── integration/    # e.g. tests/integration/routes/
+```
+
+**TODO**: expand this with actual guidance on writing tests (fixtures,
+mocking conventions, what belongs in unit vs. integration) once we have real
+tests to draw examples from.
 
 ## Frontend
 

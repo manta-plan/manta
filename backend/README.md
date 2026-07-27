@@ -37,3 +37,13 @@ repo:
 uv tool install pre-commit   # install the tool once, machine-wide
 pre-commit install           # wire it up to this repo's git hooks
 ```
+
+## Testing
+
+We use [pytest](https://docs.pytest.org/).
+
+```bash
+uv run pytest                     # everything
+uv run pytest tests/unit          # unit tests only
+uv run pytest tests/integration   # integration tests only
+```
