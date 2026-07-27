@@ -88,7 +88,15 @@ initialization instead of hand-rolled setup.
 
 ### Linting & formatting
 
-TBD
+Python code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/),
+configured in `backend/pyproject.toml`.
+
+- **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against
+  `backend/` and auto-fixes what it can before each commit — see
+  [backend/README.md](backend/README.md) for one-time setup.
+- **In CI**, the same Ruff checks run read-only on every PR: they fail the
+  build on violations but never push a fixup commit. If pre-commit was
+  skipped or bypassed, fix locally and re-push.
 
 ### Testing
 
