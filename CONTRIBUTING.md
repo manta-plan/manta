@@ -49,7 +49,7 @@ for how this maps onto FastAPI specifically, see
 |---------------------|---------------------------------------------------------------------------------|
 | Route (Controller)  | Accept input (via a `Request` class), call a service, shape the output. **No business logic.** |
 | Service             | All business logic. Implemented as a class, returns dedicated `Result` objects rather than raw data. |
-| Model               | Business entities, kept separate from both of the above.                        |
+| Entity (Model)      | Business entities, kept separate from both of the above. Called `entities/` in code, not `models/`, to avoid clashing with energy *models* (PyPSA etc.) elsewhere in the domain. |
 
 Cross-cutting concerns (auth, CORS, etc.) live in `middleware/`, not in services.
 
@@ -68,7 +68,7 @@ backend/
 │       │   └── requests/      # *_request.py — input DTOs
 │       ├── services/          # *_service.py
 │       │   └── results/       # *_result.py — output DTOs
-│       ├── models/            # business entities
+│       ├── entities/          # business entities
 │       └── middleware/        # cross-cutting concerns (auth, CORS, ...)
 └── tests/                     # pytest suite — see Testing below
 ```
@@ -77,7 +77,7 @@ backend/
 
 Use explicit suffixes so a filename alone tells you the layer: `user_route.py`,
 `user_service.py`... Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`... 
-Models are named after the entity itself (e.g. `user.py` / `User`), no suffix needed.
+Entities are named after themselves (e.g. `user.py` / `User`), no suffix needed.
 
 ### Services & dependency injection
 
