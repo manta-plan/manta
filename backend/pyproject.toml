@@ -27,7 +27,13 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+# A conservative starter set (expand later if needed):
+# E = pycodestyle errors, F = pyflakes (unused imports/vars, undefined names),
+# I = import sorting, UP = modernize syntax for our pinned Python version,
+# B = bugbear (common bug patterns), SIM = simplify needlessly complex code,
+# S = bandit security checks (hardcoded secrets, unsafe subprocess/eval usage, ...),
+# N = pep8-naming (PascalCase classes, snake_case functions/vars, self/cls, ...).
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
