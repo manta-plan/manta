@@ -1,3 +1,14 @@
-# Ignore the uv-managed virtual environment.
-/.venv
-/.python-version
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# uv-managed virtual environment
+.venv/
+.python-version
+
+# IDE
+.idea
+.vscode
