@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "An open-source power systems analyser"
 readme = "README.md"
 requires-python = "==3.14.*"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.0",
+]
 
 [project.scripts]
 manta = "manta.main:main"
