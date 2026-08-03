@@ -18,6 +18,31 @@ uv sync
 uv run manta
 ```
 
+## Database migrations
+
+We use [Alembic](https://alembic.sqlalchemy.org/) for schema migrations.
+Scripts live in `src/manta/migrations/`
+
+The app runs pending migrations automatically on startup (see
+`src/manta/migrations/runner.py`), so `uv run manta` always starts against an
+up-to-date schema — nothing to run by hand for normal development, beyond
+having Postgres up (see [docker/README.md](../docker/README.md)).
+
+After changing an entity, generate a migration and review it before
+committing — autogenerate is a starting point, not the final word:
+
+```bash
+uv run alembic revision --autogenerate -m "describe the change"
+```
+
+Other useful commands:
+
+```bash
+uv run alembic upgrade head   # apply migrations without starting the app
+uv run alembic downgrade -1   # roll back one revision
+uv run alembic current        # show the currently applied revision
+```
+
 ## Linting & formatting
 
 We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting.

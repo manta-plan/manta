@@ -10,7 +10,7 @@ not-yet-addressed concern.
 ## Usage
 
 ```bash
-docker compose --env-file ../backend/.env -f compose.services.yaml up -d
+docker compose --env-file ../backend/.env -f compose.services.yaml up
 ```
 
 Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)

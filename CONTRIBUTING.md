@@ -61,6 +61,7 @@ Files are grouped by type (not feature) for discoverability.
 backend/
 ├── pyproject.toml
 ├── uv.lock
+├── alembic.ini                 # alembic CLI config — see backend/README.md
 ├── src/
 │   └── manta/
 │       ├── main.py            # app entrypoint
@@ -69,6 +70,8 @@ backend/
 │       ├── services/          # *_service.py
 │       │   └── results/       # *_result.py — output DTOs
 │       ├── entities/          # business entities
+│       ├── migrations/        # alembic env + versions — see backend/README.md
+│       ├── config/            # app config (logging, database, ...)
 │       └── middleware/        # cross-cutting concerns (auth, CORS, ...)
 └── tests/                     # pytest suite — see Testing below
 ```
