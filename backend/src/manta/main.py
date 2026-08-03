@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from manta.config.logging_config import configure_logging
 from manta.migrations.runner import run_migrations
-from manta.routes.health_route import router as health_router
+from manta.routes.v1 import router as v1_router
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
     logger.info("Running database migrations...")
     run_migrations()
     app = FastAPI(title="Manta")
-    app.include_router(health_router)
+    app.include_router(v1_router)
     return app
 
 

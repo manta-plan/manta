@@ -65,10 +65,11 @@ backend/
 ├── src/
 │   └── manta/
 │       ├── main.py            # app entrypoint
-│       ├── routes/            # *_route.py
-│       │   └── requests/      # *_request.py — input DTOs
-│       ├── services/          # *_service.py
-│       │   └── results/       # *_result.py — output DTOs
+│       ├── routes/            # *_route.py, grouped by API version (v1/, v2/, ...)
+│       │   └── v1/
+│       │       └── requests/  # *_request.py — input DTOs, versioned with their routes
+│       ├── services/          # *_service.py — version-agnostic business logic
+│       │   └── results/       # *_result.py — output DTOs, shared across versions
 │       ├── entities/          # business entities
 │       ├── migrations/        # alembic env + versions — see backend/README.md
 │       ├── config/            # app config (logging, database, ...)
