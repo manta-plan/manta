@@ -109,9 +109,11 @@ backend/tests/
 └── integration/    # e.g. tests/integration/routes/
 ```
 
-**TODO**: expand this with actual guidance on writing tests (fixtures,
-mocking conventions, what belongs in unit vs. integration) once we have real
-tests to draw examples from.
+Structure test bodies as **Given/When/Then**, using plain comments.
+
+**TODO**: expand this with more guidance (fixtures, mocking conventions, what
+belongs in unit vs. integration) as we accumulate more tests to draw examples
+from.
 
 ## Frontend
 

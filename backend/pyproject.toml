@@ -21,8 +21,10 @@ packages = ["src/manta"]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.9.1",
     "pytest>=9.1.1",
     "ruff>=0.16.0",
+    "testcontainers>=4.15.0",
 ]
 
 [tool.ruff]
@@ -37,6 +39,9 @@ line-length = 100
 # S = bandit security checks (hardcoded secrets, unsafe subprocess/eval usage, ...),
 # N = pep8-naming (PascalCase classes, snake_case functions/vars, self/cls, ...).
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # bare `assert` is how pytest expresses assertions
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

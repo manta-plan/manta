@@ -1,0 +1,10 @@
+name: manta-test
+
+services:
+  postgres:
+    # `!override` replaces the base file's fixed "${POSTGRES_PORT}:5432" mapping
+    # instead of merging with it (Compose concatenates `ports` lists by default) —
+    # omitting the host port lets Docker assign a free one, so this stack never
+    # clashes with a locally running dev stack on POSTGRES_PORT.
+    ports: !override
+      - "5432"
