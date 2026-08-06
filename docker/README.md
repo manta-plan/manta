@@ -10,7 +10,7 @@ not-yet-addressed concern.
 ## Usage
 
 ```bash
-docker compose --env-file ../backend/.env -f compose.services.yaml up
+docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
 ```
 
 Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
@@ -19,10 +19,10 @@ truth instead of two.
 
 ## Testing
 
-`compose.test.yaml` is an overlay (not a standalone file) used only by the
+`compose-test-services.yaml` is an overlay (not a standalone file) used only by the
 backend's integration test suite — see
 [backend/tests/integration/conftest.py](../backend/tests/integration/conftest.py).
-It reuses `compose.services.yaml` for the actual service definitions, but
+It reuses `compose-dev-services.yaml` for the actual service definitions, but
 gives the stack its own project name and a random host port, so a test run
 never clashes with a locally running dev stack. You don't need to run it
 yourself; `uv run pytest tests/integration` boots and tears it down

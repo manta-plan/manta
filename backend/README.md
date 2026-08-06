@@ -78,7 +78,7 @@ uv run pytest tests/integration   # integration tests only
 Integration tests need a running [Docker](https://docs.docker.com/) daemon. 
 `tests/integration/conftest.py` boots the required service
 containers itself (via [testcontainers](https://testcontainers-python.readthedocs.io/),
-reusing [`docker/compose.services.yaml`](../docker/compose.services.yaml)) and
+reusing [`docker/compose-dev-services.yaml`](../docker/compose-dev-services.yaml)) and
 runs the app as a subprocess, all on random ports — so there's nothing to
 start by hand first, and it won't clash with or affect a dev stack you might
 already have running. Everything is torn down again once the test session

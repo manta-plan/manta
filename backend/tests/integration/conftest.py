@@ -26,11 +26,11 @@ def _print_logs(label: str, stdout: str, stderr: str) -> None:
 
 @pytest.fixture(scope="session")
 def postgres_service() -> Iterator[dict[str, str]]:
-    """Boots the same Postgres service dev uses (compose.services.yaml), isolated
-    from any locally running dev stack via the compose.test.yaml overlay."""
+    """Boots the same Postgres service dev uses (compose-dev-services.yaml), isolated
+    from any locally running dev stack via the compose-test-services.yaml overlay."""
     with DockerCompose(
         DOCKER_DIR,
-        compose_file_name=["compose.services.yaml", "compose.test.yaml"],
+        compose_file_name=["compose-dev-services.yaml", "compose-test-services.yaml"],
         env_file=str(BACKEND_ENV_FILE),
     ) as compose:
         host, port = compose.get_service_host_and_port("postgres", 5432)
