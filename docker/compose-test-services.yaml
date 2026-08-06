@@ -1,10 +1,9 @@
+# Test stack for the backend's integration suite (see
+# backend/tests/integration/conftest.py). Includes every service from
+# compose-dev-services.yaml wholesale — this file only adds test-specific
+# isolation (its own Compose project name) on top. Host ports are randomized
+# via docker/.env.test, not by overriding anything here.
 name: manta-test
 
-services:
-  postgres:
-    # `!override` replaces the base file's fixed "${POSTGRES_PORT}:5432" mapping
-    # instead of merging with it (Compose concatenates `ports` lists by default) —
-    # omitting the host port lets Docker assign a free one, so this stack never
-    # clashes with a locally running dev stack on POSTGRES_PORT.
-    ports: !override
-      - "5432"
+include:
+  - compose-dev-services.yaml

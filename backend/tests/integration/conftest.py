@@ -15,6 +15,7 @@ from testcontainers.compose import DockerCompose
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
+DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -26,12 +27,13 @@ def _print_logs(label: str, stdout: str, stderr: str) -> None:
 
 @pytest.fixture(scope="session")
 def postgres_service() -> Iterator[dict[str, str]]:
-    """Boots the same Postgres service dev uses (compose-dev-services.yaml), isolated
-    from any locally running dev stack via the compose-test-services.yaml overlay."""
+    """Boots the same Postgres service dev uses, via compose-test-services.yaml
+    (which includes compose-dev-services.yaml wholesale) isolated under its own
+    Compose project name and ephemeral host ports (see docker/.env.test)."""
     with DockerCompose(
         DOCKER_DIR,
-        compose_file_name=["compose-dev-services.yaml", "compose-test-services.yaml"],
-        env_file=str(BACKEND_ENV_FILE),
+        compose_file_name="compose-test-services.yaml",
+        env_file=[str(BACKEND_ENV_FILE), str(DOCKER_ENV_TEST_FILE)],
     ) as compose:
         host, port = compose.get_service_host_and_port("postgres", 5432)
         yield {"host": host, "port": str(port)}

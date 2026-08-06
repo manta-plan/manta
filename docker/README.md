@@ -19,11 +19,12 @@ truth instead of two.
 
 ## Testing
 
-`compose-test-services.yaml` is an overlay (not a standalone file) used only by the
-backend's integration test suite — see
+`compose-test-services.yaml` is used only by the backend's integration test
+suite — see
 [backend/tests/integration/conftest.py](../backend/tests/integration/conftest.py).
-It reuses `compose-dev-services.yaml` for the actual service definitions, but
-gives the stack its own project name and a random host port, so a test run
-never clashes with a locally running dev stack. You don't need to run it
+It `include`s `compose-dev-services.yaml` wholesale (every service, as-is) and
+gives the stack its own Compose project name. Host ports are randomized via
+[`.env.test`](.env.test), loaded on top of `backend/.env`, so a test run never
+clashes with a locally running dev stack. You don't need to run any of this
 yourself; `uv run pytest tests/integration` boots and tears it down
 automatically.
