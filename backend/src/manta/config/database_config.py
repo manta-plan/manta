@@ -1,18 +1,15 @@
 import os
 from collections.abc import Generator
 from functools import lru_cache
-from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-_BACKEND_DIR = Path(__file__).resolve().parents[3]
-
 
 def database_url() -> str:
-    load_dotenv(_BACKEND_DIR / ".env")
+    load_dotenv()
     user = os.environ["POSTGRES_USER"]
     password = os.environ["POSTGRES_PASSWORD"]
     host = os.environ.get("POSTGRES_HOST", "localhost")
