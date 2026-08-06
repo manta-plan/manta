@@ -43,9 +43,7 @@ line-length = 100
 # S = bandit security checks (hardcoded secrets, unsafe subprocess/eval usage, ...),
 # N = pep8-naming (PascalCase classes, snake_case functions/vars, self/cls, ...).
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
-# B008: FastAPI's dependency injection relies on `Depends(...)` as an argument
-# default (its own recommended pattern) — not the mutable-default footgun this
-# rule is meant to catch.
+# B008: the 'function call in default argument' warning is triggered by FastAPI dependency injection's usage of `Depends(...)` as an argument
 ignore = ["B008"]
 
 [tool.ruff.lint.per-file-ignores]
