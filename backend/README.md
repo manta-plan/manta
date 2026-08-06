@@ -20,7 +20,7 @@ uv run manta
 
 ## Database migrations
 
-We use [Alembic](https://alembic.sqlalchemy.org/) for schema migrations.
+We use [Alembic](https://alembic.sqlalchemy.org/) for Postgres DB migrations.
 Scripts live in `src/manta/migrations/`
 
 The app runs pending migrations automatically on startup (see

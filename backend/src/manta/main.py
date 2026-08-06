@@ -21,7 +21,7 @@ BANNER = r"""
 def create_app() -> FastAPI:
     configure_logging()
     print(BANNER, flush=True)
-    logger.info("Manta starting app...")
+    logger.info("Manta starting up...")
     logger.info("Running database migrations...")
     run_migrations()
     app = FastAPI(title="Manta")
