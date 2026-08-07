@@ -14,7 +14,7 @@ deployment tooling:
 manta/
 ├── backend/    # Python/FastAPI backend — see backend/README.md
 ├── frontend/   # not started yet
-└── docker/     # not started yet
+└── docker/     # local dev services (Postgres) — see docker/README.md
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and architecture, and

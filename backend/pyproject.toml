@@ -4,7 +4,14 @@ version = "0.1.0"
 description = "An open-source power systems analyser"
 readme = "README.md"
 requires-python = "==3.14.*"
-dependencies = []
+dependencies = [
+    "alembic>=1.18.5",
+    "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.4",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.51",
+    "uvicorn[standard]>=0.52.0",
+]
 
 [project.scripts]
 manta = "manta.main:main"
@@ -18,8 +25,10 @@ packages = ["src/manta"]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.9.1",
     "pytest>=9.1.1",
     "ruff>=0.16.0",
+    "testcontainers>=4.15.0",
 ]
 
 [tool.ruff]
@@ -34,6 +43,12 @@ line-length = 100
 # S = bandit security checks (hardcoded secrets, unsafe subprocess/eval usage, ...),
 # N = pep8-naming (PascalCase classes, snake_case functions/vars, self/cls, ...).
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
+# B008: the 'function call in default argument' warning is triggered by FastAPI dependency injection's usage of `Depends(...)` as an argument
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # bare `assert` is how pytest expresses assertions
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-v"
