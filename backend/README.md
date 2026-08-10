@@ -73,6 +73,17 @@ uv run pytest tests/unit          # unit tests only
 uv run pytest tests/integration   # integration tests only
 ```
 
+### Coverage
+
+```bash
+uv run pytest --cov=manta --cov-report=term-missing
+```
+
+CI combines coverage from the unit and integration suites and requires 80%
+coverage on lines changed by a PR.
+Run the command above locally (against `tests/unit`, `tests/integration`, or
+both) to check before pushing.
+
 ### Integration tests
 
 Integration tests need a running [Docker](https://docs.docker.com/) daemon. 
