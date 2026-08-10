@@ -6,6 +6,9 @@ on:
       - "backend/**"
       - ".github/workflows/backend-lint.yml"
 
+permissions:
+  contents: read
+
 jobs:
   ruff:
     runs-on: ubuntu-latest
