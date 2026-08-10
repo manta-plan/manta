@@ -28,6 +28,7 @@ jobs:
           name: coverage-unit
           path: backend/.coverage.unit
           retention-days: 1
+          include-hidden-files: true
 
   integration:
     runs-on: ubuntu-latest
@@ -50,6 +51,7 @@ jobs:
           name: coverage-integration
           path: backend/.coverage.integration
           retention-days: 1
+          include-hidden-files: true
 
   coverage:
     needs: [unit, integration]
