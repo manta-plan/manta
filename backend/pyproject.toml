@@ -25,8 +25,10 @@ packages = ["src/manta"]
 
 [dependency-groups]
 dev = [
+    "diff-cover>=10.5.0",
     "httpx2>=2.9.1",
     "pytest>=9.1.1",
+    "pytest-cov>=7.0.0",
     "ruff>=0.16.0",
     "testcontainers>=4.15.0",
 ]
@@ -52,3 +54,13 @@ ignore = ["B008"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+
+[tool.coverage.run]
+source = ["manta"]
+relative_files = true
+parallel = true
+sigterm = true
+# The integration suite exercises the app through a subprocess (see
+# tests/integration/conftest.py), so the pytest process itself never imports
+# manta directly.
+disable_warnings = ["module-not-imported", "no-data-collected"]
