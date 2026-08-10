@@ -2,10 +2,6 @@ name: Backend test
 
 on:
   pull_request:
-    paths:
-      - "backend/**"
-      - "docker/**"
-      - ".github/workflows/backend-test.yml"
 
 permissions:
   contents: read

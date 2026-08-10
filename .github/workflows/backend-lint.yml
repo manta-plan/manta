@@ -2,9 +2,6 @@ name: Backend lint
 
 on:
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-lint.yml"
 
 permissions:
   contents: read
