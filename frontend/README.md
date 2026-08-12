@@ -8,7 +8,7 @@ The Manta frontend is a [React](https://react.dev/) app built with
 
 ## Requirements
 
-- Node.js. The sample Docker build uses Node.js 26.
+- Node.js.
 - pnpm. This package is pinned to pnpm `11.10.0` in `package.json`.
 
 If you use Corepack, prepare the pinned pnpm version from the repo root:
@@ -66,15 +66,4 @@ Build and serve the production output locally:
 ```bash
 pnpm build
 pnpm preview
-```
-
-## Docker Sample
-
-The sample Dockerfile lives at `../docker/sample.Dockerfile`. Its main purpose
-is to demonstrate the frontend build step and static serving with Caddy.
-
-From the repository root:
-
-```bash
-docker build -f docker/sample.Dockerfile .
 ```
