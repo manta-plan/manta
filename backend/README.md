@@ -65,7 +65,8 @@ pre-commit install           # wire it up to this repo's git hooks
 
 ## Testing
 
-We use [pytest](https://docs.pytest.org/).
+We use [pytest](https://docs.pytest.org/), with
+[pytest-cov](https://pytest-cov.readthedocs.io/) for coverage measurement.
 
 ```bash
 uv run pytest                     # everything
