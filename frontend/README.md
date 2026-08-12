@@ -1,34 +1,80 @@
-# React + TypeScript + Vite
+# Manta Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The Manta frontend is a [React](https://react.dev/) app built with
+[Vite](https://vite.dev/), [TypeScript](https://www.typescriptlang.org/), and
+[Tailwind CSS](https://tailwindcss.com/). UI primitives come from
+[Base UI](https://base-ui.com/), and icons come from
+[React Icons](https://react-icons.github.io/react-icons/).
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js. The sample Docker build uses Node.js 26.
+- pnpm. This package is pinned to pnpm `11.10.0` in `package.json`.
 
-## React Compiler
+If you use Corepack, prepare the pinned pnpm version from the repo root:
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+corepack pnpm@11.10.0 --version
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## First-time Setup
+
+```bash
+pnpm install
+```
+
+## Running
+
+Start the Vite dev server:
+
+```bash
+pnpm dev
+```
+
+Vite prints the local URL, usually `http://localhost:5173`.
+
+## Quality Checks
+
+Format:
+
+```bash
+pnpm fmt
+```
+
+Check formatting without writing changes:
+
+```bash
+pnpm fmt:check
+```
+
+Lint:
+
+```bash
+pnpm lint
+```
+
+Type-check and build:
+
+```bash
+pnpm build
+```
+
+## Production Preview
+
+Build and serve the production output locally:
+
+```bash
+pnpm build
+pnpm preview
+```
+
+## Docker Sample
+
+The sample Dockerfile lives at `../docker/sample.Dockerfile`. Its main purpose
+is to demonstrate the frontend build step and static serving with Caddy.
+
+From the repository root:
+
+```bash
+docker build -f docker/sample.Dockerfile .
+```
