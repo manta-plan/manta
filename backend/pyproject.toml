@@ -59,6 +59,11 @@ addopts = "-v"
 source = ["manta"]
 relative_files = true
 parallel = true
+# conftest.py stops the app subprocess with SIGTERM; uvicorn's graceful
+# shutdown ends by re-raising SIGTERM with the default disposition, which
+# kills the process before normal atexit-based coverage saving can run.
+# This makes coverage.py install its own SIGTERM handler that saves data
+# first, so the subprocess's coverage isn't lost.
 sigterm = true
 # The integration suite exercises the app through a subprocess (see
 # tests/integration/conftest.py), so the pytest process itself never imports
