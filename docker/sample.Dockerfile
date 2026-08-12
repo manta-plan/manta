@@ -1,12 +1,15 @@
+# This sample image mainly demonstrates how the frontend build step is handled
+# for static frontend serving.
+
 # --- Build stage ---
 FROM node:26-alpine AS build
 WORKDIR /app
 
 RUN npm install -g pnpm@11.10.0
-COPY package.json pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+COPY frontend/ ./
 RUN pnpm build
 
 # --- Serve stage ---
