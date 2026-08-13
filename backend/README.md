@@ -80,8 +80,9 @@ uv run pytest tests/integration   # integration tests only
 uv run pytest --cov=manta --cov-report=term-missing
 ```
 
-CI combines coverage from the unit and integration suites and requires 80%
-coverage on lines changed by a PR.
+CI combines coverage from the unit and integration suites and reports
+coverage on lines changed by a PR. Not enforced yet (threshold is 0%) while
+the project is still young — expect this to ratchet up over time.
 Run the command above locally (against `tests/unit`, `tests/integration`, or
 both) to check before pushing.
 
