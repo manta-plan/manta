@@ -52,6 +52,9 @@ jobs:
   coverage:
     needs: [unit, integration]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      code-quality: write
     defaults:
       run:
         working-directory: backend
@@ -73,6 +76,11 @@ jobs:
       - run: uv run coverage combine .coverage.unit .coverage.integration
       - run: uv run coverage report -m
       - run: uv run coverage xml
+      - uses: actions/upload-code-coverage@v1
+        with:
+          language: Python
+          label: code-coverage/pytest
+          file: backend/coverage.xml
       - run: >
           uv run diff-cover coverage.xml
           --compare-branch=origin/${{ github.base_ref }}
