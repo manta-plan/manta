@@ -65,13 +65,26 @@ pre-commit install           # wire it up to this repo's git hooks
 
 ## Testing
 
-We use [pytest](https://docs.pytest.org/).
+We use [pytest](https://docs.pytest.org/), with
+[pytest-cov](https://pytest-cov.readthedocs.io/) for coverage measurement.
 
 ```bash
 uv run pytest                     # everything
 uv run pytest tests/unit          # unit tests only
 uv run pytest tests/integration   # integration tests only
 ```
+
+### Coverage
+
+```bash
+uv run pytest --cov=manta --cov-report=term-missing
+```
+
+CI combines coverage from the unit and integration suites and reports
+coverage on lines changed by a PR. Not enforced yet (threshold is 0%) while
+the project is still young — expect this to ratchet up over time.
+Run the command above locally (against `tests/unit`, `tests/integration`, or
+both) to check before pushing.
 
 ### Integration tests
 
