@@ -3,9 +3,11 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 
+from manta.config.auth_config import get_auth_config
 from manta.config.logging_config import configure_logging
 from manta.migrations.runner import run_migrations
 from manta.routes.v1 import router as v1_router
+from manta.services.auth_service import MantaAuthenticationService
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,8 @@ BANNER = r"""
 |_|  |_|/_/   \_\_| \_|  |_/_/   \_\
 """
 
+auth_svc = MantaAuthenticationService()
+
 
 def create_app() -> FastAPI:
     configure_logging()
@@ -26,6 +30,8 @@ def create_app() -> FastAPI:
     run_migrations()
     app = FastAPI(title="Manta")
     app.include_router(v1_router)
+    auth_svc = MantaAuthenticationService(get_auth_config())
+    auth_svc.add_middleware(app)
     return app
 
 
