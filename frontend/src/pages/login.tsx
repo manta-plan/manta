@@ -1,12 +1,12 @@
 import { Button } from "@base-ui/react/button";
-import type { FormEvent } from "react";
+import type { SubmitEvent } from "react";
 import { FiArrowRight, FiLock, FiUser } from "react-icons/fi";
 import { useLocation } from "wouter";
 
 export function LoginPage() {
   const [, navigate] = useLocation();
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     navigate("/");
   }

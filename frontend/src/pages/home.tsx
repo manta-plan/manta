@@ -39,7 +39,7 @@ export function HomePage() {
         </div>
 
         <aside className="border-border bg-surface shadow-primary/10 rounded-lg border p-5 shadow-xl">
-          <div className="mb-5 h-32 rounded-md bg-[image:var(--gradient-hero)]" />
+          <div className="mb-5 h-32 rounded-md bg-(image:--gradient-hero)" />
           <dl className="grid gap-3 text-sm">
             {[
               ["Primary", "bg-primary"],
