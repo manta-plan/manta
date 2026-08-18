@@ -1,6 +1,37 @@
 @import "tailwindcss";
 
+/* Brand tokens sourced from .idea/visual/MANTA_Brand_Palette.md. */
+@theme static {
+  --color-primary: #004e89;
+  --color-primary-hover: #0a5fa3;
+  --color-primary-active: #003a68;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #00a896;
+  --color-secondary-hover: #13b7a5;
+  --color-secondary-active: #008678;
+
+  --color-accent: #9ef01a;
+  --color-accent-hover: #b7f43a;
+  --color-accent-active: #7dd600;
+
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f1f5f9;
+  --color-border: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+}
+
+:root {
+  --gradient-logo: linear-gradient(135deg, #004e89 0%, #00a896 70%, #9ef01a 100%);
+  --gradient-hero: linear-gradient(135deg, #003b73 0%, #004e89 35%, #00a896 75%, #9ef01a 100%);
+}
+
 body {
+  background: var(--color-background);
+  color: var(--color-text);
   margin: 0;
   min-width: 320px;
 }
