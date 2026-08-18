@@ -22,3 +22,16 @@ class _MockSession:
 @pytest.fixture
 def mock_db() -> _MockSession:
     return _MockSession()
+
+
+class _MockS3Client:
+    def __init__(self) -> None:
+        self.upload_fileobj = MagicMock()
+        self.head_object = MagicMock(return_value={"ContentLength": 0})
+        self.head_bucket = MagicMock()
+        self.create_bucket = MagicMock()
+
+
+@pytest.fixture
+def mock_s3_client() -> _MockS3Client:
+    return _MockS3Client()

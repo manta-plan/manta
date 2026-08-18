@@ -4,8 +4,10 @@ import uvicorn
 from fastapi import FastAPI
 
 from manta.config.logging_config import configure_logging
+from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
 from manta.routes.v1 import router as v1_router
+from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,8 @@ def create_app() -> FastAPI:
     logger.info("Manta starting up...")
     logger.info("Running database migrations...")
     run_migrations()
+    logger.info("Ensuring S3 bucket exists...")
+    S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
     app = FastAPI(title="Manta")
     app.include_router(v1_router)
     return app

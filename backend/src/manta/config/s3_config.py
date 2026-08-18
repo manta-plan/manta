@@ -14,6 +14,11 @@ def s3_endpoint_url() -> str:
     return f"http://{host}:{port}"
 
 
+def s3_bucket_name() -> str:
+    load_dotenv()
+    return os.environ["S3_BUCKET"]
+
+
 @lru_cache
 def get_s3_client() -> S3Client:
     return boto3.client(
