@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* Brand tokens sourced from .idea/visual/MANTA_Brand_Palette.md. */
 @theme static {
   --color-primary: #004e89;
   --color-primary-hover: #0a5fa3;
