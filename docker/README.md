@@ -17,6 +17,17 @@ Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
 truth instead of two.
 
+## Services
+
+- **postgres** — the app database.
+- **seaweedfs** — S3-compatible object storage (see
+  [S3FileStorageService](../backend/src/manta/services/s3_file_storage_service.py)),
+  running via SeaweedFS's own `mini` command (single-container
+  master+volume+filer+S3+Admin UI, purpose-built for dev/small-scale use).
+  Once running, the Admin UI (bucket/object browser, cluster status) is at
+  `http://localhost:23646` by default (`SEAWEEDFS_ADMIN_PORT` in
+  [`backend/.env`](../backend/.env)).
+
 ## Testing
 
 `compose-test-services.yaml` is used only by the backend's integration test

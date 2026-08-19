@@ -14,7 +14,7 @@ tooling:
 manta/
 ├── backend/    # Python/FastAPI backend — see backend/README.md
 ├── frontend/   # React/Vite frontend — see frontend/README.md
-└── docker/     # local dev services (Postgres) — see docker/README.md
+└── docker/     # local dev services (Postgres, SeaweedFS) — see docker/README.md
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and architecture, and
