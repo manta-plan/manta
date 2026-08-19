@@ -6,6 +6,7 @@ import pytest
 from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
+from manta.services.results.s3_file_result import GetS3FileResult
 from manta.services.s3_file_storage_service import S3FileStorageService, S3StorageError
 
 
@@ -27,6 +28,9 @@ DOWNLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_transfer_failed_er
 
 DELETE_FAILURES = [_client_error(500), BotoCoreError()]
 DELETE_FAILURE_IDS = ["client_error", "botocore_error"]
+
+LIST_FAILURES = [_client_error(500), BotoCoreError()]
+LIST_FAILURE_IDS = ["client_error", "botocore_error"]
 
 
 def test_upload_file_returns_key_and_size(mock_s3_client) -> None:
@@ -137,6 +141,60 @@ def test_delete_file_wraps_delete_object_failures(mock_s3_client, error) -> None
     # When / Then
     with pytest.raises(S3StorageError):
         service.delete_file(uuid4(), "network.nc")
+
+
+def test_list_files_returns_all_files_across_pages(mock_s3_client) -> None:
+    # Given
+    project_uuid = uuid4()
+    last_modified = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+    mock_s3_client.get_paginator.return_value.paginate.return_value = [
+        {
+            "Contents": [
+                {"Key": f"{project_uuid}/network.nc", "Size": 42, "LastModified": last_modified}
+            ]
+        },
+        {
+            "Contents": [
+                {"Key": f"{project_uuid}/results.csv", "Size": 7, "LastModified": last_modified}
+            ]
+        },
+    ]
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    results = service.list_files(project_uuid)
+
+    # Then
+    assert results == [
+        GetS3FileResult(key=f"{project_uuid}/network.nc", size=42, last_modified=last_modified),
+        GetS3FileResult(key=f"{project_uuid}/results.csv", size=7, last_modified=last_modified),
+    ]
+    mock_s3_client.get_paginator.assert_called_once_with("list_objects_v2")
+    mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="manta", Prefix=f"{project_uuid}/"
+    )
+
+
+def test_list_files_returns_empty_list_when_no_files_match(mock_s3_client) -> None:
+    # Given
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    results = service.list_files(uuid4())
+
+    # Then
+    assert results == []
+
+
+@pytest.mark.parametrize("error", LIST_FAILURES, ids=LIST_FAILURE_IDS)
+def test_list_files_wraps_paginator_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.get_paginator.return_value.paginate.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.list_files(uuid4())
 
 
 def test_ensure_bucket_exists_when_bucket_already_exists(mock_s3_client) -> None:
