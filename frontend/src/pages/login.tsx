@@ -1,9 +1,11 @@
 import { Button } from "@base-ui/react/button";
 import type { SubmitEvent } from "react";
+import { useState } from "react";
 import { FiArrowRight, FiLock, FiUser } from "react-icons/fi";
 import { useLocation } from "wouter";
 
 export function LoginPage() {
+  const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
   const [, navigate] = useLocation();
 
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -12,28 +14,35 @@ export function LoginPage() {
   }
 
   return (
-    <main className="bg-primary text-text relative flex min-h-svh items-center justify-center overflow-hidden px-6 py-10">
+    <main
+      className="bg-primary text-text relative flex min-h-svh items-center justify-center overflow-hidden bg-cover bg-center px-6 py-10"
+      style={{ backgroundImage: "url('/auth-background-placeholder.jpg')" }}
+    >
       <img
         src="/auth-background.jpg"
         alt=""
-        className="absolute inset-0 size-full object-cover"
+        className={`absolute inset-0 size-full object-cover transition-[filter,opacity,transform] duration-700 ease-out ${
+          isBackgroundLoaded ? "blur-0 scale-100 opacity-100" : "scale-105 opacity-0 blur-md"
+        }`}
         aria-hidden="true"
+        onLoad={() => setIsBackgroundLoaded(true)}
       />
       <div
         className="absolute inset-0 bg-[linear-gradient(135deg,rgba(0,58,104,0.78),rgba(0,168,150,0.42),rgba(15,23,42,0.66))]"
         aria-hidden="true"
       />
 
-      <section className="bg-surface/95 shadow-primary/35 relative w-full max-w-md rounded-lg border border-white/30 p-6 shadow-2xl backdrop-blur sm:p-8">
+      <section className="bg-surface/95 shadow-primary/35 relative w-full max-w-md rounded-lg border border-white/30 p-6 shadow-2xl backdrop-blur motion-safe:animate-[auth-card-enter_480ms_ease-out] sm:p-8">
         <div className="mb-8">
           <img
             src="/auth-logo.png"
             alt="MANTA Energy"
             className="mx-auto mb-6 h-24 w-auto object-contain"
           />
-          <p className="text-secondary mb-2 text-sm font-semibold uppercase">MANTA Energy</p>
-          <h1 className="text-text text-3xl font-semibold tracking-normal">Enter your workspace</h1>
-          <p className="text-text-secondary mt-3 text-sm leading-6">
+          <h1 className="text-text text-center text-3xl font-semibold tracking-normal">
+            Sign in to your account
+          </h1>
+          <p className="text-text-secondary mt-3 text-center text-sm leading-6">
             Model smarter energy systems with MANTA
           </p>
         </div>
