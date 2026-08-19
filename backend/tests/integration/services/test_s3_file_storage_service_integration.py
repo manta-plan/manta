@@ -2,6 +2,8 @@ import io
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+from botocore.exceptions import ClientError
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import s3_bucket_name
@@ -44,3 +46,20 @@ def test_get_file(app_server: str, s3_client: S3Client) -> None:
     assert result.size == len(content)
     assert destination.getvalue() == content
     assert (datetime.now(UTC) - result.last_modified).total_seconds() < 60
+
+
+def test_delete_file(app_server: str, s3_client: S3Client) -> None:
+    # Given
+    bucket = s3_bucket_name()
+    project_uuid = uuid4()
+    key = f"{project_uuid}/network.nc"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=b"pypsa network data")
+    service = S3FileStorageService(client=s3_client, bucket=bucket)
+
+    # When
+    result = service.delete_file(project_uuid, "network.nc")
+
+    # Then
+    assert result is None
+    with pytest.raises(ClientError):
+        s3_client.get_object(Bucket=bucket, Key=key)

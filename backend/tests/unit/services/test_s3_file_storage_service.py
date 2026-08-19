@@ -25,6 +25,9 @@ UPLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_upload_failed_error"
 DOWNLOAD_FAILURES = [_client_error(500), BotoCoreError(), S3TransferFailedError("boom")]
 DOWNLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_transfer_failed_error"]
 
+DELETE_FAILURES = [_client_error(500), BotoCoreError()]
+DELETE_FAILURE_IDS = ["client_error", "botocore_error"]
+
 
 def test_upload_file_returns_key_and_size(mock_s3_client) -> None:
     # Given
@@ -108,6 +111,32 @@ def test_get_file_wraps_head_object_failures(mock_s3_client, error) -> None:
     # When / Then
     with pytest.raises(S3StorageError):
         service.get_file(uuid4(), "network.nc", io.BytesIO())
+
+
+def test_delete_file_deletes_the_object(mock_s3_client) -> None:
+    # Given
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+
+    # When
+    result = service.delete_file(project_uuid, "network.nc")
+
+    # Then
+    assert result is None
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="manta", Key=f"{project_uuid}/network.nc"
+    )
+
+
+@pytest.mark.parametrize("error", DELETE_FAILURES, ids=DELETE_FAILURE_IDS)
+def test_delete_file_wraps_delete_object_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.delete_object.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.delete_file(uuid4(), "network.nc")
 
 
 def test_ensure_bucket_exists_when_bucket_already_exists(mock_s3_client) -> None:

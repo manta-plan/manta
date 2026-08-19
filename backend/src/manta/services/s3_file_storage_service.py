@@ -58,6 +58,19 @@ class S3FileStorageService:
 
         return GetS3FileResult(key=key, size=size, last_modified=head_response["LastModified"])
 
+    def delete_file(self, project_uuid: UUID, filename: str) -> None:
+        # TODO: deleting a key that doesn't exist succeeds silently (S3's own
+        # convention — delete is idempotent) — revisit if callers need to
+        # distinguish "deleted" from "was already gone".
+        key = f"{project_uuid}/{filename}"
+
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+        except (ClientError, BotoCoreError) as e:
+            raise S3StorageError(f"Failed to delete {key!r} from bucket {self.bucket!r}") from e
+
+        logger.info("Deleted %r", key)
+
     def ensure_bucket_exists(self) -> None:
         """Called once at app startup (see create_app()) — CRUD methods assume
         the bucket already exists and let a missing one surface as a normal

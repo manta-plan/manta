@@ -33,6 +33,7 @@ class _MockS3Client:
         )
         self.head_bucket = MagicMock()
         self.create_bucket = MagicMock()
+        self.delete_object = MagicMock()
 
 
 @pytest.fixture
