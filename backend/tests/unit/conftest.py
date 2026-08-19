@@ -27,7 +27,10 @@ def mock_db() -> _MockSession:
 class _MockS3Client:
     def __init__(self) -> None:
         self.upload_fileobj = MagicMock()
-        self.head_object = MagicMock(return_value={"ContentLength": 0})
+        self.download_fileobj = MagicMock()
+        self.head_object = MagicMock(
+            return_value={"ContentLength": 0, "LastModified": datetime.now(UTC)}
+        )
         self.head_bucket = MagicMock()
         self.create_bucket = MagicMock()
 

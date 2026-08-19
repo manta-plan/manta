@@ -2,13 +2,13 @@ import logging
 from typing import IO
 from uuid import UUID
 
-from boto3.exceptions import S3UploadFailedError
+from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import Depends
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import get_s3_client, s3_bucket_name
-from manta.services.results.s3_file_result import UploadS3FileResult
+from manta.services.results.s3_file_result import GetS3FileResult, UploadS3FileResult
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,22 @@ class S3FileStorageService:
         logger.info("Uploaded %r (%d bytes)", key, size)
 
         return UploadS3FileResult(key=key, size=size)
+
+    def get_file(
+        self, project_uuid: UUID, filename: str, destination: IO[bytes]
+    ) -> GetS3FileResult:
+        key = f"{project_uuid}/{filename}"
+
+        try:
+            self.client.download_fileobj(self.bucket, key, destination)
+            head_response = self.client.head_object(Bucket=self.bucket, Key=key)
+        except (ClientError, BotoCoreError, S3TransferFailedError) as e:
+            raise S3StorageError(f"Failed to download {key!r} from bucket {self.bucket!r}") from e
+
+        size = head_response["ContentLength"]
+        logger.info("Downloaded %r (%d bytes)", key, size)
+
+        return GetS3FileResult(key=key, size=size, last_modified=head_response["LastModified"])
 
     def ensure_bucket_exists(self) -> None:
         """Called once at app startup (see create_app()) — CRUD methods assume

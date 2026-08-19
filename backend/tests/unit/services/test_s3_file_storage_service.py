@@ -1,8 +1,9 @@
 import io
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from boto3.exceptions import S3UploadFailedError
+from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
 from manta.services.s3_file_storage_service import S3FileStorageService, S3StorageError
@@ -20,6 +21,9 @@ def _client_error(status_code: int) -> ClientError:
 
 UPLOAD_FAILURES = [_client_error(500), BotoCoreError(), S3UploadFailedError("boom")]
 UPLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_upload_failed_error"]
+
+DOWNLOAD_FAILURES = [_client_error(500), BotoCoreError(), S3TransferFailedError("boom")]
+DOWNLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_transfer_failed_error"]
 
 
 def test_upload_file_returns_key_and_size(mock_s3_client) -> None:
@@ -59,6 +63,51 @@ def test_upload_file_wraps_head_object_failures(mock_s3_client, error) -> None:
     # When / Then
     with pytest.raises(S3StorageError):
         service.upload_file(uuid4(), "network.nc", io.BytesIO(b"data"))
+
+
+def test_get_file_returns_key_size_and_last_modified(mock_s3_client) -> None:
+    # Given
+    last_modified = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": 42,
+        "LastModified": last_modified,
+    }
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+    destination = io.BytesIO()
+
+    # When
+    result = service.get_file(project_uuid, "network.nc", destination)
+
+    # Then
+    expected_key = f"{project_uuid}/network.nc"
+    assert result.key == expected_key
+    assert result.size == 42
+    assert result.last_modified == last_modified
+    mock_s3_client.download_fileobj.assert_called_once_with("manta", expected_key, destination)
+    mock_s3_client.head_object.assert_called_once_with(Bucket="manta", Key=expected_key)
+
+
+@pytest.mark.parametrize("error", DOWNLOAD_FAILURES, ids=DOWNLOAD_FAILURE_IDS)
+def test_get_file_wraps_download_fileobj_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.download_fileobj.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.get_file(uuid4(), "network.nc", io.BytesIO())
+
+
+@pytest.mark.parametrize("error", DOWNLOAD_FAILURES, ids=DOWNLOAD_FAILURE_IDS)
+def test_get_file_wraps_head_object_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.head_object.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.get_file(uuid4(), "network.nc", io.BytesIO())
 
 
 def test_ensure_bucket_exists_when_bucket_already_exists(mock_s3_client) -> None:
