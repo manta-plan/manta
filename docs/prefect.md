@@ -2,20 +2,19 @@
 
 ## Summary
 
-This change introduces Prefect as Manta's workflow execution engine and adds a `Runs` entity/endpoint following the existing Model-Service-Controller pattern (mirroring `Project`). Prefect already handles async execution, state tracking, and logging, so Manta's job is to submit runs to Prefect and query it back, not to reimplement any of that. The demo workload (computing digits of pi + digit-frequency stats) is a disposable stand-in for what will eventually be a "Playbook": an external, independently-versioned unit of workflow code with its own dependencies/environment. The design is deliberately generic so today's demo flow and tomorrow's external playbooks fit the same shape.
+This change introduces Prefect as Manta's workflow execution engine and adds a `Runs` entity/endpoint following the existing Model-Service-Controller pattern (mirroring `Project`). Prefect already handles async execution, state tracking, and logging, so Manta's job is to submit runs to Prefect and query it back, not to reimplement any of that. The demo workload (computing digits of pi + digit-frequency stats) is a disposable stand-in for what will eventually be a "Playbook": external workflow code (in the `blocks` repo) with its own dependencies/environment. The design is deliberately generic so today's demo flow and tomorrow's external playbooks fit the same shape.
 
 ## Design decisions
 
-- **Prefect server runs in `docker-compose`**, SQLite-backed (Prefect's default) — no separate Postgres database for Prefect's own metadata initially (see Future work for reconsidering this). The server container's own Python version is irrelevant to app code — it's infra, nothing runs inside it — so it's pulled as `prefecthq/prefect:3-latest` rather than pinned to a Python minor version.
+- **Prefect server runs in `docker-compose`**, SQLite-backed (Prefect's default) — no separate Postgres database for Prefect's own metadata initially (see Future work for reconsidering this). The alternative is an in-process ephemeral prefect API, which may be simpler, but it doesn't allow persisting history or multiple worker processes -- which we will definitely need at some point. Adding a prefect-server docker compose service now also gives us the UI and the ability to use postgres later.
 - **No new dependencies for the demo workload.** Pi is computed with a short, self-contained pure-Python routine (e.g. Bailey–Borwein–Plouffe, or a `decimal`-based Chudnovsky implementation) that takes on the order of a few seconds for ~100k–1M digits. If that proves too slow or fiddly to get right, fall back to a trivial `time.sleep(N)` "flow" — the point of this feature is the plumbing, not the math.
 - **No run status/result columns in Manta's database.** Prefect is the single source of truth for run state, logs, and results. The `Run` row exists only to link a `project_id` to a `prefect_flow_run_id`; `GET /runs/{uuid}` queries Prefect live rather than caching or duplicating state that could drift out of sync.
 - **Cascade delete**: `Run.project_id`'s FK uses `ondelete="CASCADE"` — deleting a project deletes its runs.
 - **No manual background threading.** Prefect already handles asynchronous execution: `create_run` calls Prefect's `run_deployment(...)`, which submits the flow run and returns immediately without waiting for completion. A separate long-lived process — a Prefect worker, or `flow.serve()` for the simple case (see below) — is what actually executes it. The backend process never runs the flow itself.
-- **Request schema stays generic.** `CreateRunRequest` takes `project_uuid` and an open `parameters: dict[str, Any] | None`, passed straight through to Prefect — no pi-specific fields like `num_digits`. This is the shape a future "run this playbook" request also needs.
-
+- **Request schema stays generic.** `CreateRunRequest` takes `project_uuid` and an open `parameters: dict[str, Any] | None`, passed straight through to Prefect — no pi-specific fields like `num_digits`. This will change in the future once we know exactly what Playbook configs look like and how Manta will handle them, but seems like a good enough starting point.
 ## New dependency
 
-Add `prefect` to `backend/pyproject.toml` (`uv add prefect`). Nothing else.
+Add `prefect` to `backend/pyproject.toml` (`uv add prefect`). Nothing else, other than adding a prebuilt prefect-server service to Docker compose.
 
 ## Docker Compose changes (`docker/compose-dev-services.yaml`)
 
@@ -48,13 +47,13 @@ Add `PREFECT_PORT=0` to `docker/.env.test` (ephemeral port, matching the existin
 
 Prefect's execution model has two tiers of complexity:
 - **`flow.serve(name=...)`**: runs in a single long-lived process, implicitly registers a deployment, and polls for scheduled runs against it — no explicit work pool or separate worker to set up. This is the right amount of machinery for one built-in demo flow living in Manta's own codebase/environment.
-- **Work pools + `prefect worker start`**: the real deployment model, needed once flow code has different dependencies/environment than the backend (i.e. once external playbooks exist). See "External playbooks" below — that complexity belongs there, not in this initial change.
+- **Work pools + `prefect worker start`**: the real deployment model, needed once flow code has different dependencies/environment than the backend (i.e. once external playbooks exist). See "External playbooks" below.
 
 Add a new `[project.scripts]` entry in `backend/pyproject.toml`: `manta-worker = "manta.workflows.serve:main"`, where `backend/src/manta/workflows/serve.py` calls `pi_digit_stats_flow.serve(name="pi-digit-stats")`. This runs as its own host process (`uv run manta-worker`), analogous to `uv run manta` for the API — documented in `backend/README.md` as a second process to run locally alongside the API and `docker compose up`.
 
 ## Backend changes
 
-**Flow module** — new `backend/src/manta/workflows/pi_digit_stats.py` (new `workflows/` package alongside `entities/`, `services/`, `routes/`):
+**Flow module** — new `backend/src/manta/workflows/pi_digit_stats.py` (new `workflows/` package alongside `entities/`, `services/`, `routes/`), which will be removed once we have external playbooks:
 ```python
 from prefect import flow, task
 
@@ -91,8 +90,8 @@ class CreateRunRequest(BaseModel):
 No pi-specific fields. For now the service hardcodes which Prefect deployment gets called (the demo flow); `parameters` passes through to it (e.g. `{"num_digits": ...}` if a caller wants to override the default) without Manta knowing or caring what's inside.
 
 **Result DTOs** — `services/results/run_result.py`:
-- `CreateRunResult(uuid, project_uuid, prefect_flow_run_id, created_at)`
-- `GetRunResult(uuid, project_uuid, prefect_flow_run_id, status, logs, created_at)` — `status` and `logs` are fetched live from Prefect, not stored.
+- `CreateRunResult(uuid, prefect_flow_run_id, created_at)` — no `project_uuid`; the caller already has it from the request.
+- `GetRunResult(uuid, prefect_flow_run_id, status, logs, created_at)` — `status` and `logs` are fetched live from Prefect, not stored.
 
 **Service** — `services/run_service.py`:
 - `RunService(db: Session = Depends(get_db_session))`.
@@ -134,7 +133,7 @@ This is the one place the new setup adds real weight to the integration suite (a
 
 ## External playbooks: what changes, and how workers scale
 
-This is the target architecture the design above is deliberately shaped to grow into, not a separate redesign.
+This is the target architecture the design above is shaped to grow into.
 
 **The core shift**: today, `pi_digit_stats_flow` lives in Manta's own codebase and is executed by a process running in Manta's own Python environment (`flow.serve()`, via `uv run manta-worker`). A Playbook is the opposite: independently versioned code (its own git repo), with its own dependencies, that Manta must be able to execute without installing it into — or even being compatible with — Manta's own environment. Manta should end up knowing almost nothing about a playbook beyond "there's a deployment name I can call `run_deployment()` on, and a work pool it runs on."
 
@@ -150,10 +149,20 @@ Concretely, per playbook:
 
 - **Prefect's own metadata store**: this plan uses Prefect's default SQLite backend rather than pointing it at the same Postgres instance Manta uses. Reconsider once Prefect's history/durability matters operationally (SQLite is fine for a single-node dev/demo setup but is not what most production Prefect deployments run): pointing `prefect-server` at the same Postgres server (a separate database, not a shared one, to avoid coupling schemas/migrations) is the natural next step and needs no application-code changes, only compose/env config.
 - **Scaling workers onto Kubernetes, one container per flow run.** Once there are many playbooks or highly bursty workloads, a long-lived worker per playbook (as planned above) is not the only option. Prefect has a Kubernetes work pool type where the worker itself doesn't execute flow runs directly — it watches its pool and, for each flow run, creates a Kubernetes Job (a fresh Pod, from that playbook's image) to run it, then lets Kubernetes garbage-collect the Pod on completion. This gives per-run isolation (no state leaks between runs sharing a process) and scales workers to zero compute between runs (the worker pod itself stays cheap; the actual execution pods only exist while a run is in flight), at the cost of per-run container startup latency and needing a Kubernetes cluster to deploy into. This is a deployment-target change, not an architecture change — Manta's `run_deployment`/poll-via-client calls stay identical.
-- **Chaining playbooks with different environments into one pipeline.** A user may want to run playbook A, then feed its output into playbook B, where A and B need entirely different Docker images/dependencies — no single flow run can span two environments. This is feasible, but needs to be modeled as orchestration *above* individual playbook runs, not inside a playbook itself:
-  - **Manta-level sequencing** (simplest, keeps playbooks fully decoupled): Manta calls `run_deployment` for playbook A, polls to completion, then calls `run_deployment` for playbook B with parameters derived from A's output. Each step still runs in its own dedicated worker/image via normal work-pool routing — no playbook needs to know the other exists. The gap this leaves is data hand-off: since steps execute in different containers/environments, output can't be passed via shared memory or a shared filesystem — it needs an explicit medium (e.g. a shared object store like S3, or passing small results as flow-run parameters/state if they fit that path).
-  - **Flow-level sequencing** (a flow triggers another deployment from within itself, via `run_deployment` called inside playbook A's flow code): possible, but couples playbook A to knowing about playbook B and to Prefect's orchestration API — likely undesirable given the goal of playbooks staying independent and environment-agnostic.
-  - **A first-class "pipeline" concept in Manta**, sitting above playbook runs, that models a fixed or user-defined sequence of playbook invocations plus the hand-off contract between steps (what output format step N produces, what input step N+1 expects). This is the more product-shaped answer if chaining becomes a common pattern rather than a one-off, but is a larger addition than anything in this plan and should be scoped separately once there's a concrete multi-playbook workflow to support.
+- **Chaining playbooks with different environments into one pipeline.** A user may want to run playbook A, then feed its output into playbook B, where A and B need entirely different Docker images/dependencies — no single flow run can span two environments. This is feasible; Prefect has native support for it that's preferable to hand-rolling the sequencing in Manta:
+  - **Prefect-native sequencing via a parent flow** (preferred): define a lightweight orchestrator flow, deployed and run like any other flow, whose only job is to call `run_deployment` for each playbook step in order:
+    ```python
+    from prefect.deployments import run_deployment
+
+    @flow
+    def parent_flow():
+        run_deployment("subflow-a/deployment-a")  # runs on work pool A
+        run_deployment("subflow-b/deployment-b")  # runs on work pool B
+    ```
+    By default `run_deployment` called from within a flow blocks until that deployment run finishes and links it as a subflow in the Prefect UI (`as_subflow=True` is the default) — so this gets sequencing, waiting, and a grouped parent/child view in the UI for free, without Manta polling anything itself. Each `run_deployment` call still resolves to that playbook's own deployment/work pool/worker, so step A and step B execute in their own environments exactly as they would standalone — the parent flow only orchestrates, it doesn't run playbook code itself. The parent flow needs a (very lightweight) deployment and worker of its own, since it's a real flow, but it does no heavy computation — it just calls out and waits.
+  - **Manta-level sequencing** (an alternative if avoiding an extra orchestrator flow/worker matters more than UI grouping): Manta itself calls `run_deployment` for playbook A, polls to completion via the Prefect client, then calls `run_deployment` for playbook B with parameters derived from A's output. Same per-step isolation as above, but the sequencing logic and polling loop live in Manta's backend instead of in Prefect, and the parent/child UI grouping is lost.
+  - Either approach shares the same data hand-off gap: since steps execute in different containers/environments, output can't be passed via shared memory or a shared filesystem — it needs an explicit medium (e.g. a shared object store like S3, or passing small results as flow-run parameters/state if they fit that path).
+  - **A first-class "pipeline" concept in Manta**, sitting above playbook runs, that models a fixed or user-defined sequence of playbook invocations plus the hand-off contract between steps (what output format step N produces, what input step N+1 expects) — likely implemented *using* the parent-flow pattern above under the hood. This is the more product-shaped answer if chaining becomes a common pattern rather than a one-off, but is a larger addition than anything in this plan and should be scoped separately once there's a concrete multi-playbook workflow to support.
 
 ## Verification
 
