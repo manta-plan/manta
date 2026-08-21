@@ -14,5 +14,29 @@ services:
       timeout: 5s
       retries: 5
 
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.05
+    # "mini" runs master+volume+filer+S3 gateway+WebDAV+Admin UI in one
+    # process, with defaults auto-tuned for dev/small-scale use — SeaweedFS's
+    # own purpose-built command for local S3-compatible storage.
+    command:
+      - mini
+      - -ip.bind=0.0.0.0
+      - -dir=/data
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+    ports:
+      - "${S3_PORT}:8333"
+      - "${SEAWEEDFS_ADMIN_PORT}:23646" # Admin UI — cluster status, bucket/object browser
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9333/cluster/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
+  seaweedfs-data:

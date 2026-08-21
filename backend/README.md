@@ -43,6 +43,17 @@ uv run alembic downgrade -1   # roll back one revision
 uv run alembic current        # show the currently applied revision
 ```
 
+## File storage
+
+Files are stored in S3-compatible object storage — [SeaweedFS](https://github.com/seaweedfs/seaweedfs)
+locally (see [docker/README.md](../docker/README.md#services)), via
+[`S3FileStorageService`](src/manta/services/s3_file_storage_service.py) (boto3
+under the hood). Config lives in `backend/.env`, read by
+[`src/manta/config/s3_config.py`](src/manta/config/s3_config.py). Like
+migrations, the target bucket is provisioned automatically on startup (see
+`ensure_bucket_exists()` in `main.py`) — nothing to run by hand, beyond having
+SeaweedFS up.
+
 ## Linting & formatting
 
 We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting.

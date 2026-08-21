@@ -72,7 +72,7 @@ backend/
 │       │   └── results/       # *_result.py — output DTOs, shared across versions
 │       ├── entities/          # business entities
 │       ├── migrations/        # alembic env + versions — see backend/README.md
-│       ├── config/            # app config (logging, database, ...)
+│       ├── config/            # app config (logging, database, S3, ...)
 │       └── middleware/        # cross-cutting concerns (auth, CORS, ...)
 └── tests/                     # pytest suite — see Testing below
 ```

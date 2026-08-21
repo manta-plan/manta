@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = "==3.14.*"
 dependencies = [
     "alembic>=1.18.5",
+    "boto3>=1.43.73",
     "fastapi>=0.141.1",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.2.2",
@@ -25,6 +26,7 @@ packages = ["src/manta"]
 
 [dependency-groups]
 dev = [
+    "boto3-stubs[s3]>=1.43.73",
     "diff-cover>=10.5.0",
     "httpx2>=2.9.1",
     "pytest>=9.1.1",
