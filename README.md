@@ -23,3 +23,7 @@ the package-level READMEs for setup instructions:
 - [backend/README.md](backend/README.md) for the FastAPI backend.
 - [frontend/README.md](frontend/README.md) for the React frontend.
 - [docker/README.md](docker/README.md) for local services and Docker notes.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
