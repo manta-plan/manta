@@ -15,6 +15,7 @@ If you use Corepack, prepare the pinned pnpm version from the repo root:
 
 ```bash
 corepack pnpm@11.10.0 --version
+corepack enable pnpm
 ```
 
 ## First-time Setup
