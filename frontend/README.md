@@ -15,6 +15,7 @@ If you use Corepack, prepare the pinned pnpm version from the repo root:
 
 ```bash
 corepack pnpm@11.10.0 --version
+corepack enable pnpm
 ```
 
 ## First-time Setup
@@ -32,6 +33,12 @@ pnpm dev
 ```
 
 Vite prints the local URL, usually `http://localhost:5173`.
+
+## Design Tokens
+
+Tailwind theme tokens live in `src/index.css` using Tailwind v4's CSS-first
+`@theme` configuration. Prefer semantic utilities such as `bg-primary`,
+`text-text-secondary`, `border-border`, and `bg-accent` over raw palette values.
 
 ## Quality Checks
 
