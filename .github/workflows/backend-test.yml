@@ -26,7 +26,27 @@ jobs:
           retention-days: 1
           include-hidden-files: true
 
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with:
+          runtime: "node@26"
+          version: "11.10.0"
+          cache: false
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-files
+          path: frontend/dist/
+          retention-days: 1
+
   integration:
+    needs: [frontend-build]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -34,6 +54,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - uses: pnpm/setup@v2
+        with:
+          runtime: "node@26"
+          version: "11.10.0"
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-files
+          path: frontend/dist
       - run: uv sync
       - run: uv run pytest tests/integration --cov=manta --cov-report=
         env:
