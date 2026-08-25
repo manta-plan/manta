@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.18.5",
     "boto3>=1.43.73",
     "fastapi>=0.141.1",
+    "prefect>=3.0.0,<4.0.0",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.51",
