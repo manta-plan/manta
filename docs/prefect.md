@@ -49,7 +49,7 @@ Prefect's execution model has two tiers of complexity:
 - **`flow.serve(name=...)`**: runs in a single long-lived process, implicitly registers a deployment, and polls for scheduled runs against it — no explicit work pool or separate worker to set up. This is the right amount of machinery for one built-in demo flow living in Manta's own codebase/environment.
 - **Work pools + `prefect worker start`**: the real deployment model, needed once flow code has different dependencies/environment than the backend (i.e. once external playbooks exist). See [External playbooks](#external-playbooks-what-changes-and-how-workers-scale) below.
 
-Instead of a separate `manta-worker` script, integrate the Prefect worker startup into `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and future S3 initialization are run on startup. The worker should be spawned as a daemon background thread/process at app initialization, similar to how you might handle other required background services. This keeps all app-startup logic centralized in `create_app()` rather than requiring users to manually run a second command.
+Instead of a separate `manta-worker` script, spawn the Prefect worker as a **subprocess** from within `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and future S3 initialization are run on startup. This keeps all app-startup logic centralized in `create_app()`. The worker runs `prefect worker start --type process` in a separate Python process, isolated from the API server (see rationale below).
 
 ## Backend changes
 
@@ -92,8 +92,8 @@ class CreateRunRequest(BaseModel):
 For this PR, we hardcode the request to have a pi-specific `num_pi_digits` parameter that is passed through to the Prefect deployment. The code will have a **TODO**: once external playbooks are integrated from the `blocks` repo, replace this with a generic playbook-config schema (name, parameters dict, etc.) that Manta resolves to a deployment.
 
 **Result DTOs** — `services/results/run_result.py`:
-- `CreateRunResult(uuid, project_uuid, prefect_flow_run_id, created_at)`
-- `GetRunResult(uuid, project_uuid, prefect_flow_run_id, status, created_at)` — `status` is fetched live from Prefect, not stored. Logs are fetched via a separate endpoint (see below).
+- `CreateRunResult(uuid, project_uuid, created_at)` — minimal response; `prefect_flow_run_id` is stored only in Manta's database, internal to the backend.
+- `GetRunResult(uuid, project_uuid, status, created_at)` — `status` is fetched live from Prefect, not stored. Logs are fetched via a separate endpoint (see below).
 - `GetRunLogsResult(logs: list[str], run_status: str)` — `logs` are the accumulated Prefect flow-run logs; `run_status` is the current Prefect state (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, etc.) to clarify whether logs are still accumulating or final.
 
 **Service** — `services/run_service.py`:
@@ -117,6 +117,52 @@ def get_run_logs(run_uuid: UUID, service: RunService = Depends()) -> GetRunLogsR
 ```
 Wire into `routes/v1/__init__.py` alongside `project_router`.
 
+## Implementation notes
+
+**Worker subprocess architecture** — [Prefect officially recommends separate process workers](https://docs.prefect.io/v3/advanced/background-tasks), not threaded within the app. Rationale:
+
+1. **Isolation**: Worker failures (crashes, deadlocks, resource exhaustion) don't crash the API server. If the Prefect server goes down, the API keeps serving; runs just don't execute until a worker recovers.
+2. **Python GIL (Global Interpreter Lock)**: Threading Python code prevents true parallelism even on multi-core systems — only one thread executes Python bytecode at a time. Subprocess workers execute independently with their own GIL, enabling true parallel flow execution.
+3. **Graceful shutdown**: Subprocess workers respond to signals and can clean up resources (close DB connections, flush logs) before exiting. Daemon threads are abruptly terminated, risking resource leaks.
+4. **Industry standard**: [Celery (Python's de facto task queue)](https://docs.celeryq.dev/en/4.4.0/userguide/workers.html) defaults to multiprocessing, not threading, for these same reasons.
+
+**Implementation**: Spawn the worker via `subprocess.Popen()` in `create_app()`:
+```python
+import subprocess
+import sys
+
+def create_app():
+    # ... existing setup (migrations, logging, etc.) ...
+    try:
+        worker_process = subprocess.Popen(
+            [sys.executable, "-m", "prefect", "worker", "start", "--type", "process"],
+            env=os.environ.copy(),  # inherits PREFECT_API_URL, etc.
+            stdout=subprocess.PIPE,  # optional: capture logs
+            stderr=subprocess.PIPE,
+        )
+        logger.info("Prefect worker started")
+    except Exception as e:
+        logger.error(f"Failed to start Prefect worker: {e}")
+        # Non-fatal: app continues, runs just won't execute
+    
+    app = FastAPI(...)
+    # ... rest of app setup ...
+    return app
+```
+
+For production on Linux, [wrap the worker in a systemd service](https://docs.prefect.io/v3/advanced/daemonize-processes) so it auto-restarts on failure — separate from the Manta app's lifecycle.
+
+**Prefect client API** — `run_deployment()` and `get_client()` are async functions:
+- `run_deployment()`: from `prefect.deployments`; returns a `FlowRun` object with an `id` property (the `prefect_flow_run_id`).
+- `get_client()`: from `prefect.client.orchestration`; returns an async Prefect client. Use it to call `get_flow_run()` by ID.
+- In `run_service.py` (which is sync), wrap async calls with `asyncio.run(...)`. This is safe because the service is called from FastAPI's request context (which is also sync for this codebase).
+
+**Prefect version** — add a specific version constraint to `pyproject.toml`, e.g. `prefect>=3.0.0,<4.0.0` to avoid breaking changes in a future major version.
+
+**Flow registration** — `pi_digit_stats_flow.serve()` automatically registers a deployment named `pi-digit-stats/pi-digit-stats` (project_name/deployment_name). This must match the hardcoded name in `run_deployment()` calls.
+
+**Prefect server health** — if `PREFECT_API_URL` is unreachable at app startup, the worker process won't start or will crash. The app should still run (the worker startup failure is non-fatal), but runs won't execute. Log the error and continue; once Prefect server is reachable, restart the worker process (or the app).
+
 ## Tests
 
 No test for the demo flow's internals — it's a disposable stand-in, not product logic.
@@ -128,9 +174,9 @@ No test for the demo flow's internals — it's a disposable stand-in, not produc
 
 **Unit** (`tests/unit/routes/v1/requests/test_run_request.py`): mirror `test_project_request.py` — `project_uuid` must be a valid UUID; `num_pi_digits` must be a positive integer.
 
-**Integration** (`tests/integration/routes/v1/test_run_route.py`): real HTTP round trip per existing pattern. The Prefect worker is started automatically as part of `create_app()` in the test's `app_server` fixture, so no separate subprocess setup is needed — the same app instance that handles the HTTP requests also boots the worker polling the `prefect-server`. Flow:
+**Integration** (`tests/integration/routes/v1/test_run_route.py`): real HTTP round trip per existing pattern. The Prefect worker subprocess is spawned as part of `create_app()` in the test's `app_server` fixture, so no additional test setup is needed — `create_app()` handles both the API server and the worker process. Flow:
   1. `POST /v1/projects` — `project_uuid`.
-  2. `POST /v1/runs` with that `project_uuid` and `num_pi_digits` (small value to keep the test fast) — assert `201` and a `prefect_flow_run_id` is present.
+  2. `POST /v1/runs` with that `project_uuid` and `num_pi_digits` (small value to keep the test fast) — assert `201` and a `uuid` (the Manta run UUID) is present.
   3. Poll `GET /v1/runs/{uuid}` in a bounded retry loop until `status` reports a Prefect terminal state (`COMPLETED`).
   4. `GET /v1/runs/{uuid}/logs` — assert logs contain the printed digit-frequency output.
   5. Assert the `Run` row itself via `db_connection` as existing tests do (project_id/prefect_flow_run_id persisted).
@@ -193,7 +239,7 @@ This decision depends on whether cross-environment playbook composition is a com
 ## Verification
 
 - `docker compose --env-file ../backend/.env -f docker/compose-dev-services.yaml up` — confirm `prefect-server` becomes healthy and its UI is reachable at `http://localhost:4200`.
-- `uv run manta` running (app + Prefect worker started in `create_app()`) — confirm startup logs show successful Prefect worker initialization with `PREFECT_API_URL` set.
-- `POST /v1/projects` then `POST /v1/runs` via curl/httpie — `201` with a `prefect_flow_run_id`; confirm the run appears in the Prefect UI and transitions to `Completed`; `GET /v1/runs/{uuid}` reflects that status; `GET /v1/runs/{uuid}/logs` returns the printed digit-frequency output.
+- `uv run manta` running (app + Prefect worker subprocess spawned in `create_app()`) — confirm startup logs show successful Prefect worker process launch with `PREFECT_API_URL` set.
+- `POST /v1/projects` then `POST /v1/runs` via curl/httpie — `201` with a `uuid`; confirm the run appears in the Prefect UI and transitions to `Completed`; `GET /v1/runs/{uuid}` reflects that status; `GET /v1/runs/{uuid}/logs` returns the printed digit-frequency output.
 - `uv run pytest tests/unit` and `uv run pytest tests/integration` (from `backend/`) — all new and existing tests pass.
 - `uv run ruff check .` / `uv run ruff format --check .` — lint clean.
