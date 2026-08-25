@@ -10,11 +10,16 @@ This change introduces Prefect as Manta's workflow execution engine and adds a `
 - **No new dependencies for the demo workload.** Pi is computed with a short, self-contained pure-Python routine (e.g. Bailey–Borwein–Plouffe, or a `decimal`-based Chudnovsky implementation) that takes on the order of a few seconds for ~100k–1M digits. If that proves too slow or fiddly to get right, fall back to a trivial `time.sleep(N)` "flow" — the point of this feature is the plumbing, not the math.
 - **No run status/result columns in Manta's database.** Prefect is the single source of truth for run state, logs, and results. The `Run` row exists only to link a `project_id` to a `prefect_flow_run_id`; `GET /runs/{uuid}` queries Prefect live rather than caching or duplicating state that could drift out of sync.
 - **Cascade delete**: `Run.project_id`'s FK uses `ondelete="CASCADE"` — deleting a project deletes its runs.
-- **No manual background threading.** Prefect already handles asynchronous execution: `create_run` calls Prefect's `run_deployment(...)`, which submits the flow run and returns immediately without waiting for completion. A separate long-lived process — a Prefect worker, or `flow.serve()` for the simple case (see below) — is what actually executes it. The backend process never runs the flow itself.
+- **Worker initialization in `create_app()` alongside other required services.** Following the pattern established by migrations and S3 bucket setup, the Prefect worker subprocess is spawned in `create_app()` on startup. The backend process itself never runs flows — it only submits them to Prefect via `run_deployment()` and queries state/logs via the Prefect client. The separate worker process polls for and executes flow runs asynchronously.
 - **Request schema stays generic.** `CreateRunRequest` takes `project_uuid` and an open `parameters: dict[str, Any] | None`, passed straight through to Prefect — no pi-specific fields like `num_digits`. This will change in the future once we know exactly what Playbook configs look like and how Manta will handle them, but seems like a good enough starting point.
 ## New dependency
 
-Add `prefect` to `backend/pyproject.toml` (`uv add prefect`). Nothing else, other than adding a prebuilt prefect-server service to Docker compose.
+Add `prefect` to `backend/pyproject.toml`:
+```bash
+cd backend && uv add prefect
+```
+
+Also add a prebuilt `prefect-server` service to Docker Compose (see [Docker Compose changes](#docker-compose-changes) below). No other new application dependencies needed beyond `prefect`.
 
 ## Docker Compose changes (`docker/compose-dev-services.yaml`)
 
@@ -49,7 +54,7 @@ Prefect's execution model has two tiers of complexity:
 - **`flow.serve(name=...)`**: runs in a single long-lived process, implicitly registers a deployment, and polls for scheduled runs against it — no explicit work pool or separate worker to set up. This is the right amount of machinery for one built-in demo flow living in Manta's own codebase/environment.
 - **Work pools + `prefect worker start`**: the real deployment model, needed once flow code has different dependencies/environment than the backend (i.e. once external playbooks exist). See [External playbooks](#external-playbooks-what-changes-and-how-workers-scale) below.
 
-Instead of a separate `manta-worker` script, spawn the Prefect worker as a **subprocess** from within `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and future S3 initialization are run on startup. This keeps all app-startup logic centralized in `create_app()`. The worker runs `prefect worker start --type process` in a separate Python process, isolated from the API server (see rationale below).
+Instead of a separate `manta-worker` script, spawn the Prefect worker as a **subprocess** from within `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and S3 bucket initialization are run on startup. This keeps all app-startup logic centralized in `create_app()`. The worker runs `prefect worker start --type process` in a separate Python process, isolated from the API server (see rationale below).
 
 ## Backend changes
 
@@ -126,13 +131,19 @@ Wire into `routes/v1/__init__.py` alongside `project_router`.
 3. **Graceful shutdown**: Subprocess workers respond to signals and can clean up resources (close DB connections, flush logs) before exiting. Daemon threads are abruptly terminated, risking resource leaks.
 4. **Industry standard**: [Celery (Python's de facto task queue)](https://docs.celeryq.dev/en/4.4.0/userguide/workers.html) defaults to multiprocessing, not threading, for these same reasons.
 
-**Implementation**: Spawn the worker via `subprocess.Popen()` in `create_app()`:
+**Implementation**: Spawn the worker via `subprocess.Popen()` in `create_app()`, following the pattern established by S3 bucket initialization:
 ```python
 import subprocess
 import sys
 
 def create_app():
-    # ... existing setup (migrations, logging, etc.) ...
+    configure_logging()
+    logger.info("Running database migrations...")
+    run_migrations()
+    logger.info("Ensuring S3 bucket exists...")
+    S3FileStorageService(...).ensure_bucket_exists()
+    
+    logger.info("Starting Prefect worker...")
     try:
         worker_process = subprocess.Popen(
             [sys.executable, "-m", "prefect", "worker", "start", "--type", "process"],
@@ -181,7 +192,7 @@ No test for the demo flow's internals — it's a disposable stand-in, not produc
   4. `GET /v1/runs/{uuid}/logs` — assert logs contain the printed digit-frequency output.
   5. Assert the `Run` row itself via `db_connection` as existing tests do (project_id/prefect_flow_run_id persisted).
 
-The integration setup mirrors the existing pattern: `prefect-server` is a docker service (like `postgres`), and the Prefect worker is booted as part of `create_app()` startup (like migrations). No additional subprocess management is needed beyond what the test harness already does for the postgres-dependent app. This follows the same model as existing integration tests and adds acceptable weight for exercising the real Prefect submit → execute → query loop end-to-end.
+The integration setup mirrors the existing pattern: `prefect-server` is a docker service (like `postgres` and `seaweedfs`), and the Prefect worker is booted as part of `create_app()` startup (like migrations and S3 bucket initialization). No additional subprocess management is needed beyond what the test harness already does for the postgres-dependent app. This follows the same model as existing integration tests and adds acceptable weight for exercising the real Prefect submit → execute → query loop end-to-end.
 
 **CI**: no workflow-file changes needed — `backend-test.yml` already runs `tests/unit`/`tests/integration` via `uv run pytest`; the testcontainers-booted compose stack picks up `prefect-server` automatically. First run pays image-pull latency for `prefecthq/prefect:3-latest`.
 
