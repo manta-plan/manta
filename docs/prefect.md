@@ -54,7 +54,7 @@ Prefect's execution model has two tiers of complexity:
 - **`flow.serve(name=...)`**: runs in a single long-lived process, implicitly registers a deployment, and polls for scheduled runs against it — no explicit work pool or separate worker to set up. This is the right amount of machinery for one built-in demo flow living in Manta's own codebase/environment.
 - **Work pools + `prefect worker start`**: the real deployment model, needed once flow code has different dependencies/environment than the backend (i.e. once external playbooks exist). See [External playbooks](#external-playbooks-what-changes-and-how-workers-scale) below.
 
-Instead of a separate `manta-worker` script, spawn the Prefect worker as a **subprocess** from within `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and S3 bucket initialization are run on startup. This keeps all app-startup logic centralized in `create_app()`. The worker runs `prefect worker start --type process` in a separate Python process, isolated from the API server (see rationale below).
+Instead of a separate `manta-worker` script, spawn the flow-serving process as a **subprocess** from within `create_app()` in `backend/src/manta/main.py` — consistent with how migrations and S3 bucket initialization are run on startup. This keeps all app-startup logic centralized in `create_app()`. The subprocess runs `pi_digit_stats_flow.serve(name="pi-digit-stats")` (not `prefect worker start` — that command only dispatches to deployments registered via `flow.deploy()` against a work pool, which is the tier of machinery this section deliberately avoids for now), isolated from the API server (see rationale below).
 
 ## Backend changes
 
@@ -124,14 +124,21 @@ Wire into `routes/v1/__init__.py` alongside `project_router`.
 
 ## Implementation notes
 
-**Worker subprocess architecture** — [Prefect officially recommends separate process workers](https://docs.prefect.io/v3/advanced/background-tasks), not threaded within the app. Rationale:
+**Flow-serving subprocess architecture** — [Prefect officially recommends separate process workers](https://docs.prefect.io/v3/advanced/background-tasks), not threaded within the app. The same rationale applies to a `flow.serve()` process, which is likewise a long-lived loop polling Prefect for scheduled runs:
 
-1. **Isolation**: Worker failures (crashes, deadlocks, resource exhaustion) don't crash the API server. If the Prefect server goes down, the API keeps serving; runs just don't execute until a worker recovers.
-2. **Python GIL (Global Interpreter Lock)**: Threading Python code prevents true parallelism even on multi-core systems — only one thread executes Python bytecode at a time. Subprocess workers execute independently with their own GIL, enabling true parallel flow execution.
-3. **Graceful shutdown**: Subprocess workers respond to signals and can clean up resources (close DB connections, flush logs) before exiting. Daemon threads are abruptly terminated, risking resource leaks.
+1. **Isolation**: Failures (crashes, deadlocks, resource exhaustion) don't crash the API server. If the Prefect server goes down, the API keeps serving; runs just don't execute until the flow-serving process recovers.
+2. **Python GIL (Global Interpreter Lock)**: Threading Python code prevents true parallelism even on multi-core systems — only one thread executes Python bytecode at a time. A subprocess executes independently with its own GIL, enabling true parallel flow execution.
+3. **Graceful shutdown**: A subprocess responds to signals and can clean up resources (close DB connections, flush logs) before exiting. Daemon threads are abruptly terminated, risking resource leaks.
 4. **Industry standard**: [Celery (Python's de facto task queue)](https://docs.celeryq.dev/en/4.4.0/userguide/workers.html) defaults to multiprocessing, not threading, for these same reasons.
 
-**Implementation**: Spawn the worker via `subprocess.Popen()` in `create_app()`, following the pattern established by S3 bucket initialization:
+**Implementation**: Spawn the flow-serving process via `subprocess.Popen()` in `create_app()`, following the pattern established by S3 bucket initialization. Give `pi_digit_stats.py` a `__main__` entrypoint that calls `.serve()` — **not** `prefect worker start --type process`, which only dispatches to deployments registered via `flow.deploy()` against a work pool. That's a different, incompatible execution model from `flow.serve()` (see [Executing the demo flow](#executing-the-demo-flow-flowserve-not-a-full-workerwork-pool-setup-yet)); a bare `prefect worker start` subprocess would never see runs from a flow only registered via `.serve()`, since `.serve()`'s polling loop runs in — and only in — the process that called it.
+
+```python
+# backend/src/manta/workflows/pi_digit_stats.py
+if __name__ == "__main__":
+    pi_digit_stats_flow.serve(name="pi-digit-stats")
+```
+
 ```python
 import subprocess
 import sys
@@ -142,26 +149,26 @@ def create_app():
     run_migrations()
     logger.info("Ensuring S3 bucket exists...")
     S3FileStorageService(...).ensure_bucket_exists()
-    
-    logger.info("Starting Prefect worker...")
+
+    logger.info("Starting Prefect flow-serving process...")
     try:
-        worker_process = subprocess.Popen(
-            [sys.executable, "-m", "prefect", "worker", "start", "--type", "process"],
+        flow_serve_process = subprocess.Popen(
+            [sys.executable, "-m", "manta.workflows.pi_digit_stats"],
             env=os.environ.copy(),  # inherits PREFECT_API_URL, etc.
             stdout=subprocess.PIPE,  # optional: capture logs
             stderr=subprocess.PIPE,
         )
-        logger.info("Prefect worker started")
+        logger.info("Prefect flow-serving process started")
     except Exception as e:
-        logger.error(f"Failed to start Prefect worker: {e}")
+        logger.error(f"Failed to start Prefect flow-serving process: {e}")
         # Non-fatal: app continues, runs just won't execute
-    
+
     app = FastAPI(...)
     # ... rest of app setup ...
     return app
 ```
 
-For production on Linux, [wrap the worker in a systemd service](https://docs.prefect.io/v3/advanced/daemonize-processes) so it auto-restarts on failure — separate from the Manta app's lifecycle.
+For production on Linux, [wrap the subprocess in a systemd service](https://docs.prefect.io/v3/advanced/daemonize-processes) so it auto-restarts on failure — separate from the Manta app's lifecycle.
 
 **Prefect client API** — `run_deployment()` and `get_client()` are async functions:
 - `run_deployment()`: from `prefect.deployments`; returns a `FlowRun` object with an `id` property (the `prefect_flow_run_id`).
@@ -254,3 +261,54 @@ This decision depends on whether cross-environment playbook composition is a com
 - `POST /v1/projects` then `POST /v1/runs` via curl/httpie — `201` with a `uuid`; confirm the run appears in the Prefect UI and transitions to `Completed`; `GET /v1/runs/{uuid}` reflects that status; `GET /v1/runs/{uuid}/logs` returns the printed digit-frequency output.
 - `uv run pytest tests/unit` and `uv run pytest tests/integration` (from `backend/`) — all new and existing tests pass.
 - `uv run ruff check .` / `uv run ruff format --check .` — lint clean.
+
+## Implementation plan
+
+Nine commits, each independently reviewable and (with the exception of the last two, which need the full stack) independently runnable through lint/tests. Ordered so every commit only depends on ones before it. Model picks assume Claude Code's default agentic loop (planning + tool use already handled); pick a size up if the assigned model struggles.
+
+1. **Infra: Prefect dependency, docker-compose service, env vars**
+   - `cd backend && uv add "prefect>=3.0.0,<4.0.0"`
+   - `docker/compose-dev-services.yaml`: add `prefect-server` service + `prefect-data` volume (per [Docker Compose changes](#docker-compose-changes-dockercompose-dev-servicesyaml))
+   - `backend/.env`: add `PREFECT_PORT`, `PREFECT_API_URL`
+   - `docker/.env.test`: add `PREFECT_PORT=0`
+   - No application code touched. Verify with `docker compose --env-file ../backend/.env -f docker/compose-dev-services.yaml up` and confirm `prefect-server` reports healthy.
+   - **Model: Haiku** — config/YAML/env edits only, no logic.
+
+2. **Demo workflow module: `pi_digit_stats` flow**
+   - New `backend/src/manta/workflows/__init__.py`, `backend/src/manta/workflows/pi_digit_stats.py` with `compute_pi_digits` task, `digit_frequency` task, `pi_digit_stats_flow`, and a `__main__` entrypoint calling `pi_digit_stats_flow.serve(name="pi-digit-stats")` (per [Backend changes](#backend-changes) and [Implementation notes](#implementation-notes)).
+   - No test per the doc (disposable demo) — verify manually with a plain Python call (not yet wired to Prefect server/deployment).
+   - **Model: Sonnet** — getting a correct, reasonably fast pi-digit routine (or judging that the `time.sleep` fallback is the better call) needs a bit more judgment than pure boilerplate.
+
+3. **`Run` entity + migration**
+   - `backend/src/manta/entities/run.py`, add `Run` to `entities/__init__.py`'s `__all__`.
+   - `uv run alembic revision --autogenerate -m "create runs table"`, hand-review the FK/`ondelete="CASCADE"`.
+   - **Model: Haiku** — directly mirrors `Project`/its migration; AGENTS.md's "Adding a New Entity" recipe covers it exactly.
+
+4. **Run request/result DTOs**
+   - `backend/src/manta/routes/v1/requests/run_request.py` (`CreateRunRequest`)
+   - `backend/src/manta/services/results/run_result.py` (`CreateRunResult`, `GetRunResult`, `GetRunLogsResult`)
+   - **Model: Haiku** — pure Pydantic boilerplate mirroring the `Project` DTOs.
+
+5. **`RunService`**
+   - `backend/src/manta/services/run_service.py`: `create_run`, `get_run`, `get_run_logs` (per [Backend changes](#backend-changes)), wrapping Prefect's async client with `asyncio.run(...)`.
+   - **Model: Sonnet** — the sync/async boundary and mapping Prefect's `FlowRun`/state objects onto the result DTOs need more care than a mechanical mirror of `ProjectService`.
+
+6. **Run route**
+   - `backend/src/manta/routes/v1/run_route.py` (`POST /runs`, `GET /runs/{uuid}`, `GET /runs/{uuid}/logs`); wire into `routes/v1/__init__.py`.
+   - **Model: Haiku** — directly mirrors `project_route.py`.
+
+7. **Start the flow-serving subprocess in `create_app()`**
+   - `backend/src/manta/main.py`: spawn the entrypoint added in commit 2 as a subprocess (`[sys.executable, "-m", "manta.workflows.pi_digit_stats"]`) in `create_app()`, alongside migrations/S3 bucket init (per [Implementation notes](#implementation-notes)) — non-fatal on failure to start.
+   - **Model: Sonnet** — subprocess lifecycle/error-handling logic (non-fatal startup failure, as specified) needs more judgment than a mechanical mirror of the S3 bucket init step.
+
+8. **Unit tests: `RunService`, `CreateRunRequest`**
+   - `backend/tests/unit/services/test_run_service.py` — mirrors `test_project_service.py`'s `mock_db` pattern; monkeypatch `run_deployment` and the Prefect client so no real server is contacted.
+   - `backend/tests/unit/routes/v1/requests/test_run_request.py` — mirrors `test_project_request.py`.
+   - **Model: Sonnet** — correctly monkeypatching Prefect's async client calls (module-level patches, `asyncio.run` interplay) is fiddlier than the existing sync-only `mock_db` fixture covers.
+
+9. **Integration test: `run_route`**
+   - `backend/tests/integration/routes/v1/test_run_route.py` — full `POST /runs` → poll `GET /runs/{uuid}` → `GET /runs/{uuid}/logs` round trip (per [Tests](#tests)).
+   - `backend/tests/integration/conftest.py` — add a `prefect_service` fixture (mirroring `postgres_service`/`seaweedfs_service`) and pass its host/port to `app_server`'s subprocess env as `PREFECT_API_URL`.
+   - **Model: Sonnet** — bounded-retry polling loops and multi-service fixture wiring are the most failure-prone part of this plan to get right first try.
+
+**Not its own commit**: no CI workflow changes needed (per [Tests](#tests) — the existing `backend-test.yml` picks up `prefect-server` automatically via the testcontainers-booted compose stack).
