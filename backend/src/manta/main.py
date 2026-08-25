@@ -29,7 +29,10 @@ def create_app() -> FastAPI:
     logger.info("Ensuring S3 bucket exists...")
     S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
     app = FastAPI(title="Manta")
+    app.frontend("/", directory="../frontend/dist")
     app.include_router(v1_router)
+    # Mounting the frontend needs to be sequenced after all other routes so as
+    # to not accidentally shadow any api endpoints.
     return app
 
 
