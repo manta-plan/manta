@@ -45,10 +45,14 @@ class RunService:
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        flow_run = asyncio.run(
-            run_deployment(
-                PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
-            )
+        # `run_deployment` is `@async_dispatch`-decorated: called from a sync
+        # context (as here — this method runs in FastAPI's threadpool, with no
+        # running event loop) it executes synchronously and returns a `FlowRun`
+        # directly, not a coroutine — so it must NOT be wrapped in `asyncio.run()`
+        # (unlike `_read_flow_run`/`_read_flow_run_logs` below, which are real
+        # `async def` coroutine functions and do need it).
+        flow_run = run_deployment(
+            PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
         )
 
         run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)

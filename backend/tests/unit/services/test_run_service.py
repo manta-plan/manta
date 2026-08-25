@@ -95,10 +95,13 @@ def test_create_run_persists_a_run_and_returns_its_dto(monkeypatch: pytest.Monke
     project = _existing_project()
     db = _FakeSession(query_results={Project: project})
     flow_run_id = uuid4()
+    # `run_deployment` runs synchronously when called from a sync context (see
+    # the comment in `RunService.create_run`) — a plain `MagicMock`, not
+    # `AsyncMock`, mirrors that real call shape.
     monkeypatch.setattr(
         run_service_module,
         "run_deployment",
-        AsyncMock(return_value=SimpleNamespace(id=flow_run_id)),
+        MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
     )
     service = RunService(db=db)
 
@@ -120,7 +123,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(monkeypatch: pytest.Monke
 def test_create_run_with_unknown_project_raises_404(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given
     db = _FakeSession(query_results={Project: None})
-    monkeypatch.setattr(run_service_module, "run_deployment", AsyncMock())
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
     service = RunService(db=db)
 
     # When/Then
