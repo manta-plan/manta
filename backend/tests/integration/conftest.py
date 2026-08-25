@@ -57,6 +57,12 @@ def seaweedfs_service(_docker_services: DockerCompose) -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
+def prefect_service(_docker_services: DockerCompose) -> dict[str, str]:
+    host, port = _docker_services.get_service_host_and_port("prefect-server", 4200)
+    return {"host": host, "port": str(port)}
+
+
+@pytest.fixture(scope="session")
 def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connection]:
     """A direct connection to the same Postgres the app under test uses, for
     asserting on rows the app is expected to have persisted."""
@@ -106,7 +112,9 @@ def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float
 
 @pytest.fixture(scope="session")
 def app_server(
-    postgres_service: dict[str, str], seaweedfs_service: dict[str, str]
+    postgres_service: dict[str, str],
+    seaweedfs_service: dict[str, str],
+    prefect_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -118,6 +126,7 @@ def app_server(
         "POSTGRES_PORT": postgres_service["port"],
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
+        "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
