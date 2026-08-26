@@ -34,6 +34,7 @@ Add a `prefect-server` service:
     volumes:
       - prefect-data:/root/.prefect
     healthcheck:
+      # curl isn't available in this image, so using python
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
       interval: 5s
       timeout: 5s
