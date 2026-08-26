@@ -1,13 +1,16 @@
 import { Button } from "@base-ui/react/button";
+import { Menu } from "@base-ui/react/menu";
 import {
   FiAlertCircle,
   FiCheckCircle,
   FiClock,
+  FiExternalLink,
   FiFilter,
   FiMoreHorizontal,
   FiPlay,
   FiRefreshCw,
   FiSearch,
+  FiTrash2,
   FiZap,
 } from "react-icons/fi";
 
@@ -181,12 +184,32 @@ export function HomePage() {
                       <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
                       <td className="text-text-secondary px-4 py-4">{run.owner}</td>
                       <td className="px-4 py-4 text-right">
-                        <Button
-                          aria-label={`Open actions for ${run.name}`}
-                          className="hover:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
-                        >
-                          <FiMoreHorizontal className="size-4" aria-hidden="true" />
-                        </Button>
+                        <Menu.Root>
+                          <Menu.Trigger
+                            aria-label={`Open actions for ${run.name}`}
+                            className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                          >
+                            <FiMoreHorizontal className="size-4" aria-hidden="true" />
+                          </Menu.Trigger>
+                          <Menu.Portal>
+                            <Menu.Positioner
+                              align="end"
+                              className="z-10 outline-none"
+                              sideOffset={6}
+                            >
+                              <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                                <Menu.Item className={menuItemClass}>
+                                  <FiExternalLink className="size-4" aria-hidden="true" />
+                                  View result
+                                </Menu.Item>
+                                <Menu.Item className={`${menuItemClass} text-red-700`}>
+                                  <FiTrash2 className="size-4" aria-hidden="true" />
+                                  Remove
+                                </Menu.Item>
+                              </Menu.Popup>
+                            </Menu.Positioner>
+                          </Menu.Portal>
+                        </Menu.Root>
                       </td>
                     </tr>
                   );
@@ -214,3 +237,6 @@ export function HomePage() {
     </main>
   );
 }
+
+const menuItemClass =
+  "flex cursor-default items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
