@@ -139,16 +139,19 @@ export function HomePage() {
   return (
     <main className="bg-background text-text min-h-svh">
       <header className="border-border bg-surface border-b">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="text-text-secondary mb-2 flex items-center gap-2 text-sm font-medium">
-              <span className="bg-accent size-2 rounded-full" aria-hidden="true" />
-              MANTA Energy
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-6 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <img
+              alt="MANTA Energy"
+              className="size-8 shrink-0 rounded object-contain"
+              src="/manta-icon.svg"
+            />
+            <div className="border-border min-w-0 border-l pl-4">
+              <h1 className="text-xl font-semibold tracking-normal">Runs</h1>
+              <p className="text-text-secondary mt-0.5 truncate text-sm">
+                Monitor recent executions and operational workflows.
+              </p>
             </div>
-            <h1 className="text-2xl font-semibold tracking-normal">Runs</h1>
-            <p className="text-text-secondary mt-1 text-sm">
-              Monitor recent model executions and operational workflows.
-            </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
