@@ -29,7 +29,7 @@ def _print_logs(label: str, stdout: str, stderr: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def _docker_services() -> Iterator[DockerCompose]:
+def docker_services() -> Iterator[DockerCompose]:
     """Boots the same stack dev uses, via compose-test-services.yaml (which
     includes compose-dev-services.yaml wholesale) isolated under its own
     Compose project name and ephemeral host ports (see docker/.env.test).
@@ -45,14 +45,14 @@ def _docker_services() -> Iterator[DockerCompose]:
 
 
 @pytest.fixture(scope="session")
-def postgres_service(_docker_services: DockerCompose) -> dict[str, str]:
-    host, port = _docker_services.get_service_host_and_port("postgres", 5432)
+def postgres_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("postgres", 5432)
     return {"host": host, "port": str(port)}
 
 
 @pytest.fixture(scope="session")
-def seaweedfs_service(_docker_services: DockerCompose) -> dict[str, str]:
-    host, port = _docker_services.get_service_host_and_port("seaweedfs", 8333)
+def seaweedfs_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("seaweedfs", 8333)
     return {"host": host, "port": str(port)}
 
 
@@ -91,7 +91,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float = 15.0) -> None:
+def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float = 15.0) -> None:  # pyright: ignore[reportMissingTypeArgument]
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
