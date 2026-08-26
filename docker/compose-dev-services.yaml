@@ -46,10 +46,10 @@ services:
     volumes:
       - prefect-data:/root/.prefect
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
 
 volumes:
   postgres-data:
