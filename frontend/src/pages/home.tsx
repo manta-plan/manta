@@ -81,6 +81,7 @@ const demoRuns = [
 export function HomePage() {
   const [runs, setRuns] = useState<typeof demoRuns>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
+  const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const hasRuns = runs.length > 0;
   const filteredRuns =
@@ -126,6 +127,15 @@ export function HomePage() {
     }, 1000);
   }
 
+  function handleRefreshRuns() {
+    setIsRefreshingRuns(true);
+
+    window.setTimeout(() => {
+      setRuns((currentRuns) => (currentRuns.length > 0 ? [...currentRuns] : currentRuns));
+      setIsRefreshingRuns(false);
+    }, 1000);
+  }
+
   return (
     <main className="bg-background text-text min-h-svh">
       <header className="border-border bg-surface border-b">
@@ -142,9 +152,16 @@ export function HomePage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Button className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2">
-              <FiRefreshCw className="size-4" aria-hidden="true" />
-              Refresh
+            <Button
+              className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isRefreshingRuns}
+              onClick={handleRefreshRuns}
+            >
+              <FiRefreshCw
+                className={`size-4 ${isRefreshingRuns ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {isRefreshingRuns ? "Refreshing..." : "Refresh"}
             </Button>
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
