@@ -11,47 +11,6 @@ from manta.services import run_service as run_service_module
 from manta.services.run_service import RunService
 
 
-class _FakeQuery:
-    """Minimal stand-in for `Session.query(Model).filter(...).first()`."""
-
-    def __init__(self, result) -> None:
-        self._result = result
-
-    def filter(self, *_args, **_kwargs) -> _FakeQuery:
-        return self
-
-    def first(self):
-        return self._result
-
-
-class _FakeSession:
-    """Fake `Session` covering the `.query()`/`.add()`/`.commit()` calls `RunService` makes.
-
-    `RunService` needs two different lookups (`Project` by uuid in `create_run`, `Run` by
-    uuid + `Project` by id in `get_run`/`get_run_logs`), which the shared `mock_db` fixture
-    in conftest.py doesn't support (it's built for simple add/commit flows, not
-    `.query(...).filter(...).first()` chains). This local fake mirrors `_MockSession`'s
-    generated-field behaviour on `.add()` and additionally resolves `.query(Model)` to a
-    caller-supplied result per model class.
-    """
-
-    def __init__(self, query_results: dict[type, object] | None = None) -> None:
-        self.id = 1
-        self.uuid = uuid4()
-        self.created_at = datetime.now(UTC)
-        self._query_results = query_results or {}
-        self.add = MagicMock(side_effect=self._assign_generated_fields)
-        self.commit = MagicMock()
-
-    def query(self, model: type) -> _FakeQuery:
-        return _FakeQuery(self._query_results.get(model))
-
-    def _assign_generated_fields(self, entity) -> None:
-        entity.id = self.id
-        entity.uuid = self.uuid
-        entity.created_at = self.created_at
-
-
 class _FakeClientContext:
     """Async context manager standing in for the Prefect client returned by `get_client()`."""
 
@@ -90,10 +49,12 @@ def _existing_run(project: Project) -> Run:
     return run
 
 
-def test_create_run_persists_a_run_and_returns_its_dto(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_run_persists_a_run_and_returns_its_dto(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
     # Given
     project = _existing_project()
-    db = _FakeSession(query_results={Project: project})
+    db = mock_db_class(query_results={Project: project})
     flow_run_id = uuid4()
     # `run_deployment` runs synchronously when called from a sync context (see
     # the comment in `RunService.create_run`) — a plain `MagicMock`, not
@@ -120,9 +81,11 @@ def test_create_run_persists_a_run_and_returns_its_dto(monkeypatch: pytest.Monke
     assert result.created_at == db.created_at
 
 
-def test_create_run_with_unknown_project_raises_404(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_run_with_unknown_project_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
     # Given
-    db = _FakeSession(query_results={Project: None})
+    db = mock_db_class(query_results={Project: None})
     monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
     service = RunService(db=db)
 
@@ -132,11 +95,13 @@ def test_create_run_with_unknown_project_raises_404(monkeypatch: pytest.MonkeyPa
     assert exc_info.value.status_code == 404
 
 
-def test_get_run_returns_dto_for_a_known_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_run_returns_dto_for_a_known_run(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
     # Given
     project = _existing_project()
     run = _existing_run(project)
-    db = _FakeSession(query_results={Run: run, Project: project})
+    db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(read_flow_run=AsyncMock(return_value=_fake_flow_run("COMPLETED")))
     _patch_get_client(monkeypatch, fake_client)
     service = RunService(db=db)
@@ -151,9 +116,9 @@ def test_get_run_returns_dto_for_a_known_run(monkeypatch: pytest.MonkeyPatch) ->
     assert result.created_at == run.created_at
 
 
-def test_get_run_with_unknown_run_raises_404() -> None:
+def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
-    db = _FakeSession(query_results={Run: None})
+    db = mock_db_class(query_results={Run: None})
     service = RunService(db=db)
 
     # When/Then
@@ -164,11 +129,12 @@ def test_get_run_with_unknown_run_raises_404() -> None:
 
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     monkeypatch: pytest.MonkeyPatch,
+    mock_db_class,
 ) -> None:
     # Given
     project = _existing_project()
     run = _existing_run(project)
-    db = _FakeSession(query_results={Run: run, Project: project})
+    db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(
         read_flow_run=AsyncMock(return_value=_fake_flow_run("RUNNING")),
         read_logs=AsyncMock(
@@ -186,9 +152,9 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     assert result.run_status == "RUNNING"
 
 
-def test_get_run_logs_with_unknown_run_raises_404() -> None:
+def test_get_run_logs_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
-    db = _FakeSession(query_results={Run: None})
+    db = mock_db_class(query_results={Run: None})
     service = RunService(db=db)
 
     # When/Then

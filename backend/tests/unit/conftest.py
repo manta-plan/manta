@@ -5,13 +5,28 @@ from uuid import uuid4
 import pytest
 
 
+class _FakeQuery:
+    def __init__(self, result) -> None:
+        self._result = result
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def first(self):
+        return self._result
+
+
 class _MockSession:
-    def __init__(self) -> None:
+    def __init__(self, query_results: dict[type, object] | None = None) -> None:
         self.id = 1
         self.uuid = uuid4()
         self.created_at = datetime.now(UTC)
+        self._query_results = query_results or {}
         self.add = MagicMock(side_effect=self._assign_generated_fields)
         self.commit = MagicMock()
+
+    def query(self, model: type):
+        return _FakeQuery(self._query_results.get(model))
 
     def _assign_generated_fields(self, entity) -> None:
         entity.id = self.id
@@ -22,6 +37,12 @@ class _MockSession:
 @pytest.fixture
 def mock_db() -> _MockSession:
     return _MockSession()
+
+
+@pytest.fixture
+def mock_db_class():
+    """Fixture that provides the _MockSession class for creating custom mock instances."""
+    return _MockSession
 
 
 class _MockS3Client:
