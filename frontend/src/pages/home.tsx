@@ -1,5 +1,6 @@
 import { Button } from "@base-ui/react/button";
 import { Menu } from "@base-ui/react/menu";
+import { useState } from "react";
 import {
   FiAlertCircle,
   FiCheckCircle,
@@ -14,14 +15,7 @@ import {
   FiZap,
 } from "react-icons/fi";
 
-const runStats = [
-  { label: "Running", value: "1", tone: "text-secondary", detail: "active simulations" },
-  { label: "Completed", value: "1", tone: "text-primary", detail: "ready to inspect" },
-  { label: "Failed", value: "1", tone: "text-red-600", detail: "needs review" },
-  { label: "Queued", value: "1", tone: "text-text", detail: "waiting for workers" },
-];
-
-const runs = [
+const demoRuns = [
   {
     id: "RUN-2048",
     name: "North Sea demand forecast",
@@ -74,6 +68,46 @@ const runs = [
 ];
 
 export function HomePage() {
+  const [runs, setRuns] = useState<typeof demoRuns>([]);
+  const [isLoadingRuns, setIsLoadingRuns] = useState(false);
+  const hasRuns = runs.length > 0;
+
+  const runStats = [
+    {
+      label: "Running",
+      value: String(runs.filter((run) => run.status === "Running").length),
+      tone: "text-secondary",
+      detail: hasRuns ? "active simulations" : "no active runs",
+    },
+    {
+      label: "Completed",
+      value: String(runs.filter((run) => run.status === "Completed").length),
+      tone: "text-primary",
+      detail: hasRuns ? "ready to inspect" : "no results yet",
+    },
+    {
+      label: "Failed",
+      value: String(runs.filter((run) => run.status === "Failed").length),
+      tone: "text-red-600",
+      detail: hasRuns ? "needs review" : "clear",
+    },
+    {
+      label: "Queued",
+      value: String(runs.filter((run) => run.status === "Queued").length),
+      tone: "text-text",
+      detail: hasRuns ? "waiting for workers" : "empty queue",
+    },
+  ];
+
+  function handleNewRun() {
+    setIsLoadingRuns(true);
+
+    window.setTimeout(() => {
+      setRuns(demoRuns);
+      setIsLoadingRuns(false);
+    }, 1000);
+  }
+
   return (
     <main className="bg-background text-text min-h-svh">
       <header className="border-border bg-surface border-b">
@@ -94,9 +128,17 @@ export function HomePage() {
               <FiRefreshCw className="size-4" aria-hidden="true" />
               Refresh
             </Button>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2">
-              <FiPlay className="size-4" aria-hidden="true" />
-              New run
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isLoadingRuns}
+              onClick={handleNewRun}
+            >
+              {isLoadingRuns ? (
+                <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <FiPlay className="size-4" aria-hidden="true" />
+              )}
+              {isLoadingRuns ? "Starting..." : "New run"}
             </Button>
           </div>
         </div>
@@ -141,82 +183,104 @@ export function HomePage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-collapse text-left text-sm">
-              <thead className="bg-surface-alt text-text-secondary">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Run</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Started</th>
-                  <th className="px-4 py-3 font-semibold">Duration</th>
-                  <th className="px-4 py-3 font-semibold">Trigger</th>
-                  <th className="px-4 py-3 font-semibold">Owner</th>
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-border divide-y">
-                {runs.map((run) => {
-                  const StatusIcon = run.icon;
+          {hasRuns ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[880px] border-collapse text-left text-sm">
+                <thead className="bg-surface-alt text-text-secondary">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Run</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Started</th>
+                    <th className="px-4 py-3 font-semibold">Duration</th>
+                    <th className="px-4 py-3 font-semibold">Trigger</th>
+                    <th className="px-4 py-3 font-semibold">Owner</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-border divide-y">
+                  {runs.map((run) => {
+                    const StatusIcon = run.icon;
 
-                  return (
-                    <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
-                      <td className="px-4 py-4">
-                        <div className="text-text font-semibold">{run.name}</div>
-                        <div className="text-text-secondary mt-1 flex items-center gap-2">
-                          <span>{run.id}</span>
-                          <span aria-hidden="true">/</span>
-                          <span>{run.flow}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${run.statusClass}`}
-                        >
-                          <StatusIcon
-                            className={`size-3.5 ${run.statusIconClassName ?? ""}`}
-                            aria-hidden="true"
-                          />
-                          {run.status}
-                        </span>
-                      </td>
-                      <td className="text-text-secondary px-4 py-4">{run.started}</td>
-                      <td className="text-text-secondary px-4 py-4">{run.duration}</td>
-                      <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
-                      <td className="text-text-secondary px-4 py-4">{run.owner}</td>
-                      <td className="px-4 py-4 text-right">
-                        <Menu.Root>
-                          <Menu.Trigger
-                            aria-label={`Open actions for ${run.name}`}
-                            className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                    return (
+                      <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
+                        <td className="px-4 py-4">
+                          <div className="text-text font-semibold">{run.name}</div>
+                          <div className="text-text-secondary mt-1 flex items-center gap-2">
+                            <span>{run.id}</span>
+                            <span aria-hidden="true">/</span>
+                            <span>{run.flow}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${run.statusClass}`}
                           >
-                            <FiMoreHorizontal className="size-4" aria-hidden="true" />
-                          </Menu.Trigger>
-                          <Menu.Portal>
-                            <Menu.Positioner
-                              align="end"
-                              className="z-10 outline-none"
-                              sideOffset={6}
+                            <StatusIcon
+                              className={`size-3.5 ${run.statusIconClassName ?? ""}`}
+                              aria-hidden="true"
+                            />
+                            {run.status}
+                          </span>
+                        </td>
+                        <td className="text-text-secondary px-4 py-4">{run.started}</td>
+                        <td className="text-text-secondary px-4 py-4">{run.duration}</td>
+                        <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
+                        <td className="text-text-secondary px-4 py-4">{run.owner}</td>
+                        <td className="px-4 py-4 text-right">
+                          <Menu.Root>
+                            <Menu.Trigger
+                              aria-label={`Open actions for ${run.name}`}
+                              className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
                             >
-                              <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                                <Menu.Item className={menuItemClass}>
-                                  <FiExternalLink className="size-4" aria-hidden="true" />
-                                  View result
-                                </Menu.Item>
-                                <Menu.Item className={`${menuItemClass} text-red-700`}>
-                                  <FiTrash2 className="size-4" aria-hidden="true" />
-                                  Remove
-                                </Menu.Item>
-                              </Menu.Popup>
-                            </Menu.Positioner>
-                          </Menu.Portal>
-                        </Menu.Root>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                              <FiMoreHorizontal className="size-4" aria-hidden="true" />
+                            </Menu.Trigger>
+                            <Menu.Portal>
+                              <Menu.Positioner
+                                align="end"
+                                className="z-10 outline-none"
+                                sideOffset={6}
+                              >
+                                <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                                  <Menu.Item className={menuItemClass}>
+                                    <FiExternalLink className="size-4" aria-hidden="true" />
+                                    View result
+                                  </Menu.Item>
+                                  <Menu.Item className={`${menuItemClass} text-red-700`}>
+                                    <FiTrash2 className="size-4" aria-hidden="true" />
+                                    Remove
+                                  </Menu.Item>
+                                </Menu.Popup>
+                              </Menu.Positioner>
+                            </Menu.Portal>
+                          </Menu.Root>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
+              <div className="max-w-sm">
+                <div className="bg-surface-alt text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-lg">
+                  {isLoadingRuns ? (
+                    <FiRefreshCw className="size-5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <FiPlay className="size-5" aria-hidden="true" />
+                  )}
+                </div>
+                <h3 className="text-lg font-semibold tracking-normal">
+                  {isLoadingRuns ? "Starting demo run" : "No runs yet"}
+                </h3>
+                <p className="text-text-secondary mt-2 text-sm leading-6">
+                  {isLoadingRuns
+                    ? "Preparing sample executions for the workspace."
+                    : "Create a run to populate this workspace with execution activity."}
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="border-border bg-surface rounded-lg border px-4 py-3">
