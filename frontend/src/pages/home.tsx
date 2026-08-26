@@ -1,12 +1,14 @@
 import { Button } from "@base-ui/react/button";
 import { Menu } from "@base-ui/react/menu";
+import { Select } from "@base-ui/react/select";
 import { useState } from "react";
 import {
   FiAlertCircle,
   FiCheckCircle,
+  FiChevronDown,
+  FiCheck,
   FiClock,
   FiExternalLink,
-  FiFilter,
   FiMoreHorizontal,
   FiPlay,
   FiRefreshCw,
@@ -14,6 +16,15 @@ import {
   FiTrash2,
   FiZap,
 } from "react-icons/fi";
+
+const statusOptions = [
+  { label: "Running", value: "Running" },
+  { label: "Completed", value: "Completed" },
+  { label: "Failed", value: "Failed" },
+  { label: "Queued", value: "Queued" },
+] as const;
+
+type RunStatus = (typeof statusOptions)[number]["value"];
 
 const demoRuns = [
   {
@@ -70,7 +81,14 @@ const demoRuns = [
 export function HomePage() {
   const [runs, setRuns] = useState<typeof demoRuns>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
+  const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const hasRuns = runs.length > 0;
+  const filteredRuns =
+    selectedStatuses.length > 0
+      ? runs.filter((run) => selectedStatuses.includes(run.status as RunStatus))
+      : runs;
+  const selectedStatusLabel =
+    selectedStatuses.length > 0 ? `${selectedStatuses.length} selected` : "All statuses";
 
   const runStats = [
     {
@@ -176,90 +194,133 @@ export function HomePage() {
                   type="search"
                 />
               </label>
-              <Button className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2">
-                <FiFilter className="size-4" aria-hidden="true" />
-                Filter
-              </Button>
+              <Select.Root<RunStatus, true>
+                items={statusOptions}
+                multiple
+                value={selectedStatuses}
+                onValueChange={setSelectedStatuses}
+              >
+                <Select.Trigger className="border-border bg-surface hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-10 min-w-40 items-center justify-between gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2">
+                  <span>{selectedStatusLabel}</span>
+                  <Select.Icon>
+                    <FiChevronDown className="size-4" aria-hidden="true" />
+                  </Select.Icon>
+                </Select.Trigger>
+                <Select.Portal>
+                  <Select.Positioner align="end" className="z-10 outline-none" sideOffset={6}>
+                    <Select.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-[var(--anchor-width)] rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                      <Select.List className="max-h-72 overflow-y-auto py-1">
+                        {statusOptions.map((status) => (
+                          <Select.Item
+                            className={selectItemClass}
+                            key={status.value}
+                            value={status.value}
+                          >
+                            <Select.ItemIndicator className="text-primary">
+                              <FiCheck className="size-4" aria-hidden="true" />
+                            </Select.ItemIndicator>
+                            <Select.ItemText>{status.label}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </Select.List>
+                    </Select.Popup>
+                  </Select.Positioner>
+                </Select.Portal>
+              </Select.Root>
             </div>
           </div>
 
           {hasRuns ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] border-collapse text-left text-sm">
-                <thead className="bg-surface-alt text-text-secondary">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Run</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Started</th>
-                    <th className="px-4 py-3 font-semibold">Duration</th>
-                    <th className="px-4 py-3 font-semibold">Trigger</th>
-                    <th className="px-4 py-3 font-semibold">Owner</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-border divide-y">
-                  {runs.map((run) => {
-                    const StatusIcon = run.icon;
+            filteredRuns.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] border-collapse text-left text-sm">
+                  <thead className="bg-surface-alt text-text-secondary">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Run</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
+                      <th className="px-4 py-3 font-semibold">Started</th>
+                      <th className="px-4 py-3 font-semibold">Duration</th>
+                      <th className="px-4 py-3 font-semibold">Trigger</th>
+                      <th className="px-4 py-3 font-semibold">Owner</th>
+                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-border divide-y">
+                    {filteredRuns.map((run) => {
+                      const StatusIcon = run.icon;
 
-                    return (
-                      <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
-                        <td className="px-4 py-4">
-                          <div className="text-text font-semibold">{run.name}</div>
-                          <div className="text-text-secondary mt-1 flex items-center gap-2">
-                            <span>{run.id}</span>
-                            <span aria-hidden="true">/</span>
-                            <span>{run.flow}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${run.statusClass}`}
-                          >
-                            <StatusIcon
-                              className={`size-3.5 ${run.statusIconClassName ?? ""}`}
-                              aria-hidden="true"
-                            />
-                            {run.status}
-                          </span>
-                        </td>
-                        <td className="text-text-secondary px-4 py-4">{run.started}</td>
-                        <td className="text-text-secondary px-4 py-4">{run.duration}</td>
-                        <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
-                        <td className="text-text-secondary px-4 py-4">{run.owner}</td>
-                        <td className="px-4 py-4 text-right">
-                          <Menu.Root>
-                            <Menu.Trigger
-                              aria-label={`Open actions for ${run.name}`}
-                              className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                      return (
+                        <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
+                          <td className="px-4 py-4">
+                            <div className="text-text font-semibold">{run.name}</div>
+                            <div className="text-text-secondary mt-1 flex items-center gap-2">
+                              <span>{run.id}</span>
+                              <span aria-hidden="true">/</span>
+                              <span>{run.flow}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${run.statusClass}`}
                             >
-                              <FiMoreHorizontal className="size-4" aria-hidden="true" />
-                            </Menu.Trigger>
-                            <Menu.Portal>
-                              <Menu.Positioner
-                                align="end"
-                                className="z-10 outline-none"
-                                sideOffset={6}
+                              <StatusIcon
+                                className={`size-3.5 ${run.statusIconClassName ?? ""}`}
+                                aria-hidden="true"
+                              />
+                              {run.status}
+                            </span>
+                          </td>
+                          <td className="text-text-secondary px-4 py-4">{run.started}</td>
+                          <td className="text-text-secondary px-4 py-4">{run.duration}</td>
+                          <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
+                          <td className="text-text-secondary px-4 py-4">{run.owner}</td>
+                          <td className="px-4 py-4 text-right">
+                            <Menu.Root>
+                              <Menu.Trigger
+                                aria-label={`Open actions for ${run.name}`}
+                                className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
                               >
-                                <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                                  <Menu.Item className={menuItemClass}>
-                                    <FiExternalLink className="size-4" aria-hidden="true" />
-                                    View result
-                                  </Menu.Item>
-                                  <Menu.Item className={`${menuItemClass} text-red-700`}>
-                                    <FiTrash2 className="size-4" aria-hidden="true" />
-                                    Remove
-                                  </Menu.Item>
-                                </Menu.Popup>
-                              </Menu.Positioner>
-                            </Menu.Portal>
-                          </Menu.Root>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                                <FiMoreHorizontal className="size-4" aria-hidden="true" />
+                              </Menu.Trigger>
+                              <Menu.Portal>
+                                <Menu.Positioner
+                                  align="end"
+                                  className="z-10 outline-none"
+                                  sideOffset={6}
+                                >
+                                  <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                                    <Menu.Item className={menuItemClass}>
+                                      <FiExternalLink className="size-4" aria-hidden="true" />
+                                      View result
+                                    </Menu.Item>
+                                    <Menu.Item className={`${menuItemClass} text-red-700`}>
+                                      <FiTrash2 className="size-4" aria-hidden="true" />
+                                      Remove
+                                    </Menu.Item>
+                                  </Menu.Popup>
+                                </Menu.Positioner>
+                              </Menu.Portal>
+                            </Menu.Root>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
+                <div className="max-w-sm">
+                  <div className="bg-surface-alt text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-lg">
+                    <FiSearch className="size-5" aria-hidden="true" />
+                  </div>
+                  <h3 className="text-lg font-semibold tracking-normal">No matching runs</h3>
+                  <p className="text-text-secondary mt-2 text-sm leading-6">
+                    Adjust the status filter to bring more executions back into view.
+                  </p>
+                </div>
+              </div>
+            )
           ) : (
             <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
               <div className="max-w-sm">
@@ -304,3 +365,6 @@ export function HomePage() {
 
 const menuItemClass =
   "flex cursor-default items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
+
+const selectItemClass =
+  "grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
