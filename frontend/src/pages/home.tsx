@@ -16,6 +16,7 @@ import {
   FiTrash2,
   FiZap,
 } from "react-icons/fi";
+import { useLocation } from "wouter";
 
 const statusOptions = [
   { label: "Running", value: "Running" },
@@ -79,6 +80,7 @@ const demoRuns = [
 ];
 
 export function HomePage() {
+  const [, navigate] = useLocation();
   const [runs, setRuns] = useState<typeof demoRuns>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
@@ -309,7 +311,10 @@ export function HomePage() {
                                   sideOffset={6}
                                 >
                                   <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                                    <Menu.Item className={menuItemClass}>
+                                    <Menu.Item
+                                      className={menuItemClass}
+                                      onClick={() => navigate(`/result/${run.id.toLowerCase()}`)}
+                                    >
                                       <FiExternalLink className="size-4" aria-hidden="true" />
                                       View result
                                     </Menu.Item>
