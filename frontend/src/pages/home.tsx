@@ -14,7 +14,6 @@ import {
   FiRefreshCw,
   FiSearch,
   FiTrash2,
-  FiZap,
 } from "react-icons/fi";
 
 const statusOptions = [
@@ -362,21 +361,6 @@ export function HomePage() {
               </div>
             </div>
           )}
-        </section>
-
-        <section className="border-border bg-surface rounded-lg border px-4 py-3">
-          <div className="flex items-start gap-3">
-            <div className="bg-accent/20 text-primary mt-0.5 flex size-8 items-center justify-center rounded-md">
-              <FiZap className="size-4" aria-hidden="true" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold">Execution capacity is healthy</h2>
-              <p className="text-text-secondary mt-1 text-sm">
-                Workers are below threshold and queued runs are expected to start within five
-                minutes.
-              </p>
-            </div>
-          </div>
         </section>
       </section>
     </main>
