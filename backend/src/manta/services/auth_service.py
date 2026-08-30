@@ -6,6 +6,7 @@ import logging
 import secrets
 from enum import Enum
 
+import httpx2
 from fastapi import Depends
 from fastapi.applications import FastAPI
 from starlette import status
@@ -174,13 +175,25 @@ class MantaAuthenticationService:
         )
 
     def login(self, username: str, password: str) -> JSONResponse:
-        # TODO: check credentials for real
-        if (
-            username != "alice" and password != "bob"  # noqa: S105
-        ):  # TODO: replace this with a database-backed solution
+        # TODO: construct this url
+        auth_server = "http://127.0.0.1:8080/realms/manta-dev/protocol/openid-connect/token"
+        client_id = "admin-cli"
+        auth_form = {
+            "username": username,
+            "password": password,
+            "client_id": client_id,
+            "grant_type": "password",
+        }
+        # Automation setup
+        # Create Realm
+        # Create Service [API] user
+        # Create app user schema
+        # create Service OIDC Client
+        # Connect Server
+        response = httpx2.post(f"{auth_server}/", data=auth_form)
+        if response.status_code != 200:
             return JSONResponse(
                 {"error": "Invalid credentials"}, status_code=status.HTTP_401_UNAUTHORIZED
             )
-        return JSONResponse(
-            {"token": _generate_bearer_token(self._auth_config.api_signing_key, username)}
-        )
+
+        return JSONResponse({"token": response.json()["access_token"]})
