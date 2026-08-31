@@ -41,7 +41,7 @@ class RunService:
         self.db = db
 
     def create_run(self, project_uuid: UUID, num_pi_digits: int) -> CreateRunResult:
-        project = self.db.query(Project).filter(Project.uuid == project_uuid).first()
+        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
@@ -73,11 +73,11 @@ class RunService:
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
     def get_run(self, run_uuid: UUID) -> GetRunResult:
-        run = self.db.query(Run).filter(Run.uuid == run_uuid).first()
+        run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        project = self.db.query(Project).filter(Project.id == run.project_id).first()
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
 
@@ -91,7 +91,7 @@ class RunService:
         )
 
     def get_run_logs(self, run_uuid: UUID) -> GetRunLogsResult:
-        run = self.db.query(Run).filter(Run.uuid == run_uuid).first()
+        run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 

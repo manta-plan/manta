@@ -12,7 +12,7 @@ class _FakeQuery:
     def filter(self, *_args, **_kwargs):
         return self
 
-    def first(self):
+    def one_or_none(self):
         return self._result
 
 
