@@ -111,6 +111,7 @@ def test_create_and_run_pi_digit_stats(app_server: str, db_connection: psycopg.C
     # to the Prefect API asynchronously, so poll rather than assuming they're
     # already there the instant the run finishes.
     logs_body = _wait_for_logs(app_server, run_uuid)
+    assert logs_body["uuid"] == run_uuid
     assert logs_body["run_status"] == "COMPLETED"
     joined_logs = "\n".join(logs_body["logs"])
     assert re.search(r"'[0-9]':\s*\d+", joined_logs), f"unexpected log output: {joined_logs!r}"

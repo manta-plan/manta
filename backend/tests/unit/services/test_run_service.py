@@ -148,6 +148,7 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     result = service.get_run_logs(run_uuid=run.uuid)
 
     # Then
+    assert result.uuid == run.uuid
     assert result.logs == ["line 1", "line 2"]
     assert result.run_status == "RUNNING"
 

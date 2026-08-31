@@ -18,5 +18,6 @@ class GetRunResult(BaseModel):
 
 
 class GetRunLogsResult(BaseModel):
+    uuid: UUID
     logs: list[str]
     run_status: str

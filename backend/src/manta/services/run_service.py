@@ -93,4 +93,4 @@ class RunService:
 
         flow_run, logs = asyncio.run(_read_flow_run_logs(run.prefect_flow_run_id))
 
-        return GetRunLogsResult(logs=logs, run_status=_flow_run_status(flow_run))
+        return GetRunLogsResult(uuid=run.uuid, logs=logs, run_status=_flow_run_status(flow_run))
