@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "prefect>=3.0.0,<4.0.0",
     "psycopg[binary]>=3.3.4",
+    "pynpm>=0.3.1",
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.52.0",

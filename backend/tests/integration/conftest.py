@@ -13,12 +13,15 @@ import pytest
 from botocore.config import Config
 from dotenv import dotenv_values
 from mypy_boto3_s3.client import S3Client
+from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
+FRONTEND_DIR = REPO_ROOT / "frontend"
+FRONTEND_FILES = FRONTEND_DIR / "dist"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -29,7 +32,7 @@ def _print_logs(label: str, stdout: str, stderr: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def _docker_services() -> Iterator[DockerCompose]:
+def docker_services() -> Iterator[DockerCompose]:
     """Boots the same stack dev uses, via compose-test-services.yaml (which
     includes compose-dev-services.yaml wholesale) isolated under its own
     Compose project name and ephemeral host ports (see docker/.env.test).
@@ -45,14 +48,14 @@ def _docker_services() -> Iterator[DockerCompose]:
 
 
 @pytest.fixture(scope="session")
-def postgres_service(_docker_services: DockerCompose) -> dict[str, str]:
-    host, port = _docker_services.get_service_host_and_port("postgres", 5432)
+def postgres_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("postgres", 5432)
     return {"host": host, "port": str(port)}
 
 
 @pytest.fixture(scope="session")
-def seaweedfs_service(_docker_services: DockerCompose) -> dict[str, str]:
-    host, port = _docker_services.get_service_host_and_port("seaweedfs", 8333)
+def seaweedfs_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("seaweedfs", 8333)
     return {"host": host, "port": str(port)}
 
 
@@ -60,6 +63,13 @@ def seaweedfs_service(_docker_services: DockerCompose) -> dict[str, str]:
 def prefect_service(_docker_services: DockerCompose) -> dict[str, str]:
     host, port = _docker_services.get_service_host_and_port("prefect-server", 4200)
     return {"host": host, "port": str(port)}
+
+
+@pytest.fixture(scope="session")
+def frontend_files() -> Path:
+    pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
+    _ = pkg.build(wait=True)
+    return FRONTEND_FILES
 
 
 @pytest.fixture(scope="session")
@@ -97,7 +107,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float = 15.0) -> None:
+def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float = 15.0) -> None:  # pyright: ignore[reportMissingTypeArgument]
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:

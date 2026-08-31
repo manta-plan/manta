@@ -877,6 +877,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "prefect" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pynpm" },
     { name = "python-dotenv" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -900,6 +901,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "prefect", specifier = ">=3.0.0,<4.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
+    { name = "pynpm", specifier = ">=0.3.1" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "sqlalchemy", specifier = ">=2.0.51" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.0" },
@@ -1307,6 +1309,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pynpm"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/8d/f0b57a89849f8548c73722bb296dae2ca01f0ab20c1aa58ee55a7fc67db4/pynpm-0.3.1.tar.gz", hash = "sha256:8c73383b10bf5b57d96a8026619f386e1b81f30b71e125186716af2046332833", size = 4814, upload-time = "2026-07-02T21:13:12.931Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/4c/606420c327e81f951b78b18688c2db6055e6f197acf067e8a4b5339f98cd/pynpm-0.3.1-py3-none-any.whl", hash = "sha256:88b5bce96d8aa287b74d9ad8858d319dde36ce83b334bceeb956aef90af44eed", size = 5701, upload-time = "2026-07-02T21:13:11.838Z" },
 ]
 
 [[package]]
