@@ -4,14 +4,17 @@ from uuid import UUID
 
 import httpx2
 import psycopg
+from prefect.client.orchestration import SyncPrefectClient
+from prefect.exceptions import ObjectNotFound
+
+from manta.services.run_service import PI_DIGIT_STATS_DEPLOYMENT
 
 # The flow-serving subprocess (spawned by create_app()) needs to start up and
 # register its deployment with the Prefect server before `POST /runs` can
-# submit a run against it. Retry the initial POST with backoff to absorb that
-# cold-start race instead of failing the test outright.
-_CREATE_RUN_RETRY_TIMEOUT = 60.0
+# submit a run against it — a cold start.
+_DEPLOYMENT_REGISTRATION_TIMEOUT = 60.0
 # Then the flow itself needs to actually get scheduled and executed by that
-# same subprocess — a genuine cold start, so give this real margin too.
+# same subprocess.
 _RUN_COMPLETION_TIMEOUT = 90.0
 # Prefect ships flow-run logs to the API asynchronously in batches
 # (`PREFECT_LOGGING_TO_API_BATCH_INTERVAL`, 2s by default), so the final log
@@ -30,27 +33,31 @@ def _create_project(app_server: str) -> str:
     return response.json()["uuid"]
 
 
-def _create_run_with_retry(
-    app_server: str,
-    project_uuid: str,
-    num_pi_digits: int,
-    timeout: float = _CREATE_RUN_RETRY_TIMEOUT,
-) -> dict:
+def _wait_for_deployment_registered(
+    prefect_service: dict[str, str], timeout: float = _DEPLOYMENT_REGISTRATION_TIMEOUT
+) -> None:
+    """Poll Prefect's API for the flow deployment's existence."""
+    api_url = f"http://{prefect_service['host']}:{prefect_service['port']}/api"
     deadline = time.monotonic() + timeout
-    last_response = None
-    while time.monotonic() < deadline:
-        last_response = httpx2.post(
-            f"{app_server}/v1/runs",
-            json={"project_uuid": project_uuid, "num_pi_digits": num_pi_digits},
-        )
-        if last_response.status_code == 201:
-            return last_response.json()
-        time.sleep(1.0)
+    with SyncPrefectClient(api=api_url) as client:
+        while time.monotonic() < deadline:
+            try:
+                client.read_deployment_by_name(PI_DIGIT_STATS_DEPLOYMENT)
+                return
+            except ObjectNotFound:
+                time.sleep(1.0)
     raise TimeoutError(
-        f"POST /v1/runs did not succeed within {timeout}s "
-        f"(last response: {last_response.status_code if last_response else None} "
-        f"{last_response.text if last_response else None})"
+        f"Deployment {PI_DIGIT_STATS_DEPLOYMENT} was not registered within {timeout}s"
     )
+
+
+def _create_run(app_server: str, project_uuid: str, num_pi_digits: int) -> dict:
+    response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={"project_uuid": project_uuid, "num_pi_digits": num_pi_digits},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 def _wait_for_terminal_status(
@@ -88,13 +95,17 @@ def _wait_for_logs(
     )
 
 
-def test_create_and_run_pi_digit_stats(app_server: str, db_connection: psycopg.Connection) -> None:
-    # Given a project
+def test_create_and_run_pi_digit_stats(
+    app_server: str, db_connection: psycopg.Connection, prefect_service: dict[str, str]
+) -> None:
+    # Given a project, and the flow-serving subprocess's deployment registered
+    # with the Prefect server
     project_uuid = _create_project(app_server)
+    _wait_for_deployment_registered(prefect_service)
 
     # When a run is created against it, with a small digit count to keep the
     # actual flow execution fast
-    body = _create_run_with_retry(app_server, project_uuid, num_pi_digits=1000)
+    body = _create_run(app_server, project_uuid, num_pi_digits=1000)
 
     # Then it's accepted and returns a run uuid linked to the project
     run_uuid = body["uuid"]
