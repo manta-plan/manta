@@ -1,10 +1,5 @@
 # 01 — Vision and scope
 
-Condensed from *Project Manta: Security Review Summary* (12 August 2026, Lauren
-Clisby & Siddharth Krishna). This document keeps the parts that constrain the
-architecture; the security review remains the authority on security and privacy
-commitments.
-
 ## What Manta is
 
 Manta is an enterprise-grade, open-source web application for energy system modelling
@@ -27,13 +22,13 @@ able to customise modelling and analysis workflows without coding.
 | Role | What they do | What the architecture owes them |
 | --- | --- | --- |
 | **Analyst** | Runs workflows, analyses scenarios. The primary user. | A no-code way to configure and launch a run, and to watch it progress |
-| **Modeller** | Builds models and authors the workflows Analysts run | Authoring and validation that catches mistakes before a run starts |
-| **Plug-in Developer** | Extends the workflow system with new units of work | A way to ship code with its own dependencies that Manta can execute without installing it |
+| **Modeller** | Builds models and creates the workflows that Analysts run | Authoring and validation that catches mistakes before a run starts |
+| **Plug-in Developer** | Extends the workflow system with new "blocks" | A way to ship modelling workflow code with its own dependencies that Manta can execute |
 | **Stakeholder** | Views and explores results and reports | Read paths that do not require understanding the machinery |
 | **Admin** | Manages system access | Access control that maps onto projects and runs |
-| **Maintainer** | The Manta team | Operability: observable runs, isolated failure domains, upgradeable parts |
+| **Maintainer** | The Manta team: build & maintain Manta features, maintain a SaaS deployment | Operability: monitoring & metrics & logging, isolated failure domains, upgradeable parts |
 
-The Plug-in Developer role is the one with the largest architectural consequence. It
+For the MVP, the primary focus is on the Analyst role — especially for the frontend. The Plug-in Developer role is the one with the largest architectural consequence. It
 means third-party code, with dependency sets Manta's own backend could never install,
 must be executable by the platform. Nearly everything in
 [04](04-blocks-and-playbooks.md) and [07](07-deployment-topology.md) follows from that
@@ -50,11 +45,9 @@ A web application, deployed on-premise or on the cloud. Desktop applications are
 explicitly out of scope, though a power user can run the whole stack locally under
 Docker or Kubernetes.
 
-This means the deployment target is a variable, not a constant: the same system must
+This means the deployment target is variable: the same system must
 run as a developer's `docker compose` stack, as an OET-managed cloud SaaS, and inside
-a client's own cluster. The architecture treats the execution target as a pluggable
-concern for exactly this reason.
-
+a client's own cluster.
 ## Roadmap
 
 | Milestone | Timeframe | Phase | Security focus |
@@ -95,29 +88,4 @@ particular is designed to be usable — and testable — without the rest of Man
 solver licensing and audit records. Audit logs are centralised with strictly
 controlled access.
 
-## Agreed technology
 
-From the security review, and assumed throughout these documents:
-
-| Layer | Choice |
-| --- | --- |
-| Frontend | TypeScript, React |
-| Everything else | Python |
-| Orchestration | Prefect |
-| Compute | Prefect workers on Docker or Kubernetes |
-| Application database | PostgreSQL |
-| Model data | S3-compatible object store, managed with DuckDB; DuckDB WASM for the local/demo playground |
-| Authentication | Undecided for MVP; v1 uses an IdP with OIDC or SAML |
-| LLM assistance | Post-MVP: Ollama on-premise, or a commercial provider |
-
-## What these documents cover
-
-**In scope:** the workflow execution stack — how a unit of modelling work is defined,
-composed into a playbook, validated, dispatched to an environment that can run it, and
-observed to completion.
-
-**Out of scope here:** the frontend's internal architecture, the data layer's DuckDB
-storage and patching model, authentication and RBAC design, and the reporting and
-visualisation subsystem. These interact with what is described here — most obviously
-the data layer, which supplies and stores everything a run reads and writes — but each
-warrants its own design document.

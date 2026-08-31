@@ -108,7 +108,7 @@ block's dependencies stay a block's own problem.
 
 If no environment can import every block, how does anything get a complete picture?
 
-Each environment describes what it can. Running `python -m blocks` in an environment
+Each environment describes what it can import. Running `python -m blocks` in an environment
 emits a JSON **catalogue**: for every block importable there, its name, environment,
 one-line summary, dimensions, inputs, outputs, and its settings as a JSON Schema.
 Merging the per-environment catalogues yields a description of every block in the
@@ -166,7 +166,7 @@ The same playbook can be built in Python; the two are interchangeable.
 
 ### Two ways work flows between steps
 
-This distinction is central and easy to miss:
+At the moment, playbooks assume most workflows have a linear structure:
 
 - **The spine.** Every step is handed the record the previous step produced. This is
   how most work flows, and it is implicit.
@@ -295,20 +295,19 @@ implementation per deployment target. (The code currently calls this `Renderer`;
 `Provisioner` is the clearer name and is used throughout these documents.) It creates
 or updates Prefect deployments bound to work pools. It deliberately does *not* create
 work pools or start workers: those are long-lived infrastructure decisions belonging
-to whoever operates the deployment, and applying a plan should not make them behind
-the operator's back. What it does instead is report exactly which pools are missing
+to whoever operates the deployment (Manta's infra code/repo). What it does instead is report exactly which pools are missing
 and what would create them.
 
-## Current limitations
+## Current PoC state & TODOs
 
-Carried from the `blocks` README, because each has an architectural consequence:
+Carried from the `blocks` README on commit `f6dc47f`:
 
 - **Records point at PyPSA netCDF files**, and a block writes a whole new file rather
   than only what it changed, because PyPSA cannot yet compare two networks or store a
   difference. Both are confined to one module. This does not yet match Manta's
   object-store data layer — see [08](08-open-questions.md#record-storage-and-format).
 - **Resource requirements are not modelled.** No block declares CPU, memory or wall
-  time. Acceptable on a developer's machine, not acceptable on Kubernetes.
+  time, which will be needed when we deploy Manta on Kubernetes for the MVP.
 - **Only the process/pixi provisioner exists.** A container or cluster provisioner is
   the second implementation of the existing interface.
 - **Conditions cannot look at data**, only at settings. This is a deliberate trade for

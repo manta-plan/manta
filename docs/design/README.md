@@ -1,11 +1,10 @@
 # Manta Architecture Design
 
 This directory describes Manta's **target architecture**: how the system is meant to
-fit together once the workflow-execution stack is complete. It is written for a
-software engineer joining the project who knows what a workflow orchestrator is in
-general terms, but has never used Prefect specifically.
+fit together once the MVP implementation is complete. It is written for the Manta team, to give everyone a high-level understanding of all other components in the system and to help them implement and integrate their work into other components. As it's in markdown, it's also easy to feed this as context to AI agents.
 
-## Read in this order
+This doc is **WIP**, so nothing is set in stone, and a **living document**, so it should be updated by any PR that changes an architectural decision (use an AI to speeden up this check / draft updates to this doc!).
+## Contents
 
 | Doc | What it covers |
 | --- | --- |
@@ -18,16 +17,31 @@ general terms, but has never used Prefect specifically.
 | [07 — Deployment topology](07-deployment-topology.md) | Local development, cloud, and Kubernetes; how environments become work pools and images |
 | [08 — Open questions](08-open-questions.md) | Decisions not yet made, known gaps, and risks that need closing |
 
+**Still to come**: the frontend's internal architecture, the data layer's DuckDB
+storage and patching model, authentication and RBAC design, and the reporting and
+visualisation subsystem. These interact with what is described here — most obviously
+the data layer, which supplies and stores everything a run reads and writes — but each
+warrants its own design document.
+
+## Technology stack
+
+From the security review, and assumed throughout these documents:
+
+| Layer | Choice |
+| --- | --- |
+| Frontend | TypeScript, React |
+| Everything else | Python |
+| Orchestration | Prefect |
+| Compute | Prefect workers on Docker or Kubernetes |
+| Application database | PostgreSQL |
+| Model data | S3-compatible object store, managed with DuckDB; DuckDB WASM for the local/demo playground |
+| Authentication | Undecided for MVP; v1 uses an IdP with OIDC or SAML |
+| LLM assistance | Ollama on-premise, or a commercial provider |
+
 ## Status and conventions
 
 These documents describe an **end state**, not what is currently merged. Where
-present-day reality differs, it is called out inline. As of August 2026:
-
-- Manta's Prefect integration exists as a demonstration flow that computes digits of
-  pi. It proves the submit-and-observe plumbing; it is not the real workload.
-- The blocks and playbooks engine exists as a proof of concept on the
-  `feature/playbooks` branch of the `blocks` repository. Its shape is settled; its
-  integration with Manta is not yet built.
+present-day reality differs, it is called out inline. 
 
 Throughout:
 
@@ -35,8 +49,5 @@ Throughout:
   against it.
 - **Proposed** means this document is making a recommendation that has not been
   ratified.
-- Anything genuinely undecided lives in [08 — Open questions](08-open-questions.md)
-  rather than being quietly resolved in prose.
-
-These docs supersede `docs/prefect.md`, which was written as an implementation plan
-for a single pull request rather than as a description of the system.
+- Anything  undecided lives in [08 — Open questions](08-open-questions.md)
+.

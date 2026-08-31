@@ -2,8 +2,7 @@
 
 ## Guiding principles
 
-Five decisions shape everything else. Each is expanded later; they are collected here
-because most "why is it built this way?" questions resolve to one of them.
+These are the decisions that answer most "why is it built this way?" questions. [**TODO** perhaps these should go into each relevant subsection instead? Keep only the ones relevant to the overall design here.]
 
 1. **Manta orchestrates; it does not compute.** The backend never executes modelling
    code. It submits work to Prefect and reads the result back. This keeps the API
@@ -15,8 +14,8 @@ because most "why is it built this way?" questions resolve to one of them.
    and nothing more. State that is stored twice eventually disagrees.
 
 3. **The environment is the unit of isolation.** A block declares which environment it
-   needs; that environment becomes a container image and a Prefect work pool. Blocks
-   with incompatible dependencies are separated by construction, not by convention.
+   needs; that environment becomes a container image and a Prefect work pool. A workflow
+   with multiple dependencies (e.g. modelling frameworks) is separated into blocks.
 
 4. **Everything about a block can be known without importing it.** No single Python
    environment can import every block, so blocks are described by data — a catalogue —

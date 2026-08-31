@@ -5,10 +5,10 @@ How the `manta` and `blocks` repositories meet, and who owns what.
 ## The seam
 
 **Decided:** Manta's backend takes a package dependency on `manta-blocks` — the
-framework only, not the modelling library — and both sides talk to the same Prefect
+framework only, not the library of modelling blocks — and both sides talk to the same Prefect
 server and the same object store.
 
-There are three connections and no more:
+There are three connections:
 
 ```mermaid
 flowchart LR
@@ -96,15 +96,12 @@ code.
 | Infrastructure lifecycle: when to deploy, how many workers, pool sizing | — | ✅ Owns |
 | Run state, logs, retries, history | *Prefect owns this. Neither repository stores it.* | |
 
-The last row is not a formality. The strongest way to keep the boundary honest is that
-both repositories defer to Prefect for run state rather than either becoming the place
-where it lives.
+
 
 ## Plan, apply, policy
 
 "Orchestration code" is really three separable things, and each belongs somewhere
-different. Getting this split right is the difference between a clean seam and a
-tangle.
+different. 
 
 | | What it is | Where it belongs | Why |
 | --- | --- | --- | --- |
@@ -138,7 +135,7 @@ blocks:
 | `POST /v1/playbooks`, `GET`, `PUT` | Stores and returns playbook and configuration documents |
 | `POST /v1/playbooks/{uuid}/validate` | `playbook.issues(config)` → a list of issues with step path, field and input |
 | `GET /v1/playbooks/{uuid}/graph` | `playbook.to_graph(config)` → nodes and edges for the canvas |
-| `POST /v1/runs` | Validate, resolve the seed record, submit, persist the link |
+| `POST /v1/runs` | Validate, resolve the input datarecord, submit, persist the link |
 | `GET /v1/runs/{uuid}`, `/logs` | Prefect state and logs |
 
 The frontend builds configuration forms from each block's JSON Schema, skipping fields

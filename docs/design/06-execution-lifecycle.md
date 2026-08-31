@@ -15,7 +15,7 @@ user's request path, and none of it involves Manta's backend.
    the results, inject the image reference for each environment, publish
    `catalogue.json` with a version.
 3. **Create work pools and start workers.** One pool per environment (`manta-<env>`)
-   plus one for the orchestrator. A pool with no worker accumulates queued runs
+   plus one for the orchestrator of each playbook. A pool with no worker accumulates queued runs
    forever, so this is a prerequisite, not an optimisation. In production these are
    declared in the cluster manifests rather than created by hand.
 4. **Apply deployments.** One `run_block/<block>-<env>` per pair, plus
@@ -173,7 +173,7 @@ Because each child flow is named after its step, the frontend can colour the sam
 graph it drew at design time — no separate progress model is needed.
 
 `GET /v1/runs/{uuid}/logs` returns the accumulated logs together with the current
-state, so a caller knows whether they are still growing.
+state, so a caller knows whether they are still growing. [**TODO**: we probably need an endpoint to get the log of each block/step, not accumulated over the entire playbook.]
 
 Per-step detail is reported where Prefect can supply it and omitted where it cannot,
 so a missing detail degrades the response rather than failing it.
