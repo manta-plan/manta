@@ -1,7 +1,9 @@
 import { Button } from "@base-ui/react/button";
 import { Menu } from "@base-ui/react/menu";
 import { Select } from "@base-ui/react/select";
+import { format } from "date-fns";
 import { useState } from "react";
+import type { IconType } from "react-icons";
 import {
   FiAlertCircle,
   FiCheckCircle,
@@ -16,62 +18,90 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 
-const statusOptions = [
-  { label: "Running", value: "Running" },
-  { label: "Completed", value: "Completed" },
-  { label: "Failed", value: "Failed" },
-  { label: "Queued", value: "Queued" },
-] as const;
+const statusMeta = {
+  Running: {
+    label: "Running",
+    badgeClassName: "bg-secondary/10 text-secondary",
+    icon: FiRefreshCw,
+    iconClassName: "animate-spin",
+  },
+  Completed: {
+    label: "Completed",
+    badgeClassName: "bg-accent/20 text-primary",
+    icon: FiCheckCircle,
+    iconClassName: undefined,
+  },
+  Failed: {
+    label: "Failed",
+    badgeClassName: "bg-red-50 text-red-700",
+    icon: FiAlertCircle,
+    iconClassName: undefined,
+  },
+  Queued: {
+    label: "Queued",
+    badgeClassName: "bg-surface-alt text-text-secondary",
+    icon: FiClock,
+    iconClassName: undefined,
+  },
+} satisfies Record<
+  string,
+  { label: string; badgeClassName: string; icon: IconType; iconClassName?: string }
+>;
 
-type RunStatus = (typeof statusOptions)[number]["value"];
+type RunStatus = keyof typeof statusMeta;
 
-const demoRuns = [
+const statusOptions = Object.entries(statusMeta).map(([value, status]) => ({
+  label: status.label,
+  value: value as RunStatus,
+}));
+
+const demoRuns: Array<{
+  id: string;
+  name: string;
+  playbook: string;
+  status: RunStatus;
+  startedAt: string;
+  durationSeconds: number | null;
+  trigger: string;
+  owner: string;
+}> = [
   {
     id: "RUN-2048",
     name: "North Sea demand forecast",
-    flow: "Demand Forecast",
+    playbook: "Demand Forecast",
     status: "Running",
-    statusClass: "bg-secondary/10 text-secondary",
-    statusIconClassName: "animate-spin",
-    icon: FiRefreshCw,
-    started: "Today, 11:42",
-    duration: "06m 18s",
+    startedAt: "2026-08-31T04:42:00Z",
+    durationSeconds: 378,
     trigger: "API",
     owner: "Planning",
   },
   {
     id: "RUN-2047",
     name: "Alpine hydro dispatch",
-    flow: "Dispatch Optimization",
+    playbook: "Dispatch Optimization",
     status: "Completed",
-    statusClass: "bg-accent/20 text-primary",
-    icon: FiCheckCircle,
-    started: "Today, 10:00",
-    duration: "24m 02s",
+    startedAt: "2026-08-31T03:00:00Z",
+    durationSeconds: 1442,
     trigger: "Manual",
     owner: "Operations",
   },
   {
     id: "RUN-2046",
     name: "Iberian solar scenario",
-    flow: "Scenario Builder",
+    playbook: "Scenario Builder",
     status: "Failed",
-    statusClass: "bg-red-50 text-red-700",
-    icon: FiAlertCircle,
-    started: "Today, 09:30",
-    duration: "11m 47s",
+    startedAt: "2026-08-31T02:30:00Z",
+    durationSeconds: 707,
     trigger: "Manual",
     owner: "Research",
   },
   {
     id: "RUN-2045",
     name: "Grid stability baseline",
-    flow: "Network Simulation",
+    playbook: "Network Simulation",
     status: "Queued",
-    statusClass: "bg-surface-alt text-text-secondary",
-    icon: FiClock,
-    started: "Today, 09:15",
-    duration: "-",
+    startedAt: "2026-08-31T02:15:00Z",
+    durationSeconds: null,
     trigger: "Retry",
     owner: "Engineering",
   },
@@ -85,7 +115,7 @@ export function HomePage() {
   const hasRuns = runs.length > 0;
   const filteredRuns =
     selectedStatuses.length > 0
-      ? runs.filter((run) => selectedStatuses.includes(run.status as RunStatus))
+      ? runs.filter((run) => selectedStatuses.includes(run.status))
       : runs;
   const selectedStatusLabel =
     selectedStatuses.length > 0 ? `${selectedStatuses.length} selected` : "All statuses";
@@ -266,7 +296,8 @@ export function HomePage() {
                   </thead>
                   <tbody className="divide-border divide-y">
                     {filteredRuns.map((run) => {
-                      const StatusIcon = run.icon;
+                      const status = statusMeta[run.status];
+                      const StatusIcon = status.icon;
 
                       return (
                         <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
@@ -275,22 +306,26 @@ export function HomePage() {
                             <div className="text-text-secondary mt-1 flex items-center gap-2">
                               <span>{run.id}</span>
                               <span aria-hidden="true">/</span>
-                              <span>{run.flow}</span>
+                              <span>{run.playbook}</span>
                             </div>
                           </td>
                           <td className="px-4 py-4">
                             <span
-                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${run.statusClass}`}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.badgeClassName}`}
                             >
                               <StatusIcon
-                                className={`size-3.5 ${run.statusIconClassName ?? ""}`}
+                                className={`size-3.5 ${status.iconClassName ?? ""}`}
                                 aria-hidden="true"
                               />
                               {run.status}
                             </span>
                           </td>
-                          <td className="text-text-secondary px-4 py-4">{run.started}</td>
-                          <td className="text-text-secondary px-4 py-4">{run.duration}</td>
+                          <td className="text-text-secondary px-4 py-4">
+                            {formatRunStartedAt(run.startedAt)}
+                          </td>
+                          <td className="text-text-secondary px-4 py-4">
+                            {formatRunDuration(run.durationSeconds)}
+                          </td>
                           <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
                           <td className="text-text-secondary px-4 py-4">{run.owner}</td>
                           <td className="px-4 py-4 text-right">
@@ -372,3 +407,18 @@ const menuItemClass =
 
 const selectItemClass =
   "grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
+
+function formatRunStartedAt(startedAt: string) {
+  return format(new Date(startedAt), "MMM d, HH:mm");
+}
+
+function formatRunDuration(durationSeconds: number | null) {
+  if (durationSeconds === null) {
+    return "-";
+  }
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
