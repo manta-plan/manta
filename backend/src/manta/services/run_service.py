@@ -57,13 +57,17 @@ class RunService:
 
         run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)
         self.db.add(run)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception:
+            logger.error(
+                f"Failed to persist run for prefect_flow_run_id={flow_run.id} "
+                f"(project {project.uuid}); flow run was already started and is now orphaned"
+            )
+            raise
 
         logger.info(
-            "Created run %s for project %s (prefect_flow_run_id=%s)",
-            run.uuid,
-            project.uuid,
-            flow_run.id,
+            f"Created run {run.uuid} for project {project.uuid} (prefect_flow_run_id={flow_run.id})"
         )
 
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)

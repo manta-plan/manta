@@ -81,6 +81,28 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     assert result.created_at == db.created_at
 
 
+def test_create_run_logs_orphaned_flow_run_when_commit_fails(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    flow_run_id = uuid4()
+    db.commit.side_effect = RuntimeError("connection lost")
+    monkeypatch.setattr(
+        run_service_module,
+        "run_deployment",
+        MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
+    )
+    service = RunService(db=db)
+
+    # When/Then
+    with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
+        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+    assert str(flow_run_id) in caplog.text
+    assert str(project.uuid) in caplog.text
+
+
 def test_create_run_with_unknown_project_raises_404(
     monkeypatch: pytest.MonkeyPatch, mock_db_class
 ) -> None:
