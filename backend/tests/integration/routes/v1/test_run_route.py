@@ -45,7 +45,7 @@ def _wait_for_deployment_registered(
                 client.read_deployment_by_name(PI_DIGIT_STATS_DEPLOYMENT)
                 return
             except ObjectNotFound:
-                time.sleep(1.0)
+                time.sleep(0.25)
     raise TimeoutError(
         f"Deployment {PI_DIGIT_STATS_DEPLOYMENT} was not registered within {timeout}s"
     )
@@ -71,7 +71,7 @@ def _wait_for_terminal_status(
         last_status = response.json()["status"]
         if last_status in ("COMPLETED", "FAILED", "CRASHED", "CANCELLED"):
             return last_status
-        time.sleep(1.0)
+        time.sleep(0.25)
     raise TimeoutError(
         f"Run {run_uuid} did not reach a terminal status within {timeout}s "
         f"(last status: {last_status})"
@@ -89,7 +89,7 @@ def _wait_for_logs(
         last_body = response.json()
         if last_body["logs"]:
             return last_body
-        time.sleep(1.0)
+        time.sleep(0.25)
     raise TimeoutError(
         f"Run {run_uuid} did not have any logs within {timeout}s (last response: {last_body})"
     )

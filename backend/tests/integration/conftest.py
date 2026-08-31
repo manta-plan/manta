@@ -60,8 +60,8 @@ def seaweedfs_service(docker_services: DockerCompose) -> dict[str, str | None]:
 
 
 @pytest.fixture(scope="session")
-def prefect_service(_docker_services: DockerCompose) -> dict[str, str]:
-    host, port = _docker_services.get_service_host_and_port("prefect-server", 4200)
+def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
+    host, port = docker_services.get_service_host_and_port("prefect-server", 4200)
     return {"host": host, "port": str(port)}
 
 
@@ -137,6 +137,11 @@ def app_server(
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
+        # Speed up the flow-serving subprocess's runner (default 10s) and log
+        # shipping (default 2s) so integration tests don't pay for Prefect's
+        # production-tuned polling intervals.
+        "PREFECT_RUNNER_POLL_FREQUENCY": "1",
+        "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
