@@ -3,10 +3,12 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 
+from manta.config.auth_config import get_auth_config
 from manta.config.logging_config import configure_logging
 from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
 from manta.routes.v1 import router as v1_router
+from manta.services.auth_service import MantaAuthenticationService
 from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,8 @@ BANNER = r"""
 | |  | | / ___ \| |\  |  | |/ ___ \
 |_|  |_|/_/   \_\_| \_|  |_/_/   \_\
 """
+
+auth_svc = MantaAuthenticationService()
 
 
 def create_app() -> FastAPI:
@@ -31,8 +35,8 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Manta")
     app.frontend("/", directory="../frontend/dist")
     app.include_router(v1_router)
-    # Mounting the frontend needs to be sequenced after all other routes so as
-    # to not accidentally shadow any api endpoints.
+    auth_svc = MantaAuthenticationService(get_auth_config())
+    auth_svc.add_middleware(app)
     return app
 
 
