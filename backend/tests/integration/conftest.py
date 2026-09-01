@@ -60,6 +60,12 @@ def seaweedfs_service(docker_services: DockerCompose) -> dict[str, str | None]:
 
 
 @pytest.fixture(scope="session")
+def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("keycloak", 8080)
+    return {"host": host, "port": str(port)}
+
+
+@pytest.fixture(scope="session")
 def frontend_files() -> Path:
     pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
     _ = pkg.build(wait=True)
@@ -85,7 +91,7 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
 @pytest.fixture(scope="session")
 def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     env = dotenv_values(BACKEND_ENV_FILE)
-    return boto3.client(
+    return boto3.client(  # pyright: ignore[reportUnknownMemberType]
         "s3",
         endpoint_url=f"http://{seaweedfs_service['host']}:{seaweedfs_service['port']}",
         aws_access_key_id=env["S3_ACCESS_KEY"],
@@ -116,7 +122,9 @@ def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float
 
 @pytest.fixture(scope="session")
 def app_server(
-    postgres_service: dict[str, str], seaweedfs_service: dict[str, str]
+    postgres_service: dict[str, str],
+    seaweedfs_service: dict[str, str],
+    keycloak_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -128,6 +136,8 @@ def app_server(
         "POSTGRES_PORT": postgres_service["port"],
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
+        "KC_HOST": keycloak_service["host"],
+        "KC_PORT": keycloak_service["port"],
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
