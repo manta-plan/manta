@@ -37,6 +37,67 @@ services:
       timeout: 5s
       retries: 5
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    command:
+      - start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB_USERNAME: "${KC_DB_USERNAME}"
+      KC_DB_PASSWORD: "${KC_DB_PASSWORD}"
+      KC_DB_PORT: 5432
+      KC_HOSTNAME: localhost
+    ports:
+      - '8080:8080'
+    volumes:
+      - keycloak-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    post_start:
+      # Wait for keycloak initialization to finish
+      - command: ["bash", "-c", "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done"]
+      - command: ["/opt/keycloak/bin/kcadm.sh", "create", "realms", "-s", "realm=${KEYCLOAK_REALM}", "-s", "enabled=true"]
+      #- command: ["/opt/keycloak/bin/kcadm.sh", "create", "-x", "client-scopes", "-r", "${KEYCLOAK_REALM}", "-s", "enabled=true", "-s"]
+#      - command:
+#        - /opt/keycloak/bin/kcadm.sh
+#        - create
+#        - "-x"
+#        - client-scopes
+#        - "-r"
+#        - "${KEYCLOAK_REALM}"
+#        - "-s"
+#        - "name=tenantId"
+#        - "-s"
+#        - "protocol=openid-connect"
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - create
+        - clients
+        - "-r"
+        - "${KEYCLOAK_REALM}"
+        - "-s"
+        - "clientId=${MANTA_CLIENT_ID}"
+        - "-s"
+        - "secret=${MANTA_CLIENT_SECRET}"
+        - "-s"
+        - "clientAuthenticatorType=client-secret"
+        - "-s"
+        - "publicClient=false"
+        - "-s"
+        - "protocol=openid-connect"
+        - "-s"
+        - "enabled=true"
+      #- command: ["/opt/keycloak/bin/kcadm.sh", "create", "clients", "-r", "${KEYCLOAK_REALM}", "-s", "clientId=${MANTA_CLIENT_ID}", "-s", "clientSecret=${MANTA_CLIENT_SECRET}" ,"-s", "enabled=true"]
+#    pre_start:
+#      # add the keycloak user
+#      - command: 'psql -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "CREATE USER ${KC_DB_USERNAME} WITH PASSWORD ''${KC_DB_PASSWORD}'' CREATEDB;"'
+#        user: root
+#        privileged: true
+
+
 volumes:
   postgres-data:
   seaweedfs-data:
+  keycloak-data:
