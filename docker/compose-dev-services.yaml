@@ -78,6 +78,7 @@ services:
         condition: service_healthy
     post_start:
       # Wait for keycloak initialization to finish
+<<<<<<< HEAD
       - command:
           [
             "bash",
@@ -130,6 +131,30 @@ services:
 #      - command: 'psql -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "CREATE USER ${KC_DB_USERNAME} WITH PASSWORD ''${KC_DB_PASSWORD}'' CREATEDB;"'
 #        user: root
 #        privileged: true
+=======
+      - command: ["bash", "-c", "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done"]
+      # Create manta authentication realm
+      - command: ["/opt/keycloak/bin/kcadm.sh", "create", "realms", "-s", "realm=${KEYCLOAK_REALM}", "-s", "enabled=true"]
+      # Create client for manta (as a resource provider) to use
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - create
+        - clients
+        - "-r"
+        - "${KEYCLOAK_REALM}"
+        - "-s"
+        - "clientId=${MANTA_CLIENT_ID}"
+        - "-s"
+        - "secret=${MANTA_CLIENT_SECRET}"
+        - "-s"
+        - "clientAuthenticatorType=client-secret"
+        - "-s"
+        - "publicClient=false"
+        - "-s"
+        - "protocol=openid-connect"
+        - "-s"
+        - "enabled=true"
+>>>>>>> d07bebc (add tests)
 
 volumes:
   postgres-data:

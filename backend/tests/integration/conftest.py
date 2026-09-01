@@ -64,6 +64,11 @@ def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
     host, port = docker_services.get_service_host_and_port("prefect-server", 4200)
     return {"host": host, "port": str(port)}
 
+@pytest.fixture(scope="session")
+def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("keycloak", 8080)
+    return {"host": host, "port": str(port)}
+
 
 @pytest.fixture(scope="session")
 def frontend_files() -> Path:
@@ -91,7 +96,7 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
 @pytest.fixture(scope="session")
 def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     env = dotenv_values(BACKEND_ENV_FILE)
-    return boto3.client(
+    return boto3.client(  # pyright: ignore[reportUnknownMemberType]
         "s3",
         endpoint_url=f"http://{seaweedfs_service['host']}:{seaweedfs_service['port']}",
         aws_access_key_id=env["S3_ACCESS_KEY"],
@@ -125,6 +130,7 @@ def app_server(
     postgres_service: dict[str, str],
     seaweedfs_service: dict[str, str],
     prefect_service: dict[str, str],
+    keycloak_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -142,6 +148,8 @@ def app_server(
         # production-tuned polling intervals.
         "PREFECT_RUNNER_POLL_FREQUENCY": "1",
         "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
+        "KC_HOST": keycloak_service["host"],
+        "KC_PORT": keycloak_service["port"],
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
