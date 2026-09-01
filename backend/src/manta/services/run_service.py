@@ -77,15 +77,18 @@ class RunService:
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        project_uuid = None
+        if run.project_id is not None:
+            project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+            if project is None:
+                raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+            project_uuid = project.uuid
 
         flow_run = asyncio.run(_read_flow_run(run.prefect_flow_run_id))
 
         return GetRunResult(
             uuid=run.uuid,
-            project_uuid=project.uuid,
+            project_uuid=project_uuid,
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )

@@ -138,6 +138,28 @@ def test_get_run_returns_dto_for_a_known_run(
     assert result.created_at == run.created_at
 
 
+def test_get_run_with_deleted_project_returns_null_project_uuid(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose project has since been deleted (project_id set to
+    # NULL rather than the run being cascade-deleted)
+    run = Run(project_id=None, prefect_flow_run_id=uuid4())
+    run.id = 1
+    run.uuid = uuid4()
+    run.created_at = datetime.now(UTC)
+    db = mock_db_class(query_results={Run: run})
+    fake_client = MagicMock(read_flow_run=AsyncMock(return_value=_fake_flow_run("COMPLETED")))
+    _patch_get_client(monkeypatch, fake_client)
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run(run_uuid=run.uuid)
+
+    # Then no Project lookup is attempted, and the DTO reports no project
+    assert result.project_uuid is None
+    assert result.status == "COMPLETED"
+
+
 def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})

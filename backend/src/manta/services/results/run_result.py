@@ -12,7 +12,9 @@ class CreateRunResult(BaseModel):
 
 class GetRunResult(BaseModel):
     uuid: UUID
-    project_uuid: UUID
+    # `None` when the run's project has since been deleted (`Run.project_id`
+    # is set to NULL rather than cascade-deleting the run).
+    project_uuid: UUID | None
     status: str
     created_at: datetime
 
