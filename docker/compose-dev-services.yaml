@@ -10,9 +10,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 20
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.05
@@ -37,27 +37,6 @@ services:
       timeout: 5s
       retries: 5
 
-  prefect-server:
-    image: prefecthq/prefect:3-latest
-    command: prefect server start --host 0.0.0.0
-    env_file: ../backend/.env
-    ports:
-      - "${PREFECT_PORT}:4200"
-    volumes:
-      - prefect-data:/root/.prefect
-    healthcheck:
-      # `curl` isn't installed in this image — so using `python` instead
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2
     command:
@@ -70,71 +49,19 @@ services:
       KC_DB_PORT: 5432
       KC_HOSTNAME: localhost
     ports:
-      - "8080:8080"
+      - '8080:8080'
     volumes:
-      - keycloak-data:/data
+      - ./conf/user_profile.json:/tmp/user_profile.json:ro
     depends_on:
       postgres:
         condition: service_healthy
     post_start:
       # Wait for keycloak initialization to finish
-<<<<<<< HEAD
-      - command:
-          [
-            "bash",
-            "-c",
-            "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done",
-          ]
-      - command:
-          [
-            "/opt/keycloak/bin/kcadm.sh",
-            "create",
-            "realms",
-            "-s",
-            "realm=${KEYCLOAK_REALM}",
-            "-s",
-            "enabled=true",
-          ]
-      #- command: ["/opt/keycloak/bin/kcadm.sh", "create", "-x", "client-scopes", "-r", "${KEYCLOAK_REALM}", "-s", "enabled=true", "-s"]
-      #      - command:
-      #        - /opt/keycloak/bin/kcadm.sh
-      #        - create
-      #        - "-x"
-      #        - client-scopes
-      #        - "-r"
-      #        - "${KEYCLOAK_REALM}"
-      #        - "-s"
-      #        - "name=tenantId"
-      #        - "-s"
-      #        - "protocol=openid-connect"
-      - command:
-          - /opt/keycloak/bin/kcadm.sh
-          - create
-          - clients
-          - "-r"
-          - "${KEYCLOAK_REALM}"
-          - "-s"
-          - "clientId=${MANTA_CLIENT_ID}"
-          - "-s"
-          - "secret=${MANTA_CLIENT_SECRET}"
-          - "-s"
-          - "clientAuthenticatorType=client-secret"
-          - "-s"
-          - "publicClient=false"
-          - "-s"
-          - "protocol=openid-connect"
-          - "-s"
-          - "enabled=true"
-      #- command: ["/opt/keycloak/bin/kcadm.sh", "create", "clients", "-r", "${KEYCLOAK_REALM}", "-s", "clientId=${MANTA_CLIENT_ID}", "-s", "clientSecret=${MANTA_CLIENT_SECRET}" ,"-s", "enabled=true"]
-#    pre_start:
-#      # add the keycloak user
-#      - command: 'psql -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "CREATE USER ${KC_DB_USERNAME} WITH PASSWORD ''${KC_DB_PASSWORD}'' CREATEDB;"'
-#        user: root
-#        privileged: true
-=======
       - command: ["bash", "-c", "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done"]
       # Create manta authentication realm
       - command: ["/opt/keycloak/bin/kcadm.sh", "create", "realms", "-s", "realm=${KEYCLOAK_REALM}", "-s", "enabled=true"]
+      # Set user profile to require user name and email only
+      - command: ["/opt/keycloak/bin/kcadm.sh", "update", "users/profile", "-r", "${KEYCLOAK_REALM}", "-f", "/tmp/user_profile.json"]
       # Create client for manta (as a resource provider) to use
       - command:
         - /opt/keycloak/bin/kcadm.sh
@@ -154,10 +81,42 @@ services:
         - "protocol=openid-connect"
         - "-s"
         - "enabled=true"
->>>>>>> d07bebc (add tests)
+      # create an admin user (used for the dev server to programmatically register new user accounts)
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - create
+        - users
+        - "-r"
+        - master
+        - "-s"
+        - "username=kcadmin"
+        - "-s"
+        - "email=super-admin@example.com"
+        - "-s"
+        - "emailVerified=true"
+        - "-s"
+        - "enabled=true"
+      # add password for admin user
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - set-password
+        - "-r"
+        - master
+        - "--username"
+        - "kcadmin"
+        - "--new-password"
+        - "kcpassword"
+      # make admin an admin
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - add-roles
+        - "--uusername"
+        - kcadmin
+        - "--rolename"
+        - admin
+
 
 volumes:
   postgres-data:
   seaweedfs-data:
-  prefect-data:
   keycloak-data:
