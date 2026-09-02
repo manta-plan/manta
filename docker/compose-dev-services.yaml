@@ -8,6 +8,8 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Creates Keycloak's own database. Runs only on first volume init.
+      - ./postgres/init-keycloak-db.sh:/docker-entrypoint-initdb.d/init-keycloak-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -39,79 +41,37 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2
+    # --import-realm applies docker/keycloak/manta-realm.json during Keycloak's
+    # own startup, before it serves traffic. That's why there's no provisioning
+    # to orchestrate from out here: the import is idempotent (skipped when the
+    # realm already exists), so a restart is a no-op rather than a failure.
     command:
       - start-dev
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_DB_USERNAME: "${KC_DB_USERNAME}"
-      KC_DB_PASSWORD: "${KC_DB_PASSWORD}"
-      KC_DB_PORT: 5432
-      KC_HOSTNAME: localhost
+      - --import-realm
+    # Same single source of truth the other services use. Without this, the
+    # KC_DB_* settings never reach the container and Keycloak silently falls
+    # back to the embedded H2 database.
+    env_file: ../backend/.env
+    # KC_HOSTNAME is deliberately unset: in start-dev Keycloak then derives the
+    # issuer from the request, so the same config works on the dev port and on
+    # the ephemeral port the test stack gets (see docker/.env.test).
     ports:
-      - '8080:8080'
+      - "${KEYCLOAK_PORT}:8080"
     volumes:
-      - keycloak-data:/data
+      - ./keycloak/manta-realm.json:/opt/keycloak/data/import/manta-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
-    post_start:
-      # Wait for keycloak initialization to finish
-      - command: ["bash", "-c", "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done"]
-      # Create manta authentication realm
-      - command: ["/opt/keycloak/bin/kcadm.sh", "create", "realms", "-s", "realm=${KEYCLOAK_REALM}", "-s", "enabled=true"]
-      # Create client for manta (as a resource provider) to use
-      - command:
-        - /opt/keycloak/bin/kcadm.sh
-        - create
-        - clients
-        - "-r"
-        - "${KEYCLOAK_REALM}"
-        - "-s"
-        - "clientId=${MANTA_CLIENT_ID}"
-        - "-s"
-        - "secret=${MANTA_CLIENT_SECRET}"
-        - "-s"
-        - "clientAuthenticatorType=client-secret"
-        - "-s"
-        - "publicClient=false"
-        - "-s"
-        - "protocol=openid-connect"
-        - "-s"
-        - "enabled=true"
-      - command:
-        - /opt/keycloak/bin/kcadm.sh
-        - create
-        - users
-        - "-r"
-        - master
-        - "-s"
-        - "username=kcadmin"
-        - "-s"
-        - "email=super-admin@example.com"
-        - "-s"
-        - "emailVerified=true"
-        - "-s"
-        - "enabled=true"
-      - command:
-        - /opt/keycloak/bin/kcadm.sh
-        - set-password
-        - "-r"
-        - master
-        - "--username"
-        - "kcadmin"
-        - "--new-password"
-        - "kcpassword"
-      - command:
-        - /opt/keycloak/bin/kcadm.sh
-        - add-roles
-        - "--uusername"
-        - kcadmin
-        - "--rolename"
-        - admin
-
+    healthcheck:
+      # The image ships no curl or wget, so use bash's /dev/tcp to hand-write an
+      # HTTP request to the health endpoint on the management port (9000).
+      # https://www.keycloak.org/observability/health
+      test: ["CMD", "bash", "-c", '{ printf ''HEAD /health/ready HTTP/1.0\r\n\r\n'' >&0; grep ''HTTP/1.0 200''; } 0<>/dev/tcp/localhost/9000']
+      interval: 5s
+      timeout: 5s
+      # Keycloak boots in ~20s, far slower than the other services here.
+      retries: 20
 
 volumes:
   postgres-data:
   seaweedfs-data:
-  keycloak-data:

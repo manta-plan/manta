@@ -27,8 +27,23 @@ truth instead of two.
   Once running, the Admin UI (bucket/object browser, cluster status) is at
   `http://localhost:23646` by default (`SEAWEEDFS_ADMIN_PORT` in
   [`backend/.env`](../backend/.env)).
-- **keycloak** - identity provider, you can access it with bootstrap credentials
-  via [localhost:8080](https://localhost:8080)
+- **keycloak** — identity provider. Handles authentication (login, passwords,
+  token issuance) so the app never sees a credential; Manta keeps authorization.
+  Admin console at `http://localhost:8080` by default (`KEYCLOAK_PORT` in
+  [`backend/.env`](../backend/.env)), using the
+  `KC_BOOTSTRAP_ADMIN_USERNAME`/`KC_BOOTSTRAP_ADMIN_PASSWORD` credentials.
+
+  Realm configuration — clients, roles, and dev users — is declared in
+  [`keycloak/manta-realm.json`](keycloak/manta-realm.json) and imported on
+  startup, so it's reviewable in diffs and idempotent across restarts. Edit
+  that file rather than clicking through the admin console, or your change
+  won't survive the next `down -v`. Dev users (password same as username):
+  `alice` and `manta-admin`.
+
+  Keycloak keeps its own `keycloak` database, created on first boot by
+  [`postgres/init-keycloak-db.sh`](postgres/init-keycloak-db.sh). Because
+  Postgres only runs init scripts when its data volume is first created, an
+  existing dev stack needs `docker compose down -v` once to pick it up.
 
 ## Testing
 

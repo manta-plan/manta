@@ -1,0 +1,115 @@
+{
+  "realm": "manta",
+  "enabled": true,
+  "displayName": "Manta",
+  "roles": {
+    "realm": [
+      {
+        "name": "manta-admin",
+        "description": "Elevated Manta user. Manta owns authorization; this role only marks who is elevated."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "manta-frontend",
+      "description": "Browser client. Public + PKCE: a secret shipped in a JS bundle protects nothing, which is what PKCE replaces.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "manta-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "manta-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "manta-api",
+      "description": "Resource server. Has no flows enabled; it exists to be named in the token's aud claim.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "manta-test",
+      "description": "TEST ONLY. Enables direct access grants (ROPC), which RFC 9700 says MUST NOT be used for real logins - it exists so the integration suite can mint a token without driving a browser. Never enable this flow on manta-frontend.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "manta-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "manta-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Example",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "manta-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "manta-admin@example.com",
+      "firstName": "Manta",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "manta-admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "manta-admin"
+      ]
+    }
+  ]
+}

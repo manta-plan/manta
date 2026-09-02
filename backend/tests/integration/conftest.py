@@ -48,6 +48,13 @@ def docker_services() -> Iterator[DockerCompose]:
 
 
 @pytest.fixture(scope="session")
+def backend_env() -> dict[str, str | None]:
+    """The same .env the app and the compose stack read, so tests assert against
+    the configured values rather than a second copy of them."""
+    return dotenv_values(BACKEND_ENV_FILE)
+
+
+@pytest.fixture(scope="session")
 def postgres_service(docker_services: DockerCompose) -> dict[str, str | None]:
     host, port = docker_services.get_service_host_and_port("postgres", 5432)
     return {"host": host, "port": str(port)}
@@ -83,6 +90,24 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
         user=env["POSTGRES_USER"],
         password=env["POSTGRES_PASSWORD"],
         dbname=env["POSTGRES_DB"],
+        autocommit=True,
+    ) as conn:
+        yield conn
+
+
+@pytest.fixture(scope="session")
+def kc_db_connection(
+    postgres_service: dict[str, str], keycloak_service: dict[str, str]
+) -> Iterator[psycopg.Connection]:
+    """A connection to Keycloak's own database. Depends on keycloak_service so
+    Keycloak has booted and run its migrations before any query lands."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    with psycopg.connect(
+        host=postgres_service["host"],
+        port=postgres_service["port"],
+        user=env["KC_DB_USERNAME"],
+        password=env["KC_DB_PASSWORD"],
+        dbname=env["KC_DB_URL_DATABASE"],
         autocommit=True,
     ) as conn:
         yield conn
