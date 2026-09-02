@@ -79,6 +79,37 @@ services:
         - "protocol=openid-connect"
         - "-s"
         - "enabled=true"
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - create
+        - users
+        - "-r"
+        - master
+        - "-s"
+        - "username=kcadmin"
+        - "-s"
+        - "email=super-admin@example.com"
+        - "-s"
+        - "emailVerified=true"
+        - "-s"
+        - "enabled=true"
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - set-password
+        - "-r"
+        - master
+        - "--username"
+        - "kcadmin"
+        - "--new-password"
+        - "kcpassword"
+      - command:
+        - /opt/keycloak/bin/kcadm.sh
+        - add-roles
+        - "--uusername"
+        - kcadmin
+        - "--rolename"
+        - admin
+
 
 volumes:
   postgres-data:
