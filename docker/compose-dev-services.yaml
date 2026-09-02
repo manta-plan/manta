@@ -37,6 +37,22 @@ services:
       timeout: 5s
       retries: 5
 
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    command: prefect server start --host 0.0.0.0
+    env_file: ../backend/.env
+    ports:
+      - "${PREFECT_PORT}:4200"
+    volumes:
+      - prefect-data:/root/.prefect
+    healthcheck:
+      # `curl` isn't installed in this image — so using `python` instead
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   seaweedfs-data:
+  prefect-data:

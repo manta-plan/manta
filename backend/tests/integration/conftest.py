@@ -60,6 +60,12 @@ def seaweedfs_service(docker_services: DockerCompose) -> dict[str, str | None]:
 
 
 @pytest.fixture(scope="session")
+def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
+    host, port = docker_services.get_service_host_and_port("prefect-server", 4200)
+    return {"host": host, "port": str(port)}
+
+
+@pytest.fixture(scope="session")
 def frontend_files() -> Path:
     pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
     _ = pkg.build(wait=True)
@@ -116,7 +122,9 @@ def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float
 
 @pytest.fixture(scope="session")
 def app_server(
-    postgres_service: dict[str, str], seaweedfs_service: dict[str, str]
+    postgres_service: dict[str, str],
+    seaweedfs_service: dict[str, str],
+    prefect_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -128,6 +136,12 @@ def app_server(
         "POSTGRES_PORT": postgres_service["port"],
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
+        "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
+        # Speed up the flow-serving subprocess's runner (default 10s) and log
+        # shipping (default 2s) so integration tests don't pay for Prefect's
+        # production-tuned polling intervals.
+        "PREFECT_RUNNER_POLL_FREQUENCY": "1",
+        "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
