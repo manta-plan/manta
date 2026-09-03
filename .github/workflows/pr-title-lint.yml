@@ -1,0 +1,22 @@
+name: PR title lint
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with:
+          runtime: "node@26"
+          version: "11.10.0"
+          cache: false
+      - env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: echo "$PR_TITLE" | pnpm dlx -p @commitlint/cli@21.2.2 --config commitlint.config.cjs
