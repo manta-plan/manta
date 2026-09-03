@@ -1,0 +1,70 @@
+## Description
+The authentication and authorization mechanism consists of the following components:
+
+* External Integrations - the components that the authentication system communicates with outside
+* Endpoint Configuration - python decorators or FastAPI DI that mark required **authorization** scopes on endpoints
+* Middleware - **authenticates** incoming requests as being from a given user, and the validated user model/scopes to endpoints
+
+The target environments we aim for are:
+* **dev** - contributors running on their own local machine
+* **test** - integration tests running locally or on GitHub Actions
+* **production** (target for `mvp`) - OET running manta on the open internet
+* **self-hosted** (`v1`) - end-users running manta within their own ecosystems
+
+# Design
+We perform authentication in accordance with the [OpenID Connect protocol](https://openid.net/developers/how-connect-works/). In that terminology, the manta API is the **Relying Party (RP)**, and the **OpenID Provider (OP/IdP)** is Keycloak (_v1_: or the self-hosted OIDC Provider).
+
+This means that manta API **completely offloads user management to the IdP**, and only performs the following operations:
+
+1. authenticate incoming requests' (via validating the JWT tokens)
+2. confirm the request is authorized to access the endpoint (via validating the token scopes)
+
+Manta Frontend will plug directly into Keycloak to provide a UI for the non-self-hosted use cases, whereas for self-hosted use cases it can plug into the end-user's OIDC provider. There is also a plugin configuration mode where Keycloak can proxy the external OIDCs.
+
+I think this design strikes a good balance between convenience in the testing and dev side, with security and expressiveness for the `mvp` and `v1`. I believe that it should be extensible (see Roadmap below) with minor rewriting. 
+
+## Capability by Environment
+
+| Capability | `test` | `dev` | `mvp` | `v1` |
+|--------|--------|--------|--------|--------|
+| Protocol | OIDC | OIDC | OIDC | OIDC |
+| authorization flow | password grant | password grant | authorization code flow (UI+Keycloak) | user-defined |
+| User Registration | manta `/register` | manta `/register` | UI + Keycloak | (user's OP) |
+| User Login | manta `/login` | manta `/login` | UI + Keycloak | UI + User's OP |
+| Third-Party Login | N/A | N/A | Keycloak proxy mapping configuration | User's OP |
+
+# Roadmap
+
+1. **Setup Keycloak in dev and test** - this initializes our external OIDC providers, touches on #82
+2. **Add OIDC Authentication Middleware** - this maps request tokens to our internal representation of a user + scopes, and rejects invalid tokens, touches on #63 
+3. **Configure scopes on `/project` endpoint** - this validates requests based on their scopes, and rejects unauthorized requests, touches on #83 
+
+## Integrating with 3rd Party Systems
+
+Integrating with 3rd-party systems can happen in the `mvp` domain via Keycloak mapping proxy, or by directly connecting the front end to the system. I could use @mikoding9 's input here.
+
+## Complicated Permissions
+
+Eventually, we may want to develop a system for managing access control to objects (projects, runs, etc) beyond just "owner has access" - developing an access control system is out of scope for this ticket. It could be implemented as either a simple internal system, or, at scale by using a Zanzibar-like.
+
+## Related issue
+Addresses #63, #83 #82 
+
+## Type of change
+- [ ] Bug fix
+- [x] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+
+## How has this been tested?
+<!-- Describe tests you ran -->
+
+## AI Assistance
+- [ ] This code is implemented with AI Assistance
+
+## Checklist
+- [ ] The implementation code follows the project's CONTRIBUTING.md guidelines
+- [ ] I have performed a self-review
+- [ ] I have tested my contribution locally, and they seem to work as intended
+- [ ] I have updated documentation as needed (if needed)
+- [ ] I have added automated tests that prove my fix/feature works (if needed)
