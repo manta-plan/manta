@@ -12,6 +12,8 @@ import psycopg
 import pytest
 from botocore.config import Config
 from dotenv import dotenv_values
+from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
+from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
 from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
@@ -104,6 +106,30 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
         region_name="eu-central-1",
         config=Config(s3={"addressing_style": "path"}),
     )
+
+
+# TODO: replace these with proper parsed config
+@pytest.fixture(scope="session")
+def kc_oidc_client(keycloak_service: dict[str, str]) -> KeycloakOpenID:
+    return KeycloakOpenID(
+        server_url="http://localhost:8080",  # TODO Replace
+        realm_name="manta",  # TODO replace these parameters with the realm-specific ones
+        client_id="manta-client",
+        client_secret_key="im-so-secret",  # noqa: S106
+    )
+
+
+# TODO: replace these with proper parsed config
+@pytest.fixture(scope="session")
+def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
+    kc_adm_connection = KeycloakOpenIDConnection(
+        server_url="http://localhost:8080",  # TODO Replace
+        realm_name="manta",  # TODO replace these parameters with the realm-specific ones
+        user_realm_name="master",  # kcadmin only exists in master; target ops at manta
+        username="kcadmin",
+        password="kcpassword",  # noqa: S106
+    )
+    return KeycloakAdmin(connection=kc_adm_connection)
 
 
 def _free_port() -> int:
