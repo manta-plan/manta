@@ -23,13 +23,22 @@ commits get squashed together:
 <type>[!]: <imperative description>
 ```
 
-- `type` is one of `feat`, `fix`, or `docs` — use `docs` only when the PR is
+- `type` is usually `feat`, `fix`, or `docs` — use `docs` only when the PR is
   docs-only; a feature PR that happens to touch docs too is still `feat`.
+  The rest of [commitlint's default
+  types](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional)
+  are also allowed but less common here: `build`, `chore`, `ci`, `perf`,
+  `refactor`, `revert`, `style`, `test`.
 - No scope (e.g. no `(backend)`) — it's not worth the overhead.
 - Append `!` for breaking changes (e.g. `feat!:`), enough on its own to drive
   a changelog.
 - The description should be imperative and descriptive — read it as
   completing "If applied, this commit will...".
+- Header (the whole `<type>[!]: <description>` line) must be 100 characters
+  or fewer, and the description must not end with a full stop.
+- CI enforces this on the PR title via
+  [commitlint](https://commitlint.js.org/), configured in
+  `commitlint.config.cjs`.
 
 - Open a PR against `main` for review before merging.
 - Style/formatting disputes are considered solved problems — defer to the
