@@ -8,6 +8,7 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./conf/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 2s
@@ -62,17 +63,37 @@ services:
     image: quay.io/keycloak/keycloak:26.7.2
     command:
       - start-dev
+      # This option causes startup to attempt to import a realm from the
+      # /opt/keycloak/data/import directory in the container. If the realm
+      # already exists, it skips it, preserving state
+      #
+      # We can use kcadm on a live instance of keycloak to re-export the realm
+      # if we wish to update base state.
+      # see: https://www.keycloak.org/server/importExport
+      - --import-realm
+    env_file: ../backend/.env
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_DB_USERNAME: "${KC_DB_USERNAME}"
-      KC_DB_PASSWORD: "${KC_DB_PASSWORD}"
-      KC_DB_PORT: 5432
+      KC_DB_URL_PORT: 5432
       KC_HOSTNAME: localhost
     ports:
-      - "8080:8080"
+      - "${KEYCLOAK_PORT}:8080"
     volumes:
       - ./conf/user_profile.json:/tmp/user_profile.json:ro
+      - ./conf/manta-realm.json:/opt/keycloak/data/import/manta-realm.json:ro
+    healthcheck:
+      # No curl/wget/nc in this image — /dev/tcp is the only thing available.
+      # the default management interface for Keycloak is port 9000
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/localhost/9000 &&
+          echo -e "GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n" >&3 &&
+          cat <&3 | grep -q "200 OK"
+      interval: 2s
+      timeout: 2s
+      retries: 20
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,18 +105,7 @@ services:
             "-c",
             "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done",
           ]
-      # Create manta authentication realm
-      - command:
-          [
-            "/opt/keycloak/bin/kcadm.sh",
-            "create",
-            "realms",
-            "-s",
-            "realm=${KEYCLOAK_REALM}",
-            "-s",
-            "enabled=true",
-          ]
-      # Set user profile to require user name and email only
+      # Set user profile to require user name and email only (idempotently)
       - command:
           [
             "/opt/keycloak/bin/kcadm.sh",
@@ -106,40 +116,13 @@ services:
             "-f",
             "/tmp/user_profile.json",
           ]
-      # Create client for manta (as a resource provider) to use
-      - command:
-          - /opt/keycloak/bin/kcadm.sh
-          - create
-          - clients
-          - "-r"
-          - "${KEYCLOAK_REALM}"
-          - "-s"
-          - "clientId=${MANTA_CLIENT_ID}"
-          - "-s"
-          - "secret=${MANTA_CLIENT_SECRET}"
-          - "-s"
-          - "clientAuthenticatorType=client-secret"
-          - "-s"
-          - "publicClient=false"
-          - "-s"
-          - "protocol=openid-connect"
-          - "-s"
-          - "enabled=true"
       # create an admin user (used for the dev server to programmatically register new user accounts)
       - command:
-          - /opt/keycloak/bin/kcadm.sh
-          - create
-          - users
-          - "-r"
-          - master
-          - "-s"
-          - "username=kcadmin"
-          - "-s"
-          - "email=super-admin@example.com"
-          - "-s"
-          - "emailVerified=true"
-          - "-s"
-          - "enabled=true"
+          [
+            "bash",
+            "-c",
+            "/opt/keycloak/bin/kcadm.sh create users -r master -s username=${KC_ADMIN_USERNAME} -s email=super-admin@example.com -s emailVerified=true -s enabled=true || true",
+          ]
       # add password for admin user
       - command:
           - /opt/keycloak/bin/kcadm.sh
@@ -147,17 +130,16 @@ services:
           - "-r"
           - master
           - "--username"
-          - "kcadmin"
+          - "${KC_ADMIN_USERNAME}"
           - "--new-password"
-          - "kcpassword"
+          - "${KC_ADMIN_PASSWORD}"
       # make admin an admin
       - command:
-          - /opt/keycloak/bin/kcadm.sh
-          - add-roles
-          - "--uusername"
-          - kcadmin
-          - "--rolename"
-          - admin
+          [
+            "bash",
+            "-c",
+            "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KC_ADMIN_USERNAME} --rolename admin || true",
+          ]
 
 volumes:
   postgres-data:

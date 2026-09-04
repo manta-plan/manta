@@ -66,10 +66,20 @@ def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
     host, port = docker_services.get_service_host_and_port("prefect-server", 4200)
     return {"host": host, "port": str(port)}
 
+
 @pytest.fixture(scope="session")
 def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
     host, port = docker_services.get_service_host_and_port("keycloak", 8080)
-    return {"host": host, "port": str(port)}
+    env = dotenv_values(BACKEND_ENV_FILE)
+    return {
+        "host": host,
+        "port": str(port),
+        "realm": env["KEYCLOAK_REALM"],
+        "client_id": env["MANTA_CLIENT_ID"],
+        "client_secret": env["MANTA_CLIENT_SECRET"],
+        "admin_username": env["KC_ADMIN_USERNAME"],
+        "admin_password": env["KC_ADMIN_PASSWORD"],
+    }
 
 
 @pytest.fixture(scope="session")
@@ -108,26 +118,24 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     )
 
 
-# TODO: replace these with proper parsed config
 @pytest.fixture(scope="session")
 def kc_oidc_client(keycloak_service: dict[str, str]) -> KeycloakOpenID:
     return KeycloakOpenID(
-        server_url="http://localhost:8080",  # TODO Replace
-        realm_name="manta",  # TODO replace these parameters with the realm-specific ones
-        client_id="manta-client",
-        client_secret_key="im-so-secret",  # noqa: S106
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
+        client_id=keycloak_service["client_id"],
+        client_secret_key=keycloak_service["client_secret"],
     )
 
 
-# TODO: replace these with proper parsed config
 @pytest.fixture(scope="session")
 def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
     kc_adm_connection = KeycloakOpenIDConnection(
-        server_url="http://localhost:8080",  # TODO Replace
-        realm_name="manta",  # TODO replace these parameters with the realm-specific ones
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
         user_realm_name="master",  # kcadmin only exists in master; target ops at manta
-        username="kcadmin",
-        password="kcpassword",  # noqa: S106
+        username=keycloak_service["admin_username"],
+        password=keycloak_service["admin_password"],
     )
     return KeycloakAdmin(connection=kc_adm_connection)
 
