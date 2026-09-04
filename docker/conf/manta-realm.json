@@ -1,0 +1,53 @@
+{
+  "realm": "manta",
+  "enabled": true,
+  "displayName": "Manta",
+  "roles": {
+    "realm": [
+      {
+        "name": "manta-admin",
+        "description": "Elevated Manta user. Manta owns authorization; this role only marks who is elevated."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "manta-client",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "im-so-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "fullScopeAllowed": true
+    }
+  ],
+  "users": [
+    {
+      "username": "manta-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "manta-admin@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "manta-admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "manta-admin"
+      ]
+    }
+  ]
+}

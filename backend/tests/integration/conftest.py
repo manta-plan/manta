@@ -12,6 +12,8 @@ import psycopg
 import pytest
 from botocore.config import Config
 from dotenv import dotenv_values
+from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
+from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
 from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
@@ -66,6 +68,21 @@ def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
+def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("keycloak", 8080)
+    env = dotenv_values(BACKEND_ENV_FILE)
+    return {
+        "host": host,
+        "port": str(port),
+        "realm": env["KEYCLOAK_REALM"],
+        "client_id": env["MANTA_CLIENT_ID"],
+        "client_secret": env["MANTA_CLIENT_SECRET"],
+        "admin_username": env["KC_ADMIN_USERNAME"],
+        "admin_password": env["KC_ADMIN_PASSWORD"],
+    }
+
+
+@pytest.fixture(scope="session")
 def frontend_files() -> Path:
     pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
     _ = pkg.build(wait=True)
@@ -91,7 +108,7 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
 @pytest.fixture(scope="session")
 def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     env = dotenv_values(BACKEND_ENV_FILE)
-    return boto3.client(
+    return boto3.client(  # pyright: ignore[reportUnknownMemberType]
         "s3",
         endpoint_url=f"http://{seaweedfs_service['host']}:{seaweedfs_service['port']}",
         aws_access_key_id=env["S3_ACCESS_KEY"],
@@ -99,6 +116,28 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
         region_name="eu-central-1",
         config=Config(s3={"addressing_style": "path"}),
     )
+
+
+@pytest.fixture(scope="session")
+def kc_oidc_client(keycloak_service: dict[str, str]) -> KeycloakOpenID:
+    return KeycloakOpenID(
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
+        client_id=keycloak_service["client_id"],
+        client_secret_key=keycloak_service["client_secret"],
+    )
+
+
+@pytest.fixture(scope="session")
+def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
+    kc_adm_connection = KeycloakOpenIDConnection(
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
+        user_realm_name="master",  # kcadmin only exists in master; target ops at manta
+        username=keycloak_service["admin_username"],
+        password=keycloak_service["admin_password"],
+    )
+    return KeycloakAdmin(connection=kc_adm_connection)
 
 
 def _free_port() -> int:
@@ -125,6 +164,7 @@ def app_server(
     postgres_service: dict[str, str],
     seaweedfs_service: dict[str, str],
     prefect_service: dict[str, str],
+    keycloak_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -142,6 +182,8 @@ def app_server(
         # production-tuned polling intervals.
         "PREFECT_RUNNER_POLL_FREQUENCY": "1",
         "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
+        "KC_HOST": keycloak_service["host"],
+        "KC_PORT": keycloak_service["port"],
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input

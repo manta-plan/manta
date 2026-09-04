@@ -27,6 +27,8 @@ truth instead of two.
   Once running, the Admin UI (bucket/object browser, cluster status) is at
   `http://localhost:23646` by default (`SEAWEEDFS_ADMIN_PORT` in
   [`backend/.env`](../backend/.env)).
+- **keycloak** - identity provider, you can access it with bootstrap credentials
+  via [localhost:8080](http://localhost:8080)
 
 ## Testing
 
