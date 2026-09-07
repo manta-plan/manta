@@ -1,8 +1,7 @@
 import { Button } from "@base-ui/react/button";
-import { Menu } from "@base-ui/react/menu";
 import { Select } from "@base-ui/react/select";
 import { format } from "date-fns";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { IconType } from "react-icons";
 import {
   FiAlertCircle,
@@ -10,12 +9,9 @@ import {
   FiChevronDown,
   FiCheck,
   FiClock,
-  FiExternalLink,
-  FiMoreHorizontal,
   FiPlay,
   FiRefreshCw,
   FiSearch,
-  FiTrash2,
 } from "react-icons/fi";
 
 const statusMeta = {
@@ -41,6 +37,12 @@ const statusMeta = {
     label: "Queued",
     badgeClassName: "bg-surface-alt text-text-secondary",
     icon: FiClock,
+    iconClassName: undefined,
+  },
+  Unknown: {
+    label: "Unknown",
+    badgeClassName: "bg-surface-alt text-text-secondary",
+    icon: FiAlertCircle,
     iconClassName: undefined,
   },
 } satisfies Record<
@@ -79,6 +81,19 @@ type CreateRunResponse = {
   created_at: string;
 };
 
+type GetRunResponse = {
+  uuid: string;
+  project_uuid: string | null;
+  status: string;
+  created_at: string;
+};
+
+type GetRunLogsResponse = {
+  uuid: string;
+  logs: string[];
+  run_status: string;
+};
+
 type RunListItem = {
   id: string;
   name: string;
@@ -90,11 +105,20 @@ type RunListItem = {
   owner: string;
 };
 
+type ExpandedRunState = {
+  isLoading: boolean;
+  error: string | null;
+  detail: GetRunResponse | null;
+  logs: GetRunLogsResponse | null;
+};
+
 export function HomePage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const hasRuns = runs.length > 0;
   const filteredRuns =
@@ -156,6 +180,64 @@ export function HomePage() {
       setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
       setIsLoadingRuns(false);
+    }
+  }
+
+  async function handleToggleRunDetails(runId: string) {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      return;
+    }
+
+    setExpandedRunId(runId);
+
+    const expandedRun = expandedRuns[runId];
+
+    if (expandedRun !== undefined && expandedRun.detail !== null && expandedRun.logs !== null) {
+      return;
+    }
+
+    setExpandedRuns((currentExpandedRuns) => ({
+      ...currentExpandedRuns,
+      [runId]: {
+        isLoading: true,
+        error: null,
+        detail: currentExpandedRuns[runId]?.detail ?? null,
+        logs: currentExpandedRuns[runId]?.logs ?? null,
+      },
+    }));
+
+    try {
+      const [detail, logs] = await Promise.all([
+        getJson<GetRunResponse>(`/v1/runs/${runId}`),
+        getJson<GetRunLogsResponse>(`/v1/runs/${runId}/logs`),
+      ]);
+      const runStatus = normalizeRunStatus(logs.run_status || detail.status);
+
+      setRuns((currentRuns) =>
+        currentRuns.map((run) =>
+          run.id === runId ? { ...run, status: runStatus, startedAt: detail.created_at } : run,
+        ),
+      );
+      setExpandedRuns((currentExpandedRuns) => ({
+        ...currentExpandedRuns,
+        [runId]: {
+          isLoading: false,
+          error: null,
+          detail,
+          logs,
+        },
+      }));
+    } catch (error) {
+      setExpandedRuns((currentExpandedRuns) => ({
+        ...currentExpandedRuns,
+        [runId]: {
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load run details.",
+          detail: currentExpandedRuns[runId]?.detail ?? null,
+          logs: currentExpandedRuns[runId]?.logs ?? null,
+        },
+      }));
     }
   }
 
@@ -307,65 +389,61 @@ export function HomePage() {
                     {filteredRuns.map((run) => {
                       const status = statusMeta[run.status];
                       const StatusIcon = status.icon;
+                      const isExpanded = expandedRunId === run.id;
+                      const expandedRun = expandedRuns[run.id];
 
                       return (
-                        <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
-                          <td className="px-4 py-4">
-                            <div className="text-text font-semibold">{run.name}</div>
-                            <div className="text-text-secondary mt-1 flex items-center gap-2">
-                              <span>{run.id}</span>
-                              <span aria-hidden="true">/</span>
-                              <span>{run.playbook}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <span
-                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.badgeClassName}`}
-                            >
-                              <StatusIcon
-                                className={`size-3.5 ${status.iconClassName ?? ""}`}
-                                aria-hidden="true"
-                              />
-                              {run.status}
-                            </span>
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">
-                            {formatRunStartedAt(run.startedAt)}
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">
-                            {formatRunDuration(run.durationSeconds)}
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
-                          <td className="text-text-secondary px-4 py-4">{run.owner}</td>
-                          <td className="px-4 py-4 text-right">
-                            <Menu.Root>
-                              <Menu.Trigger
-                                aria-label={`Open actions for ${run.name}`}
-                                className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                        <Fragment key={run.id}>
+                          <tr className="hover:bg-surface-alt/70 transition">
+                            <td className="px-4 py-4">
+                              <div className="text-text font-semibold">{run.name}</div>
+                              <div className="text-text-secondary mt-1 flex items-center gap-2">
+                                <span>{run.id}</span>
+                                <span aria-hidden="true">/</span>
+                                <span>{run.playbook}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.badgeClassName}`}
                               >
-                                <FiMoreHorizontal className="size-4" aria-hidden="true" />
-                              </Menu.Trigger>
-                              <Menu.Portal>
-                                <Menu.Positioner
-                                  align="end"
-                                  className="z-10 outline-none"
-                                  sideOffset={6}
-                                >
-                                  <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                                    <Menu.Item className={menuItemClass}>
-                                      <FiExternalLink className="size-4" aria-hidden="true" />
-                                      View result
-                                    </Menu.Item>
-                                    <Menu.Item className={`${menuItemClass} text-red-700`}>
-                                      <FiTrash2 className="size-4" aria-hidden="true" />
-                                      Remove
-                                    </Menu.Item>
-                                  </Menu.Popup>
-                                </Menu.Positioner>
-                              </Menu.Portal>
-                            </Menu.Root>
-                          </td>
-                        </tr>
+                                <StatusIcon
+                                  className={`size-3.5 ${status.iconClassName ?? ""}`}
+                                  aria-hidden="true"
+                                />
+                                {status.label}
+                              </span>
+                            </td>
+                            <td className="text-text-secondary px-4 py-4">
+                              {formatRunStartedAt(run.startedAt)}
+                            </td>
+                            <td className="text-text-secondary px-4 py-4">
+                              {formatRunDuration(run.durationSeconds)}
+                            </td>
+                            <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
+                            <td className="text-text-secondary px-4 py-4">{run.owner}</td>
+                            <td className="px-4 py-4 text-right">
+                              <Button
+                                aria-expanded={isExpanded}
+                                aria-label={`${isExpanded ? "Collapse" : "Expand"} details for ${run.name}`}
+                                className="hover:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                                onClick={() => handleToggleRunDetails(run.id)}
+                              >
+                                <FiChevronDown
+                                  className={`size-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                  aria-hidden="true"
+                                />
+                              </Button>
+                            </td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="bg-surface-alt/40">
+                              <td className="px-4 py-4" colSpan={7}>
+                                <RunDetailsPanel state={expandedRun} />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -411,11 +489,60 @@ export function HomePage() {
   );
 }
 
-const menuItemClass =
-  "flex cursor-default items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
-
 const selectItemClass =
   "grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
+
+function RunDetailsPanel({ state }: { state: ExpandedRunState | undefined }) {
+  if (state === undefined || state.isLoading) {
+    return (
+      <div className="text-text-secondary flex items-center gap-2 text-sm">
+        <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+        Loading run details...
+      </div>
+    );
+  }
+
+  if (state.error !== null) {
+    return <div className="text-sm text-red-700">{state.error}</div>;
+  }
+
+  const detail = state.detail;
+  const logs = state.logs;
+
+  if (detail === null || logs === null) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
+      <dl className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-1">
+        <div>
+          <dt className="text-text-secondary">Run UUID</dt>
+          <dd className="mt-1 font-medium break-all">{detail.uuid}</dd>
+        </div>
+        <div>
+          <dt className="text-text-secondary">Project UUID</dt>
+          <dd className="mt-1 font-medium break-all">{detail.project_uuid ?? "-"}</dd>
+        </div>
+        <div>
+          <dt className="text-text-secondary">Backend status</dt>
+          <dd className="mt-1 font-medium">{detail.status}</dd>
+        </div>
+      </dl>
+
+      <section>
+        <h3 className="text-sm font-semibold">Logs</h3>
+        {logs.logs.length > 0 ? (
+          <pre className="bg-text text-background mt-2 max-h-56 overflow-auto rounded-md p-3 text-xs leading-5">
+            {logs.logs.join("\n")}
+          </pre>
+        ) : (
+          <p className="text-text-secondary mt-2 text-sm">No logs are available yet.</p>
+        )}
+      </section>
+    </div>
+  );
+}
 
 function formatRunStartedAt(startedAt: string) {
   return format(new Date(startedAt), "MMM d, HH:mm");
@@ -440,6 +567,16 @@ async function postJson<ResponseBody>(url: string, body: unknown) {
     },
     body: JSON.stringify(body),
   });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await getResponseErrorMessage(response));
+  }
+
+  return (await response.json()) as ResponseBody;
+}
+
+async function getJson<ResponseBody>(url: string) {
+  const response = await fetch(url);
 
   if (!response.ok) {
     throw new ApiError(response.status, await getResponseErrorMessage(response));
@@ -473,6 +610,25 @@ async function createRun(project: { uuid: string; wasCached: boolean }) {
     }
 
     throw error;
+  }
+}
+
+function normalizeRunStatus(status: string): RunStatus {
+  switch (status.toUpperCase()) {
+    case "RUNNING":
+      return "Running";
+    case "COMPLETED":
+      return "Completed";
+    case "FAILED":
+    case "CRASHED":
+    case "CANCELLED":
+      return "Failed";
+    case "SCHEDULED":
+    case "PENDING":
+    case "PAUSED":
+      return "Queued";
+    default:
+      return "Unknown";
   }
 }
 
