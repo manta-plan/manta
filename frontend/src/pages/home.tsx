@@ -55,7 +55,31 @@ const statusOptions = Object.entries(statusMeta).map(([value, status]) => ({
   value: value as RunStatus,
 }));
 
-const demoRuns: Array<{
+const defaultProjectPayload = {
+  name: "My First Project",
+  description: "Default project for guest user, first time visit.",
+};
+
+const defaultRunPayload = {
+  num_pi_digits: 10_000,
+};
+
+const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
+
+type CreateProjectResponse = {
+  uuid: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+};
+
+type CreateRunResponse = {
+  uuid: string;
+  project_uuid: string;
+  created_at: string;
+};
+
+type RunListItem = {
   id: string;
   name: string;
   playbook: string;
@@ -64,53 +88,13 @@ const demoRuns: Array<{
   durationSeconds: number | null;
   trigger: string;
   owner: string;
-}> = [
-  {
-    id: "RUN-2048",
-    name: "North Sea demand forecast",
-    playbook: "Demand Forecast",
-    status: "Running",
-    startedAt: "2026-08-31T04:42:00Z",
-    durationSeconds: 378,
-    trigger: "API",
-    owner: "Planning",
-  },
-  {
-    id: "RUN-2047",
-    name: "Alpine hydro dispatch",
-    playbook: "Dispatch Optimization",
-    status: "Completed",
-    startedAt: "2026-08-31T03:00:00Z",
-    durationSeconds: 1442,
-    trigger: "Manual",
-    owner: "Operations",
-  },
-  {
-    id: "RUN-2046",
-    name: "Iberian solar scenario",
-    playbook: "Scenario Builder",
-    status: "Failed",
-    startedAt: "2026-08-31T02:30:00Z",
-    durationSeconds: 707,
-    trigger: "Manual",
-    owner: "Research",
-  },
-  {
-    id: "RUN-2045",
-    name: "Grid stability baseline",
-    playbook: "Network Simulation",
-    status: "Queued",
-    startedAt: "2026-08-31T02:15:00Z",
-    durationSeconds: null,
-    trigger: "Retry",
-    owner: "Engineering",
-  },
-];
+};
 
 export function HomePage() {
-  const [runs, setRuns] = useState<typeof demoRuns>([]);
+  const [runs, setRuns] = useState<RunListItem[]>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
+  const [runCreationError, setRunCreationError] = useState<string | null>(null);
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const hasRuns = runs.length > 0;
   const filteredRuns =
@@ -147,13 +131,32 @@ export function HomePage() {
     },
   ];
 
-  function handleNewRun() {
+  async function handleNewRun() {
     setIsLoadingRuns(true);
+    setRunCreationError(null);
 
-    window.setTimeout(() => {
-      setRuns(demoRuns);
+    try {
+      const project = await getOrCreateDefaultProject();
+      const run = await createRun(project);
+
+      setRuns((currentRuns) => [
+        {
+          id: run.uuid,
+          name: "Pi digit statistics",
+          playbook: "Pi Digit Statistics",
+          status: "Queued",
+          startedAt: run.created_at,
+          durationSeconds: null,
+          trigger: "Manual",
+          owner: "Guest",
+        },
+        ...currentRuns,
+      ]);
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
+    } finally {
       setIsLoadingRuns(false);
-    }, 1000);
+    }
   }
 
   function handleRefreshRuns() {
@@ -212,6 +215,12 @@ export function HomePage() {
       </header>
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6">
+        {runCreationError ? (
+          <div className="border-border bg-surface rounded-lg border px-4 py-3 text-sm text-red-700">
+            {runCreationError}
+          </div>
+        ) : null}
+
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {runStats.map((stat) => (
             <div className="border-border bg-surface rounded-lg border px-4 py-3" key={stat.label}>
@@ -421,4 +430,71 @@ function formatRunDuration(durationSeconds: number | null) {
   const seconds = durationSeconds % 60;
 
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+async function postJson<ResponseBody>(url: string, body: unknown) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await getResponseErrorMessage(response));
+  }
+
+  return (await response.json()) as ResponseBody;
+}
+
+async function getOrCreateDefaultProject() {
+  const cachedProjectUuid = window.sessionStorage.getItem(defaultProjectSessionStorageKey);
+
+  if (cachedProjectUuid !== null) {
+    return { uuid: cachedProjectUuid, wasCached: true };
+  }
+
+  const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
+  window.sessionStorage.setItem(defaultProjectSessionStorageKey, project.uuid);
+
+  return { uuid: project.uuid, wasCached: false };
+}
+
+async function createRun(project: { uuid: string; wasCached: boolean }) {
+  try {
+    return await postJson<CreateRunResponse>("/v1/runs", {
+      project_uuid: project.uuid,
+      num_pi_digits: defaultRunPayload.num_pi_digits,
+    });
+  } catch (error) {
+    if (project.wasCached && error instanceof ApiError && error.status === 404) {
+      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
+    }
+
+    throw error;
+  }
+}
+
+async function getResponseErrorMessage(response: Response) {
+  try {
+    const errorBody = (await response.json()) as { detail?: unknown };
+
+    if (typeof errorBody.detail === "string") {
+      return errorBody.detail;
+    }
+  } catch {
+    // Fall back to the status text below when the response is not JSON.
+  }
+
+  return response.statusText || `Request failed with status ${response.status}`;
+}
+
+class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
 }
