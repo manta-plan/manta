@@ -899,7 +899,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
     { name = "fastapi", specifier = ">=0.141.1" },
-    { name = "prefect", specifier = ">=3.0.0,<4.0.0" },
+    { name = "prefect", specifier = "==3.8.3" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pynpm", specifier = ">=0.3.1" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
