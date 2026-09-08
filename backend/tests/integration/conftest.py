@@ -75,10 +75,10 @@ def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
         "host": host,
         "port": str(port),
         "realm": env["KEYCLOAK_REALM"],
-        "client_id": env["MANTA_CLIENT_ID"],
-        "client_secret": env["MANTA_CLIENT_SECRET"],
-        "admin_username": env["KC_ADMIN_USERNAME"],
-        "admin_password": env["KC_ADMIN_PASSWORD"],
+        "client_id": env["IDP_CLIENT_ID"],
+        "client_secret": env["IDP_CLIENT_SECRET"],
+        "admin_username": env["KEYCLOAK_ADMIN_USERNAME"],
+        "admin_password": env["KEYCLOAK_ADMIN_PASSWORD"],
     }
 
 
