@@ -10,6 +10,7 @@ type RunsTableProps = {
   runs: RunListItem[];
   expandedRunId: string | null;
   expandedRuns: Record<string, ExpandedRunState>;
+  onRefreshRunDetails: (runId: string) => void;
   onToggleRunDetails: (runId: string) => void;
 };
 
@@ -17,6 +18,7 @@ export function RunsTable({
   runs,
   expandedRunId,
   expandedRuns,
+  onRefreshRunDetails,
   onToggleRunDetails,
 }: RunsTableProps) {
   return (
@@ -77,7 +79,10 @@ export function RunsTable({
                 {isExpanded ? (
                   <tr className="bg-surface-alt/40">
                     <td className="px-4 py-4" colSpan={7}>
-                      <RunDetailsPanel state={expandedRun} />
+                      <RunDetailsPanel
+                        state={expandedRun}
+                        onRefresh={() => onRefreshRunDetails(run.id)}
+                      />
                     </td>
                   </tr>
                 ) : null}

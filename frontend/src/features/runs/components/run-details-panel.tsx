@@ -1,12 +1,14 @@
+import { Button } from "@base-ui/react/button";
 import { FiRefreshCw } from "react-icons/fi";
 import type { ExpandedRunState } from "../types";
 
 type RunDetailsPanelProps = {
   state: ExpandedRunState | undefined;
+  onRefresh: () => void;
 };
 
-export function RunDetailsPanel({ state }: RunDetailsPanelProps) {
-  if (state === undefined || state.isLoading) {
+export function RunDetailsPanel({ state, onRefresh }: RunDetailsPanelProps) {
+  if (state === undefined || (state.isLoading && (state.detail === null || state.logs === null))) {
     return (
       <div className="text-text-secondary flex items-center gap-2 text-sm">
         <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
@@ -16,7 +18,19 @@ export function RunDetailsPanel({ state }: RunDetailsPanelProps) {
   }
 
   if (state.error !== null) {
-    return <div className="text-sm text-red-700">{state.error}</div>;
+    return (
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm text-red-700">{state.error}</div>
+        <Button
+          aria-label="Retry run details refresh"
+          className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2"
+          onClick={onRefresh}
+        >
+          <FiRefreshCw className="size-3.5" aria-hidden="true" />
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   const detail = state.detail;
@@ -44,7 +58,21 @@ export function RunDetailsPanel({ state }: RunDetailsPanelProps) {
       </dl>
 
       <section>
-        <h3 className="text-sm font-semibold">Logs</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold">Logs</h3>
+          <Button
+            aria-label="Refresh run details"
+            className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2"
+            disabled={state.isLoading}
+            onClick={onRefresh}
+          >
+            <FiRefreshCw
+              className={`size-3.5 ${state.isLoading ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            {state.isLoading ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
         {logs.logs.length > 0 ? (
           <pre className="bg-text text-background mt-2 max-h-56 overflow-auto rounded-md p-3 text-xs leading-5">
             {logs.logs.join("\n")}

@@ -77,20 +77,7 @@ export function HomePage() {
     }
   }
 
-  async function handleToggleRunDetails(runId: string) {
-    if (expandedRunId === runId) {
-      setExpandedRunId(null);
-      return;
-    }
-
-    setExpandedRunId(runId);
-
-    const expandedRun = expandedRuns[runId];
-
-    if (expandedRun !== undefined && expandedRun.detail !== null && expandedRun.logs !== null) {
-      return;
-    }
-
+  async function refreshRunDetails(runId: string) {
     setExpandedRuns((currentExpandedRuns) => ({
       ...currentExpandedRuns,
       [runId]: {
@@ -130,6 +117,23 @@ export function HomePage() {
         },
       }));
     }
+  }
+
+  async function handleToggleRunDetails(runId: string) {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      return;
+    }
+
+    setExpandedRunId(runId);
+
+    const expandedRun = expandedRuns[runId];
+
+    if (expandedRun !== undefined && expandedRun.detail !== null && expandedRun.logs !== null) {
+      return;
+    }
+
+    await refreshRunDetails(runId);
   }
 
   function handleRefreshRuns() {
@@ -238,6 +242,7 @@ export function HomePage() {
                 runs={filteredRuns}
                 expandedRunId={expandedRunId}
                 expandedRuns={expandedRuns}
+                onRefreshRunDetails={refreshRunDetails}
                 onToggleRunDetails={handleToggleRunDetails}
               />
             ) : (
