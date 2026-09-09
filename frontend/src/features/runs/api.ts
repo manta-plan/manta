@@ -99,6 +99,24 @@ export async function getRunSummary(project: DefaultProject) {
   }
 }
 
+export async function getProjectRun(project: DefaultProject, runId: string) {
+  try {
+    const run = await getRun(runId);
+
+    if (run.project_uuid !== project.uuid) {
+      return null;
+    }
+
+    return run;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 export function getRun(runId: string) {
   return getJson<GetRunResponse>(`/v1/runs/${runId}`);
 }

@@ -1,10 +1,12 @@
 import { Button } from "@base-ui/react/button";
+import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import {
   createRun,
   getCachedDefaultProject,
   getOrCreateDefaultProject,
+  getProjectRun,
   getRun,
   getRunLogs,
   getRunSummary,
@@ -42,6 +44,8 @@ export function HomePage() {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
+  const [searchRunId, setSearchRunId] = useState("");
+  const [activeSearchRunId, setActiveSearchRunId] = useState("");
 
   useEffect(() => {
     const cachedProject = getCachedDefaultProject();
@@ -91,7 +95,8 @@ export function HomePage() {
   const hasRuns = runs.length > 0;
   const hasProjectRuns = runSummary.total > 0;
   const hasStatusFilter = selectedStatuses.length > 0;
-  const shouldShowTableArea = hasProjectRuns || hasStatusFilter;
+  const hasRunSearch = activeSearchRunId.length > 0;
+  const shouldShowTableArea = hasProjectRuns || hasStatusFilter || hasRunSearch;
   const pageStart = runsTotal > 0 ? runsOffset + 1 : 0;
   const pageEnd = Math.min(runsOffset + runs.length, runsTotal);
   const canGoToPreviousPage = runsOffset > 0;
@@ -132,6 +137,8 @@ export function HomePage() {
       const project = await getOrCreateDefaultProject();
       await createRun(project);
 
+      setSearchRunId("");
+      setActiveSearchRunId("");
       setRunsOffset(0);
       await refreshRunsPage(project, 0, selectedStatuses);
     } catch (error) {
@@ -142,6 +149,11 @@ export function HomePage() {
   }
 
   async function refreshRuns(project: DefaultProject) {
+    if (activeSearchRunId.length > 0) {
+      await refreshRunSearch(project, activeSearchRunId);
+      return;
+    }
+
     await refreshRunsPage(project, runsOffset, selectedStatuses);
   }
 
@@ -239,6 +251,62 @@ export function HomePage() {
     await refreshRuns(cachedProject);
   }
 
+  async function refreshRunSearch(project: DefaultProject, runId: string) {
+    setIsRefreshingRuns(true);
+    setRunCreationError(null);
+
+    try {
+      const [run, latestRunSummary] = await Promise.all([
+        getProjectRun(project, runId),
+        getRunSummary(project),
+      ]);
+      setRuns(run === null ? [] : [toRunListItem(run)]);
+      setRunsTotal(run === null ? 0 : 1);
+      setRunsOffset(0);
+      setRunSummary(latestRunSummary);
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to search run.");
+    } finally {
+      setIsRefreshingRuns(false);
+    }
+  }
+
+  async function handleRunSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const runId = searchRunId.trim();
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    if (runId.length === 0) {
+      setActiveSearchRunId("");
+      setRunsOffset(0);
+      await refreshRunsPage(cachedProject, 0, selectedStatuses);
+      return;
+    }
+
+    setSelectedStatuses([]);
+    setActiveSearchRunId(runId);
+    await refreshRunSearch(cachedProject, runId);
+  }
+
+  async function handleClearRunSearch() {
+    setSearchRunId("");
+    setActiveSearchRunId("");
+
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    setRunsOffset(0);
+    await refreshRunsPage(cachedProject, 0, selectedStatuses);
+  }
+
   async function handlePreviousRunsPage() {
     const cachedProject = getCachedDefaultProject();
 
@@ -261,6 +329,8 @@ export function HomePage() {
 
   async function handleSelectedStatusesChange(statuses: RunStatus[]) {
     setSelectedStatuses(statuses);
+    setSearchRunId("");
+    setActiveSearchRunId("");
     setRunsOffset(0);
 
     const cachedProject = getCachedDefaultProject();
@@ -347,15 +417,33 @@ export function HomePage() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
-              <label className="border-border bg-surface-alt text-text-secondary flex h-10 min-w-64 items-center gap-2 rounded-md border px-3 text-sm">
+              <form
+                className="border-border bg-surface-alt text-text-secondary flex h-10 min-w-64 items-center gap-2 rounded-md border px-3 text-sm"
+                onSubmit={handleRunSearchSubmit}
+              >
                 <FiSearch className="size-4" aria-hidden="true" />
-                <span className="sr-only">Search runs</span>
+                <label className="sr-only" htmlFor="run-search">
+                  Search by run UUID
+                </label>
                 <input
                   className="placeholder:text-muted text-text min-w-0 flex-1 bg-transparent outline-none"
-                  placeholder="Search runs"
+                  id="run-search"
+                  onChange={(event) => setSearchRunId(event.target.value)}
+                  placeholder="Search by run UUID"
+                  value={searchRunId}
                   type="search"
                 />
-              </label>
+                {searchRunId.length > 0 ? (
+                  <Button
+                    aria-label="Clear run search"
+                    className="hover:bg-surface focus-visible:outline-secondary text-text-secondary inline-flex size-6 items-center justify-center rounded transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                    onClick={handleClearRunSearch}
+                    type="button"
+                  >
+                    <FiX className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </form>
               <StatusFilter
                 selectedStatuses={selectedStatuses}
                 onSelectedStatusesChange={handleSelectedStatusesChange}
@@ -378,9 +466,13 @@ export function HomePage() {
                   <div className="bg-surface-alt text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-lg">
                     <FiSearch className="size-5" aria-hidden="true" />
                   </div>
-                  <h3 className="text-lg font-semibold tracking-normal">No matching runs</h3>
+                  <h3 className="text-lg font-semibold tracking-normal">
+                    {hasRunSearch ? "No run found" : "No matching runs"}
+                  </h3>
                   <p className="text-text-secondary mt-2 text-sm leading-6">
-                    Adjust the status filter to bring more executions back into view.
+                    {hasRunSearch
+                      ? "Check the run UUID and try again."
+                      : "Adjust the status filter to bring more executions back into view."}
                   </p>
                 </div>
               </div>
@@ -396,11 +488,11 @@ export function HomePage() {
                   )}
                 </div>
                 <h3 className="text-lg font-semibold tracking-normal">
-                  {isLoadingRuns ? "Starting demo run" : "No runs yet"}
+                  {isLoadingRuns ? "Starting run" : "No runs yet"}
                 </h3>
                 <p className="text-text-secondary mt-2 text-sm leading-6">
                   {isLoadingRuns
-                    ? "Preparing sample executions for the workspace."
+                    ? "Preparing execution for this workspace."
                     : "Create a run to populate this workspace with execution activity."}
                 </p>
               </div>
@@ -409,26 +501,30 @@ export function HomePage() {
           {shouldShowTableArea ? (
             <div className="border-border flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-text-secondary text-sm">
-                Showing {pageStart}-{pageEnd} of {runsTotal}
+                {hasRunSearch
+                  ? `Search result for ${activeSearchRunId}`
+                  : `Showing ${pageStart}-${pageEnd} of ${runsTotal}`}
               </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!canGoToPreviousPage || isRefreshingRuns}
-                  onClick={handlePreviousRunsPage}
-                >
-                  <FiChevronLeft className="size-4" aria-hidden="true" />
-                  Previous
-                </Button>
-                <Button
-                  className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!canGoToNextPage || isRefreshingRuns}
-                  onClick={handleNextRunsPage}
-                >
-                  Next
-                  <FiChevronRight className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
+              {hasRunSearch ? null : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canGoToPreviousPage || isRefreshingRuns}
+                    onClick={handlePreviousRunsPage}
+                  >
+                    <FiChevronLeft className="size-4" aria-hidden="true" />
+                    Previous
+                  </Button>
+                  <Button
+                    className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canGoToNextPage || isRefreshingRuns}
+                    onClick={handleNextRunsPage}
+                  >
+                    Next
+                    <FiChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              )}
             </div>
           ) : null}
         </section>
