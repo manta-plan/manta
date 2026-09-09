@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.entities import Project, Run
-from manta.services.results.run_result import CreateRunResult, GetRunLogsResult, GetRunResult
+from manta.services.results.run_result import (
+    CreateRunResult,
+    GetRunLogsResult,
+    GetRunResult,
+    ListRunsResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,28 +86,30 @@ class RunService:
 
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
-    def list_runs(self, project_uuid: UUID) -> list[GetRunResult]:
+    def list_runs(self, project_uuid: UUID, limit: int, offset: int) -> ListRunsResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        runs = (
-            self.db.query(Run)
-            .filter(Run.project_id == project.id)
-            .order_by(desc(Run.created_at))
-            .all()
-        )
+        runs_query = self.db.query(Run).filter(Run.project_id == project.id)
+        total = runs_query.count()
+        runs = runs_query.order_by(desc(Run.created_at)).offset(offset).limit(limit).all()
         flow_runs = asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
 
-        return [
-            GetRunResult(
-                uuid=run.uuid,
-                project_uuid=project.uuid,
-                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
-                created_at=run.created_at,
-            )
-            for run in runs
-        ]
+        return ListRunsResult(
+            items=[
+                GetRunResult(
+                    uuid=run.uuid,
+                    project_uuid=project.uuid,
+                    status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
+                    created_at=run.created_at,
+                )
+                for run in runs
+            ],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_run(self, run_uuid: UUID) -> GetRunResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()

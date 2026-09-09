@@ -1,6 +1,6 @@
 import { Button } from "@base-ui/react/button";
 import { useEffect, useState } from "react";
-import { FiPlay, FiRefreshCw, FiSearch } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch } from "react-icons/fi";
 import {
   createRun,
   getCachedDefaultProject,
@@ -20,8 +20,12 @@ import type {
   RunStatus,
 } from "../features/runs/types";
 
+const runsPageSize = 10;
+
 export function HomePage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
+  const [runsOffset, setRunsOffset] = useState(0);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
@@ -31,12 +35,42 @@ export function HomePage() {
 
   useEffect(() => {
     const cachedProject = getCachedDefaultProject();
+    let isActive = true;
 
     if (cachedProject === null) {
       return;
     }
 
-    void refreshRuns(cachedProject);
+    const project = cachedProject;
+
+    async function loadInitialRuns() {
+      setIsRefreshingRuns(true);
+      setRunCreationError(null);
+
+      try {
+        const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset: 0 });
+
+        if (isActive) {
+          setRuns(fetchedRuns.items.map(toRunListItem));
+          setRunsTotal(fetchedRuns.total);
+          setRunsOffset(fetchedRuns.offset);
+        }
+      } catch (error) {
+        if (isActive) {
+          setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
+        }
+      } finally {
+        if (isActive) {
+          setIsRefreshingRuns(false);
+        }
+      }
+    }
+
+    void loadInitialRuns();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   const hasRuns = runs.length > 0;
@@ -44,6 +78,10 @@ export function HomePage() {
     selectedStatuses.length > 0
       ? runs.filter((run) => selectedStatuses.includes(run.status))
       : runs;
+  const pageStart = runsTotal > 0 ? runsOffset + 1 : 0;
+  const pageEnd = Math.min(runsOffset + runs.length, runsTotal);
+  const canGoToPreviousPage = runsOffset > 0;
+  const canGoToNextPage = runsOffset + runsPageSize < runsTotal;
 
   const runStats = [
     {
@@ -78,21 +116,10 @@ export function HomePage() {
 
     try {
       const project = await getOrCreateDefaultProject();
-      const run = await createRun(project);
+      await createRun(project);
 
-      setRuns((currentRuns) => [
-        {
-          id: run.uuid,
-          name: "Pi digit statistics",
-          playbook: "Pi Digit Statistics",
-          status: "Queued",
-          startedAt: run.created_at,
-          durationSeconds: null,
-          trigger: "Manual",
-          owner: "Guest",
-        },
-        ...currentRuns,
-      ]);
+      setRunsOffset(0);
+      await refreshRunsPage(project, 0);
     } catch (error) {
       setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
@@ -101,12 +128,18 @@ export function HomePage() {
   }
 
   async function refreshRuns(project: DefaultProject) {
+    await refreshRunsPage(project, runsOffset);
+  }
+
+  async function refreshRunsPage(project: DefaultProject, offset: number) {
     setIsRefreshingRuns(true);
     setRunCreationError(null);
 
     try {
-      const fetchedRuns = await listRuns(project);
-      setRuns(fetchedRuns.map(toRunListItem));
+      const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset });
+      setRuns(fetchedRuns.items.map(toRunListItem));
+      setRunsTotal(fetchedRuns.total);
+      setRunsOffset(fetchedRuns.offset);
     } catch (error) {
       setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
     } finally {
@@ -181,6 +214,26 @@ export function HomePage() {
     }
 
     await refreshRuns(cachedProject);
+  }
+
+  async function handlePreviousRunsPage() {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, Math.max(runsOffset - runsPageSize, 0));
+  }
+
+  async function handleNextRunsPage() {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, runsOffset + runsPageSize);
   }
 
   return (
@@ -317,6 +370,31 @@ export function HomePage() {
               </div>
             </div>
           )}
+          {hasRuns ? (
+            <div className="border-border flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-text-secondary text-sm">
+                Showing {pageStart}-{pageEnd} of {runsTotal}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canGoToPreviousPage || isRefreshingRuns}
+                  onClick={handlePreviousRunsPage}
+                >
+                  <FiChevronLeft className="size-4" aria-hidden="true" />
+                  Previous
+                </Button>
+                <Button
+                  className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canGoToNextPage || isRefreshingRuns}
+                  onClick={handleNextRunsPage}
+                >
+                  Next
+                  <FiChevronRight className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </section>
     </main>

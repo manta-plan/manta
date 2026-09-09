@@ -195,13 +195,16 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     service = RunService(db=db)
 
     # When
-    result = service.list_runs(project_uuid=project.uuid)
+    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0)
 
     # Then
-    assert [run.uuid for run in result] == [first_run.uuid, second_run.uuid]
-    assert [run.project_uuid for run in result] == [project.uuid, project.uuid]
-    assert [run.status for run in result] == ["COMPLETED", "RUNNING"]
-    assert [run.created_at for run in result] == [first_run.created_at, second_run.created_at]
+    assert result.total == 2
+    assert result.limit == 10
+    assert result.offset == 0
+    assert [run.uuid for run in result.items] == [first_run.uuid, second_run.uuid]
+    assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
+    assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
+    assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
 
 
 def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
@@ -211,7 +214,7 @@ def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.list_runs(project_uuid=uuid4())
+        service.list_runs(project_uuid=uuid4(), limit=10, offset=0)
     assert exc_info.value.status_code == 404
 
 

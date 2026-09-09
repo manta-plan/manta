@@ -20,7 +20,12 @@ export type GetRunResponse = {
   created_at: string;
 };
 
-export type ListRunsResponse = GetRunResponse[];
+export type ListRunsResponse = {
+  items: GetRunResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+};
 
 export type GetRunLogsResponse = {
   uuid: string;

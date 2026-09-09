@@ -57,9 +57,18 @@ export async function createRun(project: DefaultProject) {
   }
 }
 
-export async function listRuns(project: DefaultProject) {
+type ListRunsParams = {
+  limit: number;
+  offset: number;
+};
+
+export async function listRuns(project: DefaultProject, params: ListRunsParams) {
   try {
-    const searchParams = new URLSearchParams({ project_uuid: project.uuid });
+    const searchParams = new URLSearchParams({
+      project_uuid: project.uuid,
+      limit: String(params.limit),
+      offset: String(params.offset),
+    });
     return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {

@@ -19,6 +19,13 @@ class GetRunResult(BaseModel):
     created_at: datetime
 
 
+class ListRunsResult(BaseModel):
+    items: list[GetRunResult]
+    total: int
+    limit: int
+    offset: int
+
+
 class GetRunLogsResult(BaseModel):
     uuid: UUID
     logs: list[str]

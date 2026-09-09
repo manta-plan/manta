@@ -15,6 +15,12 @@ class _FakeQuery:
     def order_by(self, *_args, **_kwargs):
         return self
 
+    def offset(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
     def one_or_none(self):
         return self._result
 
@@ -22,6 +28,11 @@ class _FakeQuery:
         if isinstance(self._result, list):
             return self._result
         return []
+
+    def count(self):
+        if isinstance(self._result, list):
+            return len(self._result)
+        return 0
 
 
 class _MockSession:
