@@ -7,6 +7,7 @@ from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
@@ -21,6 +22,14 @@ PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
 async def _read_flow_run(flow_run_id: UUID) -> FlowRun:
     async with get_client() as client:
         return await client.read_flow_run(flow_run_id)
+
+
+async def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
+    async with get_client() as client:
+        flow_runs = {}
+        for flow_run_id in flow_run_ids:
+            flow_runs[flow_run_id] = await client.read_flow_run(flow_run_id)
+        return flow_runs
 
 
 async def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
@@ -71,6 +80,29 @@ class RunService:
         )
 
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
+
+    def list_runs(self, project_uuid: UUID) -> list[GetRunResult]:
+        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+
+        runs = (
+            self.db.query(Run)
+            .filter(Run.project_id == project.id)
+            .order_by(desc(Run.created_at))
+            .all()
+        )
+        flow_runs = asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+
+        return [
+            GetRunResult(
+                uuid=run.uuid,
+                project_uuid=project.uuid,
+                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
+                created_at=run.created_at,
+            )
+            for run in runs
+        ]
 
     def get_run(self, run_uuid: UUID) -> GetRunResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()

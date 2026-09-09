@@ -20,6 +20,11 @@ def create_run(request: CreateRunRequest, service: RunService = Depends()) -> Cr
     )
 
 
+@router.get("", response_model=list[GetRunResult])
+def list_runs(project_uuid: UUID, service: RunService = Depends()) -> list[GetRunResult]:
+    return service.list_runs(project_uuid)
+
+
 @router.get("/{run_uuid}", response_model=GetRunResult)
 def get_run(run_uuid: UUID, service: RunService = Depends()) -> GetRunResult:
     return service.get_run(run_uuid)

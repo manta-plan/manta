@@ -171,6 +171,50 @@ def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     assert exc_info.value.status_code == 404
 
 
+def test_list_runs_returns_project_runs_with_prefect_statuses(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    first_run = _existing_run(project)
+    second_run = _existing_run(project)
+    second_run.id = 2
+    second_run.uuid = uuid4()
+    second_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [first_run, second_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        AsyncMock(
+            return_value={
+                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.list_runs(project_uuid=project.uuid)
+
+    # Then
+    assert [run.uuid for run in result] == [first_run.uuid, second_run.uuid]
+    assert [run.project_uuid for run in result] == [project.uuid, project.uuid]
+    assert [run.status for run in result] == ["COMPLETED", "RUNNING"]
+    assert [run.created_at for run in result] == [first_run.created_at, second_run.created_at]
+
+
+def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
+    # Given
+    db = mock_db_class(query_results={Project: None})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.list_runs(project_uuid=uuid4())
+    assert exc_info.value.status_code == 404
+
+
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     monkeypatch: pytest.MonkeyPatch,
     mock_db_class,
