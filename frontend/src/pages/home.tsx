@@ -1,11 +1,24 @@
 import { Button } from "@base-ui/react/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FiPlay, FiRefreshCw, FiSearch } from "react-icons/fi";
-import { createRun, getOrCreateDefaultProject, getRun, getRunLogs } from "../features/runs/api";
+import {
+  createRun,
+  getCachedDefaultProject,
+  getOrCreateDefaultProject,
+  getRun,
+  getRunLogs,
+  listRuns,
+} from "../features/runs/api";
 import { RunsTable } from "../features/runs/components/runs-table";
 import { StatusFilter } from "../features/runs/components/status-filter";
 import { normalizeRunStatus } from "../features/runs/status";
-import type { ExpandedRunState, RunListItem, RunStatus } from "../features/runs/types";
+import type {
+  DefaultProject,
+  ExpandedRunState,
+  GetRunResponse,
+  RunListItem,
+  RunStatus,
+} from "../features/runs/types";
 
 export function HomePage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
@@ -15,6 +28,16 @@ export function HomePage() {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
+
+  useEffect(() => {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    void refreshRuns(cachedProject);
+  }, []);
 
   const hasRuns = runs.length > 0;
   const filteredRuns =
@@ -77,6 +100,20 @@ export function HomePage() {
     }
   }
 
+  async function refreshRuns(project: DefaultProject) {
+    setIsRefreshingRuns(true);
+    setRunCreationError(null);
+
+    try {
+      const fetchedRuns = await listRuns(project);
+      setRuns(fetchedRuns.map(toRunListItem));
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
+    } finally {
+      setIsRefreshingRuns(false);
+    }
+  }
+
   async function refreshRunDetails(runId: string) {
     setExpandedRuns((currentExpandedRuns) => ({
       ...currentExpandedRuns,
@@ -136,13 +173,14 @@ export function HomePage() {
     await refreshRunDetails(runId);
   }
 
-  function handleRefreshRuns() {
-    setIsRefreshingRuns(true);
+  async function handleRefreshRuns() {
+    const cachedProject = getCachedDefaultProject();
 
-    window.setTimeout(() => {
-      setRuns((currentRuns) => (currentRuns.length > 0 ? [...currentRuns] : currentRuns));
-      setIsRefreshingRuns(false);
-    }, 1000);
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRuns(cachedProject);
   }
 
   return (
@@ -283,4 +321,17 @@ export function HomePage() {
       </section>
     </main>
   );
+}
+
+function toRunListItem(run: GetRunResponse): RunListItem {
+  return {
+    id: run.uuid,
+    name: "Pi digit statistics",
+    playbook: "Pi Digit Statistics",
+    status: normalizeRunStatus(run.status),
+    startedAt: run.created_at,
+    durationSeconds: null,
+    trigger: "Manual",
+    owner: "Guest",
+  };
 }

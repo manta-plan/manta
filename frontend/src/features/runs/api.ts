@@ -5,6 +5,7 @@ import type {
   DefaultProject,
   GetRunLogsResponse,
   GetRunResponse,
+  ListRunsResponse,
 } from "./types";
 
 const defaultProjectPayload = {
@@ -18,11 +19,21 @@ const defaultRunPayload = {
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
 
-export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
+export function getCachedDefaultProject(): DefaultProject | null {
   const cachedProjectUuid = window.sessionStorage.getItem(defaultProjectSessionStorageKey);
 
-  if (cachedProjectUuid !== null) {
-    return { uuid: cachedProjectUuid, wasCached: true };
+  if (cachedProjectUuid === null) {
+    return null;
+  }
+
+  return { uuid: cachedProjectUuid, wasCached: true };
+}
+
+export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
+  const cachedProject = getCachedDefaultProject();
+
+  if (cachedProject !== null) {
+    return cachedProject;
   }
 
   const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
@@ -37,6 +48,19 @@ export async function createRun(project: DefaultProject) {
       project_uuid: project.uuid,
       num_pi_digits: defaultRunPayload.num_pi_digits,
     });
+  } catch (error) {
+    if (project.wasCached && error instanceof ApiError && error.status === 404) {
+      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
+    }
+
+    throw error;
+  }
+}
+
+export async function listRuns(project: DefaultProject) {
+  try {
+    const searchParams = new URLSearchParams({ project_uuid: project.uuid });
+    return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {
       window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
