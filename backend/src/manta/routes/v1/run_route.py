@@ -1,6 +1,7 @@
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from manta.routes.v1.requests.list_runs_request import ListRunsRequest
 from manta.routes.v1.requests.run_request import CreateRunRequest
@@ -25,7 +26,7 @@ def create_run(request: CreateRunRequest, service: RunService = Depends()) -> Cr
 
 @router.get("", response_model=ListRunsResult)
 def list_runs(
-    request: ListRunsRequest = Depends(),
+    request: Annotated[ListRunsRequest, Query()],
     service: RunService = Depends(),
 ) -> ListRunsResult:
     return service.list_runs(
