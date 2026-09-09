@@ -4,6 +4,7 @@ from uuid import UUID
 
 import httpx2
 import psycopg
+from keycloak.openid_connection import KeycloakOpenID
 from prefect.client.orchestration import SyncPrefectClient
 from prefect.exceptions import ObjectNotFound
 
@@ -24,10 +25,16 @@ _RUN_COMPLETION_TIMEOUT = 90.0
 _LOGS_AVAILABLE_TIMEOUT = 15.0
 
 
-def _create_project(app_server: str) -> str:
+def _auth_headers(kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
+    token = kc_oidc_client.token("manta-admin", "manta-admin")
+    return {"Authorization": f"Bearer {token['access_token']}"}
+
+
+def _create_project(app_server: str, kc_oidc_client: KeycloakOpenID) -> str:
     response = httpx2.post(
         f"{app_server}/v1/projects",
         json={"name": "Pi Digit Stats Project", "description": "Integration test project"},
+        headers=_auth_headers(kc_oidc_client),
     )
     assert response.status_code == 201
     return response.json()["uuid"]
@@ -96,11 +103,14 @@ def _wait_for_logs(
 
 
 def test_create_and_run_pi_digit_stats(
-    app_server: str, db_connection: psycopg.Connection, prefect_service: dict[str, str]
+    app_server: str,
+    db_connection: psycopg.Connection,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
 ) -> None:
     # Given a project, and the flow-serving subprocess's deployment registered
     # with the Prefect server
-    project_uuid = _create_project(app_server)
+    project_uuid = _create_project(app_server, kc_oidc_client)
     _wait_for_deployment_registered(prefect_service)
 
     # When a run is created against it, with a small digit count to keep the
@@ -144,10 +154,13 @@ def test_create_and_run_pi_digit_stats(
 
 
 def test_run_survives_project_deletion_with_project_id_set_to_null(
-    app_server: str, db_connection: psycopg.Connection, prefect_service: dict[str, str]
+    app_server: str,
+    db_connection: psycopg.Connection,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
 ) -> None:
     # Given a project with a run against it
-    project_uuid = _create_project(app_server)
+    project_uuid = _create_project(app_server, kc_oidc_client)
     _wait_for_deployment_registered(prefect_service)
     body = _create_run(app_server, project_uuid, num_pi_digits=1000)
     run_uuid = body["uuid"]

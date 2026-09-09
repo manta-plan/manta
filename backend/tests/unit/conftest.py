@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from keycloak import KeycloakOpenID
 
 
 class _FakeQuery:
@@ -24,6 +25,7 @@ class _MockSession:
         self._query_results = query_results or {}
         self.add = MagicMock(side_effect=self._assign_generated_fields)
         self.commit = MagicMock()
+        self.flush = MagicMock()
 
     def query(self, model: type):
         return _FakeQuery(self._query_results.get(model))
@@ -61,3 +63,8 @@ class _MockS3Client:
 @pytest.fixture
 def mock_s3_client() -> _MockS3Client:
     return _MockS3Client()
+
+
+@pytest.fixture
+def mock_kc_client() -> MagicMock:
+    return MagicMock(spec=KeycloakOpenID)
