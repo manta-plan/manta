@@ -16,6 +16,7 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunSummaryResult,
     ListRunsResult,
 )
 
@@ -56,6 +57,35 @@ def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | No
 
     normalized_status_filters = {status_filter.upper() for status_filter in status_filters}
     return normalized_status_filters or None
+
+
+def _status_bucket(status: str) -> str:
+    match status.upper():
+        case "RUNNING":
+            return "running"
+        case "COMPLETED":
+            return "completed"
+        case "FAILED" | "CRASHED" | "CANCELLED":
+            return "failed"
+        case "SCHEDULED" | "PENDING" | "PAUSED":
+            return "queued"
+        case _:
+            return "unknown"
+
+
+def _build_run_summary(run_results: list[GetRunResult]) -> GetRunSummaryResult:
+    counts = {
+        "running": 0,
+        "completed": 0,
+        "failed": 0,
+        "queued": 0,
+        "unknown": 0,
+    }
+
+    for run_result in run_results:
+        counts[_status_bucket(run_result.status)] += 1
+
+    return GetRunSummaryResult(total=len(run_results), **counts)
 
 
 class RunService:
@@ -101,23 +131,10 @@ class RunService:
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        runs = (
-            self.db.query(Run)
-            .filter(Run.project_id == project.id)
-            .order_by(desc(Run.created_at))
-            .all()
-        )
-        flow_runs = asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+        runs = self._list_project_runs(project.id)
+        flow_runs = self._read_project_flow_runs(runs)
         normalized_status_filters = _normalize_status_filters(status_filters)
-        run_results = [
-            GetRunResult(
-                uuid=run.uuid,
-                project_uuid=project.uuid,
-                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
-                created_at=run.created_at,
-            )
-            for run in runs
-        ]
+        run_results = self._build_run_results(project.uuid, runs, flow_runs)
         filtered_run_results = [
             run_result
             for run_result in run_results
@@ -131,7 +148,41 @@ class RunService:
             total=len(filtered_run_results),
             limit=limit,
             offset=offset,
+            summary=_build_run_summary(run_results),
         )
+
+    def get_run_summary(self, project_uuid: UUID) -> GetRunSummaryResult:
+        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+
+        runs = self._list_project_runs(project.id)
+        flow_runs = self._read_project_flow_runs(runs)
+        return _build_run_summary(self._build_run_results(project.uuid, runs, flow_runs))
+
+    def _list_project_runs(self, project_id: int) -> list[Run]:
+        return (
+            self.db.query(Run)
+            .filter(Run.project_id == project_id)
+            .order_by(desc(Run.created_at))
+            .all()
+        )
+
+    def _read_project_flow_runs(self, runs: list[Run]) -> dict[UUID, FlowRun]:
+        return asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+
+    def _build_run_results(
+        self, project_uuid: UUID, runs: list[Run], flow_runs: dict[UUID, FlowRun]
+    ) -> list[GetRunResult]:
+        return [
+            GetRunResult(
+                uuid=run.uuid,
+                project_uuid=project_uuid,
+                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
+                created_at=run.created_at,
+            )
+            for run in runs
+        ]
 
     def get_run(self, run_uuid: UUID) -> GetRunResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()

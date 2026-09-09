@@ -19,11 +19,21 @@ class GetRunResult(BaseModel):
     created_at: datetime
 
 
+class GetRunSummaryResult(BaseModel):
+    total: int
+    running: int
+    completed: int
+    failed: int
+    queued: int
+    unknown: int
+
+
 class ListRunsResult(BaseModel):
     items: list[GetRunResult]
     total: int
     limit: int
     offset: int
+    summary: GetRunSummaryResult
 
 
 class GetRunLogsResult(BaseModel):

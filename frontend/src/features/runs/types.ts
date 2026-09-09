@@ -25,6 +25,16 @@ export type ListRunsResponse = {
   total: number;
   limit: number;
   offset: number;
+  summary: GetRunSummaryResponse;
+};
+
+export type GetRunSummaryResponse = {
+  total: number;
+  running: number;
+  completed: number;
+  failed: number;
+  queued: number;
+  unknown: number;
 };
 
 export type GetRunLogsResponse = {

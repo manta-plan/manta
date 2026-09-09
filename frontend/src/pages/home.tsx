@@ -7,6 +7,7 @@ import {
   getOrCreateDefaultProject,
   getRun,
   getRunLogs,
+  getRunSummary,
   listRuns,
 } from "../features/runs/api";
 import { RunsTable } from "../features/runs/components/runs-table";
@@ -21,11 +22,20 @@ import type {
 } from "../features/runs/types";
 
 const runsPageSize = 10;
+const emptyRunSummary = {
+  total: 0,
+  running: 0,
+  completed: 0,
+  failed: 0,
+  queued: 0,
+  unknown: 0,
+};
 
 export function HomePage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [runsTotal, setRunsTotal] = useState(0);
   const [runsOffset, setRunsOffset] = useState(0);
+  const [runSummary, setRunSummary] = useState(emptyRunSummary);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
@@ -58,6 +68,7 @@ export function HomePage() {
           setRuns(fetchedRuns.items.map(toRunListItem));
           setRunsTotal(fetchedRuns.total);
           setRunsOffset(fetchedRuns.offset);
+          setRunSummary(fetchedRuns.summary);
         }
       } catch (error) {
         if (isActive) {
@@ -78,8 +89,9 @@ export function HomePage() {
   }, []);
 
   const hasRuns = runs.length > 0;
+  const hasProjectRuns = runSummary.total > 0;
   const hasStatusFilter = selectedStatuses.length > 0;
-  const shouldShowTableArea = hasRuns || hasStatusFilter;
+  const shouldShowTableArea = hasProjectRuns || hasStatusFilter;
   const pageStart = runsTotal > 0 ? runsOffset + 1 : 0;
   const pageEnd = Math.min(runsOffset + runs.length, runsTotal);
   const canGoToPreviousPage = runsOffset > 0;
@@ -88,27 +100,27 @@ export function HomePage() {
   const runStats = [
     {
       label: "Running",
-      value: String(runs.filter((run) => run.status === "Running").length),
+      value: String(runSummary.running),
       tone: "text-secondary",
-      detail: hasRuns ? "active simulations" : "no active runs",
+      detail: hasProjectRuns ? "active simulations" : "no active runs",
     },
     {
       label: "Completed",
-      value: String(runs.filter((run) => run.status === "Completed").length),
+      value: String(runSummary.completed),
       tone: "text-primary",
-      detail: hasRuns ? "ready to inspect" : "no results yet",
+      detail: hasProjectRuns ? "ready to inspect" : "no results yet",
     },
     {
       label: "Failed",
-      value: String(runs.filter((run) => run.status === "Failed").length),
+      value: String(runSummary.failed),
       tone: "text-red-600",
-      detail: hasRuns ? "needs review" : "clear",
+      detail: hasProjectRuns ? "needs review" : "clear",
     },
     {
       label: "Queued",
-      value: String(runs.filter((run) => run.status === "Queued").length),
+      value: String(runSummary.queued),
       tone: "text-text",
-      detail: hasRuns ? "waiting for workers" : "empty queue",
+      detail: hasProjectRuns ? "waiting for workers" : "empty queue",
     },
   ];
 
@@ -142,6 +154,7 @@ export function HomePage() {
       setRuns(fetchedRuns.items.map(toRunListItem));
       setRunsTotal(fetchedRuns.total);
       setRunsOffset(fetchedRuns.offset);
+      setRunSummary(fetchedRuns.summary);
     } catch (error) {
       setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
     } finally {
@@ -161,7 +174,12 @@ export function HomePage() {
     }));
 
     try {
-      const [detail, logs] = await Promise.all([getRun(runId), getRunLogs(runId)]);
+      const cachedProject = getCachedDefaultProject();
+      const [detail, logs, latestRunSummary] = await Promise.all([
+        getRun(runId),
+        getRunLogs(runId),
+        cachedProject === null ? Promise.resolve(null) : getRunSummary(cachedProject),
+      ]);
       const runStatus = normalizeRunStatus(logs.run_status || detail.status);
 
       setRuns((currentRuns) =>
@@ -178,6 +196,9 @@ export function HomePage() {
           logs,
         },
       }));
+      if (latestRunSummary !== null) {
+        setRunSummary(latestRunSummary);
+      }
     } catch (error) {
       setExpandedRuns((currentExpandedRuns) => ({
         ...currentExpandedRuns,

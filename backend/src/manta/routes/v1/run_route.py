@@ -8,6 +8,7 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunSummaryResult,
     ListRunsResult,
 )
 from manta.services.run_service import RunService
@@ -33,6 +34,11 @@ def list_runs(
     return service.list_runs(
         project_uuid=project_uuid, limit=limit, offset=offset, status_filters=statuses
     )
+
+
+@router.get("/summary", response_model=GetRunSummaryResult)
+def get_run_summary(project_uuid: UUID, service: RunService = Depends()) -> GetRunSummaryResult:
+    return service.get_run_summary(project_uuid)
 
 
 @router.get("/{run_uuid}", response_model=GetRunResult)

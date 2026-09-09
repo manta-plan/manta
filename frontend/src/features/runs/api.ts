@@ -6,6 +6,7 @@ import type {
   DefaultProject,
   GetRunLogsResponse,
   GetRunResponse,
+  GetRunSummaryResponse,
   ListRunsResponse,
   RunStatus,
 } from "./types";
@@ -76,6 +77,19 @@ export async function listRuns(project: DefaultProject, params: ListRunsParams) 
       searchParams.append("status", status);
     });
     return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
+  } catch (error) {
+    if (project.wasCached && error instanceof ApiError && error.status === 404) {
+      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
+    }
+
+    throw error;
+  }
+}
+
+export async function getRunSummary(project: DefaultProject) {
+  try {
+    const searchParams = new URLSearchParams({ project_uuid: project.uuid });
+    return await getJson<GetRunSummaryResponse>(`/v1/runs/summary?${searchParams.toString()}`);
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {
       window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
