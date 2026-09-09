@@ -27,9 +27,12 @@ def list_runs(
     project_uuid: UUID,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     offset: Annotated[int, Query(ge=0)] = 0,
+    statuses: Annotated[list[str] | None, Query(alias="status")] = None,
     service: RunService = Depends(),
 ) -> ListRunsResult:
-    return service.list_runs(project_uuid=project_uuid, limit=limit, offset=offset)
+    return service.list_runs(
+        project_uuid=project_uuid, limit=limit, offset=offset, status_filters=statuses
+    )
 
 
 @router.get("/{run_uuid}", response_model=GetRunResult)

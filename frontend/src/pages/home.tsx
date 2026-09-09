@@ -48,7 +48,11 @@ export function HomePage() {
       setRunCreationError(null);
 
       try {
-        const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset: 0 });
+        const fetchedRuns = await listRuns(project, {
+          limit: runsPageSize,
+          offset: 0,
+          statuses: [],
+        });
 
         if (isActive) {
           setRuns(fetchedRuns.items.map(toRunListItem));
@@ -74,10 +78,8 @@ export function HomePage() {
   }, []);
 
   const hasRuns = runs.length > 0;
-  const filteredRuns =
-    selectedStatuses.length > 0
-      ? runs.filter((run) => selectedStatuses.includes(run.status))
-      : runs;
+  const hasStatusFilter = selectedStatuses.length > 0;
+  const shouldShowTableArea = hasRuns || hasStatusFilter;
   const pageStart = runsTotal > 0 ? runsOffset + 1 : 0;
   const pageEnd = Math.min(runsOffset + runs.length, runsTotal);
   const canGoToPreviousPage = runsOffset > 0;
@@ -119,7 +121,7 @@ export function HomePage() {
       await createRun(project);
 
       setRunsOffset(0);
-      await refreshRunsPage(project, 0);
+      await refreshRunsPage(project, 0, selectedStatuses);
     } catch (error) {
       setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
@@ -128,15 +130,15 @@ export function HomePage() {
   }
 
   async function refreshRuns(project: DefaultProject) {
-    await refreshRunsPage(project, runsOffset);
+    await refreshRunsPage(project, runsOffset, selectedStatuses);
   }
 
-  async function refreshRunsPage(project: DefaultProject, offset: number) {
+  async function refreshRunsPage(project: DefaultProject, offset: number, statuses: RunStatus[]) {
     setIsRefreshingRuns(true);
     setRunCreationError(null);
 
     try {
-      const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset });
+      const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset, statuses });
       setRuns(fetchedRuns.items.map(toRunListItem));
       setRunsTotal(fetchedRuns.total);
       setRunsOffset(fetchedRuns.offset);
@@ -223,7 +225,7 @@ export function HomePage() {
       return;
     }
 
-    await refreshRunsPage(cachedProject, Math.max(runsOffset - runsPageSize, 0));
+    await refreshRunsPage(cachedProject, Math.max(runsOffset - runsPageSize, 0), selectedStatuses);
   }
 
   async function handleNextRunsPage() {
@@ -233,7 +235,20 @@ export function HomePage() {
       return;
     }
 
-    await refreshRunsPage(cachedProject, runsOffset + runsPageSize);
+    await refreshRunsPage(cachedProject, runsOffset + runsPageSize, selectedStatuses);
+  }
+
+  async function handleSelectedStatusesChange(statuses: RunStatus[]) {
+    setSelectedStatuses(statuses);
+    setRunsOffset(0);
+
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, 0, statuses);
   }
 
   return (
@@ -322,15 +337,15 @@ export function HomePage() {
               </label>
               <StatusFilter
                 selectedStatuses={selectedStatuses}
-                onSelectedStatusesChange={setSelectedStatuses}
+                onSelectedStatusesChange={handleSelectedStatusesChange}
               />
             </div>
           </div>
 
-          {hasRuns ? (
-            filteredRuns.length > 0 ? (
+          {shouldShowTableArea ? (
+            hasRuns ? (
               <RunsTable
-                runs={filteredRuns}
+                runs={runs}
                 expandedRunId={expandedRunId}
                 expandedRuns={expandedRuns}
                 onRefreshRunDetails={refreshRunDetails}
@@ -370,7 +385,7 @@ export function HomePage() {
               </div>
             </div>
           )}
-          {hasRuns ? (
+          {shouldShowTableArea ? (
             <div className="border-border flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-text-secondary text-sm">
                 Showing {pageStart}-{pageEnd} of {runsTotal}

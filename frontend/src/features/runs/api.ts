@@ -1,4 +1,5 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
+import { getBackendStatusFilters } from "./status";
 import type {
   CreateProjectResponse,
   CreateRunResponse,
@@ -6,6 +7,7 @@ import type {
   GetRunLogsResponse,
   GetRunResponse,
   ListRunsResponse,
+  RunStatus,
 } from "./types";
 
 const defaultProjectPayload = {
@@ -60,6 +62,7 @@ export async function createRun(project: DefaultProject) {
 type ListRunsParams = {
   limit: number;
   offset: number;
+  statuses: RunStatus[];
 };
 
 export async function listRuns(project: DefaultProject, params: ListRunsParams) {
@@ -68,6 +71,9 @@ export async function listRuns(project: DefaultProject, params: ListRunsParams) 
       project_uuid: project.uuid,
       limit: String(params.limit),
       offset: String(params.offset),
+    });
+    getBackendStatusFilters(params.statuses).forEach((status) => {
+      searchParams.append("status", status);
     });
     return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
   } catch (error) {

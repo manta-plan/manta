@@ -43,6 +43,18 @@ export const statusOptions = Object.entries(statusMeta).map(([value, status]) =>
   value: value as RunStatus,
 }));
 
+const backendStatusesByRunStatus = {
+  Running: ["RUNNING"],
+  Completed: ["COMPLETED"],
+  Failed: ["FAILED", "CRASHED", "CANCELLED"],
+  Queued: ["SCHEDULED", "PENDING", "PAUSED"],
+  Unknown: ["UNKNOWN"],
+} satisfies Record<RunStatus, string[]>;
+
+export function getBackendStatusFilters(statuses: RunStatus[]) {
+  return statuses.flatMap((status) => backendStatusesByRunStatus[status]);
+}
+
 export function normalizeRunStatus(status: string): RunStatus {
   switch (status.toUpperCase()) {
     case "RUNNING":

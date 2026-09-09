@@ -50,6 +50,14 @@ def _flow_run_status(flow_run: FlowRun) -> str:
     return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
 
 
+def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | None:
+    if status_filters is None:
+        return None
+
+    normalized_status_filters = {status_filter.upper() for status_filter in status_filters}
+    return normalized_status_filters or None
+
+
 class RunService:
     def __init__(self, db: Session = Depends(get_db_session)) -> None:
         self.db = db
@@ -86,27 +94,41 @@ class RunService:
 
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
-    def list_runs(self, project_uuid: UUID, limit: int, offset: int) -> ListRunsResult:
+    def list_runs(
+        self, project_uuid: UUID, limit: int, offset: int, status_filters: list[str] | None
+    ) -> ListRunsResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        runs_query = self.db.query(Run).filter(Run.project_id == project.id)
-        total = runs_query.count()
-        runs = runs_query.order_by(desc(Run.created_at)).offset(offset).limit(limit).all()
+        runs = (
+            self.db.query(Run)
+            .filter(Run.project_id == project.id)
+            .order_by(desc(Run.created_at))
+            .all()
+        )
         flow_runs = asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+        normalized_status_filters = _normalize_status_filters(status_filters)
+        run_results = [
+            GetRunResult(
+                uuid=run.uuid,
+                project_uuid=project.uuid,
+                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
+                created_at=run.created_at,
+            )
+            for run in runs
+        ]
+        filtered_run_results = [
+            run_result
+            for run_result in run_results
+            if normalized_status_filters is None
+            or run_result.status.upper() in normalized_status_filters
+        ]
+        paginated_run_results = filtered_run_results[offset : offset + limit]
 
         return ListRunsResult(
-            items=[
-                GetRunResult(
-                    uuid=run.uuid,
-                    project_uuid=project.uuid,
-                    status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
-                    created_at=run.created_at,
-                )
-                for run in runs
-            ],
-            total=total,
+            items=paginated_run_results,
+            total=len(filtered_run_results),
             limit=limit,
             offset=offset,
         )

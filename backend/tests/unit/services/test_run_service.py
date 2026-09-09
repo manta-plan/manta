@@ -195,7 +195,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     service = RunService(db=db)
 
     # When
-    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0)
+    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0, status_filters=None)
 
     # Then
     assert result.total == 2
@@ -207,6 +207,40 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
 
 
+def test_list_runs_filters_project_runs_by_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    completed_run = _existing_run(project)
+    running_run = _existing_run(project)
+    running_run.id = 2
+    running_run.uuid = uuid4()
+    running_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [completed_run, running_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        AsyncMock(
+            return_value={
+                completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                running_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.list_runs(
+        project_uuid=project.uuid, limit=10, offset=0, status_filters=["running"]
+    )
+
+    # Then
+    assert result.total == 1
+    assert [run.uuid for run in result.items] == [running_run.uuid]
+    assert [run.status for run in result.items] == ["RUNNING"]
+
+
 def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Project: None})
@@ -214,7 +248,7 @@ def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.list_runs(project_uuid=uuid4(), limit=10, offset=0)
+        service.list_runs(project_uuid=uuid4(), limit=10, offset=0, status_filters=None)
     assert exc_info.value.status_code == 404
 
 
