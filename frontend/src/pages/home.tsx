@@ -19,18 +19,15 @@ import type {
   DefaultProject,
   ExpandedRunState,
   GetRunResponse,
+  GetRunSummaryResponse,
   RunListItem,
   RunStatus,
 } from "../features/runs/types";
 
 const runsPageSize = 10;
-const emptyRunSummary = {
+const emptyRunSummary: GetRunSummaryResponse = {
   total: 0,
-  running: 0,
-  completed: 0,
-  failed: 0,
-  queued: 0,
-  unknown: 0,
+  statuses: {},
 };
 
 export function HomePage() {
@@ -104,28 +101,28 @@ export function HomePage() {
 
   const runStats = [
     {
+      label: "Total Runs",
+      value: String(runSummary.total),
+      tone: "text-primary",
+      detail: hasProjectRuns ? "tracked in this project" : "no runs yet",
+    },
+    {
       label: "Running",
-      value: String(runSummary.running),
+      value: String(runSummary.statuses.RUNNING ?? 0),
       tone: "text-secondary",
-      detail: hasProjectRuns ? "active simulations" : "no active runs",
+      detail: hasProjectRuns ? "executing now" : "none active",
     },
     {
       label: "Completed",
-      value: String(runSummary.completed),
+      value: String(runSummary.statuses.COMPLETED ?? 0),
       tone: "text-primary",
-      detail: hasProjectRuns ? "ready to inspect" : "no results yet",
+      detail: hasProjectRuns ? "finished successfully" : "no results yet",
     },
     {
-      label: "Failed",
-      value: String(runSummary.failed),
-      tone: "text-red-600",
-      detail: hasProjectRuns ? "needs review" : "clear",
-    },
-    {
-      label: "Queued",
-      value: String(runSummary.queued),
+      label: "Scheduled",
+      value: String(runSummary.statuses.SCHEDULED ?? 0),
       tone: "text-text",
-      detail: hasProjectRuns ? "waiting for workers" : "empty queue",
+      detail: hasProjectRuns ? "waiting to start" : "empty queue",
     },
   ];
 

@@ -202,8 +202,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     assert result.limit == 10
     assert result.offset == 0
     assert result.summary.total == 2
-    assert result.summary.completed == 1
-    assert result.summary.running == 1
+    assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
     assert [run.uuid for run in result.items] == [first_run.uuid, second_run.uuid]
     assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
     assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
@@ -241,8 +240,7 @@ def test_list_runs_filters_project_runs_by_status(
     # Then
     assert result.total == 1
     assert result.summary.total == 2
-    assert result.summary.completed == 1
-    assert result.summary.running == 1
+    assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
     assert [run.uuid for run in result.items] == [running_run.uuid]
     assert [run.status for run in result.items] == ["RUNNING"]
 
@@ -295,11 +293,13 @@ def test_get_run_summary_returns_project_status_counts(
 
     # Then
     assert result.total == 5
-    assert result.running == 1
-    assert result.completed == 1
-    assert result.failed == 1
-    assert result.queued == 1
-    assert result.unknown == 1
+    assert result.statuses == {
+        "RUNNING": 1,
+        "COMPLETED": 1,
+        "CRASHED": 1,
+        "SCHEDULED": 1,
+        "LATE": 1,
+    }
 
 
 def test_get_run_summary_with_unknown_project_raises_404(mock_db_class) -> None:

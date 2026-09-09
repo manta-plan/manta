@@ -59,33 +59,14 @@ def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | No
     return normalized_status_filters or None
 
 
-def _status_bucket(status: str) -> str:
-    match status.upper():
-        case "RUNNING":
-            return "running"
-        case "COMPLETED":
-            return "completed"
-        case "FAILED" | "CRASHED" | "CANCELLED":
-            return "failed"
-        case "SCHEDULED" | "PENDING" | "PAUSED":
-            return "queued"
-        case _:
-            return "unknown"
-
-
 def _build_run_summary(run_results: list[GetRunResult]) -> GetRunSummaryResult:
-    counts = {
-        "running": 0,
-        "completed": 0,
-        "failed": 0,
-        "queued": 0,
-        "unknown": 0,
-    }
+    statuses: dict[str, int] = {}
 
     for run_result in run_results:
-        counts[_status_bucket(run_result.status)] += 1
+        status = run_result.status.upper()
+        statuses[status] = statuses.get(status, 0) + 1
 
-    return GetRunSummaryResult(total=len(run_results), **counts)
+    return GetRunSummaryResult(total=len(run_results), statuses=statuses)
 
 
 class RunService:

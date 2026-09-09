@@ -1,4 +1,4 @@
-export type RunStatus = "Running" | "Completed" | "Failed" | "Queued" | "Unknown";
+export type RunStatus = string;
 
 export type CreateProjectResponse = {
   uuid: string;
@@ -30,11 +30,7 @@ export type ListRunsResponse = {
 
 export type GetRunSummaryResponse = {
   total: number;
-  running: number;
-  completed: number;
-  failed: number;
-  queued: number;
-  unknown: number;
+  statuses: Record<string, number>;
 };
 
 export type GetRunLogsResponse = {

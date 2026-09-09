@@ -19,14 +19,7 @@ class _StubRunService:
             total=0,
             limit=kwargs["limit"],
             offset=kwargs["offset"],
-            summary=GetRunSummaryResult(
-                total=0,
-                running=0,
-                completed=0,
-                failed=0,
-                queued=0,
-                unknown=0,
-            ),
+            summary=GetRunSummaryResult(total=0, statuses={}),
         )
 
 

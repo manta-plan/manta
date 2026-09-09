@@ -21,11 +21,7 @@ class GetRunResult(BaseModel):
 
 class GetRunSummaryResult(BaseModel):
     total: int
-    running: int
-    completed: int
-    failed: int
-    queued: int
-    unknown: int
+    statuses: dict[str, int]
 
 
 class ListRunsResult(BaseModel):
