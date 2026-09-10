@@ -1,6 +1,7 @@
 # 04 — Blocks and playbooks
 
-The domain model, defined in the `blocks` repository. Two packages with a deliberate
+The domain model, defined in the `blocks` repository.
+Two packages with a deliberate
 one-way dependency: `blocks` never imports `playbooks`, so the playbook engine can
 become its own project later without untangling anything.
 
@@ -25,7 +26,8 @@ src/
 
 ## A block
 
-A block is one unit of work on an energy model. It reads a record, does something, and
+A block is one unit of work on an energy model.
+It reads a record, does something, and
 returns a record pointing at the result.
 
 ```python
@@ -57,9 +59,11 @@ it without running — or even importing — the block:
 | `INPUTS` | Settings filled in by another block's output rather than by the user |
 | `OUTPUTS` | The results it offers to later blocks |
 
-A block class is checked the moment it is written. Every name in `INPUTS` must be a
+A block class is checked the moment it is written.
+Every name in `INPUTS` must be a
 setting that can hold a record *and* has a default, so a block is always usable with
-nothing wired to it. Getting this wrong raises at class-creation time, not at run
+nothing wired to it.
+Getting this wrong raises at class-creation time, not at run
 time.
 
 ### `DataRecord`
@@ -70,24 +74,29 @@ class DataRecord:
     url: str
 ```
 
-A record is a pointer, never the data. It is passed between processes and machines,
-which a loaded model could not survive. Everything crossing a boundary travels as
+A record is a pointer, never the data.
+It is passed between processes and machines,
+which a loaded model could not survive.
+Everything crossing a boundary travels as
 `{"url": ...}`.
 
 ### Dimensions
 
 Each block declares the dimensions it `requires`, `adds` and `removes` — `snapshot`,
-`investment_period` and so on. Folding those declarations along a playbook's steps
+`investment_period` and so on.
+Folding those declarations along a playbook's steps
 determines what the data looks like at each point, and catches "this step needs
-something an earlier step removed" before anything runs. The error message names the
+something an earlier step removed" before anything runs.
+The error message names the
 step that removed it.
 
-This is the most useful check the system performs, and it works entirely on
-declarations.
+It works entirely on declarations, so it applies to blocks the checking process cannot
+import.
 
 ### The registry, and why blocks are named
 
-Blocks are looked up **by name**. A playbook can name a block it cannot import,
+Blocks are looked up **by name**.
+A playbook can name a block it cannot import,
 because no single Python environment can import them all.
 
 The blocks Manta ships need PyPSA, so the registry records where they live rather than
@@ -108,7 +117,8 @@ block's dependencies stay a block's own problem.
 
 If no environment can import every block, how does anything get a complete picture?
 
-Each environment describes what it can import. Running `python -m blocks` in an environment
+Each environment describes what it can import.
+Running `python -m blocks` in an environment
 emits a JSON **catalogue**: for every block importable there, its name, environment,
 one-line summary, dimensions, inputs, outputs, and its settings as a JSON Schema.
 Merging the per-environment catalogues yields a description of every block in the
@@ -125,12 +135,15 @@ form built from the catalogue knows to skip them: they are connection points in 
 playbook, not something a user types.
 
 The catalogue is what lets a process that could not import a single one of these
-blocks still draw a playbook, offer its settings, and check how it is wired. It is the
+blocks still draw a playbook, offer its settings, and check how it is wired.
+It is the
 contract between the two repositories — see [05](05-repository-interface.md).
 
 A `BlockSpec` is what a playbook step actually holds: a block description plus,
-*optionally*, the real class. Building, checking, drawing and deploying need only the
-description. Only executing needs the class, and asking for one that is not available
+*optionally*, the real class.
+Building, checking, drawing and deploying need only the
+description.
+Only executing needs the class, and asking for one that is not available
 says so plainly.
 
 ## A playbook
@@ -168,7 +181,8 @@ The same playbook can be built in Python; the two are interchangeable.
 
 At the moment, playbooks assume most workflows have a linear structure:
 
-- **The spine.** Every step is handed the record the previous step produced. This is
+- **The spine.** Every step is handed the record the previous step produced.
+This is
   how most work flows, and it is implicit.
 - **Wires.** A step can additionally reach back for a *particular* earlier step's
   result and put it into one of its settings, written
@@ -189,7 +203,8 @@ Solid arrows are the spine; the dashed arrow is a wire.
 
 ### Settings live in a separate document
 
-A playbook says what runs; a configuration document says how. Settings are filed by
+A playbook says what runs; a configuration document says how.
+Settings are filed by
 step name, plus a `globals` section everything can see:
 
 ```yaml
@@ -217,12 +232,14 @@ settings: `expansion_2030` and `expansion_2040` are two steps of one block.
 the settings alone, never on the data**.
 
 That restriction is what makes a playbook checkable and drawable before it runs: which
-steps will execute is known up front. Steps switched off stay in the graph, marked as
+steps will execute is known up front.
+Steps switched off stay in the graph, marked as
 not running, so the branch not taken is still visible and the user can change their
 mind.
 
-Which steps run is decided in exactly one place, and validation, graphing, deployment
-planning and execution all ask that same question. They therefore cannot disagree.
+Which steps run is decided in one place, and validation, graphing, deployment
+planning and execution all ask that same question.
+They therefore cannot disagree.
 
 ### Playbooks inside playbooks
 
@@ -230,15 +247,18 @@ A step can be another playbook — referenced by locator, or written out in plac
 is what a browser with no filesystem sends.
 
 Anything the inner playbook does not wire up itself is offered to the outer one as
-`<step>.<setting>`, fed exactly like a block's own input. Its settings live under its
-step's name, and it inherits the outer `globals` unless it has its own. Checking,
+`<step>.<setting>`, fed like a block's own input.
+Its settings live under its
+step's name, and it inherits the outer `globals` unless it has its own.
+Checking,
 dimension folding and deployment planning all recurse; a problem inside a nested
 playbook is reported against its full path, and a playbook that ends up containing
 itself is reported rather than followed until the stack runs out.
 
 ## Checking a playbook
 
-`playbook.issues(config)` returns everything wrong, without raising. Each issue names
+`playbook.issues(config)` returns everything wrong, without raising.
+Each issue names
 the step it concerns and, where applicable, the exact setting — so a user interface can
 mark the right box and the right field.
 
@@ -252,9 +272,11 @@ What is checked:
 - Blocks sharing an environment name agree on what that environment is.
 
 Nearly all of this works for blocks the checking process cannot import, using the
-JSON Schema from the catalogue. The one thing that cannot travel is a rule a block
+JSON Schema from the catalogue.
+The one thing that cannot travel is a rule a block
 expresses in code — "exactly one of these two settings" — which can only be checked
-where the block itself is importable. Those surface at run time instead.
+where the block itself is importable.
+Those surface at run time instead.
 
 ## Drawing a playbook
 
@@ -262,13 +284,15 @@ where the block itself is importable. Those surface at run time instead.
 the dimensions at each point, which settings are wired to what. `to_mermaid()` renders
 the same graph as a diagram.
 
-Neither runs any of the playbook. With real blocks that matters: **asking for a
+Neither runs any of the playbook.
+With real blocks that matters: **asking for a
 picture should not start a solver.**
 
 ## From playbook to deployments
 
 Before a playbook can run, Prefect needs a deployment for each distinct
-`(block, environment)` pair its active steps use. Working that out is a pure function
+`(block, environment)` pair its active steps use.
+Working that out is a pure function
 of the playbook and its settings:
 
 ```mermaid
@@ -283,33 +307,38 @@ flowchart TD
     pool --> worker["Worker running in the pypsa environment"]
 ```
 
-Names are constructed in exactly one place: deployment `run_block/<block>-<env>`, work
-pool `manta-<env>` by default. No other component should ever build these strings.
+Names are constructed in one place: deployment `run_block/<block>-<env>`, work
+pool `manta-<env>` by default.
+No other component should ever build these strings.
 
-Steps needing the same pair share one deployment. Nested playbooks fold into the
+Steps needing the same pair share one deployment.
+Nested playbooks fold into the
 parent's plan, with each step's path recorded from the outermost playbook inwards so a
 conflict can be located.
 
 Turning a plan into reality is the job of a **provisioner** — an interface with one
 implementation per deployment target. (The code currently calls this `Renderer`;
 `Provisioner` is the clearer name and is used throughout these documents.) It creates
-or updates Prefect deployments bound to work pools. It deliberately does *not* create
+or updates Prefect deployments bound to work pools.
+It deliberately does *not* create
 work pools or start workers: those are long-lived infrastructure decisions belonging
-to whoever operates the deployment (Manta's infra code/repo). What it does instead is report exactly which pools are missing
-and what would create them.
-
+to whoever operates the deployment (Manta's infra code/repo). (It has the ability to check if required work pools are missing and report them by raising a meaningful error.)
 ## Current PoC state & TODOs
 
-Carried from the `blocks` README on commit `f6dc47f`:
+Carried from the `blocks` README on commit `f6dc47f`. [09](09-code-changes.md) lists
+these alongside the other deltas between this design and the code as it stands.
 
 - **Records point at PyPSA netCDF files**, and a block writes a whole new file rather
   than only what it changed, because PyPSA cannot yet compare two networks or store a
-  difference. Both are confined to one module. This does not yet match Manta's
+  difference.
+Both are confined to one module.
+This does not yet match Manta's
   object-store data layer — see [08](08-open-questions.md#record-storage-and-format).
 - **Resource requirements are not modelled.** No block declares CPU, memory or wall
   time, which will be needed when we deploy Manta on Kubernetes for the MVP.
 - **Only the process/pixi provisioner exists.** A container or cluster provisioner is
   the second implementation of the existing interface.
-- **Conditions cannot look at data**, only at settings. This is a deliberate trade for
+- **Conditions cannot look at data**, only at settings.
+This is a deliberate trade for
   up-front checkability, but it does rule out data-dependent branching.
-- **Every block so far produces exactly one result**, though `OUTPUTS` allows more.
+- **Every block so far produces a single result**, though `OUTPUTS` allows more.

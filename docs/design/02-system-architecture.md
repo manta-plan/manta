@@ -2,28 +2,36 @@
 
 ## Guiding principles
 
-These are the decisions that answer most "why is it built this way?" questions. [**TODO** perhaps these should go into each relevant subsection instead? Keep only the ones relevant to the overall design here.]
+These are the decisions that answer most "why is it built this way?" questions. [**TODO** perhaps these should go into each relevant subsection instead?
+Keep only the ones relevant to the overall design here.]
 
 1. **Manta orchestrates; it does not compute.** The backend never executes modelling
-   code. It submits work to Prefect and reads the result back. This keeps the API
+   code.
+It submits work to Prefect and reads the result back.
+This keeps the API
    process small, stateless with respect to runs, and independent of the scientific
    Python stack.
 
 2. **Prefect is the single source of truth for run state.** Manta stores no status,
-   progress or log columns. A run row links a project to a Prefect flow run identifier
-   and nothing more. State that is stored twice eventually disagrees.
+   progress or log columns.
+A run row links a project to a Prefect flow run identifier
+   and nothing more.
+State that is stored twice eventually disagrees.
 
 3. **The environment is the unit of isolation.** A block declares which environment it
-   needs; that environment becomes a container image and a Prefect work pool. A workflow
+   needs; that environment becomes a container image and a Prefect work pool.
+A workflow
    with multiple dependencies (e.g. modelling frameworks) is separated into blocks.
 
 4. **Everything about a block can be known without importing it.** No single Python
    environment can import every block, so blocks are described by data — a catalogue —
-   rather than by code. Manta's backend can validate, draw and plan a playbook
+   rather than by code.
+Manta's backend can validate, draw and plan a playbook
    composed entirely of blocks it could never load.
 
 5. **The playbook document is the interchange format.** A playbook is written, edited,
-   stored, sent and executed as the same document. What runs is exactly what was on
+   stored, sent and executed as the same document.
+What runs is what was on
    screen.
 
 ## Level 1 — System context
@@ -52,9 +60,10 @@ C4Context
     Rel(manta, licences, "Checks out solver licences", "TCP")
 ```
 
-Note that the Plug-in Developer's relationship with Manta is indirect. They publish an
+Note that the Plug-in Developer's relationship with Manta is indirect.
+They publish an
 image and a block description; they do not deploy code into Manta's application
-process. That indirection is the whole point of the design.
+process.
 
 ## Level 2 — Containers
 
@@ -70,7 +79,8 @@ C4Container
         ContainerDb(appdb, "Application Database", "PostgreSQL", "Projects, playbooks, runs, users, audit records")
         ContainerDb(objstore, "Object Store", "S3-compatible", "Model data records and run artefacts")
         Container(prefect, "Prefect Server", "Prefect 3", "Orchestration API, scheduler and operator UI")
-        ContainerDb(prefectdb, "Prefect Database", "PostgreSQL", "Flow runs, states and logs. Separate database and role from the application database")
+        ContainerDb(prefectdb, "Prefect Database", "PostgreSQL", "Flow runs, states and logs.
+Separate database and role from the application database")
         Container(orch, "Orchestrator Worker", "Prefect worker, process pool", "Runs the playbook flow: sequences steps and dispatches each to the environment it needs")
         Container(envworkers, "Environment Workers", "One Prefect worker per environment", "Execute a single block in the environment that block requires")
     }
@@ -89,14 +99,16 @@ C4Container
 Three things worth noticing in that diagram:
 
 - **The backend never talks to a worker, and no worker talks to the backend.** All
-  coordination goes through the Prefect server. Workers can therefore live in a
+  coordination goes through the Prefect server.
+Workers can therefore live in a
   different network segment, scale independently, and be restarted without the API
   noticing.
 - **The object store is the only data path between steps.** Workers are separate
   processes — usually separate containers — so a record passed from one step to the
   next is a URL, never an in-memory object.
 - **Prefect has its own database.** Shared server, separate database and separate
-  role, so PostgreSQL's own permissions enforce the boundary. See
+  role, so PostgreSQL's own permissions enforce the boundary.
+See
   [03](03-workflow-orchestration.md#prefects-own-database).
 
 ## Level 3 — Backend components
@@ -134,9 +146,11 @@ C4Component
     Rel(blockslib, prefect, "Submits runs; reads state and logs", "HTTP")
 ```
 
-`manta-blocks` is a library dependency, not a service. It is the same package that
+`manta-blocks` is a library dependency, not a service.
+It is the same package that
 runs inside the workers, which is what guarantees that the playbook Manta validates
-and the playbook the orchestrator executes are interpreted identically. See
+and the playbook the orchestrator executes are interpreted identically.
+See
 [05](05-repository-interface.md).
 
 ## Repositories
@@ -147,8 +161,10 @@ and the playbook the orchestrator executes are interpreted identically. See
 | `blocks` | The block framework, the playbook engine, the blocks OET ships, and the Prefect flows that execute them | Manta, and anyone running playbooks from a terminal |
 | *(third party)* | Plug-in blocks with their own environments | Referenced by catalogue and image, never vendored |
 
-`blocks` is deliberately usable without Manta. Its test suite runs with no database,
-no web server and — in its default environment — without PyPSA installed. That last
+`blocks` is deliberately usable without Manta.
+Its test suite runs with no database,
+no web server and — in its default environment — without PyPSA installed.
+That last
 constraint is what proves a block's dependencies stay a block's own problem.
 
 ## Backend conventions
@@ -158,7 +174,8 @@ The backend follows a Model–Service–Controller layering, one set per domain 
 - **Entity** — a SQLAlchemy model in `entities/`, inheriting a base that supplies
   `id`, `uuid` and `created_at`.
 - **Service** — business logic in `services/`, receiving a database session by
-  dependency injection. Stateless; no instance state beyond the session.
+  dependency injection.
+Stateless; no instance state beyond the session.
 - **Route** — a FastAPI router in `routes/v1/` that validates input and delegates.
 - **DTOs** — Pydantic request models in `routes/v1/requests/` and result models in
   `services/results/`.
@@ -175,6 +192,7 @@ The entities relevant to this design:
 | `Playbook` | Stores a playbook document and its configuration document | Any interpretation of their contents — that is `manta-blocks`' job |
 | `Run` | Links a project and playbook to one Prefect flow run | Status, progress, logs, results |
 
-`Run`'s foreign keys cascade on delete: removing a project removes its runs. The
+`Run`'s foreign keys cascade on delete: removing a project removes its runs.
+The
 Prefect flow runs they pointed at are not deleted, and are subject to Prefect's own
 retention policy.
