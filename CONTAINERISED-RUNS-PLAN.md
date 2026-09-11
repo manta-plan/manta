@@ -1,34 +1,61 @@
 # Running calculation jobs in their own containers — plan
 
-**The problem today**
+## 1. The problem
 
-When the app starts, it quietly launches a background helper to run our one existing job (the pi-digit calculation). It's a shortcut that happens to work, but it's fragile — no automatic recovery if it fails to start, and it wasn't built with the idea that we'll eventually have many different jobs running independently, some potentially heavy or long-running.
+Manta runs its only job inside the application process.
+Starting the app launches a background helper, and that helper computes pi digits.
+Nothing restarts the helper if it fails to come up.
 
-**What we're building**
+The arrangement also assumes there is one job.
+Every calculation shares one process, one set of dependencies and one point of failure.
+Energy-system modelling needs many jobs, each with its own tools and libraries, and some of them heavy or long-running.
 
-We're separating "the app that people interact with" from "the thing that actually runs calculations," and giving the second one a proper, dedicated home.
+## 2. The design
 
-- A new, self-contained worker package, sitting alongside the backend and frontend, with nothing to do with either. It holds exactly two things: the calculation code, and the instructions for building it into a container image.
-- A single background service watches for new job requests and, for each one, starts a fresh, isolated container to actually run it. Every run gets a clean, disposable environment — no jobs stepping on each other's toes.
-- The worker announces itself when it starts up — it registers "here's a job I know how to run" with the system. The backend app never needs to know anything about how a calculation works; it only ever asks "please run this" and later "what was the result." That's the entire contract between the two.
-- No manual setup, ever. Starting the normal services plus starting the app is the whole procedure. Nobody needs to remember a special command to wire this up.
-- We're deliberately not adding concurrency limits or moving to a more robust database for the job-tracking system yet — those are real future improvements, but not needed to prove this out, and adding them now would be complexity we can't yet justify.
+The application people interact with is separated from the thing that runs calculations, and the second gets a home of its own.
 
-**Why this is more than just "fixing the pi job"**
+- **A worker package sits alongside the backend and the frontend.**
+  It holds two things: the calculation code, and the instructions for building it into a container image.
+  It has nothing to do with either neighbour.
+- **One background service turns job requests into containers.**
+  The watcher sees a new request and starts a fresh container to run it.
+  Every run gets a clean, disposable environment, so no two jobs share one.
+- **The worker registers its job types at startup.**
+  It announces what it knows how to run.
+  The backend asks "please run this" and later "what was the result", and that is the entire contract between them.
+- **Starting the normal services and the app is the whole procedure.**
+  No command wires the parts together by hand.
+- **Concurrency limits and a durable store for job tracking stay out.**
+  Both are real improvements.
+  Neither is needed to prove this design, and adding them now buys complexity against no evidence.
 
-Today there's exactly one job. Soon there will be many — real energy-system-modelling calculations, each potentially needing very different tools and libraries. The current shortcut couldn't support that: everything shared one process, one set of dependencies, one point of failure.
+## 3. Adding a new job type
 
-The design here fixes that at the root. Because each job type lives in its own self-contained package with its own container image, adding a new kind of job later is purely additive — a new folder, its own dependencies, its own image, registered the same way. It doesn't touch the backend, doesn't touch other jobs, and can't accidentally break something unrelated by needing a newer or conflicting library. The backend, the "waiting room" that watches for work, and each individual job all stay cleanly separated and independently replaceable. This was an open question flagged when the very first version of this system was built — this PR is effectively answering it.
+Adding a job type is additive.
+A new job is a new folder with its own dependencies and its own image, registered the same way as the first.
+It touches no backend code, touches no other job, and cannot break something unrelated by needing a newer or conflicting library.
+The backend, the watcher and each job stay separate and independently replaceable.
 
-**The path to Kubernetes**
+The first version of this system flagged this as an open question, and this plan answers it.
 
-We already know this needs to run on Kubernetes eventually for real production workloads. The good news: the way we're building this, that move is a swap, not a rebuild.
+## 4. The path to Kubernetes
 
-- The container image doesn't change. Whether a job runs via Docker on one machine or as a pod in a cluster, it's the same packaged image doing the same thing.
-- What changes is who's in charge of starting containers. Right now, our watcher service talks directly to Docker on the same machine. On Kubernetes, it would instead ask the cluster to start the job — same idea, different manager.
-- The one new piece of infrastructure we'd need is a place to publish images so any machine in the cluster can pull them (a "registry") — right now everything runs locally on one machine, so this isn't needed yet.
-- Nothing about how the app submits jobs or reads results changes at all — that part is already fully decoupled from where the actual work happens.
+Production needs Kubernetes, and this design makes the move a swap rather than a rebuild.
 
-**Verifying it works**
+- **The container image does not change.**
+  The same packaged image runs under Docker on one machine or as a pod in a cluster.
+- **The watcher changes.**
+  Today it asks the local Docker daemon for a container.
+  On a cluster it asks the cluster for a pod.
+  The idea is the same and the manager is different.
+- **An image registry is the one new piece of infrastructure.**
+  Any node in the cluster has to be able to pull the worker image.
+  One machine running everything locally does not need one yet.
+- **Job submission and result reading do not change.**
+  Both are already decoupled from where the work happens.
 
-Once built: submit a job through the app, confirm a real, isolated container actually spins up and runs it, and confirm the result and logs come back correctly — proving the whole path end to end with nothing set up by hand.
+## 5. Verification
+
+Submit a job through the app.
+Confirm that an isolated container starts and runs it, and that the result and the logs come back.
+Nothing is set up by hand at any point in that path.

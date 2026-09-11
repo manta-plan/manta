@@ -1,29 +1,51 @@
 # Playbooks and blocks — plan
 
-## 1. The problem and the shape of the solution
+## 1. The problem
 
-Today Manta can run exactly one thing. `POST /v1/runs` takes a single number, `num_pi_digits`, and submits a hardcoded Prefect deployment named by a constant in [run_service.py:25](backend/src/manta/services/run_service.py:25). There is no way to say *what* to run, because there is nothing to choose from. The preceding PR fixed how work executes — each job now gets its own container — but it did not change what can be asked for. The contract is still "run the one job we know about."
+Manta can run exactly one thing.
+`POST /v1/runs` takes a single number, `num_pi_digits`, and submits a hardcoded Prefect deployment named by a constant in [run_service.py:25](backend/src/manta/services/run_service.py:25).
+A request cannot say what to run, because there is nothing to choose from.
+The preceding PR changed how work executes, and each job now gets its own container.
+It did not change what can be asked for, so the contract is still "run the one job we know about".
 
-What we are building is the part that makes that contract general. Two ideas:
+## 2. Blocks and playbooks
 
-- A **block** is one unit of energy-modelling work — cluster a network's time series, solve a capacity expansion. Blocks live in a separate repository, carry their own dependencies, and know nothing about Manta.
-- A **playbook** is a recipe naming blocks in order, saying which block's output feeds which block's input. Playbooks are rows in Manta's database, written as YAML.
+Two ideas make that contract general.
 
-Starting a run becomes: pick a playbook, press go.
+- **A block is one unit of energy-modelling work.**
+  Clustering a network's time series is a block, and so is solving a capacity expansion.
+  Blocks live in a separate repository, carry their own dependencies, and know nothing about Manta.
+- **A playbook is a recipe naming blocks in order.**
+  It says which block's output feeds which block's input.
+  Playbooks are rows in Manta's database, written as YAML.
 
-The division of labour is strict and worth stating once, plainly:
+Starting a run is then picking a playbook and pressing go.
 
-- **Manta owns the playbook.** It stores the document, and it owns the **interpreter** — the code that reads a playbook and decides what runs, in what order, with which inputs. That is Manta's own code, in Manta's repository.
-- **The blocks repository owns the blocks.** Manta holds no block code, imports no block code, and has no opinion about what a calculation means.
-- **The interpreter spawns one container per block.** For each step, it starts a fresh container that pulls that block's code and dependencies from the blocks repository, hands it its configuration and its inputs, and takes back a reference to what it produced. "Please run this" and "what was the result" is the entire conversation.
+The division of labour is strict.
 
-This is more than a feature. It is where Manta stops being an application with a calculation bolted on and becomes a platform that runs other people's modelling work. The property that matters most is that **adding a block requires no change to Manta at all** — no migration, no deploy, no new image. Someone commits to the blocks repository, and a playbook can name it the same day.
+- **Manta owns the playbook.**
+  It stores the document, and it owns the interpreter: the code that reads a playbook and decides what runs, in what order, with which inputs.
+  That is Manta's own code, in Manta's repository.
+- **The blocks repository owns the blocks.**
+  Manta holds no block code, imports no block code, and has no opinion about what a calculation means.
+- **The interpreter spawns one container per block.**
+  For each step it starts a fresh container.
+  That container pulls the block's code and dependencies from the blocks repository, takes its configuration and its inputs, and hands back a reference to what it produced.
+  "Please run this" and "what was the result" is the entire conversation.
 
-There is an extensive proof of concept in the blocks repository covering both halves. Its `playbooks` package is the interpreter we are adopting, and it moves into Manta. Its `blocks` package stays where it is, largely untouched. Prefect remains under the hood and stays there — it appears in no request, no response, and no vocabulary a user reads.
+**Adding a block requires no change to Manta.**
+No migration, no deploy, no new image.
+Someone commits to the blocks repository, and a playbook can name that commit the same day.
+Every decision below protects that property.
 
-## 2. Entity definitions, as code
+A proof of concept (PoC) in the blocks repository already covers both halves.
+Its `playbooks` package is the interpreter, and it moves into Manta.
+Its `blocks` package stays where it is, largely untouched.
+Prefect stays under the hood: it appears in no request, no response, and no vocabulary a user reads.
 
-### 2.1 The Playbook entity
+## 3. The entities
+
+### 3.1 The playbook entity
 
 ```python
 # backend/src/manta/entities/playbook.py
@@ -45,23 +67,37 @@ class Playbook(Base):
     configuration: Mapped[str] = mapped_column(Text)
 ```
 
-The decisions behind it:
+**One entity is enough.**
+There is no step table and no input table.
+The interpreter already models the document.
+Putting the same structure in SQL would mean two definitions of one thing, kept in step forever, for queries nobody is making.
 
-**One entity, and only one.** No step table, no input table. The interpreter already models the document; putting the same structure in SQL would mean two definitions of one thing, kept in step forever, for queries nobody is making.
+**The documents are stored as verbatim YAML.**
+The document is the thing users author, and the interpreter already parses YAML.
+Storing text means comments and formatting survive a round trip.
 
-**YAML, stored verbatim.** The document is the thing users author, and the interpreter already parses YAML. Storing text means comments and formatting survive a round trip.
+**The recipe and its settings are two documents in one row.**
+The PoC separates them.
+A playbook says what runs in what order, and the settings document says with which values, filed by step name plus a shared `globals` section.
+That split is worth keeping, and it costs a column rather than an entity.
 
-**Two documents, one row.** The PoC separates the recipe from its settings — a playbook says *what runs in what order*, the settings document says *with which values*, filed by step name plus a shared `globals` section. Worth keeping, and it costs a column rather than an entity.
+**Which block version to run is not stored here.**
+It lives in the definition, on the step, next to the block it pins.
+See §4.
 
-**Which block version to run is not stored here.** It lives in the definition, on the step, next to the block it pins — see §3.
+**The dual key comes from `Base`.**
+[base.py](backend/src/manta/entities/base.py) supplies the house pair: an internal integer `id` for foreign keys, and a public `uuid` as the only identifier crossing the API boundary.
 
-**Identity.** Inherits `Base` ([base.py](backend/src/manta/entities/base.py)) for the house dual key: internal integer `id` for foreign keys, public `uuid` as the only identifier crossing the API boundary.
+**A playbook is not scoped to a project.**
+It describes a procedure, not a dataset, and the same recipe applies to any network you point it at.
+Scoping now would mean copying playbooks to reuse them.
+Runs stay scoped to projects, so nothing the frontend does today changes.
 
-**Not scoped to a project.** A playbook describes a procedure, not a dataset — the same recipe applies to any network you point it at. Scoping now would mean copying playbooks to reuse them. Runs stay scoped to projects, so nothing the frontend does today changes.
+**A playbook stays editable.**
+There is no version table and no locking once a run exists.
+What a run submitted is captured in its flow run's parameters, so an in-flight run is unaffected by an edit.
 
-**Mutable.** No version table, no locking once a run exists. What a run submitted is captured in its flow run's parameters, so an in-flight run is unaffected by an edit.
-
-### 2.2 Changes to the Run entity
+### 3.2 Changes to the run entity
 
 ```diff
  class Run(Base):
@@ -78,13 +114,18 @@ The decisions behind it:
      prefect_flow_run_id: Mapped[UUID] = mapped_column(unique=True)
 ```
 
-That is the entire change. `SET NULL` for the same reason `project_id` already uses it: a run outlives its parents.
+That is the entire change.
+`SET NULL` is there for the same reason `project_id` already uses it: a run outlives its parents.
 
-**No per-step table, and no block registry table.** Per-step state is already tracked — each step is a child flow run. A block registry would mirror a repository Manta does not own, which means a sync job, a staleness question, and a failure mode where a block exists but Manta refuses to run it. It would also make adding a block require a write on Manta's side, which is the one thing this design exists to prevent.
+**There is no per-step table and no block registry table.**
+Per-step state is already tracked, because each step is a child flow run.
+A block registry would mirror a repository Manta does not own, which means a sync job, a staleness question, and a failure mode where a block exists but Manta refuses to run it.
+It would also make adding a block require a write on Manta's side, which is the one thing this design exists to prevent.
 
-## 3. One worked example
+## 4. A worked example
 
-A playbook that solves capacity expansion, then runs rolling-horizon dispatch against the capacities the first step produced. Both blocks are real ones from the PoC's library, and the wiring is genuine — `RollingHorizonDispatch` declares `INPUTS = {"capacity_source"}`.
+This playbook solves capacity expansion, then runs rolling-horizon dispatch against the capacities the first step produced.
+Both blocks are real ones from the PoC's library, and the wiring is genuine: `RollingHorizonDispatch` declares `INPUTS = {"capacity_source"}`.
 
 `playbooks.definition`:
 
@@ -116,33 +157,57 @@ dispatch:
     overlap: 24
 ```
 
-`version` is a git ref in the blocks repository, pinned per step so a run is reproducible. It is optional; omitted, the runner uses the repository's default branch, and the run is then only as reproducible as that branch is stable. Two steps may pin different versions — each step gets its own container and its own checkout, so nothing forces them to agree.
+`version` is a git ref in the blocks repository, pinned per step so a run is reproducible.
+The field is optional.
+Without it the runner uses the repository's default branch, and the run is then only as reproducible as that branch is stable.
+Two steps may pin different versions, because each step gets its own container and its own checkout.
 
-End to end:
+A run then goes like this.
 
-1. **`POST /v1/runs {"project_uuid": ..., "playbook_uuid": ...}`.** `RunService` loads the playbook row and calls `run_deployment("run-playbook/manta", parameters={"definition": <yaml>, "configuration": <yaml>, "record": {...}}, timeout=0)` — the same fire-and-forget shape as today's [create_run](backend/src/manta/services/run_service.py:76). One row goes into `runs` holding the returned flow run id; the API returns `201` immediately. Sending the documents rather than a reference means a mid-run edit is harmless.
+1. **The API receives `POST /v1/runs {"project_uuid": ..., "playbook_uuid": ...}`.**
+   `RunService` loads the playbook row and calls `run_deployment("run-playbook/manta", parameters={"definition": <yaml>, "configuration": <yaml>, "record": {...}}, timeout=0)`.
+   That is the same fire-and-forget shape as today's [create_run](backend/src/manta/services/run_service.py:76).
+   One row goes into `runs` holding the returned flow run id, and the API returns `201` immediately.
+   Sending the documents rather than a reference means a mid-run edit is harmless.
 
-2. **The watcher starts one container** from the worker image — the interpreter. Same image, same mechanism as any other job; the watcher does not know this one orchestrates.
+2. **The watcher starts one container** from the worker image, and that container is the interpreter.
+   It is the same image and the same mechanism as any other job, and the watcher does not know this one orchestrates.
 
-3. **The interpreter reads the documents.** `manta_playbooks.document.parse` turns them into a `Playbook`; `execution.build_flow` compiles it. Steps run in list order, threading a record — `{"url": ...}`, a reference to data, never the data — from step to step.
+3. **The interpreter reads the documents.**
+   `manta_playbooks.document.parse` turns them into a `Playbook`, and `execution.build_flow` compiles it.
+   Steps run in list order, threading a record from step to step.
+   A record is `{"url": ...}`, a reference to data, never the data.
 
-4. **The interpreter spawns a container for `expansion`.** It submits a block job carrying `{"block": "overnight_capacity_expansion", "version": "9f2c1ab…", "config": {...}, "inputs": {}, "record": {"url": "..."}}` and waits. A block name, a version, its configuration, its inputs: that is the entire contract, and Manta never sends anything else.
+4. **The interpreter spawns a container for `expansion`.**
+   It submits a block job carrying `{"block": "overnight_capacity_expansion", "version": "9f2c1ab…", "config": {...}, "inputs": {}, "record": {"url": "..."}}` and waits.
+   The entire contract is a block name, a version, its configuration and its inputs.
+   Manta never sends anything else.
 
-5. **The block container runs.** Its runner checks out the blocks repository at `9f2c1ab…`, enters `library/overnight_capacity_expansion/`, builds *that block's own* pixi environment, and runs the block inside it. The block fetches whatever its input record points at, solves, writes its result wherever it chooses, and returns a new `{"url": ...}`. The container exits.
+5. **The block container runs.**
+   Its runner checks out the blocks repository at `9f2c1ab…`, enters `library/overnight_capacity_expansion/`, builds that block's own pixi environment, and runs the block inside it.
+   The block fetches whatever its input record points at, solves, writes its result wherever it chooses, and returns a new `{"url": ...}`.
+   The container exits.
 
-6. **The interpreter spawns a container for `dispatch`.** Its `capacity_source` input resolves to the record `expansion` returned and is merged into its configuration. A third container starts, builds a completely separate environment, and runs the dispatch block.
+6. **The interpreter spawns a container for `dispatch`.**
+   Its `capacity_source` input resolves to the record `expansion` returned, and that record is merged into its configuration.
+   A third container starts, builds a completely separate environment, and runs the dispatch block.
 
-7. **Reading it back.** `GET /v1/runs/{uuid}` gives overall status, `GET /v1/runs/{uuid}/steps` gives each step's state, and `GET /v1/runs/{uuid}/logs` returns lines from the interpreter and both block containers, each attributed to its step.
+7. **The API reads the run back.**
+   `GET /v1/runs/{uuid}` gives overall status, `GET /v1/runs/{uuid}/steps` gives each step's state, and `GET /v1/runs/{uuid}/logs` returns lines from the interpreter and both block containers, each attributed to its step.
 
-Three containers, two independently-built environments, and nothing in Manta that knows what PyPSA is.
+The run uses three containers and two independently built environments, and nothing in Manta knows what PyPSA is.
 
-## 4. What transfers from the PoC
+## 5. The transfer from the proof of concept
 
-### 4.1 Into Manta
+### 5.1 What lands in Manta
 
-This table is only what lands in **Manta's repository** — which is to say, the interpreter and nothing else. Every row comes from the PoC's `playbooks` package. The PoC's `blocks` package is not here because none of it is coming: `MantaBlock`, `DataRecord`, the registry, the block entrypoint, the environment handling, the library blocks and the PyPSA helpers all stay in the blocks repository, where Manta never sees them.
+The table below lists only what lands in Manta's repository, which is the interpreter and nothing else.
+Every row comes from the PoC's `playbooks` package.
+None of the PoC's `blocks` package comes across.
+`MantaBlock`, `DataRecord`, the registry, the block entrypoint, the environment handling, the library blocks and the PyPSA helpers all stay in the blocks repository, where Manta never sees them.
 
-Anything not listed is not being transferred for now, mostly because it supports validation, graph drawing, or playbook nesting — all out of scope for this slice.
+Anything not listed stays behind.
+Most of it supports validation, graph drawing or playbook nesting, and all three are out of scope for this slice.
 
 | PoC component | Verdict | Reasoning | Adjustments needed |
 |---|---|---|---|
@@ -151,25 +216,28 @@ Anything not listed is not being transferred for now, mostly because it supports
 | `${steps.<step>.output}` reference syntax and `_REF_RE` | transfer as-is | Readable, implemented, and backward-only by construction, which keeps a future DAG additive | None |
 | Separate settings document (`globals` + per-step sections) | transfer as-is | Keeps the recipe readable and lets one recipe run with different values | Stored as a second column rather than a second file |
 | `execution.py` — `build_flow`, the sequential spine, `_wire_up`, `_run_block_step` | transfer with changes | The sequential spine plus explicit wires is the execution model | Every step spawns a container. The in-process branch, the `dispatch` flag and `run_playbook_locally` all go |
-| `dispatch_block` | transfer with changes | The mechanism for "run this step elsewhere and wait for its record" | Becomes the block-container spawn, targeting one generic `run-block/manta` deployment with the block name and version as parameters, rather than a deployment per block. See §5 |
+| `dispatch_block` | transfer with changes | The mechanism for "run this step elsewhere and wait for its record" | Becomes the block-container spawn, targeting one generic `run-block/manta` deployment with the block name and version as parameters, rather than a deployment per block. See §6 |
 | `control.py` — `start_run` sending the document rather than a reference | transfer with changes | Sending what was on screen is why a mid-run edit is harmless | Becomes `RunService.create_run` |
 | `control.py` — `run_status`, `_step_states` | transfer with changes | Walking child runs for per-step state is exactly what the steps endpoint needs | Becomes `RunService.get_run_steps`, returning Manta's status vocabulary rather than Prefect's |
 | Frozen Pydantic models throughout | transfer as-is | Good convention, and it matches Manta's existing DTO style | None |
 
-### 4.2 Changes needed in the blocks repository
+### 5.2 What changes in the blocks repository
 
-Nothing is added to the blocks repository and nothing moves into it. Four changes are needed there, all consequences of decisions made on Manta's side:
+Nothing is added to the blocks repository and nothing moves into it.
+Four changes are needed there, and all four follow from decisions made on Manta's side.
 
 | Change | Reasoning |
 |---|---|
-| Split the repository-wide `pixi.toml` into one `pixi.toml` and lockfile per block, and move `library/` out of the installable package | Each block owns its environment. See §6.1 |
+| Split the repository-wide `pixi.toml` into one `pixi.toml` and lockfile per block, and move `library/` out of the installable package | Each block owns its environment. See §7.1 |
 | `MANIFEST` and `ENV` resolve against the block's own directory by convention | Follows from the split; the PoC already has `MANIFEST` for pointing a block at its own manifest |
 | `entrypoint.py` — `run_block` takes a block name, configuration and inputs as plain JSON, and returns a record as plain JSON | It is now invoked by a runner that has no playbook context, and the wire format has to be readable by an interpreter that cannot import `blocks` |
 | Remove `src/playbooks/` | The interpreter moves to Manta. The PoC already guarantees `blocks` never imports `playbooks`, so this is a clean deletion |
 
-## 5. The playbook interpreter
+## 6. The interpreter
 
-The interpreter is **Manta's code**, in Manta's repository. It is adopted from the PoC's `playbooks` package rather than written from scratch, but ownership moves: this is the piece that decides what runs and in what order, and that decision belongs to the application, not to the library of calculations.
+The interpreter is Manta's code, in Manta's repository.
+It is adopted from the PoC's `playbooks` package rather than written from scratch, but ownership moves.
+This is the piece that decides what runs and in what order, and that decision belongs to the application rather than to the library of calculations.
 
 It lives in a new package in the monorepo, alongside `backend/`, `frontend/` and `worker/`:
 
@@ -181,35 +249,62 @@ playbooks/
     └── execution.py    # build_flow — the spine, the wiring, the spawn per step
 ```
 
-A third package rather than a folder inside one, because it has two consumers: the **worker** executes it, and the **backend** reads a stored document to list a run's steps for the steps endpoint. One owner, one definition of the format, and neither the backend nor the worker depends on the other — preserving the separation the preceding PR established.
+It is a third package rather than a folder inside one, because it has two consumers.
+The worker executes it, and the backend reads a stored document to list a run's steps for the steps endpoint.
+One owner holds one definition of the format, and neither the backend nor the worker depends on the other.
+That preserves the separation the preceding PR established.
 
-Responsibilities:
+Each module has one job.
 
-- **`document.py`** — turns the two YAML documents into a `Playbook`. Validates the document is a playbook at all, and resolves each input's `${steps.<step>.output}` into an `OutputRef`.
-- **`playbook.py`** — the in-memory model. `Playbook.active(config)` decides which steps run, in the one place everything consults.
-- **`execution.py`** — compiles the playbook into a Prefect flow. The spine threads a record step to step; `_wire_up` pulls a named earlier result into a named setting; each step spawns a container.
+- **`document.py` turns the two YAML documents into a `Playbook`.**
+  It validates that the document is a playbook at all, and resolves each input's `${steps.<step>.output}` into an `OutputRef`.
+- **`playbook.py` holds the in-memory model.**
+  `Playbook.active(config)` decides which steps run, in the one place everything consults.
+- **`execution.py` compiles the playbook into a Prefect flow.**
+  The spine threads a record step to step, `_wire_up` pulls a named earlier result into a named setting, and each step spawns a container.
 
-Crucially, **`manta_playbooks` does not import the blocks package**. A step holds a block name and a version, and the interpreter never resolves either to a class, a schema, or a description. It passes them to the container and receives `{"url": ...}` back. This is what lets the interpreter live in Manta without Manta acquiring any modelling dependency, and it is why the PoC's `Catalogue` and `BlockSpec` resolution is dropped rather than carried.
+**`manta_playbooks` does not import the blocks package.**
+A step holds a block name and a version, and the interpreter never resolves either to a class, a schema or a description.
+It passes them to the container and receives `{"url": ...}` back.
+This is what lets the interpreter live in Manta without Manta acquiring any modelling dependency.
+It is also why the PoC's `Catalogue` and `BlockSpec` resolution is dropped rather than carried.
 
-Three changes from the PoC, all forced by containers:
+Containers force three changes from the PoC.
 
-**Execution always spawns.** The PoC can run a step in-process when the block's environment matches the current one. Under container-per-block there is no such case — the interpreter never has block dependencies. The in-process branch goes.
+**Execution always spawns.**
+The PoC can run a step in-process when the block's environment matches the current one.
+Under container-per-block there is no such case, because the interpreter never has block dependencies.
+The in-process branch goes.
 
-**One deployment instead of one per block.** The PoC registers a Prefect deployment per `(block, environment)` pair. Under that scheme, adding a block means registering a deployment — an operation outside the blocks repository, breaking the rule that adding a block is purely additive. So the spawn targets a single permanent `run-block/manta` deployment and passes the block's identity as parameters.
+**One deployment serves every block.**
+The PoC registers a Prefect deployment per `(block, environment)` pair.
+Under that scheme, adding a block means registering a deployment.
+That is an operation outside the blocks repository, and it breaks the rule that adding a block is purely additive.
+So the spawn targets a single permanent `run-block/manta` deployment and passes the block's identity as parameters.
 
-**The interpreter asks the watcher for containers; it does not call Docker.** It spawns a container per block by submitting a block job, and the watcher — unchanged from the preceding PR — turns that into a container. Keeping one component responsible for containers is what makes the Kubernetes move a swap rather than a rebuild, and it means the interpreter is testable without a Docker socket.
+**The interpreter asks the watcher for containers, and does not call Docker.**
+It spawns a container per block by submitting a block job, and the watcher turns that into a container, unchanged from the preceding PR.
+Keeping one component responsible for containers is what makes the Kubernetes move a swap rather than a rebuild.
+It also means the interpreter is testable without a Docker socket.
 
-The Prefect surface is then three things: **a playbook run is one flow run, each step is a child flow run, and two deployments exist forever.** No tasks, no caching, no retries, no work-pool arithmetic.
+The Prefect surface is then three things.
+A playbook run is one flow run, each step is a child flow run, and two deployments exist forever.
+There are no tasks, no caching, no retries and no work-pool arithmetic.
 
-One piece of Prefect configuration this does require: **result persistence must be turned on**, pointing at a shared volume locally. The PoC gets away without it because its tests run in one process; once a step's record has to come back out of a container, Prefect needs somewhere durable to have put it. A settings change, not a code change, and the item most worth proving first.
+One piece of Prefect configuration is required: result persistence, pointing at a shared volume locally.
+The PoC gets away without it because its tests run in one process.
+Once a step's record has to come back out of a container, Prefect needs somewhere durable to have put it.
+It is a settings change rather than a code change, and it is the item most worth proving first.
 
-## 6. The block contract
+## 7. The block contract
 
-Everything in this section is the **blocks repository**. Manta gains nothing here and loses nothing here.
+Everything in this section is the blocks repository.
+Manta gains nothing here and loses nothing here.
 
-### 6.1 What a block is
+### 7.1 Block layout
 
-What the PoC already made it — a `MantaBlock` subclass, registered by name, declaring what it needs as class attributes — now living in its own directory with its own environment:
+A block is what the PoC already made it: a `MantaBlock` subclass, registered by name, declaring what it needs as class attributes.
+It now lives in its own directory with its own environment.
 
 ```
 library/overnight_capacity_expansion/
@@ -246,40 +341,81 @@ pypsa = "*"
 manta-blocks = { path = "../..", editable = true }   # the framework only
 ```
 
-**Each block owns its environment.** The PoC has one repository-wide `pixi.toml` with `dev`, `pypsa` and `full` environments shared across all blocks, which quietly recreates the problem blocks exist to solve: two blocks wanting different versions of the same library have nowhere to put that disagreement. Splitting per block removes the shared surface. This is not a new mechanism — the PoC already carries a `MANIFEST` attribute for pointing a block at its own `pixi.toml`, used as `pixi run --manifest-path <M> -e <ENV>`. That path becomes the normal case, and by convention it is the block's own directory.
+**Each block owns its environment.**
+The PoC has one repository-wide `pixi.toml` with `dev`, `pypsa` and `full` environments shared across all blocks, which recreates the problem blocks exist to solve.
+Two blocks wanting different versions of the same library have nowhere to put that disagreement.
+Splitting per block removes the shared surface.
+This is not a new mechanism.
+The PoC already carries a `MANIFEST` attribute for pointing a block at its own `pixi.toml`, used as `pixi run --manifest-path <M> -e <ENV>`.
+That path becomes the normal case, and by convention it is the block's own directory.
 
-**There is no bespoke manifest file.** An earlier draft invented a `block.toml` and a `requirements.txt`; both are gone and are not coming back. The `pixi.toml` above is not that — it is the dependency tool the repository already uses, applied per block instead of once globally. Everything a bespoke manifest would restate is already declared: dependencies in `pixi.toml` with a committed lockfile; parameters in `CONFIG`, a Pydantic model that is strictly more precise than a table of names; inputs and outputs in `INPUTS` and `OUTPUTS`, with `__init_subclass__` already enforcing that a wired input can hold a record and has a default; and identity in the registered name, which by convention is also the directory name so the runner can find a block before importing any Python.
+**There is no bespoke manifest file.**
+A `block.toml` or a `requirements.txt` would restate what a block already declares.
 
-Writing a new block is therefore: a directory, a `pixi.toml`, and a module. Nothing else, nowhere else.
+- **Dependencies live in `pixi.toml`,** with a committed lockfile beside it.
+- **Parameters live in `CONFIG`,** a Pydantic model, which is strictly more precise than a table of names.
+- **Inputs and outputs live in `INPUTS` and `OUTPUTS`.**
+  `__init_subclass__` already enforces that a wired input can hold a record and has a default.
+- **Identity is the registered name.**
+  By convention it is also the directory name, so the runner can find a block before importing any Python.
 
-The repository's top-level `pixi.toml` survives for the framework — the thing that is not a block — and `library/` moves out of the installable package so the framework stays block-free and installable on its own.
+Writing a new block therefore takes a directory, a `pixi.toml` and a module, and nothing else.
 
-### 6.2 Identification and pinning
+The repository's top-level `pixi.toml` survives for the framework, which is the thing that is not a block.
+`library/` moves out of the installable package so the framework stays block-free and installable on its own.
 
-A block is named by its registered name and pinned by a git ref in the blocks repository, written on the step. Name plus version identifies it completely: the version fixes the code, the `pixi.lock` beside it fixes the dependencies, and together they make a step reproducible. Pinning per step is possible precisely because environments are now per block. Branch names are accepted and discouraged; a mutable ref is an unreproducible run.
+### 7.2 Identification and pinning
 
-### 6.3 How the container gets the code and its dependencies
+A block is named by its registered name and pinned by a git ref in the blocks repository, written on the step.
+Name plus version identifies it completely.
+The version fixes the code, the `pixi.lock` beside it fixes the dependencies, and together they make a step reproducible.
+Pinning per step is possible precisely because environments are now per block.
+Branch names are accepted and discouraged, because a mutable ref is an unreproducible run.
 
-The worker image is generic. It contains `git`, `pixi`, the interpreter, and a thin runner — and **no block implementation, and not even the blocks framework**. Everything block-related arrives at run time:
+### 7.3 Code and dependencies at run time
+
+The worker image is generic.
+It contains `git`, `pixi`, the interpreter and a thin runner.
+It contains no block implementation, and not even the blocks framework.
+Everything block-related arrives at run time.
 
 1. Fetch the blocks repository into a bare mirror on a named volume, then check out the commit the step pinned.
-2. Enter `library/<block name>/` and build that block's environment with `pixi install`, against its own `pixi.toml` and lockfile. This is also what installs the framework, as a path dependency.
-3. Run the block inside it — `pixi run -e <ENV> …` — handing it the configuration and inputs as JSON. The registry imports the block by name; `merge_config` folds the wired inputs into its settings; `flow(record)` runs.
+2. Enter `library/<block name>/` and build that block's environment with `pixi install`, against its own `pixi.toml` and lockfile.
+   This is also what installs the framework, as a path dependency.
+3. Run the block inside it with `pixi run -e <ENV> …`, handing it the configuration and inputs as JSON.
+   The registry imports the block by name, `merge_config` folds the wired inputs into its settings, and `flow(record)` runs.
 4. Stream the container's output into the flow run's logs, and return the resulting record as JSON.
 
-This is what makes a new block free: a block that did not exist when the worker image was built runs in that image without rebuilding it, because the image never contained any blocks to begin with.
+This is what makes a new block free.
+A block that did not exist when the worker image was built still runs in that image, without a rebuild.
+The image never contained any blocks to begin with.
 
-**Failure.** Any non-zero exit — checkout, environment build, or the block itself — fails the step, and the logs already carry the reason. Conflicts cannot arise *between* blocks, since no two share an environment; a conflict *within* one block is caught by `pixi` against its committed lockfile, in the blocks repository, before anything reaches Manta.
+**Any non-zero exit fails the step**, whether it comes from the checkout, the environment build or the block itself.
+The logs already carry the reason.
+Conflicts cannot arise between blocks, since no two share an environment.
+A conflict within one block is caught by `pixi` against its committed lockfile, in the blocks repository, before anything reaches Manta.
 
-**Caching.** Cached on one named volume: the git mirror, and each block environment keyed by block name and commit. Nothing per-run is cached. The cost is a volume that grows with no invalidation beyond deleting it — acceptable because the key includes the commit, so a stale entry is impossible by construction, and because the lockfile makes a rebuild deterministic. The benefit is that the second run of a block starts in seconds rather than minutes. Per-block environments do mean identical dependencies get built more than once; pixi's package cache absorbs most of that, and the isolation is worth the rest.
+**One named volume holds the cache.**
+It holds the git mirror, and each block environment keyed by block name and commit.
+Nothing per-run is cached.
+The cost is a volume that grows with no invalidation beyond deleting it.
+That is acceptable, because the key includes the commit, so a stale entry is impossible by construction, and because the lockfile makes a rebuild deterministic.
+The benefit is that the second run of a block starts in seconds rather than minutes.
+Per-block environments do mean identical dependencies get built more than once, and pixi's package cache absorbs most of that.
 
-### 6.4 How Manta learns which blocks exist
+### 7.4 Block discovery
 
-**It does not, and this is a deliberate revision to the preceding PR.** That PR's registration handshake assumed job code shipped inside the worker image, so registering a job type and building the image were one act. That no longer holds. If the handshake stayed per-job, adding a block would mean rebuilding and redeploying the worker image.
+**Manta does not learn which blocks exist, and that revises the preceding PR.**
+That PR's registration handshake assumed job code shipped inside the worker image, so registering a job type and building the image were one act.
+That no longer holds.
+If the handshake stayed per-job, adding a block would mean rebuilding and redeploying the worker image.
 
-So the handshake's granularity changes, and nothing else about it does. The worker still announces itself at startup, but registers two generic entrypoints — "I can run a playbook" and "I can run a block" — rather than one per job. Manta consequently cannot answer "what blocks exist"; the blocks repository is the answer. Nothing asks until there is a UI that browses blocks, and when there is, the PoC's catalogue is the prior art to return to.
+So the handshake's granularity changes, and nothing else about it does.
+The worker still announces itself at startup, but registers two generic entrypoints rather than one per job: "I can run a playbook" and "I can run a block".
+Manta consequently cannot answer "what blocks exist", and the blocks repository is the answer.
+Nothing asks until there is a UI that browses blocks, and the PoC's catalogue is the prior art to return to when there is.
 
-### 6.5 Blocks repository layout
+### 7.5 Repository layout
 
 ```
 blocks/
@@ -296,32 +432,53 @@ blocks/
         └── block.py
 ```
 
-`src/playbooks/` is gone — it is now Manta's. The pi-digit job is not converted, and Manta's copy is not deleted; it simply stops being reachable once `POST /v1/runs` takes a playbook instead of a digit count, which the brief accepts. Nothing is removed from Manta beyond the request field that has to change.
+`src/playbooks/` is gone, because it is now Manta's.
+The pi-digit job is not converted, and Manta's copy is not deleted.
+It stops being reachable once `POST /v1/runs` takes a playbook instead of a digit count, which the brief accepts.
+Nothing is removed from Manta beyond the request field that has to change.
 
-## 7. Execution flow
+## 8. Execution
 
-**One container per block execution, plus one per playbook run for the interpreter.**
+**Each block execution gets one container, and each playbook run gets one more for the interpreter.**
 
-Per block, not per playbook run, because the entire reason blocks exist is that they carry incompatible dependencies — and with per-block environments, two steps in one playbook may legitimately want different versions of the same library. Sharing a container would put that disagreement back. One container per block also makes a failure survivable and the logs separable.
+The unit is a block rather than a playbook run, because the entire reason blocks exist is that they carry incompatible dependencies.
+With per-block environments, two steps in one playbook may legitimately want different versions of the same library.
+Sharing a container would put that disagreement back.
+One container per block also makes a failure survivable and the logs separable.
 
-The interpreter gets its own container rather than running in the backend, because it is long-lived and must not occupy a request thread; and rather than becoming a new always-on service, because the watcher already knows how to start containers from job requests. A second container type costs nothing; a second background service costs a lifecycle.
+The interpreter gets its own container rather than running in the backend, because it is long-lived and must not occupy a request thread.
+It is not a new always-on service either, because the watcher already knows how to start containers from job requests.
+A second container type costs nothing, and a second background service costs a lifecycle.
 
-Responsibilities:
+Each part has one job.
 
 - **The backend** writes one row and submits one job request, then forgets the run until asked.
-- **The watcher**, unchanged from the preceding PR, turns every job request into a container. It does not know that some interpret and others calculate.
+- **The watcher** turns every job request into a container, unchanged from the preceding PR.
+  It does not know that some containers interpret and others calculate.
 - **The interpreter container** parses the documents, compiles the flow, and spawns one block container per active step in order, waiting for each.
 - **Each block container** checks out the pinned commit, builds that block's environment, and runs the block.
 
-**Outputs between blocks.** A block returns `{"url": ...}` — a reference, not data. The next block receives it merged into its configuration and fetches whatever it points at itself. Manta and the worker never read or write modelling data, which keeps the container boundary cheap and lets a block choose its own storage. Getting that reference back out of a container is Prefect's result path, hence the result-persistence requirement in §5.
+**A block returns a reference, not data.**
+It returns `{"url": ...}`, and the next block receives it merged into its configuration and fetches whatever it points at itself.
+Manta and the worker never read or write modelling data, which keeps the container boundary cheap and lets a block choose its own storage.
+Getting that reference back out of a container is Prefect's result path, hence the result-persistence requirement in §6.
 
-**Status and logs.** Each step is a child flow run, so its state is tracked without any new record; the PoC's `_step_states` already walks child runs to produce exactly this. Logs come back as they already do — each container's output goes to its flow run, and `GET /v1/runs/{uuid}/logs` collects the interpreter's flow run plus its children, attributing each line to its step.
+**Each step is a child flow run, so its state needs no new record.**
+The PoC's `_step_states` already walks child runs to produce exactly this.
 
-**Failure partway through.** The failed step's container exits non-zero, its flow run fails, the wait raises in the interpreter, and the run fails. Later steps never start. No rollback, no cleanup, no resume — whatever an earlier block wrote stays where it wrote it, which is the first thing anyone debugging will want.
+**Logs come back as they already do.**
+Each container's output goes to its flow run, and `GET /v1/runs/{uuid}/logs` collects the interpreter's flow run plus its children, attributing each line to its step.
 
-## 8. API surface
+**A failed step fails the run.**
+The step's container exits non-zero, its flow run fails, the wait raises in the interpreter, and the run fails.
+Later steps never start.
+There is no rollback, no cleanup and no resume.
+Whatever an earlier block wrote stays where it wrote it, which is the first thing anyone debugging will want.
 
-**New — playbooks.** YAML travels as a string field.
+## 9. The API
+
+**Three new playbook endpoints.**
+YAML travels as a string field.
 
 ```
 POST /v1/playbooks                                      -> 201
@@ -340,7 +497,9 @@ GET  /v1/playbooks/{playbook_uuid}                      -> 200
       "definition": "...", "configuration": "..."}
 ```
 
-**Changed — starting a run.** `CreateRunRequest` loses `num_pi_digits` and gains a playbook. `project_uuid` stays: runs remain scoped to projects even though playbooks are not.
+**Starting a run changes shape.**
+`CreateRunRequest` loses `num_pi_digits` and gains a playbook.
+`project_uuid` stays, because runs remain scoped to projects even though playbooks are not.
 
 ```diff
 -POST /v1/runs  {"project_uuid": "...", "num_pi_digits": 100000}
@@ -348,9 +507,13 @@ GET  /v1/playbooks/{playbook_uuid}                      -> 200
    -> {"uuid": "...", "project_uuid": "...", "created_at": "..."}
 ```
 
-This is a breaking change to the only run-creation path. The frontend's hardcoded `defaultRunPayload` in `frontend/src/features/runs/api.ts` and the `"Pi digit statistics"` placeholders in `toRunListItem` change with it; the runs table already renders a `playbook` column, so it starts showing a real value.
+This is a breaking change to the only run-creation path.
+The frontend's hardcoded `defaultRunPayload` in [api.ts](frontend/src/features/runs/api.ts) and the `"Pi digit statistics"` placeholders in `toRunListItem` change with it.
+The runs table already renders a `playbook` column, so it starts showing a real value.
 
-**New — per-step state.** The backend reads the run's playbook document with `manta_playbooks` to know the full list of steps, and fills in each one's state from its child flow run.
+**One new endpoint reports per-step state.**
+The backend reads the run's playbook document with `manta_playbooks` to get the full list of steps.
+It fills in each step's state from that step's child flow run.
 
 ```
 GET /v1/runs/{run_uuid}/steps                           -> 200
@@ -361,50 +524,94 @@ GET /v1/runs/{run_uuid}/steps                           -> 200
          "status": "RUNNING", "started_at": "...", "finished_at": null}]}
 ```
 
-Step status uses Manta's own vocabulary — `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED` — not Prefect's state names. This is new surface, so there is no reason to leak through it.
+Step status uses Manta's own vocabulary — `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED` — rather than Prefect's state names.
+This is new surface, so there is no reason to leak through it.
 
-**Unchanged in shape.** `GET /v1/runs`, `GET /v1/runs/summary`, `GET /v1/runs/{uuid}` and `GET /v1/runs/{uuid}/logs` keep their response models. `/logs` changes only internally, to include child flow runs.
+**Four endpoints keep their response models.**
+`GET /v1/runs`, `GET /v1/runs/summary`, `GET /v1/runs/{uuid}` and `GET /v1/runs/{uuid}/logs` are unchanged in shape.
+`/logs` changes only internally, to include child flow runs.
 
-## 9. The path to Kubernetes
+## 10. The path to Kubernetes
 
-Unchanged in a cluster: the worker image, the interpreter, the block contract, the blocks repository, the document format, every API endpoint, and the fact that a block execution is a container that builds an environment and runs a class. Because only references cross between steps, data flow needs no change — there is no shared volume to lose.
+These do not change in a cluster: the worker image, the interpreter, the block contract, the blocks repository, the document format, every API endpoint, and the fact that a block execution is a container that builds an environment and runs a class.
+Data flow needs no change either, because only references cross between steps and there is no shared volume to lose.
 
-Swapped: the watcher, exactly as the preceding PR described. Instead of asking the local Docker daemon for a container, it asks the cluster for a pod. Same image, same parameters, same job request. This is why the interpreter asks the watcher for containers rather than calling Docker itself — otherwise the interpreter would need swapping too.
+The watcher is swapped, exactly as the preceding PR described.
+Instead of asking the local Docker daemon for a container, it asks the cluster for a pod.
+Same image, same parameters, same job request.
+This is why the interpreter asks the watcher for containers rather than calling Docker itself, because otherwise the interpreter would need swapping too.
 
-New infrastructure:
+A cluster needs four things that one machine does not.
 
-- **An image registry**, so any node can pull the worker image — the item the preceding PR already flagged.
-- **Cluster egress to the git host.** Every block container checks out the blocks repository. A cluster without outbound access cannot run anything.
-- **Shared storage for Prefect results**, since a step's returned reference must be readable by an interpreter on a different node. Locally a volume; on a cluster, object storage — a settings change.
-- **A home for the pixi cache.** The named volume holding the git mirror and the built environments is the one host-local assumption here. On a cluster it becomes either a read-write-many volume or nothing, in which case every block execution pays a cold environment build. Neither changes any code — the cache is a path, and its absence is already a supported state.
+- **An image registry lets any node pull the worker image.**
+  The preceding PR already flagged it.
+- **Cluster egress to the git host is required.**
+  Every block container checks out the blocks repository, so a cluster without outbound access cannot run anything.
+- **Prefect results need shared storage.**
+  A step's returned reference must be readable by an interpreter on a different node.
+  Locally that is a volume, and on a cluster it is object storage, which is a settings change.
+- **The pixi cache needs a home.**
+  The named volume holding the git mirror and the built environments is the one host-local assumption here.
+  On a cluster it becomes either a read-write-many volume or nothing, in which case every block execution pays a cold environment build.
+  Neither changes any code, because the cache is a path and its absence is already a supported state.
 
-Nothing else makes the move harder: no host paths, no node affinity, no local sockets in the execution path, and no assumption that two containers can see each other.
+Nothing else makes the move harder.
+There are no host paths, no node affinity, no local sockets in the execution path, and no assumption that two containers can see each other.
 
-## 10. Verification
+## 11. Verification
 
-Start the normal services and the app — `docker compose … up` for infrastructure, `uv run manta` for the application. Nothing else, by hand, ever.
+Start the normal services with `docker compose … up`, then start the application with `uv run manta`.
+Nothing else is set up by hand at any point.
 
-1. `POST /v1/playbooks` with the two documents from §3 and a real commit SHA. Confirm `201`, and that the stored YAML comes back byte-identical from `GET /v1/playbooks/{uuid}`.
-2. `POST /v1/runs`. Confirm `201` returns immediately rather than blocking for the length of the run.
-3. Watch `docker ps`. Expect the interpreter first, then the `expansion` container, then — only after it exits — the `dispatch` container. Three containers in that order is the architecture proving itself.
-4. `GET /v1/runs/{uuid}/steps` while it runs. Expect `expansion` to move `PENDING → RUNNING → SUCCEEDED` and `dispatch` to stay `PENDING` until it does.
-5. Confirm `dispatch` received the reference `expansion` returned — a record crossed a container boundary and the second block resolved it. This proves result persistence is configured, and is the step most likely to fail first.
-6. `GET /v1/runs/{uuid}/logs`. Confirm lines from both blocks, each attributed to its step.
-7. **Prove isolation**: confirm each block container built its environment from its own directory's `pixi.toml`, that the two environments are separately materialised, and that the interpreter container has no PyPSA and no solver.
-8. **Prove Manta holds no block code**: grep the Manta repository for any block implementation, PyPSA import, or modelling dependency, and confirm `manta_playbooks` imports nothing from `blocks`. There should be none, before or after this change.
-9. **Prove additivity**: add a block — a directory, a `pixi.toml`, a module — to the blocks repository, create a playbook naming it at the new commit, and run it, without restarting Manta, rebuilding any image, or running a migration. This is the test that matters most.
-10. **Prove failure is clean**: run a playbook whose second block raises. Confirm the run fails, the second step reads `FAILED`, a third stays `PENDING`, and the traceback is in the logs.
+1. `POST /v1/playbooks` with the two documents from §4 and a real commit SHA.
+   Confirm `201`, and that the stored YAML comes back byte-identical from `GET /v1/playbooks/{uuid}`.
+2. `POST /v1/runs`.
+   Confirm `201` returns immediately rather than blocking for the length of the run.
+3. Watch `docker ps`.
+   Expect the interpreter first, then the `expansion` container, then the `dispatch` container only after `expansion` exits.
+   Three containers in that order is the design working.
+4. `GET /v1/runs/{uuid}/steps` while it runs.
+   Expect `expansion` to move `PENDING → RUNNING → SUCCEEDED`, and `dispatch` to stay `PENDING` until it does.
+5. Confirm that `dispatch` received the reference `expansion` returned.
+   That means a record crossed a container boundary and the second block resolved it.
+   It proves result persistence is configured, and it is the step most likely to fail first.
+6. `GET /v1/runs/{uuid}/logs`.
+   Confirm lines from both blocks, each attributed to its step.
+7. **Prove isolation.**
+   Confirm that each block container built its environment from its own directory's `pixi.toml`, that the two environments are separately materialised, and that the interpreter container has no PyPSA and no solver.
+8. **Prove Manta holds no block code.**
+   Grep the Manta repository for any block implementation, PyPSA import or modelling dependency, and confirm that `manta_playbooks` imports nothing from `blocks`.
+   There should be none, before or after this change.
+9. **Prove additivity.**
+   Add a block to the blocks repository as a directory, a `pixi.toml` and a module, create a playbook naming it at the new commit, and run it, without restarting Manta, rebuilding any image, or running a migration.
+   This is the test that matters most.
+10. **Prove failure is clean.**
+    Run a playbook whose second block raises.
+    Confirm the run fails, the second step reads `FAILED`, a third stays `PENDING`, and the traceback is in the logs.
 
-## 11. Deliberately deferred
+## 12. Deferred work
 
-- **Validation.** The PoC's `validation.py` is good work and none of it comes across yet. A bad reference or unknown block fails the run with a clear message, which is enough until people are authoring playbooks by hand at volume.
-- **Graph drawing.** `graph.py` and the Mermaid renderer stay behind until there is a UI to draw into.
-- **Nested playbooks.** Composition machinery — nested steps, child configs, loaders, circular-reference detection — for a use case nobody has yet.
-- **Conditional steps.** `when:` parses, since the document model comes across whole, but branching is not something to rely on in this slice.
-- **The block catalogue.** Needed the day there is a block picker; the PoC has the design ready.
-- **Recording what a run executed.** A run points at a playbook, not a snapshot of it. Reconstructing an old run after its playbook was edited is the TODO on `Run`.
-- **Playbooks scoped to projects.** Global for now; scoping is easy to add and hard to remove.
-- **Playbook editing and deletion.** Create, list and get only — the minimum to start a run.
-- **Sharing environments between blocks that genuinely agree.** Every block builds its own, even where two are identical. Deduplicating is an optimisation; isolation is the point.
-- **Retries, scheduling, triggers, concurrency limits, cancellation.** The preceding PR already deferred the queueing questions.
-- **An image registry**, and **per-block prebuilt images.** Not needed on one machine. If environment builds become painful even when warm, prebuilt images slot in behind the same contract.
+- **None of the PoC's `validation.py` comes across yet.**
+  It is good work.
+  A bad reference or unknown block fails the run with a clear message, which is enough until people author playbooks by hand at volume.
+- **Graph drawing stays behind.**
+  `graph.py` and the Mermaid renderer wait for a UI to draw into.
+- **Nested playbooks are out.**
+  The composition machinery covers nested steps, child configs, loaders and circular-reference detection, and nobody has the use case yet.
+- **Conditional steps parse, and are not something to rely on.**
+  `when:` parses, since the document model comes across whole.
+  Branching is out of scope for this slice.
+- **The block catalogue waits for a block picker.**
+  The PoC has the design ready.
+- **A run points at a playbook, not a snapshot of it.**
+  Reconstructing an old run after its playbook was edited is the TODO on `Run`.
+- **Playbooks are global rather than scoped to projects.**
+  Scoping is easy to add and hard to remove.
+- **Playbooks cannot be edited or deleted.**
+  Create, list and get are the minimum to start a run.
+- **Every block builds its own environment, even where two are identical.**
+  Deduplicating is an optimisation, and isolation is the point.
+- **Retries, scheduling, triggers, concurrency limits and cancellation stay out.**
+  The preceding PR already deferred the queueing questions.
+- **Neither an image registry nor per-block prebuilt images are needed on one machine.**
+  If environment builds become painful even when warm, prebuilt images slot in behind the same contract.
