@@ -95,6 +95,20 @@ def _wait_for_logs(
     )
 
 
+def _create_completed_runs(
+    app_server: str, prefect_service: dict[str, str], project_uuid: str, count: int
+) -> list[str]:
+    _wait_for_deployment_registered(prefect_service)
+    run_uuids = []
+
+    for _ in range(count):
+        run_uuid = _create_run(app_server, project_uuid, num_pi_digits=100)["uuid"]
+        assert _wait_for_terminal_status(app_server, run_uuid) == "COMPLETED"
+        run_uuids.append(run_uuid)
+
+    return run_uuids
+
+
 def test_create_and_run_pi_digit_stats(
     app_server: str, db_connection: psycopg.Connection, prefect_service: dict[str, str]
 ) -> None:
@@ -169,3 +183,106 @@ def test_run_survives_project_deletion_with_project_id_set_to_null(
     response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
     assert response.status_code == 200
     assert response.json()["project_uuid"] is None
+
+
+def test_list_runs_returns_project_runs_with_pagination_and_summary(
+    app_server: str, prefect_service: dict[str, str]
+) -> None:
+    # Given a project with multiple completed runs
+    project_uuid = _create_project(app_server)
+    run_uuids = _create_completed_runs(app_server, prefect_service, project_uuid, count=3)
+
+    # When fetching the first page
+    first_page_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "limit": 2, "offset": 0},
+    )
+
+    # Then pagination metadata, project scoping, and summary counts are returned
+    assert first_page_response.status_code == 200
+    first_page = first_page_response.json()
+    assert first_page["total"] == 3
+    assert first_page["limit"] == 2
+    assert first_page["offset"] == 0
+    assert len(first_page["items"]) == 2
+    assert {item["uuid"] for item in first_page["items"]}.issubset(set(run_uuids))
+    assert {item["project_uuid"] for item in first_page["items"]} == {project_uuid}
+    assert {item["status"] for item in first_page["items"]} == {"COMPLETED"}
+    assert first_page["summary"] == {
+        "total": 3,
+        "statuses": {"COMPLETED": 3},
+    }
+
+    # And the second page returns the remaining run
+    second_page_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "limit": 2, "offset": 2},
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()
+    assert second_page["total"] == 3
+    assert second_page["offset"] == 2
+    assert len(second_page["items"]) == 1
+    assert second_page["items"][0]["uuid"] in run_uuids
+
+
+def test_list_runs_filters_project_runs_by_status(
+    app_server: str, prefect_service: dict[str, str]
+) -> None:
+    # Given a project with completed runs
+    project_uuid = _create_project(app_server)
+    run_uuids = _create_completed_runs(app_server, prefect_service, project_uuid, count=2)
+
+    # When filtering by completed status
+    completed_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "statuses": "COMPLETED", "limit": 10, "offset": 0},
+    )
+
+    # Then matching runs are returned
+    assert completed_response.status_code == 200
+    completed_body = completed_response.json()
+    assert completed_body["total"] == 2
+    assert {item["uuid"] for item in completed_body["items"]} == set(run_uuids)
+    assert {item["status"] for item in completed_body["items"]} == {"COMPLETED"}
+
+    # And non-matching filters return an empty page while preserving project summary
+    running_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "statuses": "RUNNING", "limit": 10, "offset": 0},
+    )
+    assert running_response.status_code == 200
+    running_body = running_response.json()
+    assert running_body["items"] == []
+    assert running_body["total"] == 0
+    assert running_body["summary"]["total"] == 2
+    assert running_body["summary"]["statuses"] == {"COMPLETED": 2}
+
+
+def test_get_run_summary_returns_project_counts(
+    app_server: str, prefect_service: dict[str, str]
+) -> None:
+    # Given a project with completed runs
+    project_uuid = _create_project(app_server)
+    _create_completed_runs(app_server, prefect_service, project_uuid, count=2)
+
+    # When fetching its summary
+    response = httpx2.get(f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid})
+
+    # Then counts are scoped to that project
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 2,
+        "statuses": {"COMPLETED": 2},
+    }
+
+
+def test_list_runs_with_unknown_project_returns_404(app_server: str) -> None:
+    # Given an unknown project UUID
+    project_uuid = "00000000-0000-0000-0000-000000000000"
+
+    # When listing its runs
+    response = httpx2.get(f"{app_server}/v1/runs", params={"project_uuid": project_uuid})
+
+    # Then the API reports that the project does not exist
+    assert response.status_code == 404

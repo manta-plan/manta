@@ -171,6 +171,159 @@ def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     assert exc_info.value.status_code == 404
 
 
+def test_list_runs_returns_project_runs_with_prefect_statuses(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    first_run = _existing_run(project)
+    second_run = _existing_run(project)
+    second_run.id = 2
+    second_run.uuid = uuid4()
+    second_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [first_run, second_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        AsyncMock(
+            return_value={
+                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0, status_filters=None)
+
+    # Then
+    assert result.total == 2
+    assert result.limit == 10
+    assert result.offset == 0
+    assert result.summary.total == 2
+    assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
+    assert [run.uuid for run in result.items] == [first_run.uuid, second_run.uuid]
+    assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
+    assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
+    assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
+
+
+def test_list_runs_filters_project_runs_by_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    completed_run = _existing_run(project)
+    running_run = _existing_run(project)
+    running_run.id = 2
+    running_run.uuid = uuid4()
+    running_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [completed_run, running_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        AsyncMock(
+            return_value={
+                completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                running_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.list_runs(
+        project_uuid=project.uuid, limit=10, offset=0, status_filters=["running"]
+    )
+
+    # Then
+    assert result.total == 1
+    assert result.summary.total == 2
+    assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
+    assert [run.uuid for run in result.items] == [running_run.uuid]
+    assert [run.status for run in result.items] == ["RUNNING"]
+
+
+def test_get_run_summary_returns_project_status_counts(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    running_run = _existing_run(project)
+    completed_run = _existing_run(project)
+    completed_run.id = 2
+    completed_run.uuid = uuid4()
+    completed_run.prefect_flow_run_id = uuid4()
+    failed_run = _existing_run(project)
+    failed_run.id = 3
+    failed_run.uuid = uuid4()
+    failed_run.prefect_flow_run_id = uuid4()
+    queued_run = _existing_run(project)
+    queued_run.id = 4
+    queued_run.uuid = uuid4()
+    queued_run.prefect_flow_run_id = uuid4()
+    unknown_run = _existing_run(project)
+    unknown_run.id = 5
+    unknown_run.uuid = uuid4()
+    unknown_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(
+        query_results={
+            Project: project,
+            Run: [running_run, completed_run, failed_run, queued_run, unknown_run],
+        }
+    )
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        AsyncMock(
+            return_value={
+                running_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+                completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                failed_run.prefect_flow_run_id: _fake_flow_run("CRASHED"),
+                queued_run.prefect_flow_run_id: _fake_flow_run("SCHEDULED"),
+                unknown_run.prefect_flow_run_id: _fake_flow_run("LATE"),
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_summary(project_uuid=project.uuid)
+
+    # Then
+    assert result.total == 5
+    assert result.statuses == {
+        "RUNNING": 1,
+        "COMPLETED": 1,
+        "CRASHED": 1,
+        "SCHEDULED": 1,
+        "LATE": 1,
+    }
+
+
+def test_get_run_summary_with_unknown_project_raises_404(mock_db_class) -> None:
+    # Given
+    db = mock_db_class(query_results={Project: None})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.get_run_summary(project_uuid=uuid4())
+    assert exc_info.value.status_code == 404
+
+
+def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
+    # Given
+    db = mock_db_class(query_results={Project: None})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.list_runs(project_uuid=uuid4(), limit=10, offset=0, status_filters=None)
+    assert exc_info.value.status_code == 404
+
+
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     monkeypatch: pytest.MonkeyPatch,
     mock_db_class,

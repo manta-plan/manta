@@ -19,6 +19,19 @@ class GetRunResult(BaseModel):
     created_at: datetime
 
 
+class GetRunSummaryResult(BaseModel):
+    total: int
+    statuses: dict[str, int]
+
+
+class ListRunsResult(BaseModel):
+    items: list[GetRunResult]
+    total: int
+    limit: int
+    offset: int
+    summary: GetRunSummaryResult
+
+
 class GetRunLogsResult(BaseModel):
     uuid: UUID
     logs: list[str]
