@@ -45,17 +45,9 @@ def test_list_runs_request_rejects_a_negative_offset() -> None:
         ListRunsRequest(project_uuid=uuid4(), offset=-1)
 
 
-def test_list_runs_request_accepts_status_alias() -> None:
+def test_list_runs_request_accepts_statuses() -> None:
     # When
-    request = ListRunsRequest(project_uuid=uuid4(), status=["RUNNING", "COMPLETED"])
+    request = ListRunsRequest(project_uuid=uuid4(), statuses=["RUNNING", "COMPLETED"])
 
     # Then
     assert request.statuses == ["RUNNING", "COMPLETED"]
-
-
-def test_list_runs_request_accepts_statuses_field_name() -> None:
-    # When
-    request = ListRunsRequest(project_uuid=uuid4(), statuses=["FAILED"])
-
-    # Then
-    assert request.statuses == ["FAILED"]

@@ -236,7 +236,7 @@ def test_list_runs_filters_project_runs_by_status(
     # When filtering by completed status
     completed_response = httpx2.get(
         f"{app_server}/v1/runs",
-        params={"project_uuid": project_uuid, "status": "COMPLETED", "limit": 10, "offset": 0},
+        params={"project_uuid": project_uuid, "statuses": "COMPLETED", "limit": 10, "offset": 0},
     )
 
     # Then matching runs are returned
@@ -249,7 +249,7 @@ def test_list_runs_filters_project_runs_by_status(
     # And non-matching filters return an empty page while preserving project summary
     running_response = httpx2.get(
         f"{app_server}/v1/runs",
-        params={"project_uuid": project_uuid, "status": "RUNNING", "limit": 10, "offset": 0},
+        params={"project_uuid": project_uuid, "statuses": "RUNNING", "limit": 10, "offset": 0},
     )
     assert running_response.status_code == 200
     running_body = running_response.json()

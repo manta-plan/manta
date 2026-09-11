@@ -73,7 +73,7 @@ export async function listRuns(project: DefaultProject, params: ListRunsParams) 
       offset: String(params.offset),
     });
     params.statuses.forEach((status) => {
-      searchParams.append("status", status);
+      searchParams.append("statuses", status);
     });
     return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
   } catch (error) {

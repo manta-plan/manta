@@ -39,8 +39,8 @@ def test_list_runs_binds_query_params_to_request_model() -> None:
             ("project_uuid", str(project_uuid)),
             ("limit", "25"),
             ("offset", "50"),
-            ("status", "RUNNING"),
-            ("status", "COMPLETED"),
+            ("statuses", "RUNNING"),
+            ("statuses", "COMPLETED"),
         ],
     )
 
