@@ -77,10 +77,8 @@ Whatever manages the infrastructure starts them:
 
 | Target | Started by |
 | --- | --- |
-| Local development | The developer, or a Compose service per environment |
-| Compose deployment | A service with `restart: unless-stopped` |
-| Kubernetes | A Deployment per work pool, in Manta's infrastructure manifests or Helm chart |
-| Bare VM | A systemd unit |
+| Local development | A Compose service per environment with `restart: unless-stopped` |
+| MVP (Kubernetes) | A Deployment per work pool, in Manta's infrastructure manifests or Helm chart |
 
 ## Kubernetes
 
@@ -221,8 +219,7 @@ backup and recovery policies needing to diverge.
 | Concurrent runs | Bounded by work pool concurrency limits, configured per pool in Prefect, and by cluster capacity |
 | Many playbooks | No effect on infrastructure — playbooks are data, and one orchestrator deployment serves all of them |
 | A new environment | One image, one pool, one worker deployment |
-| Bursty load | Long idle stretches punctuated by many simultaneous runs — twenty scenario variants fired off at once, or nothing overnight and everyone at 9am.
-Kubernetes pools absorb it: pods exist only while a run is in flight, so the peak scales out and the trough costs nothing |
+| Bursty load | Long idle stretches punctuated by many simultaneous runs — twenty scenario variants fired off at once, or nothing overnight and everyone at 9am. Kubernetes pools absorb it: pods exist only while a run is in flight, so the peak scales out and the trough costs nothing |
 | Long playbooks | Hold an orchestrator slot for their duration; size the orchestrator's concurrency for the expected number of simultaneous playbooks, not steps |
 | Idle cost | One small worker per environment, plus orchestrator workers shared across every playbook.
 Execution pods scale to zero |

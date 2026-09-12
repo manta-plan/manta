@@ -132,8 +132,7 @@ The PoC currently passes the body — see
 | Identity, access control, tenancy | — | ✅ Owns |
 | The HTTP API and the frontend | — | ✅ Owns |
 | Infrastructure lifecycle: when to deploy, how many workers, pool sizing | — | ✅ Owns |
-| Run state, logs, retries, history | *Prefect owns this.
-Neither repository stores it.* | |
+| Run state, logs, retries, history | *Prefect owns this. Neither repository stores it.* | |
 
 
 

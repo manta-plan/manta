@@ -103,21 +103,16 @@ without it, and would continue happening if it were restarted.
 
 `POST /v1/runs` does five things, in order:
 
-1.
-Loads the project, playbook document and configuration from the database.
-2.
-Rebuilds the playbook using the catalogue and validates it.
-An invalid playbook
-   fails here, with the issue list, before anything is submitted — a run that could
-   not succeed is never started.
-3.
-Resolves the input `DataRecord`: the URL of the project's input model in the object
-   store.
-4.
-Submits `run_playbook/<env>` with the document, configuration, record and catalogue
-   reference as parameters, and returns immediately.
-5.
-Inserts the run row linking the project and playbook to the returned flow run id.
+1. Loads the project, playbook document and configuration from the database.
+
+2. Rebuilds the playbook using the catalogue and validates it.
+An invalid playbook fails here, with the issue list, before anything is submitted — a run that could not succeed is never started.
+
+3. Resolves the input `DataRecord`: the URL of the project's input model in the object store.
+
+4. Submits `run_playbook/<env>` with the document, configuration, record and catalogue reference as parameters, and returns immediately.
+
+5. Inserts the run row linking the project and playbook to the returned flow run id.
 
 The playbook travels **as its document**, not as a reference.
 What runs is what was on
