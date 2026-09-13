@@ -141,11 +141,11 @@ and is a product object.
 
 ### Own deployment creation (the apply layer)
 
-Nothing in Manta creates Prefect deployments today; the deploy path lives in `blocks`.
-Manta takes the `DeploymentPlan` from `manta-blocks` and applies it: creating or
-updating deployments bound to `manta-<env>` pools, deciding *when* to apply (at release
-time, or when a playbook is saved), and recording in its own database what has been
-applied so it is idempotent. Locally this is `docker/`; for Kubernetes it is
+Nothing in Manta creates Prefect flow deployments today; the deploy path lives in
+`blocks`. Manta takes the `DeploymentPlan` from `manta-blocks` and applies it: creating
+or updating flow deployments bound to `manta-<env>` pools, deciding *when* to apply (at
+release time, or when a playbook is saved), and recording in its own database what has
+been applied so it is idempotent. Locally this is `docker/`; for Kubernetes it is
 `manta-infra`. See [05](05-repository-interface.md#plan-apply-policy).
 
 ## Repository structure
@@ -162,10 +162,10 @@ on the pinned published version in production. Add an import-linter rule forbidd
 
 ### Extract the PyPSA block library into its own repository
 
-The blocks that need PyPSA move out of the monorepo into a separate library
-repository, which depends on the published `manta-blocks`, owns its own environments,
-images and catalogue CI, and serves as the reference for third-party block
-contributors.
+The blocks that need PyPSA move out of the monorepo into a separate library repository
+— `manta-batteries` *(proposed name)* — which depends on the published `manta-blocks`,
+owns its own environments, images and catalogue CI, and serves as the reference for
+third-party block contributors.
 
 ### Stand up `manta-infra` (future)
 

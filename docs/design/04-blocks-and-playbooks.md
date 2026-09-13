@@ -12,7 +12,7 @@ src/
     registry.py    Which blocks exist, and the catalogue that describes them
     environments.py  The environments blocks run in
     deployment.py  What needs deploying, and the one place deployment names are made
-    entrypoint.py  The Prefect flow every block deployment runs
+    entrypoint.py  The Prefect flow every block flow deployment runs
     library/       A few example blocks used by tests (the PyPSA block library lives
                    in its own repository)
   playbooks/       Blocks chained together
@@ -290,9 +290,9 @@ Neither runs any of the playbook.
 With real blocks that matters: **asking for a
 picture should not start a solver.**
 
-## From playbook to deployments
+## From playbook to flow deployments
 
-Before a playbook can run, Prefect needs a deployment for each distinct
+Before a playbook can run, Prefect needs a flow deployment for each distinct
 `(block, environment)` pair its active steps use.
 Working that out is a pure function
 of the playbook and its settings:
@@ -309,17 +309,17 @@ flowchart TD
     pool --> worker["Worker running in the pypsa environment"]
 ```
 
-Names are constructed in one place: deployment `run_block/<block>-<env>`, work
+Names are constructed in one place: flow deployment `run_block/<block>-<env>`, work
 pool `manta-<env>` by default.
 No other component should ever build these strings.
 
-Steps needing the same pair share one deployment.
+Steps needing the same pair share one flow deployment.
 Nested playbooks fold into the
 parent's plan, with each step's path recorded from the outermost playbook inwards so a
 conflict can be located.
 
 Producing the plan is where `manta-blocks` stops.
-Turning it into managed Prefect deployments — bound to work pools, with images,
+Turning it into managed Prefect flow deployments — bound to work pools, with images,
 resource limits and secrets — is the **apply** layer, and it belongs to Manta:
 `docker/` for local development and a future `manta-infra` repo for Kubernetes.
 See [05](05-repository-interface.md#plan-apply-policy) and
@@ -328,7 +328,8 @@ See [05](05-repository-interface.md#plan-apply-policy) and
 For terminal use and for its own tests, `manta-blocks` keeps a **thin runner** that
 takes the same plan and runs the playbook against whatever Prefect the caller already
 has — in-process or via `.serve()`.
-It does *not* create durable `manta-<env>` deployments, size pools or start workers.
+It does *not* create durable `manta-<env>` flow deployments, size pools or start
+workers.
 ## Current PoC state & TODOs
 
 Carried from the `blocks` README on commit `f6dc47f`. [09](09-code-changes.md) lists

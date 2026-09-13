@@ -19,9 +19,10 @@ Third-party plug-in environments are built from their
 3. **Create work pools and start workers.** One pool per environment (`manta-<env>`),
    plus one orchestrator pool shared by every playbook.
 Each pool is accompanied by one worker which watches the pool and creates docker containers (local dev) / kubernetes pods (prod) for each block run.
-4. **Apply deployments.** Manta takes the `DeploymentPlan` from `manta-blocks` and
-   applies one `run_block/<block>-<env>` per pair, plus a single
-   `run_playbook/<orchestrator-env>` that serves every playbook in the system.
+4. **Apply flow deployments.** Manta computes the plan from the catalogue (there is no
+   playbook at release time) and applies one `run_block/<block>-<env>` flow deployment
+   per pair, plus a single `run_playbook/<orchestrator-env>` that serves every playbook
+   in the system.
 5. **Manta loads the catalogue** at startup and serves it at `GET /v1/blocks`.
 
 ## Phase 1 — Design time
@@ -148,7 +149,7 @@ re-running it costs almost nothing.
 
 ### Dispatch, in detail
 
-One `run_playbook` deployment serves every playbook, so the first thing the
+One `run_playbook` flow deployment serves every playbook, so the first thing the
 orchestrator does is turn the document it was handed back into a playbook.
 
 **This is deserialisation, and it is cheap.** Only JSON crosses a Prefect parameter
@@ -164,7 +165,7 @@ being a per-run overhead worth engineering around.
 For each step that the conditions say will run, it:
 
 - collects the wired inputs — the records produced by specific earlier steps;
-- calls `run_deployment` for that step's `(block, environment)` deployment, passing
+- calls `run_deployment` for that step's `(block, environment)` flow deployment, passing
   the block name, that step's settings, the spine record and the wired inputs;
 - blocks until the child finishes, and takes the returned record as the new spine
   record.

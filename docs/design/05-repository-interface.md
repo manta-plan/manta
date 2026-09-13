@@ -86,7 +86,7 @@ published version in production; publishing to PyPI and conda builds only that s
 catalogue and the submit-execute-observe loop in tests, and deliberately not needing
 PyPSA.
 The main block library — OET's PyPSA blocks, and other modelling frameworks later —
-lives in a separate repository.
+lives in a separate repository, **`manta-batteries`** *(proposed name)*.
 That repository is an example consumer of `manta-blocks` and the reference a
 third-party block contributor copies from; it owns its own environments, images and
 catalogue CI.
@@ -139,11 +139,17 @@ Manta submits a run with a **catalogue version and URI**, not the catalogue's
 contents.
 The orchestrator fetches it from that URI and caches it by version.
 
-The URI points at wherever `blocks` CI publishes the catalogue — the object store is
-the obvious home, since every worker can already reach it.
+The URI points at wherever the block library's CI publishes the catalogue — the object
+store is the obvious home, since every worker can already reach it.
 Not Manta's API: workers do
 not call the backend, and keeping that true means the backend can restart, or be
 unreachable, without affecting a run in flight.
+
+Manta loads the catalogue at startup — simplest for now.
+Because it travels by reference from a stable URI, Manta can also re-fetch it while
+running; that is the seam through which a newly published catalogue (new or updated
+blocks) reaches a running system without a redeploy.
+See [07 — Evolving a running system](07-deployment-topology.md#evolving-a-running-system).
 
 Passing the body would work — it makes a flow run self-contained, and guarantees the
 catalogue that validated the playbook is the one used to dispatch it — but it copies a
@@ -171,7 +177,7 @@ The PoC currently passes the body — see
 | The `run_block` and `run_playbook` flows | ✅ Owns | Submits to them |
 | A thin runner for terminal and test use | ✅ Owns | Does not use it |
 | Environment definitions, images, catalogue generation | ✅ Owns | Reads the result |
-| Creating Prefect deployments, work pools and workers | — | ✅ Owns |
+| Creating Prefect flow deployments, work pools and workers | — | ✅ Owns |
 | Persistence — projects, playbooks, runs, artefacts | — | ✅ Owns |
 | Identity, access control, tenancy | — | ✅ Owns |
 | The HTTP API and the frontend | — | ✅ Owns |
@@ -187,19 +193,68 @@ different.
 
 | | What it is | Where it belongs | Why |
 | --- | --- | --- | --- |
-| **Plan** | Deriving *what* must exist: `(block, env)` pairs, deployment and pool names, environment conflicts, the orchestrator path | `manta-blocks` | Pure functions over playbook semantics. Only `manta-blocks` knows the block-to-environment mapping, and name construction must have one home or the consumers drift |
-| **Apply** | Creating it against a target: Prefect deployments, work pools, workers, containers, pods | Manta (`docker/` locally; a future `manta-infra` repo for Kubernetes) | Applying needs registry, cluster, limits and secrets — all Manta's knowledge, none of it a library's |
-| **Policy** | *When* to deploy, how many, for whom, idempotency, what the user sees on failure | Manta | These are product events and infrastructure decisions. A library has no events and no database to be idempotent against |
+| **Plan** | Deriving *what* must exist: `(block, env)` pairs, flow-deployment and pool names, resource requirements, environment conflicts, the orchestrator path | `manta-blocks` | Pure functions over playbook semantics. Only `manta-blocks` knows the block-to-environment mapping, and name construction must have one home or the consumers drift |
+| **Apply** | Creating it against a target: Prefect flow deployments, work pools, workers | Manta (`docker/` locally; a future `manta-infra` repo for Kubernetes) | Applying needs registry, cluster, limits and secrets — all Manta's knowledge, none of it a library's |
+| **Policy** | *When* to apply, how many, for whom, idempotency, what the user sees on failure | Manta | These are product events and infrastructure decisions. A library has no events and no database to be idempotent against |
+
+### What the plan is
+
+The plan is a `DeploymentPlan` — a plain value computed with no I/O and no block
+imports.
+It can be derived from two different inputs, for two different purposes:
+
+- **From a playbook + config:** the subset of `(block, env)` pairs that *this*
+  playbook's active steps need.
+Manta uses this to check the required flow deployments
+  and pools already exist before a run, never to create them on the run path.
+- **From the catalogue:** every `(block, env)` pair in the whole system, independent of
+  any playbook.
+This is what release-time provisioning enumerates — there is no playbook
+  at release time.
+
+Either way the plan carries, for each pair, the constructed names — flow deployment
+`run_block/<block>-<env>`, work pool `manta-<env>` — plus the single orchestrator flow
+deployment `run_playbook/<orchestrator-env>`, and (once modelled) each block's resource
+requirements.
+Name construction lives here so the code that *creates* a flow deployment and the code
+that *triggers* it by name cannot disagree.
+
+### What apply does
+
+Applying a plan against a target creates three kinds of object, and they differ in
+mechanism and lifetime — which is what makes "does a new block need a redeploy?"
+answerable:
+
+| Object | How it is created | Lifetime | Needs cluster access? |
+| --- | --- | --- | --- |
+| **Flow deployment** (`run_block/<block>-<env>`, `run_playbook/<env>`) | A Prefect-API call against the running server | Cheap, per `(block, env)`; re-registering is idempotent | No — server metadata only |
+| **Work pool** (`manta-<env>`, orchestrator) | A Prefect-API call | Per environment; created once | No |
+| **Worker** | An OS/cluster process: a Compose service locally, a Kubernetes Deployment in `manta-infra` | Long-lived, per environment | Yes — image, namespace, service account, secrets |
+
+Only the worker needs registry, cluster and secret knowledge, which is why apply is
+Manta's and not a library's.
+Flow deployments and pools are Prefect-API calls, so they can be made at any time
+against a running Prefect server — including, eventually, from the backend at runtime.
+See [07 — Evolving a running system](07-deployment-topology.md#evolving-a-running-system).
+
+### What policy decides
+
+Manta decides *when* to apply (at release time, or when a playbook is saved — never per
+run), records in its own database what it has already applied so re-applying is a
+no-op, sets pool concurrency limits, and shapes what a user sees when a run fails.
+A library has neither the events nor the database for any of this.
+
+### The thin runner
 
 `manta-blocks` keeps one execution path of its own: a **thin runner** that turns a
 playbook document into a Prefect flow and runs it in-process or via `.serve()`, against
 whatever Prefect the caller already has.
 This is what a terminal user runs without Manta, and what `manta-blocks`' own
 integration tests use to submit-execute-observe.
-It does not create managed `manta-<env>` deployments, size pools or start workers —
-that is the apply layer, and it is Manta's.
-Manta targets the same plan at durable Prefect deployments instead; its deployment
-setup is one apply target, not the only one.
+It does not create managed `manta-<env>` flow deployments, size pools or start workers
+— that is the apply layer, and it is Manta's.
+Manta targets the same plan at durable flow deployments instead; its deployment setup
+is one apply target, not the only one.
 See [07](07-deployment-topology.md).
 
 Two concrete consequences for the current code:

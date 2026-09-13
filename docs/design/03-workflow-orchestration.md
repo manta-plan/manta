@@ -36,18 +36,19 @@ Everything that submits or executes work talks to this API and only to this API.
 That
 is why Manta's backend and Manta's workers never talk to each other directly.
 
-### Deployments
+### Flow deployments
 
 Running a flow by importing it and calling it only works if the calling process can
 import the flow — which requires the flow's dependencies.
 That is what Manta cannot
 assume.
 
-A **deployment** solves this.
-It is a registered, named, remotely-triggerable
-description of "this flow, runnable in this place, with these default parameters".
-Its
-name is `<flow-name>/<deployment-name>`.
+A **flow deployment** solves this. (Prefect's own term is just *deployment*; these
+documents say *flow deployment* to keep it distinct from a Kubernetes Deployment.)
+It is a registered, named, remotely-triggerable description of "this flow, runnable in
+this place, with these default parameters and this infrastructure config (image,
+resources)".
+Its name is `<flow-name>/<deployment-name>`.
 Given only that string, any process that can
 reach the Prefect API can request a run:
 
@@ -66,12 +67,28 @@ of the rest of this design follows from that.
 
 ### Work pools and workers
 
-A deployment is registered against a **work pool**: a named queue that routes flow
+A flow deployment is registered against a **work pool**: a named queue that routes flow
 runs to the infrastructure capable of executing them.
 
 A **worker** is a long-running process that polls one work pool, picks up flow runs
-queued to it, and executes them.
+queued to it, and runs them.
 One worker serves one pool.
+
+The three play distinct roles, which is worth pinning down because they are easy to
+conflate:
+
+- The **work pool** says *what kind* of infrastructure and its defaults (`process` /
+  `docker` / `kubernetes`).
+- The **worker** is the long-lived poller that, per flow run, provisions that
+  infrastructure — a subprocess, a container, or a fresh pod — and tears it down after.
+- The **flow deployment** is the durable, named recipe the worker launches: which flow,
+  which image and resources, which parameters.
+It is also the handle the orchestrator
+  triggers by name with `run_deployment(...)`.
+
+So a worker does create a pod per run, but it needs a flow deployment to know *what* to
+put in that pod; and many flow deployments (one per block) share a single pool and its
+one worker.
 
 The consequence that matters: a flow run queued to a pool with no worker sits there
 forever.
@@ -86,7 +103,7 @@ Worker types differ in *how* they execute a run:
 | `docker` | Starts a container per flow run | Docker-based deployments |
 | `kubernetes` | Creates a Kubernetes Job — a fresh pod — per flow run, then lets Kubernetes reap it | Production block execution |
 
-Switching between them changes deployment configuration and infrastructure, not
+Switching between them changes flow deployment configuration and infrastructure, not
 application code.
 See [07](07-deployment-topology.md).
 
@@ -131,8 +148,8 @@ reimplemented there.
 
 ### Two flows, and only two
 
-The whole system is built from two Prefect flows, both defined in the `blocks`
-repository:
+The whole system is built from two Prefect flows, both defined in the `manta-blocks`
+package:
 
 | Flow | Deployment name | Runs on | Job |
 | --- | --- | --- | --- |
@@ -274,9 +291,9 @@ Manta's own API, under Manta's own access control.
 | Flow | A Python function Prefect tracks as a unit of work |
 | Flow run | One tracked execution of a flow |
 | Task | A tracked unit inside a flow |
-| Deployment | A named, remotely-triggerable registration of a flow against a work pool |
+| Flow deployment | A named, remotely-triggerable registration of a flow against a work pool, carrying its parameters and infrastructure config (Prefect calls it a *deployment*) |
 | Work pool | A queue routing flow runs to infrastructure that can execute them |
-| Worker | A process that polls one work pool and executes what it finds |
+| Worker | A long-running process that polls one work pool and, per flow run, provisions and runs the infrastructure (subprocess, container or pod) |
 | Subflow | A flow run linked as a child of another flow run |
 | Result | A flow run's return value, persisted so other processes can read it |
 | State | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CRASHED`, `CANCELLED` |

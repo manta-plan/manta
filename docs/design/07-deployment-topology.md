@@ -5,7 +5,7 @@ client's Kubernetes cluster.
 What differs between them is confined to two things: how
 an environment is materialised, and how Manta's apply layer turns a deployment plan
 (produced by `manta-blocks` — see [05](05-repository-interface.md#plan-apply-policy))
-into Prefect deployments, work pools and workers.
+into Prefect flow deployments, work pools and workers.
 Locally that apply layer is `docker/`; for Kubernetes it is a future `manta-infra`
 repository.
 
@@ -18,7 +18,7 @@ consistently:
 | Concept | Name |
 | --- | --- |
 | Prefect work pool | `manta-<env>` |
-| Prefect deployment for a block | `run_block/<block>-<env>` |
+| Prefect flow deployment for a block | `run_block/<block>-<env>` |
 | Container image (production) | `<registry>/manta-<env>:<tag>` |
 | Pixi environment (development) | `<env>` in the `blocks` manifest |
 
@@ -204,6 +204,49 @@ One gotcha to verify early: a deployment records the flow's entrypoint as an imp
 Suggested order: 1 and 2 first, on Compose with SeaweedFS, because they carry the real
 risk.
 Then 3, then 4 and 5, which are plumbing.
+
+## Evolving a running system
+
+A live system changes in four ways, and they cost very different amounts.
+The apply
+layer is split the way it is ([05](05-repository-interface.md#what-apply-does)) so that
+the common changes are cheap and the rare one is the only one that touches the cluster.
+
+| Change | What it needs | Redeploy Manta? |
+| --- | --- | --- |
+| **A new playbook**, or an edited one | Nothing — a playbook is data.
+It is stored and validated against the current catalogue; its `(block, env)` pairs already have flow deployments | No |
+| **A new or updated block in an existing environment** (e.g. a new PyPSA block on the existing `pypsa` env) | A refreshed catalogue, and one flow deployment `run_block/<block>-pypsa`.
+Both are Prefect-API calls against the running server; the existing pool and worker are reused | No |
+| **A new modelling framework as a new environment** (e.g. a second solver stack) | A new image, a new pool `manta-<env>`, and a new worker | The worker is a cluster object, so yes — a `manta-infra` change |
+| **An upgraded environment** (e.g. a new PyPSA version, `manta-pypsa:2027.01`) | A rebuilt image and the worker pointed at the new tag | Yes — a `manta-infra` upgrade/redeploy |
+
+The first two are the frequent cases, and neither requires redeploying Manta: catalogue
+refresh and flow-deployment registration are both things a running Prefect server
+accepts at any time.
+The last two change the set of environments — which changes rarely — and go through
+`manta-infra` as an ordinary infrastructure upgrade.
+
+### Future improvement: dynamic block onboarding from the backend
+
+**Not built, and not needed for the MVP.** Today the apply layer runs at release time;
+adding a block still means someone runs the apply step.
+Because registering a flow deployment and creating a pool are Prefect-API calls, the
+step Manta's backend would need in order to onboard a new block *without any operator
+action* is small: on catalogue refresh (or when a playbook first references a block),
+compute the plan for the new `(block, env)` pairs and register any missing flow
+deployments, recording them in Manta's database for idempotency.
+This is feasible in a production Kubernetes cluster precisely because it talks only to
+the Prefect server, not the Kubernetes API — no new RBAC, no pod creation from app
+code.
+
+The part that stays outside this loop is the **worker** for a genuinely new
+environment: that is a Kubernetes Deployment, and creating one from application code
+means giving the backend cluster credentials, or driving it through KEDA or an
+operator.
+Since new environments are rare, the pragmatic boundary is: flow deployments and pools
+can become dynamic backend actions; worker provisioning stays declarative in
+`manta-infra`.
 
 ## Prefect's metadata store
 
