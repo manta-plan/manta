@@ -1,9 +1,9 @@
 # 04 — Blocks and playbooks
 
-The domain model, defined in the `blocks` repository.
-Two packages with a deliberate
-one-way dependency: `blocks` never imports `playbooks`, so the playbook engine can
-become its own project later without untangling anything.
+The domain model, defined in the `manta-blocks` package (in the `manta` monorepo — see
+[05](05-repository-interface.md#monorepo-and-the-block-library)).
+Two packages with a deliberate one-way dependency: `blocks` never imports `playbooks`,
+so the playbook engine can become its own project later without untangling anything.
 
 ```
 src/
@@ -13,15 +13,17 @@ src/
     environments.py  The environments blocks run in
     deployment.py  What needs deploying, and the one place deployment names are made
     entrypoint.py  The Prefect flow every block deployment runs
-    library/       The blocks Manta ships (these need PyPSA)
+    library/       A few example blocks used by tests (the PyPSA block library lives
+                   in its own repository)
   playbooks/       Blocks chained together
     playbook.py    Steps, wiring, conditions
     validation.py  Everything checkable before running
     yaml_io.py     Playbooks as documents: reading, writing, sending
     graph.py       A playbook as boxes and arrows, worked out without running it
     execution.py   Running a playbook, here or across environments
-    deploy.py      Working out what to deploy, and creating it
-    control.py     The front door: deploy, start a run, ask how it is doing
+    deploy.py      Working out what to deploy (the plan); creating it is Manta's job
+    control.py     A thin runner for terminal and test use: run a playbook, ask how
+                   it is doing
 ```
 
 ## A block
@@ -137,7 +139,7 @@ playbook, not something a user types.
 The catalogue is what lets a process that could not import a single one of these
 blocks still draw a playbook, offer its settings, and check how it is wired.
 It is the
-contract between the two repositories — see [05](05-repository-interface.md).
+contract between the block library and Manta — see [05](05-repository-interface.md).
 
 A `BlockSpec` is what a playbook step actually holds: a block description plus,
 *optionally*, the real class.
@@ -316,13 +318,17 @@ Nested playbooks fold into the
 parent's plan, with each step's path recorded from the outermost playbook inwards so a
 conflict can be located.
 
-Turning a plan into reality is the job of a **provisioner** — an interface with one
-implementation per deployment target. (The code currently calls this `Renderer`;
-`Provisioner` is the clearer name and is used throughout these documents.) It creates
-or updates Prefect deployments bound to work pools.
-It deliberately does *not* create
-work pools or start workers: those are long-lived infrastructure decisions belonging
-to whoever operates the deployment (Manta's infra code/repo). (It has the ability to check if required work pools are missing and report them by raising a meaningful error.)
+Producing the plan is where `manta-blocks` stops.
+Turning it into managed Prefect deployments — bound to work pools, with images,
+resource limits and secrets — is the **apply** layer, and it belongs to Manta:
+`docker/` for local development and a future `manta-infra` repo for Kubernetes.
+See [05](05-repository-interface.md#plan-apply-policy) and
+[07](07-deployment-topology.md).
+
+For terminal use and for its own tests, `manta-blocks` keeps a **thin runner** that
+takes the same plan and runs the playbook against whatever Prefect the caller already
+has — in-process or via `.serve()`.
+It does *not* create durable `manta-<env>` deployments, size pools or start workers.
 ## Current PoC state & TODOs
 
 Carried from the `blocks` README on commit `f6dc47f`. [09](09-code-changes.md) lists
@@ -336,8 +342,10 @@ This does not yet match Manta's
   object-store data layer — see [08](08-open-questions.md#record-storage-and-format).
 - **Resource requirements are not modelled.** No block declares CPU, memory or wall
   time, which will be needed when we deploy Manta on Kubernetes for the MVP.
-- **Only the process/pixi provisioner exists.** A container or cluster provisioner is
-  the second implementation of the existing interface.
+- **Deployment creation still lives in `blocks`.** The process/pixi provisioner and
+  the deploy path move to Manta; `blocks` keeps the plan and a thin runner.
+See
+  [09](09-code-changes.md#move-deployment-creation-out-of-blocks).
 - **Conditions cannot look at data**, only at settings.
 This is a deliberate trade for
   up-front checkability, but it does rule out data-dependent branching.

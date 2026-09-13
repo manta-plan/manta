@@ -5,9 +5,9 @@ a user authors a playbook, and what happens when they press Run.
 
 ## Phase 0 — Release time
 
-Performed by `blocks` CI and by whoever operates the deployment.
-Nothing here is on a
-user's request path, and none of it involves Manta's backend.
+Steps 1–2 are performed by the block library's CI; steps 3–4 by Manta's apply layer
+(`docker/` locally, `manta-infra` on Kubernetes).
+Nothing here is on a user's request path.
 
 1. **Build each environment.** One container image per environment, from that
    environment's dependency set.
@@ -18,11 +18,9 @@ Third-party plug-in environments are built from their
    `catalogue.json` with a version.
 3. **Create work pools and start workers.** One pool per environment (`manta-<env>`),
    plus one orchestrator pool shared by every playbook.
-A pool with no worker
-   accumulates queued runs forever, so this is a prerequisite, not an optimisation.
-In
-   production these are declared in the cluster manifests rather than created by hand.
-4. **Apply deployments.** One `run_block/<block>-<env>` per pair, plus a single
+Each pool is accompanied by one worker which watches the pool and creates docker containers (local dev) / kubernetes pods (prod) for each block run.
+4. **Apply deployments.** Manta takes the `DeploymentPlan` from `manta-blocks` and
+   applies one `run_block/<block>-<env>` per pair, plus a single
    `run_playbook/<orchestrator-env>` that serves every playbook in the system.
 5. **Manta loads the catalogue** at startup and serves it at `GET /v1/blocks`.
 
@@ -269,8 +267,7 @@ so a missing detail degrades the response rather than failing it.
 | Work pool exists but has no worker | The run queues indefinitely in `PENDING` | Nobody, unless monitored — see [08](08-open-questions.md) |
 | A block raises | That child flow run fails; the orchestrator's `run_deployment` raises; the parent run fails | Run state and logs |
 | Orchestrator worker dies mid-run | The parent run fails or crashes; already-dispatched children continue and are orphaned | Run state |
-| Manta backend restarts mid-run | Nothing.
-The run continues; state is read live on the next request | Nobody |
+| Manta backend restarts mid-run | Nothing. The run continues; state is read live on the next request | Nobody |
 | Object store unreachable from a worker | That block fails at read or write | Run logs |
 
 The row worth designing against is the orchestrator dying: it holds a process open for

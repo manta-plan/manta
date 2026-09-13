@@ -47,7 +47,7 @@ C4Context
 
     System(manta, "Manta", "Web application for energy system modelling: data management, playbook authoring, run orchestration and result visualisation")
 
-    System_Ext(registry, "Container Registry", "Environment images built from the blocks repository")
+    System_Ext(registry, "Container Registry", "Environment images built from the block library repository")
     System_Ext(idp, "Identity Provider", "OIDC / SAML — from v1")
     System_Ext(licences, "Solver Licence Server", "Commercial MILP solver licences — from v1")
 
@@ -155,17 +155,23 @@ See
 
 ## Repositories
 
+Manta is a monorepo: the `manta-blocks` package lives beside the backend and frontend,
+and is published to PyPI and conda from its own subtree.
+See [05](05-repository-interface.md#monorepo-and-the-block-library).
+
 | Repository | Contains | Consumers |
 | --- | --- | --- |
-| `manta` | Backend API, frontend, application database schema, deployment manifests | The product |
-| `blocks` | The block framework, the playbook engine, the blocks OET ships, and the Prefect flows that execute them | Manta, and anyone running playbooks from a terminal |
+| `manta` (monorepo) | Backend API, frontend, application database schema, local infrastructure (`docker/`), and the `manta-blocks` package: block framework, playbook engine, the Prefect flows that execute them, a thin runner, and a few example blocks | The product; and, via the published package, anyone running playbooks from a terminal |
+| block library | The blocks OET ships (these need PyPSA), and later other modelling frameworks; an example consumer of `manta-blocks` and the reference for third-party contributors | Manta, via catalogue and image |
+| `manta-infra` *(future)* | Kubernetes work pools, workers, deployments and the production topology | The platform team |
 | *(third party)* | Plug-in blocks with their own environments | Referenced by catalogue and image, never vendored |
 
-`blocks` is deliberately usable without Manta.
-Its test suite runs with no database,
-no web server and — in its default environment — without PyPSA installed.
-That last
-constraint is what proves a block's dependencies stay a block's own problem.
+`manta-blocks` is designed to be usable without Manta (for power users who want to run model workflows in the terminal / on SLURM clusters).
+Its test suite runs with no database, no web server and — in its default environment —
+without PyPSA installed.
+That last constraint is what proves a block's dependencies stay a block's own problem,
+and an import-linter rule keeps `manta-blocks` from importing Manta so the published
+package stays standalone.
 
 ## Backend conventions
 

@@ -40,12 +40,19 @@ exist.
 
 **Change:** make it a required argument.
 
-### Rename `Renderer` to `Provisioner`
+### Move deployment creation out of `blocks`
 
-The interface that turns a `DeploymentPlan` into Prefect deployments is called
-`Renderer`. It creates infrastructure; it does not render anything, and the name reads
-as frontend vocabulary. These documents use `Provisioner` throughout —
-`ProcessPixiProvisioner`, `KubernetesProvisioner`.
+`blocks` currently owns both the deployment plan and the code that applies it — the
+`Renderer` interface, `ProcessPixiRenderer`, and the deploy path in `deploy.py` /
+`control.py`.
+
+**Change:** `blocks` keeps the `DeploymentPlan` and name construction (the plan), plus
+a thin runner that runs a playbook against the caller's own Prefect for terminal use
+and tests. Creating managed `manta-<env>` deployments, work pools and workers moves to
+Manta's apply layer — `docker/` locally, a future `manta-infra` repo for Kubernetes.
+See [05](05-repository-interface.md#plan-apply-policy) and
+[07](07-deployment-topology.md). This supersedes the earlier plan to keep a
+`ProcessPixiProvisioner` in `blocks` and add a `KubernetesProvisioner` beside it.
 
 ### Records must live in the object store
 
@@ -75,14 +82,6 @@ specification. Whether it is static or expressed relative to the data is open �
 **Change:** have `blocks` CI inject the built image reference per environment when it
 publishes the merged catalogue, so the catalogue doubles as the environment-to-image
 manifest. See [05](05-repository-interface.md#the-catalogue-contract).
-
-### A Kubernetes provisioner
-
-Only `ProcessPixiRenderer` exists. The Kubernetes implementation adds image, namespace,
-service account, secrets and resource limits as job variables.
-
-Verify early that the entrypoint a deployment records — an import path — resolves
-identically inside the image.
 
 ### `MANIFEST` has no meaning on Kubernetes
 
@@ -140,6 +139,40 @@ frontend needs them per step, to show alongside the failed node.
 Run state stays in Prefect, but the output artefact URL outlives Prefect's retention
 and is a product object.
 
+### Own deployment creation (the apply layer)
+
+Nothing in Manta creates Prefect deployments today; the deploy path lives in `blocks`.
+Manta takes the `DeploymentPlan` from `manta-blocks` and applies it: creating or
+updating deployments bound to `manta-<env>` pools, deciding *when* to apply (at release
+time, or when a playbook is saved), and recording in its own database what has been
+applied so it is idempotent. Locally this is `docker/`; for Kubernetes it is
+`manta-infra`. See [05](05-repository-interface.md#plan-apply-policy).
+
+## Repository structure
+
+### Make `manta` a monorepo with `manta-blocks` as a workspace package
+
+`blocks` is a separate repository today. Move it into `manta` as a workspace package,
+keeping only a few example blocks for tests, and set up path-filtered CI that builds,
+versions and publishes the `manta-blocks` subtree to PyPI and conda independently of
+the application. Manta depends on it as a workspace/path dependency in development and
+on the pinned published version in production. Add an import-linter rule forbidding
+`manta-blocks → manta` so the published package stays standalone. See
+[05](05-repository-interface.md#monorepo-and-the-block-library).
+
+### Extract the PyPSA block library into its own repository
+
+The blocks that need PyPSA move out of the monorepo into a separate library
+repository, which depends on the published `manta-blocks`, owns its own environments,
+images and catalogue CI, and serves as the reference for third-party block
+contributors.
+
+### Stand up `manta-infra` (future)
+
+A separate repository for the Kubernetes apply layer: work pools, workers, flow
+deployments and the production topology. Not needed until the Kubernetes target — see
+[07](07-deployment-topology.md).
+
 ## Shared infrastructure
 
 ### Configure Prefect result persistence
@@ -155,7 +188,9 @@ Prefect's default SQLite backend becomes a PostgreSQL database on the shared ser
 with its own role. See
 [03](03-workflow-orchestration.md#prefects-own-database).
 
-### Create work pools and workers as infrastructure
+### Create work pools, workers and deployments as infrastructure
 
-Pools and workers are created by hand from printed commands. In a managed deployment
-they belong in the cluster manifests, under review and rollback like anything else.
+Pools and workers are created by hand from printed commands, and deployments from the
+`blocks` deploy path. In a managed deployment all three belong to Manta's apply layer —
+`docker/` locally, `manta-infra` on Kubernetes — under review and rollback like
+anything else.

@@ -1,22 +1,28 @@
 # 05 — Repository interface
 
-How the `manta` and `blocks` repositories meet, and who owns what.
+How Manta and the `manta-blocks` package meet, and who owns what.
 
 ## The seam
 
 **Decided:** Manta's backend takes a package dependency on `manta-blocks` — the
-framework only, not the library of modelling blocks — and both sides talk to the same Prefect
-server and the same object store.
+framework and a few example blocks, not the main library of modelling blocks — and
+both sides talk to the same Prefect server and the same object store.
 
-There are three connections:
+`manta-blocks` lives in the `manta` repository (a monorepo) and is published to PyPI
+and conda from its own subtree; Manta depends on it as a workspace package.
+The main block library — OET's PyPSA blocks, and other modelling frameworks in future
+— lives in its own repository.
+See [Monorepo and the block library](#monorepo-and-the-block-library).
+
+There are three connections between Manta's backend and `manta-blocks`:
 
 ```mermaid
 flowchart LR
-    subgraph manta["manta repository"]
+    subgraph monorepo["manta repository (monorepo)"]
         api["Backend API"]
+        lib["manta-blocks<br/>framework + example blocks"]
     end
-    subgraph blocks["blocks repository"]
-        lib["manta-blocks<br/>framework"]
+    subgraph libraryrepo["block library repository"]
         library["block library<br/>(needs PyPSA)"]
         ci["CI: build images,<br/>emit catalogue"]
     end
@@ -26,6 +32,7 @@ flowchart LR
     end
 
     api -->|imports| lib
+    library -->|depends on| lib
     ci -->|publishes catalogue.json| api
     api -->|submits and observes runs| prefect
     library -->|executed by workers| prefect
@@ -33,23 +40,23 @@ flowchart LR
     api -->|reads and writes records| s3
 ```
 
-1. **A library dependency.** Manta imports the playbook document model, the catalogue
+1. **A library dependency.** Manta imports `manta-blocks`: the playbook document model, the catalogue
    model, validation, graphing and run control.
 Its runtime dependencies are Prefect,
    Pydantic, PyYAML and jsonschema — all of which Manta either already has or can
    trivially add.
-PyPSA is deliberately absent from the framework package.
-2. **The catalogue as a build artefact.** `blocks` CI publishes a versioned
+PyPSA is deliberately absent from this package.
+2. **The catalogue as a build artefact.** The block library's CI publishes a versioned
    `catalogue.json` describing every block in every environment.
 Manta loads it and
    serves it to the frontend.
 3. **A shared Prefect server and object store.** Manta submits and observes; workers
    execute and store.
 
-Manta never imports a block class, never needs a Pixi environment, and never needs
-PyPSA.
-The `blocks` framework's default test environment having no PyPSA is what
-proves this path works.
+Manta never imports a library block class, never needs a Pixi environment, and never
+needs PyPSA.
+The framework's default test environment having no PyPSA is what proves
+this path works.
 
 ### Why not the alternatives
 
@@ -61,12 +68,47 @@ The validation logic
 would have to be reimplemented in TypeScript and kept in step by hand.
 Rejected.
 
-**`blocks` as its own HTTP service** that Manta proxies to.
+**`manta-blocks` as its own HTTP service** that Manta proxies to.
 Buys process isolation
 that isn't needed — the framework has no heavy dependencies — and costs a service, a
 schema and a deployment.
 Worth revisiting only if something that isn't Python needs to
 consume the playbook engine.
+
+## Monorepo and the block library
+
+**Proposed:** `manta-blocks` lives in the `manta` repository as a workspace package,
+alongside the backend, the frontend and the local infrastructure under `docker/`.
+Manta depends on it as a path/workspace dependency in development and on the pinned
+published version in production; publishing to PyPI and conda builds only that subtree.
+
+`manta-blocks` from the monorepo ships a few example blocks — enough to exercise the framework, the
+catalogue and the submit-execute-observe loop in tests, and deliberately not needing
+PyPSA.
+The main block library — OET's PyPSA blocks, and other modelling frameworks later —
+lives in a separate repository.
+That repository is an example consumer of `manta-blocks` and the reference a
+third-party block contributor copies from; it owns its own environments, images and
+catalogue CI.
+
+This keeps two properties the design relies on:
+
+- **`manta-blocks` is usable without Manta.** A terminal user installs the package,
+  writes block classes and playbook YAML, and runs them with the thin runner against
+  their own Prefect.
+The package's dependency set stays lean (Prefect, Pydantic, PyYAML,
+  jsonschema); it never imports Manta.
+- **The block library has a clean front door.** A public library repository is where
+  external contributors add blocks, without pulling in — or gaining access to — Manta's
+  application code.
+
+The monorepo cost is that the boundary is now on the honour system: nothing at the
+filesystem level stops `manta-blocks` importing Manta.
+Two guards keep it honest — the PyPSA-free default test environment (which already
+proves the package imports without the modelling stack) and an import-linter rule
+forbidding `manta-blocks → manta`.
+Releases run on two cadences in one pipeline: path-filtered CI builds and versions the
+`manta-blocks` subtree independently of the application.
 
 ## The catalogue contract
 
@@ -74,7 +116,7 @@ The catalogue is what lets Manta reason about code it cannot load.
 
 | Property | Decision |
 | --- | --- |
-| **Produced by** | `blocks` CI, one invocation per environment, merged |
+| **Produced by** | The block library's CI, one invocation per environment, merged |
 | **Contains** | Block name, environment, summary, dimensions, inputs, outputs, settings as JSON Schema; plus the environments themselves (name, manifest, image, work pool; not the full pixi environment) |
 | **Versioned by** | `catalogue_version`, bumped when the shape changes so a reader can tell what it has |
 | **Consumed by** | Manta at startup; served to the frontend at `GET /v1/blocks` |
@@ -120,19 +162,21 @@ The PoC currently passes the body — see
 
 ## Who owns what
 
-| Concern | `blocks` | Manta |
+| Concern | `manta-blocks` | Manta |
 | --- | --- | --- |
 | Block and playbook semantics | ✅ Owns | Consumes |
 | Playbook document schema | ✅ Owns | Stores instances of it |
 | Validation, dimension folding (infer dims at every step), graphing | ✅ Owns | Calls it, maps issues to API responses |
 | Deployment planning and name construction | ✅ Owns | Never constructs these strings |
 | The `run_block` and `run_playbook` flows | ✅ Owns | Submits to them |
+| A thin runner for terminal and test use | ✅ Owns | Does not use it |
 | Environment definitions, images, catalogue generation | ✅ Owns | Reads the result |
+| Creating Prefect deployments, work pools and workers | — | ✅ Owns |
 | Persistence — projects, playbooks, runs, artefacts | — | ✅ Owns |
 | Identity, access control, tenancy | — | ✅ Owns |
 | The HTTP API and the frontend | — | ✅ Owns |
 | Infrastructure lifecycle: when to deploy, how many workers, pool sizing | — | ✅ Owns |
-| Run state, logs, retries, history | *Prefect owns this. Neither repository stores it.* | |
+| Run state, logs, retries, history | *Prefect owns this. Neither side stores it.* | |
 
 
 
@@ -143,12 +187,20 @@ different.
 
 | | What it is | Where it belongs | Why |
 | --- | --- | --- | --- |
-| **Plan** | Deriving *what* must exist: `(block, env)` pairs, deployment and pool names, environment conflicts, the orchestrator path | `blocks` | Pure functions over playbook semantics.
-Only `blocks` knows the block-to-environment mapping, and name construction must have one home or the two repositories drift |
-| **Apply** | Creating it against a target: Prefect deployments, containers, pods | Interface in `blocks`; implementations follow their target | The process/pixi provisioner serves the CLI, examples and tests, and stays.
-A Kubernetes provisioner needs registry, cluster, limits and secrets — all Manta's knowledge — so it belongs to Manta |
-| **Policy** | *When* to deploy, how many, for whom, idempotency, what the user sees on failure | Manta | These are product events and infrastructure decisions.
-A library has no events and no database to be idempotent against |
+| **Plan** | Deriving *what* must exist: `(block, env)` pairs, deployment and pool names, environment conflicts, the orchestrator path | `manta-blocks` | Pure functions over playbook semantics. Only `manta-blocks` knows the block-to-environment mapping, and name construction must have one home or the consumers drift |
+| **Apply** | Creating it against a target: Prefect deployments, work pools, workers, containers, pods | Manta (`docker/` locally; a future `manta-infra` repo for Kubernetes) | Applying needs registry, cluster, limits and secrets — all Manta's knowledge, none of it a library's |
+| **Policy** | *When* to deploy, how many, for whom, idempotency, what the user sees on failure | Manta | These are product events and infrastructure decisions. A library has no events and no database to be idempotent against |
+
+`manta-blocks` keeps one execution path of its own: a **thin runner** that turns a
+playbook document into a Prefect flow and runs it in-process or via `.serve()`, against
+whatever Prefect the caller already has.
+This is what a terminal user runs without Manta, and what `manta-blocks`' own
+integration tests use to submit-execute-observe.
+It does not create managed `manta-<env>` deployments, size pools or start workers —
+that is the apply layer, and it is Manta's.
+Manta targets the same plan at durable Prefect deployments instead; its deployment
+setup is one apply target, not the only one.
+See [07](07-deployment-topology.md).
 
 Two concrete consequences for the current code:
 
@@ -199,12 +251,14 @@ Using a stable identifier matters — the
 circular-reference check keys on whatever the loader reports, so an unstable key would
 either miss a genuine cycle or invent one.
 
-## Versioning between the repositories
+## Versioning across the boundary
 
-Manta pins a compatible range of `manta-blocks` in its dependencies, the way it pins
-anything else.
-On top of that, two payloads that cross the boundary carry their own
-version number.
+Within the monorepo Manta tracks `manta-blocks` as a workspace dependency, so the two
+move together during development; a released deployment pins a compatible published
+version, the way it pins anything else.
+The block library repository does the same — it pins the `manta-blocks` version it was
+built against.
+On top of that, two payloads that cross the boundary carry their own version number.
 
 ### `catalogue_version` and `graph_version`
 

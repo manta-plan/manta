@@ -14,7 +14,7 @@ This doc is **WIP**, so nothing is set in stone, and a **living document**, so i
 | [02 — System architecture](02-system-architecture.md) | The components and how they relate, as C4 context / container / component diagrams |
 | [03 — Workflow orchestration](03-workflow-orchestration.md) | A Prefect primer, and how Manta uses it. **Read this before 04–07.** |
 | [04 — Blocks and playbooks](04-blocks-and-playbooks.md) | The domain model: what a block is, what a playbook is, how they are described and checked |
-| [05 — Repository interface](05-repository-interface.md) | The seam between the `manta` and `blocks` repositories, and who owns what |
+| [05 — Repository interface](05-repository-interface.md) | The seam between Manta and the `manta-blocks` package, the monorepo and block-library split, and who owns what |
 | [06 — Execution lifecycle](06-execution-lifecycle.md) | End to end, from block release through playbook authoring to a finished run |
 | [07 — Deployment topology](07-deployment-topology.md) | Local development, cloud, and Kubernetes; how environments become work pools and images |
 | [08 — Open questions](08-open-questions.md) | Decisions not yet made, known gaps, and risks that need closing |

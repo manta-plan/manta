@@ -3,8 +3,11 @@
 The same architecture runs on a developer's laptop, on OET's cloud, and inside a
 client's Kubernetes cluster.
 What differs between them is confined to two things: how
-an environment is materialised, and which provisioner turns a deployment plan into
-Prefect deployments.
+an environment is materialised, and how Manta's apply layer turns a deployment plan
+(produced by `manta-blocks` — see [05](05-repository-interface.md#plan-apply-policy))
+into Prefect deployments, work pools and workers.
+Locally that apply layer is `docker/`; for Kubernetes it is a future `manta-infra`
+repository.
 
 ## Environments are the unit of isolation
 
@@ -59,9 +62,11 @@ an environment itself.
 
 Supporting services run under Docker Compose: PostgreSQL, SeaweedFS as the
 S3-compatible object store, and the Prefect server.
-Integration tests boot the same
-compose stack with ephemeral ports and an isolated project name, and spawn the API as
-a subprocess against it.
+The same `docker/` setup is Manta's local apply layer: it brings up those compose
+services, creates the `process` work pools, starts a worker per environment, and
+registers the flow deployments for the blocks and playbooks in use.
+Integration tests boot the same compose stack with ephemeral ports and an isolated
+project name, and spawn the API as a subprocess against it.
 
 ### Who starts workers
 
@@ -77,8 +82,8 @@ Whatever manages the infrastructure starts them:
 
 | Target | Started by |
 | --- | --- |
-| Local development | A Compose service per environment with `restart: unless-stopped` |
-| MVP (Kubernetes) | A Deployment per work pool, in Manta's infrastructure manifests or Helm chart |
+| Local development | A Compose service per environment with `restart: unless-stopped`, from `docker/` |
+| MVP (Kubernetes) | A Deployment per work pool, in the `manta-infra` repository's manifests or Helm chart |
 
 ## Kubernetes
 
@@ -152,8 +157,8 @@ pool only.
 | Environment is | A Pixi environment | A container image |
 | Work pool type | `process` | `kubernetes` (blocks), `process` (orchestrator) |
 | A block run is | A subprocess of the worker | A Job, i.e. a fresh pod |
-| Pools and workers created by | A human operator, from printed commands | Cluster manifests, under version control |
-| Provisioner | Process/Pixi | Kubernetes |
+| Pools, workers and deployments created by | `docker/`, under version control | `manta-infra` manifests, under version control |
+| Apply layer | `docker/` | `manta-infra` |
 | Data between steps | Object store (already; no shared filesystem shortcut) | Object store |
 | Isolation between runs | Process | Pod |
 
@@ -189,11 +194,12 @@ Only the block author knows that a particular MILP needs
 4. **An environment-to-image mapping**, injected into the catalogue by the CI that
    built the images.
 See [05](05-repository-interface.md#the-catalogue-contract).
-5. **A Kubernetes provisioner**, the second implementation of the existing interface,
-   adding image, namespace, service account, secrets and resource limits to each
-   deployment.
-One gotcha to verify early: a deployment records the flow's entrypoint
-   as an import path, which must resolve identically inside the image.
+5. **A Kubernetes apply layer** in `manta-infra`, adding image, namespace, service
+   account, secrets and resource limits to each deployment.
+It consumes the same
+   deployment plan from `manta-blocks` that `docker/` consumes locally.
+One gotcha to verify early: a deployment records the flow's entrypoint as an import
+   path, which must resolve identically inside the image.
 
 Suggested order: 1 and 2 first, on Compose with SeaweedFS, because they carry the real
 risk.
@@ -270,16 +276,19 @@ single-VM deployment: the same per-run isolation as Kubernetes, without a cluste
 
 ## Testing strategy
 
-The provisioner interface is what makes this tractable.
+Sharing one deployment plan across apply layers is what makes this tractable.
 
 - **Unit tests** mock Prefect entirely; no server involved.
-- **Integration tests** run against the Compose stack with `process` pools — real
-  Prefect, real submit-execute-observe loop, real object store, no cluster.
+- **`manta-blocks` integration tests** use the thin runner against a local Prefect —
+  no Manta, no cluster — to exercise the submit-execute-observe loop with the example
+  blocks.
+- **Manta integration tests** run against the Compose stack with `process` pools —
+  real Prefect, real object store, the `docker/` apply layer, no cluster.
 - **Kubernetes** is exercised in a dedicated environment, or with `kind`/`k3d` in CI
   if the cost is justified.
 It is not the default test target and does not need to be:
-  what differs from the tested path is confined to the provisioner and the Job
-  specification.
+  what differs from the tested path is confined to the `manta-infra` apply layer and
+  the Job specification.
 
 Per the security policy, test data is synthetic-first; production grid data is never
 used in non-production environments.

@@ -1,6 +1,6 @@
 # 08 — Open questions
 
-Decisions not yet made, gaps between the two repositories, and risks that need
+Decisions not yet made, gaps between Manta and the block library, and risks that need
 closing.
 Ordered roughly by how much they block progress.
 
@@ -155,15 +155,15 @@ The relationship between them is undefined.
 
 ### Who creates work pools?
 
-Currently: an operator, from commands the provisioner prints.
+Currently: an operator, by hand from printed commands.
 That is right for
 development and probably wrong for a managed SaaS, where adding an environment should
 not require a human running `prefect work-pool create`.
 
-**Proposed:** pools and workers are declared in the cluster manifests alongside every
-other piece of infrastructure, so adding an environment is a manifest change with
-review and rollback.
-Neither library creates them at run time.
+**Proposed:** pools and workers are declared in Manta's apply layer — `docker/` locally,
+`manta-infra` on Kubernetes — alongside every other piece of infrastructure, so adding
+an environment is a manifest change with review and rollback.
+`manta-blocks` does not create them at run time.
 
 ### Orchestrator resilience
 
