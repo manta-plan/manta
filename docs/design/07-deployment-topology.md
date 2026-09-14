@@ -214,10 +214,8 @@ the common changes are cheap and the rare one is the only one that touches the c
 
 | Change | What it needs | Redeploy Manta? |
 | --- | --- | --- |
-| **A new playbook**, or an edited one | Nothing — a playbook is data.
-It is stored and validated against the current catalogue; its `(block, env)` pairs already have flow deployments | No |
-| **A new or updated block in an existing environment** (e.g. a new PyPSA block on the existing `pypsa` env) | A refreshed catalogue, and one flow deployment `run_block/<block>-pypsa`.
-Both are Prefect-API calls against the running server; the existing pool and worker are reused | No |
+| **A new playbook**, or an edited one | Nothing — a playbook is data. It is stored and validated against the current catalogue; its `(block, env)` pairs already have flow deployments | No |
+| **A new or updated block in an existing environment** (e.g. a new PyPSA block on the existing `pypsa` env) | A refreshed catalogue, and one flow deployment `run_block/<block>-pypsa`. Both are Prefect-API calls against the running server; the existing pool and worker are reused | No |
 | **A new modelling framework as a new environment** (e.g. a second solver stack) | A new image, a new pool `manta-<env>`, and a new worker | The worker is a cluster object, so yes — a `manta-infra` change |
 | **An upgraded environment** (e.g. a new PyPSA version, `manta-pypsa:2027.01`) | A rebuilt image and the worker pointed at the new tag | Yes — a `manta-infra` upgrade/redeploy |
 

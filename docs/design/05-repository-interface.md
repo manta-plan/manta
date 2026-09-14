@@ -206,7 +206,7 @@ It can be derived from two different inputs, for two different purposes:
 - **From a playbook + config:** the subset of `(block, env)` pairs that *this*
   playbook's active steps need.
 Manta uses this to check the required flow deployments
-  and pools already exist before a run, never to create them on the run path.
+  and pools already exist before a run, instead of creating them on the run path.
 - **From the catalogue:** every `(block, env)` pair in the whole system, independent of
   any playbook.
 This is what release-time provisioning enumerates — there is no playbook
