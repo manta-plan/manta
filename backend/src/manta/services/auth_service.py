@@ -1,23 +1,24 @@
 import logging
 from functools import lru_cache
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
+from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
-from keycloak import KeycloakOpenID
+from keycloak import KeycloakConnectionError, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
+from keycloak.keycloak_openid import KeycloakAuthenticationError
+from keycloak.openid_connection import KeycloakPostError
 from sqlalchemy.orm import Session
+from starlette.authentication import BaseUser
 
 from manta.config.database_config import get_db_session
 from manta.config.keycloak_config import get_keycloak_openid
-from manta.entities import User, UserCredential
-from manta.errors.authentication_error import AuthenticationError
+from manta.entities import User
+from manta.services.errors import AuthenticationError, BackendError
 from manta.services.results.login_result import LoginResult
 
 logger = logging.getLogger(__name__)
 
-# Registers the bearer scheme (and its tokenUrl) with FastAPI's OpenAPI docs, so
-# Swagger UI's "Authorize" button works — this is what routes depend on to extract
-# the `Authorization: Bearer <token>` header, not just a plain string param.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="v1/auth/login")
 
 
@@ -44,17 +45,26 @@ class AuthService:
     def login(self, username: str, password: str) -> LoginResult:
         try:
             token = self.kc_client.token(username, password)
-        except KeycloakError as ke:
-            raise AuthenticationError from ke
+        except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
+            raise AuthenticationError from request_error
+        except (
+            KeycloakConnectionError,
+            KeycloakPostError,
+        ) as transient_error:  # Transient or configuration-based connection error
+            raise BackendError from transient_error
+        except (TypeError, AttributeError) as config_error:  # configuration-based connection error
+            raise BackendError from config_error
         return LoginResult(access_token=token["access_token"])
 
-    def get_current_user(self, token: str) -> User:
+    def authenticate(self, token: str) -> User:
         try:
             claims = self.kc_client.decode_token(token, validate=True)
-        except (KeycloakError, ValueError) as e:
+        except (KeycloakAuthenticationError, ValueError) as e:
             # ValueError: jwcrypto raises this (not a KeycloakError) for input
             # that isn't even well-formed JWT/JWS, e.g. a garbage bearer token.
             raise AuthenticationError from e
+        except KeycloakError as e:  # catch-all for non-user errors
+            raise BackendError from e
 
         # decode_token(validate=True) checks the signature (via JWKS) and exp/nbf,
         # but NOT iss or aud - check iss explicitly against our single known realm.
@@ -63,30 +73,28 @@ class AuthService:
         expected_issuer = _expected_issuer(self.kc_client)
         if claims.get("iss") != expected_issuer:
             raise AuthenticationError(
-                f"unexpected issuer: got {claims.get('iss')!r}, expected {expected_issuer!r}"
+                detail=f"unexpected issuer: got {claims.get('iss')!r}, expected {expected_issuer!r}"
             )
 
         idp_subject = claims["sub"]
         idp_source = claims["iss"]
 
-        credential = (
-            self.db.query(UserCredential)
-            .filter(
-                UserCredential.idp_subject == idp_subject, UserCredential.idp_source == idp_source
-            )
+        user = (
+            self.db.query(User)
+            .filter(User.idp_subject == idp_subject, User.idp_source == idp_source)
             .one_or_none()
         )
-        if credential is not None and credential.user_id is not None:
-            user = self.db.query(User).filter(User.id == credential.user_id).one_or_none()
-            if user is not None:
-                return user
+        if user is not None:
+            return user
 
         # First time we've seen this identity - manta offloads user management to
         # the IdP entirely, so any validly-signed token JIT-provisions a local user.
-        user = User(username=claims.get("preferred_username", idp_subject))
+        user = User(
+            username=claims.get("preferred_username", idp_subject),
+            idp_subject=idp_subject,
+            idp_source=idp_source,
+        )
         self.db.add(user)
-        self.db.flush()  # populate user.id before the credential references it
-        self.db.add(UserCredential(user_id=user.id, idp_subject=idp_subject, idp_source=idp_source))
         self.db.commit()
 
         logger.info("Provisioned new user %r (uuid=%s)", user.username, user.uuid)
@@ -94,9 +102,17 @@ class AuthService:
         return user
 
 
+def require_authenticated(request: Request):
+    if request.state["manta_user"] is None:
+        raise AuthenticationError(detail="authentication information not loaded")
+    user: BaseUser = request.state.manta_user
+    if not user.is_authenticated:
+        raise AuthenticationError(detail="endpoint requires authentication")
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), auth: AuthService = Depends()) -> User:
     try:
-        return auth.get_current_user(token)
+        return auth.authenticate(token)
     except AuthenticationError as e:
         logger.warning("Rejected token: %s", e)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token") from e
+        raise
