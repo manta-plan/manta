@@ -157,7 +157,7 @@ def test_create_and_run_pi_digit_stats(
     assert prefect_flow_run_id is not None
 
 
-def test_run_survives_project_deletion_with_project_id_set_to_null(
+def test_run_is_cascade_deleted_when_project_is_deleted(
     app_server: str, db_connection: psycopg.Connection, prefect_service: dict[str, str]
 ) -> None:
     # Given a project with a run against it
@@ -170,19 +170,16 @@ def test_run_survives_project_deletion_with_project_id_set_to_null(
     with db_connection.cursor() as cursor:
         cursor.execute("DELETE FROM projects WHERE uuid = %s", (project_uuid,))
 
-    # Then the run row survives, with its project_id set to NULL rather than
-    # being cascade-deleted
+    # Then the run row is cascade-deleted along with it
     with db_connection.cursor() as cursor:
-        cursor.execute("SELECT project_id FROM runs WHERE uuid = %s", (run_uuid,))
+        cursor.execute("SELECT 1 FROM runs WHERE uuid = %s", (run_uuid,))
         run_row = cursor.fetchone()
 
-    assert run_row is not None
-    assert run_row[0] is None
+    assert run_row is None
 
-    # And the run is still reachable via the API, reporting no project
+    # And the run is no longer reachable via the API
     response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
-    assert response.status_code == 200
-    assert response.json()["project_uuid"] is None
+    assert response.status_code == 404
 
 
 def test_list_runs_returns_project_runs_with_pagination_and_summary(
