@@ -5,9 +5,22 @@ import psycopg
 from keycloak.openid_connection import KeycloakOpenID
 
 
-def _auth_headers(kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
+def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
     token = kc_oidc_client.token("manta-admin", "manta-admin")
-    return {"Authorization": f"Bearer {token['access_token']}"}
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
+    # authenticate() requires an already-registered user; register is idempotent,
+    # so it's safe to call on every request rather than tracking first-use.
+    response = httpx2.post(
+        f"{app_server}/v1/auth/register",
+        json={
+            "username": "manta-admin",
+            "idp_subject": claims["sub"],
+            "idp_source": claims["iss"],
+        },
+    )
+    assert response.status_code == 200
+    return headers
 
 
 def test_create_project(
@@ -18,7 +31,9 @@ def test_create_project(
 
     # When
     response = httpx2.post(
-        f"{app_server}/v1/projects", json=request_payload, headers=_auth_headers(kc_oidc_client)
+        f"{app_server}/v1/projects",
+        json=request_payload,
+        headers=_auth_headers(app_server, kc_oidc_client),
     )
 
     # Then

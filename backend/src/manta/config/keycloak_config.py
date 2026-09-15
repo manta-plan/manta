@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Any
 
 from dotenv import load_dotenv
 from keycloak import KeycloakOpenID
@@ -39,3 +40,9 @@ def get_keycloak_openid() -> KeycloakOpenID:
         client_id=keycloak_client_id(),
         client_secret_key=keycloak_client_secret(),
     )
+
+
+@lru_cache
+def well_known(kc_client: KeycloakOpenID) -> dict[str, Any]:
+    # Cache keycloak's openid configuration data
+    return kc_client.well_known()
