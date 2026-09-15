@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -12,20 +12,22 @@ from manta.services.run_service import RunService
 
 
 class _FakeClientContext:
-    """Async context manager standing in for the Prefect client returned by `get_client()`."""
+    """Sync context manager standing in for the client from `get_client(sync_client=True)`."""
 
     def __init__(self, client) -> None:
         self._client = client
 
-    async def __aenter__(self):
+    def __enter__(self):
         return self._client
 
-    async def __aexit__(self, *_args) -> bool:
+    def __exit__(self, *_args) -> bool:
         return False
 
 
 def _patch_get_client(monkeypatch: pytest.MonkeyPatch, client) -> None:
-    monkeypatch.setattr(run_service_module, "get_client", lambda: _FakeClientContext(client))
+    monkeypatch.setattr(
+        run_service_module, "get_client", lambda sync_client=False: _FakeClientContext(client)
+    )
 
 
 def _fake_flow_run(state_type: str):
@@ -124,7 +126,7 @@ def test_get_run_returns_dto_for_a_known_run(
     project = _existing_project()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
-    fake_client = MagicMock(read_flow_run=AsyncMock(return_value=_fake_flow_run("COMPLETED")))
+    fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED")))
     _patch_get_client(monkeypatch, fake_client)
     service = RunService(db=db)
 
@@ -148,7 +150,7 @@ def test_get_run_with_deleted_project_returns_null_project_uuid(
     run.uuid = uuid4()
     run.created_at = datetime.now(UTC)
     db = mock_db_class(query_results={Run: run})
-    fake_client = MagicMock(read_flow_run=AsyncMock(return_value=_fake_flow_run("COMPLETED")))
+    fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED")))
     _patch_get_client(monkeypatch, fake_client)
     service = RunService(db=db)
 
@@ -185,7 +187,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     monkeypatch.setattr(
         run_service_module,
         "_read_flow_runs",
-        AsyncMock(
+        MagicMock(
             return_value={
                 first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
                 second_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
@@ -223,7 +225,7 @@ def test_list_runs_filters_project_runs_by_status(
     monkeypatch.setattr(
         run_service_module,
         "_read_flow_runs",
-        AsyncMock(
+        MagicMock(
             return_value={
                 completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
                 running_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
@@ -276,7 +278,7 @@ def test_get_run_summary_returns_project_status_counts(
     monkeypatch.setattr(
         run_service_module,
         "_read_flow_runs",
-        AsyncMock(
+        MagicMock(
             return_value={
                 running_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
                 completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
@@ -333,8 +335,8 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(
-        read_flow_run=AsyncMock(return_value=_fake_flow_run("RUNNING")),
-        read_logs=AsyncMock(
+        read_flow_run=MagicMock(return_value=_fake_flow_run("RUNNING")),
+        read_logs=MagicMock(
             return_value=[SimpleNamespace(message="line 1"), SimpleNamespace(message="line 2")]
         ),
     )
