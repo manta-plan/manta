@@ -17,6 +17,10 @@ class S3StorageError(Exception):
     pass
 
 
+class S3FileNotFoundError(S3StorageError):
+    """A requested source object does not exist, as opposed to storage failing."""
+
+
 class S3FileStorageService:
     def __init__(
         self,
@@ -58,11 +62,50 @@ class S3FileStorageService:
 
         return GetS3FileResult(key=key, size=size, last_modified=head_response["LastModified"])
 
-    def list_files(self, project_uuid: UUID) -> list[GetS3FileResult]:
-        # TODO: only lists everything under the project's prefix for now —
-        # extend with args for filtering by file type or other business
-        # logic once there's a concrete need.
-        prefix = f"{project_uuid}/"
+    def copy_file(
+        self, source_key: str, project_uuid: UUID, dest_filename: str
+    ) -> UploadS3FileResult:
+        """Copy an existing object to `{project_uuid}/{dest_filename}`.
+
+        The source is any key in the app bucket (it need not belong to the project);
+        the destination always lands under the project's prefix. A missing source is
+        the caller's mistake and raised apart from storage failures.
+        """
+        dest_key = f"{project_uuid}/{dest_filename}"
+
+        try:
+            head_response = self.client.head_object(Bucket=self.bucket, Key=source_key)
+        except ClientError as e:
+            if e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                raise S3FileNotFoundError(
+                    f"Source {source_key!r} does not exist in bucket {self.bucket!r}"
+                ) from e
+            raise S3StorageError(f"Failed to check {source_key!r} in bucket {self.bucket!r}") from e
+        except BotoCoreError as e:
+            raise S3StorageError(f"Failed to check {source_key!r} in bucket {self.bucket!r}") from e
+
+        try:
+            self.client.copy_object(
+                Bucket=self.bucket,
+                Key=dest_key,
+                CopySource={"Bucket": self.bucket, "Key": source_key},
+            )
+        except (ClientError, BotoCoreError) as e:
+            raise S3StorageError(
+                f"Failed to copy {source_key!r} to {dest_key!r} in bucket {self.bucket!r}"
+            ) from e
+
+        size = head_response["ContentLength"]
+        logger.info("Copied %r to %r (%d bytes)", source_key, dest_key, size)
+
+        return UploadS3FileResult(key=dest_key, size=size)
+
+    def list_files(self, project_uuid: UUID, prefix: str = "") -> list[GetS3FileResult]:
+        # TODO: only lists everything under the project's prefix (optionally
+        # narrowed by `prefix` inside it) for now — extend with args for
+        # filtering by file type or other business logic once there's a
+        # concrete need.
+        prefix = f"{project_uuid}/{prefix}"
 
         try:
             paginator = self.client.get_paginator("list_objects_v2")

@@ -1,0 +1,29 @@
+name: Manta-blocks test
+
+on:
+  pull_request:
+    paths:
+      - "manta-blocks/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: manta-blocks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+# manta-batteries has no CI job yet on purpose: its full test suite needs the
+# pixi-managed PyPSA environments (a heavyweight solve+download per run). The
+# right shape per the playbooks proposal is a pixi-based job with caching that
+# also regenerates catalogue.json and fails on drift — worth doing when the
+# library starts changing regularly.

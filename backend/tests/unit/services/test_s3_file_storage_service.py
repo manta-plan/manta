@@ -7,7 +7,11 @@ from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
 from manta.services.results.s3_file_result import GetS3FileResult
-from manta.services.s3_file_storage_service import S3FileStorageService, S3StorageError
+from manta.services.s3_file_storage_service import (
+    S3FileNotFoundError,
+    S3FileStorageService,
+    S3StorageError,
+)
 
 
 def _client_error(status_code: int) -> ClientError:
@@ -31,6 +35,8 @@ DELETE_FAILURE_IDS = ["client_error", "botocore_error"]
 
 LIST_FAILURES = [_client_error(500), BotoCoreError()]
 LIST_FAILURE_IDS = ["client_error", "botocore_error"]
+
+COPY_FAILURE_IDS = ["client_error", "botocore_error"]
 
 
 def test_upload_file_returns_key_and_size(mock_s3_client) -> None:
@@ -252,3 +258,74 @@ def test_ensure_bucket_exists_raises_on_connection_failure(mock_s3_client) -> No
     with pytest.raises(S3StorageError):
         service.ensure_bucket_exists()
     mock_s3_client.create_bucket.assert_not_called()
+
+
+def test_copy_file_copies_into_the_project_prefix(mock_s3_client) -> None:
+    # Given
+    mock_s3_client.head_object.return_value = {"ContentLength": 42}
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+
+    # When
+    result = service.copy_file(
+        source_key="examples/network.nc",
+        project_uuid=project_uuid,
+        dest_filename="runs/1/network.nc",
+    )
+
+    # Then
+    assert result.key == f"{project_uuid}/runs/1/network.nc"
+    assert result.size == 42
+    mock_s3_client.copy_object.assert_called_once_with(
+        Bucket="manta",
+        Key=f"{project_uuid}/runs/1/network.nc",
+        CopySource={"Bucket": "manta", "Key": "examples/network.nc"},
+    )
+
+
+def test_copy_file_reports_a_missing_source_distinctly(mock_s3_client) -> None:
+    # Given — a 404 on the source is the caller's mistake, not storage failing
+    mock_s3_client.head_object.side_effect = _client_error(404)
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When/Then
+    with pytest.raises(S3FileNotFoundError):
+        service.copy_file(source_key="examples/gone.nc", project_uuid=uuid4(), dest_filename="x.nc")
+    mock_s3_client.copy_object.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [_client_error(500), BotoCoreError()], ids=COPY_FAILURE_IDS)
+def test_copy_file_wraps_head_object_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.head_object.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When/Then
+    with pytest.raises(S3StorageError):
+        service.copy_file(source_key="a.nc", project_uuid=uuid4(), dest_filename="b.nc")
+
+
+@pytest.mark.parametrize("error", [_client_error(500), BotoCoreError()], ids=COPY_FAILURE_IDS)
+def test_copy_file_wraps_copy_object_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.head_object.return_value = {"ContentLength": 42}
+    mock_s3_client.copy_object.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When/Then
+    with pytest.raises(S3StorageError):
+        service.copy_file(source_key="a.nc", project_uuid=uuid4(), dest_filename="b.nc")
+
+
+def test_list_files_narrows_by_prefix_inside_the_project(mock_s3_client) -> None:
+    # Given
+    paginator = mock_s3_client.get_paginator.return_value
+    paginator.paginate.return_value = [{"Contents": []}]
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+
+    # When
+    service.list_files(project_uuid, prefix="runs/1/")
+
+    # Then
+    paginator.paginate.assert_called_once_with(Bucket="manta", Prefix=f"{project_uuid}/runs/1/")

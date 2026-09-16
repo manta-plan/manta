@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "manta-batteries"
+version = "0.1.0"
+description = "The standard library of Manta blocks: units of energy-model work built on PyPSA."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Bryn Pickering", email = "bryn.pickering@openenergytransition.org" },
+    { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
+]
+dependencies = [
+    # Records live in S3 when run under Manta, hence the s3 extra.
+    "manta-blocks[s3]",
+    "pyyaml>=6"
+]
+
+# PyPSA itself is an extra rather than a requirement: this package must stay
+# importable (for names, schemas, and catalogues) in environments that cannot
+# install a solver stack. Only the environment a block actually runs in - the
+# `pypsa` pixi environment - needs it.
+[project.optional-dependencies]
+pypsa = ["pypsa>=1.2,<2", "highspy", "netcdf4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/manta_batteries"]
+exclude = ["**/tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+markers = [
+    "slow: exercises real Prefect flow execution (slower due to server startup)",
+    "pypsa: needs PyPSA installed (run in the `full` environment)"
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W", "PT", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "D104"]
+# These tests skip themselves when PyPSA is missing, which means checking for it
+# before importing anything that needs it.
+"src/manta_batteries/tests/test_library.py" = ["E402"]
+"src/manta_batteries/tests/test_pypsa_end_to_end.py" = ["E402"]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"

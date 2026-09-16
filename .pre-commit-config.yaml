@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^backend/
+        # Ruff resolves the nearest pyproject.toml per file, so each package
+        # is checked against its own configuration.
+        files: ^(backend|manta-blocks|manta-batteries)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|manta-blocks|manta-batteries)/

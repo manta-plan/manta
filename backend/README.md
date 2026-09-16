@@ -60,6 +60,31 @@ migrations, the target bucket is provisioned automatically on startup (see
 `ensure_bucket_exists()` in `main.py`) — nothing to run by hand, beyond having
 SeaweedFS up.
 
+## Playbooks
+
+Playbooks — graphs of modelling [blocks](../manta-blocks/README.md) executed by
+Prefect — are stored in the app database (seeded by migration for now) and
+exposed under `/v1/playbooks`:
+
+- `GET /v1/playbooks`, `GET /v1/playbooks/{uuid}` — list / read stored playbooks.
+- `POST /v1/playbooks/{uuid}/validate` — check a config against the playbook
+  without running anything; problems come back as structured issues.
+- `POST /v1/playbooks/{uuid}/runs` — start a run: the input file (`input_key`,
+  an object in the app bucket) is frozen under the run's own S3 prefix, the
+  playbook document + config + catalogue are handed to the Prefect
+  orchestrator deployment, and a row lands in `runs` (so playbook runs show up
+  in the existing runs endpoints). `GET /v1/runs/{uuid}/outputs` lists
+  everything the run has written.
+
+The backend never imports block code. It validates and wires playbooks from a
+generated block catalogue
+([manta-batteries/catalogue.json](../manta-batteries/catalogue.json) by
+default; override with `MANTA_CATALOGUE_PATH`), and submits runs to the
+deployment registered by the provision container
+(`MANTA_ORCHESTRATOR_ENV`, default `orchestrator`). Actually executing a run
+needs the worker containers — see
+[docker/README.md](../docker/README.md#playbook-execution---profile-playbooks).
+
 ## Linting & formatting
 
 We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting.

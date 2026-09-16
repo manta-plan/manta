@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from prefect.exceptions import ObjectNotFound
 
 from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
@@ -339,3 +340,75 @@ def test_get_run_logs_with_unknown_run_raises_404(mock_db_class) -> None:
     with pytest.raises(HTTPException) as exc_info:
         service.get_run_logs(run_uuid=uuid4())
     assert exc_info.value.status_code == 404
+
+
+class _NotFoundClient:
+    """A Prefect client whose flow runs are all gone (e.g. its state was reset)."""
+
+    def read_flow_run(self, flow_run_id):
+        raise ObjectNotFound(http_exc=Exception("no such flow run"))
+
+
+def test_get_run_whose_flow_run_prefect_no_longer_knows_reads_as_unknown(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given — the run row survived a reset of Prefect's own state
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    _patch_get_client(monkeypatch, _NotFoundClient())
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run(run_uuid=run.uuid)
+
+    # Then
+    assert result.status == "UNKNOWN"
+
+
+def test_get_run_logs_whose_flow_run_is_gone_returns_no_logs_and_unknown(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    _patch_get_client(monkeypatch, _NotFoundClient())
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_logs(run_uuid=run.uuid)
+
+    # Then
+    assert result.logs == []
+    assert result.run_status == "UNKNOWN"
+
+
+def test_list_runs_tolerates_flow_runs_prefect_no_longer_knows(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given — one run still known to Prefect, one long gone
+    project = _existing_project()
+    known_run = _existing_run(project)
+    gone_run = _existing_run(project)
+    gone_run.id = 2
+    gone_run.uuid = uuid4()
+    gone_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [known_run, gone_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        MagicMock(
+            return_value={
+                known_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                gone_run.prefect_flow_run_id: None,
+            }
+        ),
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0, status_filters=None)
+
+    # Then
+    assert [run.status for run in result.items] == ["COMPLETED", "UNKNOWN"]

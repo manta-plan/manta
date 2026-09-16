@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+# The environments this library's blocks run in. Environment *names* are the contract:
+# a block's `ENV = "pypsa"` must match an environment here, the Prefect work pool for
+# it is `manta-pypsa`, and the worker draining that pool is started with
+# `pixi run -e pypsa prefect worker start --pool manta-pypsa`
+# (see docker/compose-dev-services.yaml).
+
+[workspace]
+authors = [
+    "Bryn Pickering <bryn.pickering@openenergytransition.org>",
+    "Jonas Hörsch <jonas.hoersch@openenergytransition.org>"
+]
+channels = ["conda-forge"]
+name = "manta-batteries"
+platforms = ["osx-arm64", "linux-64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.12,<3.15"
+# Held back so the conda solve stays inside prefect's `packaging<26.3` pin;
+# without this, conda picks a newer packaging than the pypi solve can accept.
+packaging = "<26.3"
+
+[pypi-dependencies]
+# Pinned to the backend's prefect and the prefect-server image in
+# docker/compose-dev-services.yaml; a client/server version drift is the first
+# thing to suspect when deployments misbehave.
+prefect = "==3.8.3"
+# For docker work pools: provisioning builds their job templates, and the
+# workers in docker/compose-dev-services.yaml drain them.
+prefect-docker = ">=0.6"
+boto3 = ">=1.34"
+manta-blocks = { path = "../manta-blocks", editable = true }
+manta-batteries = { path = ".", editable = true }
+
+[feature.pypsa.dependencies]
+# The solver stack comes from conda-forge: heavy binary dependencies install far
+# more reliably there than from PyPI.
+pypsa = ">=1.2,<2"
+highspy = "*"
+netcdf4 = "*"
+
+[feature.dev.dependencies]
+pytest = ">=8"
+
+[feature.dev.tasks]
+test = "pytest"
+
+[tasks]
+# Regenerate the committed catalogue after adding or changing a block. Must run in
+# an environment that can import every block (pypsa or full):
+#   pixi run -e pypsa catalogue
+catalogue = "python -m manta_blocks manta_batteries > catalogue.json"
+
+[environments]
+# `orchestrator` runs the playbook interpreter: it needs the framework but no PyPSA.
+# That it stays PyPSA-free is the proof that a block's dependencies stay its own.
+orchestrator = []
+# `pypsa` is what this library's blocks declare as their ENV.
+pypsa = ["pypsa"]
+# `dev` tests the packaging without PyPSA; `full` is the only environment that can
+# run the PyPSA blocks and the end-to-end playbook tests.
+dev = ["dev"]
+full = ["dev", "pypsa"]

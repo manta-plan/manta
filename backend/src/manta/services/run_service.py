@@ -6,6 +6,7 @@ from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from prefect.exceptions import ObjectNotFound
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -23,31 +24,46 @@ logger = logging.getLogger(__name__)
 
 PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
 
+# Prefect's state can be reset independently of our runs table (a dev database
+# wipe, a retention policy, switching its backing store), so a flow run we know
+# about but Prefect no longer does is reported as UNKNOWN rather than an error.
 
-def _read_flow_run(flow_run_id: UUID) -> FlowRun:
+
+def _read_flow_run(flow_run_id: UUID) -> FlowRun | None:
     with get_client(sync_client=True) as client:
-        return client.read_flow_run(flow_run_id)
+        try:
+            return client.read_flow_run(flow_run_id)
+        except ObjectNotFound:
+            return None
 
 
-def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
+def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun | None]:
     with get_client(sync_client=True) as client:
-        flow_runs = {}
+        flow_runs: dict[UUID, FlowRun | None] = {}
         for flow_run_id in flow_run_ids:
-            flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
+            try:
+                flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
+            except ObjectNotFound:
+                flow_runs[flow_run_id] = None
         return flow_runs
 
 
-def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
+def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun | None, list[str]]:
     with get_client(sync_client=True) as client:
-        flow_run = client.read_flow_run(flow_run_id)
+        try:
+            flow_run = client.read_flow_run(flow_run_id)
+        except ObjectNotFound:
+            return None, []
         logs = client.read_logs(
             log_filter=LogFilter(flow_run_id=LogFilterFlowRunId(any_=[flow_run_id]))
         )
         return flow_run, [log.message for log in logs]
 
 
-def _flow_run_status(flow_run: FlowRun) -> str:
-    return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
+def _flow_run_status(flow_run: FlowRun | None) -> str:
+    if flow_run is None or flow_run.state is None:
+        return "UNKNOWN"
+    return flow_run.state.type.value
 
 
 def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | None:

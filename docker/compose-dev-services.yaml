@@ -9,11 +9,28 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./conf/postgres-init:/docker-entrypoint-initdb.d:ro
+    # The prefect database also has to exist before this container counts as
+    # healthy — prefect-server waits on `service_healthy`, and post_start (which
+    # creates the database, see below) gives no such ordering guarantee itself.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} && psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -tc \"SELECT 1 FROM pg_database WHERE datname = 'prefect'\" | grep -q 1",
+        ]
       interval: 2s
       timeout: 2s
       retries: 20
+    post_start:
+      # Create the prefect-server database if it's missing. Runs on every start
+      # (idempotent) rather than as an initdb script, so existing dev volumes
+      # created before this database was needed get it too.
+      - command:
+          [
+            "sh",
+            "-c",
+            "until pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}; do sleep 1; done; psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -tc \"SELECT 1 FROM pg_database WHERE datname = 'prefect'\" | grep -q 1 || createdb -U ${POSTGRES_USER} prefect",
+          ]
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.05
@@ -42,10 +59,17 @@ services:
     image: prefecthq/prefect:3.8.3-python3.12
     command: prefect server start --host 0.0.0.0
     env_file: ../backend/.env
+    environment:
+      # Prefect's default store is a SQLite file, which buckles under concurrent
+      # writers ("database is locked" errors) as soon as workers poll the server —
+      # so state lives in the shared Postgres instead, in its own database
+      # (created by the postgres service's post_start above).
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/prefect
     ports:
       - "${PREFECT_PORT}:4200"
-    volumes:
-      - prefect-data:/root/.prefect
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       # `curl` isn't installed in this image — so using `python` instead
       test:
@@ -58,6 +82,98 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # --- Playbook execution ---------------------------------------------------
+  # Gated behind `--profile playbooks` so the base stack (and the integration
+  # test suite, which includes this file wholesale) stays lean; the worker image
+  # bakes two pixi environments and is a heavyweight build. Start it with:
+  #   docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile playbooks up
+  #
+  # Work pools are docker-type: every job - each playbook run and each block
+  # run - executes in its own throwaway container, spawned from the image below
+  # (docker/worker.Dockerfile) with the pool's pixi environment activated. The
+  # workers here are thin dispatchers: they drain a pool and talk to the docker
+  # daemon, nothing more. All job wiring (image, network, volumes, environment)
+  # lives in the pools' job templates, written by playbooks-provision.
+
+  # One-shot: creates the docker work pools (job templates included) and
+  # registers a Prefect deployment per block plus the playbook orchestrator.
+  # Idempotent - templates and deployments are created or updated on every `up`,
+  # which is also how image/env changes roll out. The backend only ever starts
+  # runs on deployments this container has registered.
+  playbooks-provision:
+    profiles: ["playbooks"]
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    image: manta-playbooks-worker
+    command: pixi run -e pypsa python -m manta_batteries.provision
+    restart: "no"
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      MANTA_POOL_TYPE: docker
+      # What every job container runs as and plugs into. The network and volume
+      # names are the ones this compose project produces ("manta" + resource).
+      MANTA_JOB_IMAGE: manta-playbooks-worker
+      MANTA_JOB_NETWORK: manta_default
+      MANTA_JOB_VOLUMES: manta_prefect-results:/prefect-results
+      # Handed on to every job container: where records live
+      # (boto3's standard variables, read by manta_blocks.records).
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_ENDPOINT_URL: http://seaweedfs:8333
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+
+  prefect-worker-orchestrator:
+    profiles: ["playbooks"]
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    image: manta-playbooks-worker
+    command: pixi run -e orchestrator prefect worker start --pool manta-orchestrator --type docker
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    volumes:
+      # The worker spawns a container per job on the host's docker daemon —
+      # sibling containers, not nested ones. Socket access means root-equivalent
+      # control of the host's docker; acceptable for this dev stack only.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persisted flow results (the record pointers blocks return) go on a
+      # volume shared by all job containers, so the orchestrator's job can read
+      # a block's result back. The workers don't use it themselves — mounting it
+      # here just puts its lifecycle in compose's hands rather than leaving the
+      # docker daemon to auto-create it for the first job. Object-store result
+      # storage would remove it, at the price of an s3fs dependency everywhere.
+      - prefect-results:/prefect-results
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      playbooks-provision:
+        condition: service_completed_successfully
+
+  prefect-worker-pypsa:
+    profiles: ["playbooks"]
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    image: manta-playbooks-worker
+    command: pixi run -e pypsa prefect worker start --pool manta-pypsa --type docker
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - prefect-results:/prefect-results
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      playbooks-provision:
+        condition: service_completed_successfully
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2
@@ -144,4 +260,4 @@ services:
 volumes:
   postgres-data:
   seaweedfs-data:
-  prefect-data:
+  prefect-results:

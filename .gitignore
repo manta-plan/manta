@@ -12,6 +12,9 @@ htmlcov/
 .venv/
 .python-version
 
+# pixi-managed environments (manta-batteries)
+.pixi/
+
 # JavaScript
 logs/
 *.log
