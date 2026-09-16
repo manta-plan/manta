@@ -936,9 +936,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-docker = [
-    { name = "prefect-docker" },
-]
 s3 = [
     { name = "boto3" },
 ]
@@ -946,7 +943,6 @@ s3 = [
 [package.dev-dependencies]
 dev = [
     { name = "boto3" },
-    { name = "prefect-docker" },
     { name = "pytest" },
 ]
 
@@ -955,16 +951,14 @@ requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
     { name = "jsonschema", specifier = ">=4" },
     { name = "prefect", specifier = ">=3.7.8,<4" },
-    { name = "prefect-docker", marker = "extra == 'docker'", specifier = ">=0.6" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
-provides-extras = ["s3", "docker"]
+provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "boto3", specifier = ">=1.34" },
-    { name = "prefect-docker", specifier = ">=0.6" },
     { name = "pytest", specifier = ">=8" },
 ]
 
@@ -1157,8 +1151,8 @@ name = "pendulum"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "python-dateutil", marker = "python_full_version < '3.13'" },
-    { name = "tzdata", marker = "python_full_version < '3.13'" },
+    { name = "python-dateutil" },
+    { name = "tzdata" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/72/9a51afa0a822b09e286c4cb827ed7b00bc818dac7bd11a5f161e493a217d/pendulum-3.2.0.tar.gz", hash = "sha256:e80feda2d10fa3ff8b1526715f7d33dcb7e08494b3088f2c8a3ac92d4a4331ce", size = 86912, upload-time = "2026-01-30T11:22:24.093Z" }
 wheels = [
@@ -1270,21 +1264,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/9b/79ab0ea9eac4f93675033516b76ecf9e30309ff82369e84ce04b24364fea/prefect-3.8.6.tar.gz", hash = "sha256:46c71c36a46660fbfa9f21c4cdf7541d530706c55b2bc5b61bb9b5425761526c", size = 14721653, upload-time = "2026-09-15T00:34:46.881Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/78/96e76c84b8ce67647d7423269fa695775c30251b66a84b6f796b7a1daa97/prefect-3.8.6-py3-none-any.whl", hash = "sha256:4d2bba656e031bbb749966e0fca4f0c9311a62c520082e8e3e5514d9b47b034a", size = 15652543, upload-time = "2026-09-15T00:34:43.778Z" },
-]
-
-[[package]]
-name = "prefect-docker"
-version = "0.7.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "docker" },
-    { name = "exceptiongroup" },
-    { name = "prefect" },
-    { name = "python-on-whales" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/55/35e245d41e091bf87207a9e6ee0049620fdb18a6420094ea639f71bac31f/prefect_docker-0.7.4.tar.gz", hash = "sha256:cfd4bd5f36d493472a4aa33b48695330a1ba70d022fdf8efc9aba8f9eea20cb3", size = 50648, upload-time = "2026-09-08T18:33:13.371Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/bf/ac92a81ba57ab290455e662efe0c2af1d39b81dc47c8048fb7d41ee6266f/prefect_docker-0.7.4-py3-none-any.whl", hash = "sha256:93d743696b79739ce24990796cb9d366516236dd81f3350e57b7f6205af58dc8", size = 32463, upload-time = "2026-09-08T18:33:12.248Z" },
 ]
 
 [[package]]
@@ -1520,19 +1499,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/21/25/5473e46b179f8e8b4ad3aeeb36773d1701b7770eaf5e5bc2025c7303b598/python_json_logger-4.2.0.tar.gz", hash = "sha256:e371ebe22ec01e289850102091a2b1f6fc9e655c7f1f5f29073936756c290afa", size = 18211, upload-time = "2026-08-15T11:36:38.232Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/55/6467fde553886cb293e41538f3a8b4e4fd4688c6df242cf982162d8367fb/python_json_logger-4.2.0-py3-none-any.whl", hash = "sha256:158a52126fcd6869e09574d2b66272666f3dc8f468c62637ef9a1fa883719cb9", size = 14988, upload-time = "2026-08-15T11:36:36.821Z" },
-]
-
-[[package]]
-name = "python-on-whales"
-version = "0.81.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/81/4b545de811e41ff90762a1c7045fcae215f20f4114eebddedab8eab6f63e/python_on_whales-0.81.0.tar.gz", hash = "sha256:bb6172014e3fe949f908092748bddf34df758cb92c2c3d0536b75bf236abce1b", size = 115066, upload-time = "2026-03-09T14:17:43.534Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/cb/5049e041a1d0e6f6cb6ac8737a8215fb4e67cb147f140ef31e67361dc61a/python_on_whales-0.81.0-py3-none-any.whl", hash = "sha256:6d5f81f56d0f95fd311a7cce29a01a1a60841074e4936000dc5f2dc9a7ffafac", size = 119240, upload-time = "2026-03-09T14:17:42.195Z" },
 ]
 
 [[package]]
@@ -2261,8 +2227,8 @@ name = "whenever"
 version = "0.10.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "tzdata", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
-    { name = "tzlocal", marker = "python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux'" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "tzlocal", marker = "sys_platform != 'darwin' and sys_platform != 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/09/9ec61cfa69047a75af61e8db53e7782ed5b3995bc8a08132b951202c8aaf/whenever-0.10.5.tar.gz", hash = "sha256:bc8fd6208d50be50e490a3628fa6346d006b02df5de64c43170df8a809ded8d4", size = 437531, upload-time = "2026-08-07T15:03:30.933Z" }
 wheels = [

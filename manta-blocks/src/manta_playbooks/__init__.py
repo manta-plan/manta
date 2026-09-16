@@ -16,8 +16,6 @@ from manta_playbooks.deploy import (
     ProcessPixiRenderer,
     Renderer,
     deployment_plan,
-    docker_job_template,
-    ensure_docker_pool,
     ensure_process_pool,
     provision_catalogue,
 )
@@ -91,8 +89,6 @@ __all__ = [
     "deploy",
     "deployment_plan",
     "dispatch_block",
-    "docker_job_template",
-    "ensure_docker_pool",
     "ensure_process_pool",
     "graph_to_mermaid",
     "load_config",

@@ -1007,16 +1007,14 @@ requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
     { name = "jsonschema", specifier = ">=4" },
     { name = "prefect", specifier = ">=3.7.8,<4" },
-    { name = "prefect-docker", marker = "extra == 'docker'", specifier = ">=0.6" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
-provides-extras = ["s3", "docker"]
+provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "boto3", specifier = ">=1.34" },
-    { name = "prefect-docker", specifier = ">=0.6" },
     { name = "pytest", specifier = ">=8" },
 ]
 

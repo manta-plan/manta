@@ -5,9 +5,10 @@
 """Working out what a playbook needs deployed, and creating it.
 
 A plan says what is needed - which blocks, in which environments - without saying how
-to provide it. A renderer then creates it. Today one renderer exists, running each
-environment as a local pixi environment; a renderer for containers or a cluster would
-read the same plan.
+to provide it. A renderer then creates it. One renderer exists here, running each
+environment as a local pixi environment on process work pools - the simplest thing
+Prefect offers, and all this package's own tests need. An installation wanting a
+container or a pod per job brings its own; see `provision_catalogue`.
 
 Deployments are pushed straight to the Prefect API rather than written to a file,
 since a playbook edited in a browser has nowhere to keep one.
@@ -120,80 +121,6 @@ def ensure_process_pool(name: str) -> None:
             pass
 
 
-def docker_job_template(
-    env_name: str,
-    image: str,
-    env: dict[str, str] | None = None,
-    network: str | None = None,
-    volumes: "list[str] | None" = None,
-) -> dict:
-    """A docker work pool's job template: each job is a container running `image`.
-
-    The container's command activates the pixi environment `env_name` before handing
-    over to Prefect, which is what keeps "which environment does this pool run" a
-    property of the pool rather than of any code. `env`, `network`, and `volumes`
-    become defaults for every job the pool runs; a deployment can still override any
-    of them through its own job variables.
-
-    Needs `prefect-docker` installed (`manta-blocks[docker]`).
-    """
-    from prefect_docker.worker import DockerWorker
-
-    template = DockerWorker.get_default_base_job_template()
-    defaults = {
-        "image": image,
-        "command": f"pixi run -e {env_name} prefect flow-run execute",
-        # An image that only exists locally (built by compose, never pushed) must
-        # not be pulled: for a `latest` tag the worker would otherwise try the
-        # registry first and fail.
-        "image_pull_policy": "IfNotPresent",
-        # Job containers are throwaway by design; their logs live in Prefect.
-        "auto_remove": True,
-    }
-    if env:
-        defaults["env"] = env
-    if network:
-        defaults["networks"] = [network]
-    if volumes:
-        defaults["volumes"] = volumes
-
-    variables = template["variables"]["properties"]
-    for key, value in defaults.items():
-        variables[key]["default"] = value
-    return template
-
-
-def ensure_docker_pool(name: str, base_job_template: dict) -> None:
-    """Create the docker work pool `name`, or bring it up to date.
-
-    Unlike `ensure_process_pool`, an existing pool is updated rather than left
-    alone: the template carries the image and wiring, and re-provisioning is how
-    changes to those roll out. A pool of another type under this name is recreated,
-    since Prefect cannot change a pool's type in place - anything deployed onto it
-    goes with it, which is fine for the one caller (`provision_catalogue`) because
-    it re-registers every deployment right after.
-    """
-    from prefect.client.orchestration import get_client
-    from prefect.client.schemas.actions import WorkPoolCreate, WorkPoolUpdate
-    from prefect.exceptions import ObjectAlreadyExists
-
-    create = WorkPoolCreate(
-        name=name, type="docker", base_job_template=base_job_template
-    )
-    with get_client(sync_client=True) as client:
-        try:
-            client.create_work_pool(create)
-        except ObjectAlreadyExists:
-            if client.read_work_pool(name).type == "docker":
-                client.update_work_pool(
-                    work_pool_name=name,
-                    work_pool=WorkPoolUpdate(base_job_template=base_job_template),
-                )
-            else:
-                client.delete_work_pool(name)
-                client.create_work_pool(create)
-
-
 def provision_catalogue(
     catalogue: Catalogue,
     orchestrator_env: str,
@@ -208,15 +135,17 @@ def provision_catalogue(
     `run_deployment` call - which is exactly what the Manta backend does.
 
     Unlike `ProcessPixiRenderer`, this also creates the work pools: it is meant for a
-    setup step of a managed installation (Manta's docker compose, later Kubernetes),
-    where there is no operator watching for printed commands. Workers are still
-    started by the installation itself, one per environment.
+    setup step of a managed installation, where there is no operator watching for
+    printed commands. Workers are still started by the installation itself, one per
+    environment.
 
     `pool_factory` decides what kind of pool each environment gets, called as
-    `pool_factory(pool_name, env_name)`. The default creates process pools (a worker
-    per environment runs jobs as subprocesses); pass one built on
-    `ensure_docker_pool` + `docker_job_template` to run every job in its own docker
-    container instead - which is what Manta's dev stack does.
+    `pool_factory(pool_name, env_name)`. The default creates process pools: a worker
+    per environment, running jobs as its own subprocesses. An installation wanting
+    something else - a container or a pod per job - passes its own factory, or
+    creates the pools itself and passes `create_pools=False`. That is the seam
+    Manta's docker compose uses (see `docker/provision.py`), and where Kubernetes
+    will attach; nothing about either target belongs in this package.
 
     Deployments are registered with module entrypoints rather than file paths, so a
     worker finds the flow by importing it from its own installed packages - the

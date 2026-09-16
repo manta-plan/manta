@@ -9,11 +9,7 @@ from prefect.client.schemas.actions import WorkPoolCreate
 from manta_blocks.deployment import DeploymentPlan
 from manta_blocks.environments import EnvironmentSpec
 from manta_blocks.tests.fakes import FakeOtherEnv, FakePassthrough
-from manta_playbooks.deploy import (
-    ProcessPixiRenderer,
-    deployment_plan,
-    docker_job_template,
-)
+from manta_playbooks.deploy import ProcessPixiRenderer, deployment_plan
 from manta_playbooks.playbook import Playbook
 
 
@@ -78,37 +74,3 @@ def test_a_plan_covers_only_the_steps_that_will_run():
     plan = deployment_plan(pb, {"globals": {"mode": "off"}, "a": {}, "b": {}})
     assert {d.block for d in plan.deployments} == {"fake_passthrough"}
     assert set(plan.environments) == {"default"}
-
-
-def test_a_docker_job_template_runs_jobs_inside_the_named_pixi_environment():
-    template = docker_job_template(
-        "pypsa",
-        image="manta-playbooks-worker",
-        env={"MANTA_BLOCK_SOURCES": "manta_batteries"},
-        network="manta_default",
-        volumes=["manta_prefect-results:/prefect-results"],
-    )
-
-    defaults = {
-        key: value.get("default")
-        for key, value in template["variables"]["properties"].items()
-    }
-    assert defaults["image"] == "manta-playbooks-worker"
-    assert defaults["command"] == "pixi run -e pypsa prefect flow-run execute"
-    assert defaults["env"] == {"MANTA_BLOCK_SOURCES": "manta_batteries"}
-    assert defaults["networks"] == ["manta_default"]
-    assert defaults["volumes"] == ["manta_prefect-results:/prefect-results"]
-    # A locally built image must never be pulled, and finished jobs must not
-    # pile up as stopped containers.
-    assert defaults["image_pull_policy"] == "IfNotPresent"
-    assert defaults["auto_remove"] is True
-
-
-def test_a_docker_job_template_leaves_unset_wiring_to_the_worker_defaults():
-    template = docker_job_template("pypsa", image="manta-playbooks-worker")
-
-    properties = template["variables"]["properties"]
-    assert (
-        "default" not in properties["networks"] or not properties["networks"]["default"]
-    )
-    assert "default" not in properties["env"] or not properties["env"]["default"]

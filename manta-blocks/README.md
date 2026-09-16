@@ -219,6 +219,12 @@ Two ways to make that happen:
   orchestrator. After that, any playbook of catalogued blocks starts with a single
   `run_deployment` call — this is what Manta's docker setup runs at start-up.
 
+Both create process work pools, which is the simplest thing Prefect offers and all
+this package needs. An installation that wants a container or a pod per job passes
+`provision_catalogue` its own pool factory, or creates the pools itself and passes
+`create_pools=False`; Manta's `docker/provision.py` is that, and Kubernetes will
+attach at the same place. Nothing about either target lives here.
+
 ```python
 from manta_playbooks.control import deploy, start_run, run_status
 
@@ -255,8 +261,9 @@ of the blocks it is describing.
 - Resource requirements (cpu, memory, walltime) are not modelled yet. The intent is to
   declare them relative to the data, so absolute requirements can be worked out from
   the record being processed.
-- Only the pixi-and-process renderer exists. `Renderer` is the seam for containers or a
-  cluster.
+- Only the pixi-and-process renderer exists, by design. `Renderer` and
+  `provision_catalogue`'s pool factory are the seams a container or cluster target
+  attaches to, from outside this package.
 - A playbook-wide `globals` section is only read by `when` conditions and nested
   playbooks; it is not yet merged into each block's settings (see
   `execution._run_block_step` for where that would happen).
