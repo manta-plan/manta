@@ -43,11 +43,11 @@ def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, 
     return headers
 
 
-def _create_project(app_server: str, kc_oidc_client: KeycloakOpenID) -> str:
+def _create_project(app_server: str, headers: dict[str, str]) -> str:
     response = httpx2.post(
         f"{app_server}/v1/projects",
         json={"name": "Pi Digit Stats Project", "description": "Integration test project"},
-        headers=_auth_headers(app_server, kc_oidc_client),
+        headers=headers,
     )
     assert response.status_code == 201
     return response.json()["uuid"]
@@ -71,22 +71,28 @@ def _wait_for_deployment_registered(
     )
 
 
-def _create_run(app_server: str, project_uuid: str, num_pi_digits: int) -> dict:
+def _create_run(
+    app_server: str, project_uuid: str, num_pi_digits: int, headers: dict[str, str]
+) -> dict:
     response = httpx2.post(
         f"{app_server}/v1/runs",
         json={"project_uuid": project_uuid, "num_pi_digits": num_pi_digits},
+        headers=headers,
     )
     assert response.status_code == 201, response.text
     return response.json()
 
 
 def _wait_for_terminal_status(
-    app_server: str, run_uuid: str, timeout: float = _RUN_COMPLETION_TIMEOUT
+    app_server: str,
+    run_uuid: str,
+    headers: dict[str, str],
+    timeout: float = _RUN_COMPLETION_TIMEOUT,
 ) -> str:
     deadline = time.monotonic() + timeout
     last_status = None
     while time.monotonic() < deadline:
-        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
+        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
         assert response.status_code == 200
         last_status = response.json()["status"]
         if last_status in ("COMPLETED", "FAILED", "CRASHED", "CANCELLED"):
@@ -99,12 +105,15 @@ def _wait_for_terminal_status(
 
 
 def _wait_for_logs(
-    app_server: str, run_uuid: str, timeout: float = _LOGS_AVAILABLE_TIMEOUT
+    app_server: str,
+    run_uuid: str,
+    headers: dict[str, str],
+    timeout: float = _LOGS_AVAILABLE_TIMEOUT,
 ) -> dict:
     deadline = time.monotonic() + timeout
     last_body = None
     while time.monotonic() < deadline:
-        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs")
+        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs", headers=headers)
         assert response.status_code == 200
         last_body = response.json()
         if last_body["logs"]:
@@ -123,12 +132,13 @@ def test_create_and_run_pi_digit_stats(
 ) -> None:
     # Given a project, and the flow-serving subprocess's deployment registered
     # with the Prefect server
-    project_uuid = _create_project(app_server, kc_oidc_client)
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
 
     # When a run is created against it, with a small digit count to keep the
     # actual flow execution fast
-    body = _create_run(app_server, project_uuid, num_pi_digits=1000)
+    body = _create_run(app_server, project_uuid, num_pi_digits=1000, headers=headers)
 
     # Then it's accepted and returns a run uuid linked to the project
     run_uuid = body["uuid"]
@@ -137,14 +147,14 @@ def test_create_and_run_pi_digit_stats(
 
     # And it eventually completes, submitted and executed via a real Prefect
     # server + flow-serving subprocess
-    status = _wait_for_terminal_status(app_server, run_uuid)
+    status = _wait_for_terminal_status(app_server, run_uuid, headers)
     assert status == "COMPLETED"
 
     # And logs contain the printed digit-frequency output (a Counter dict
     # repr) — assert on the shape rather than exact digits/ordering. Logs ship
     # to the Prefect API asynchronously, so poll rather than assuming they're
     # already there the instant the run finishes.
-    logs_body = _wait_for_logs(app_server, run_uuid)
+    logs_body = _wait_for_logs(app_server, run_uuid, headers)
     assert logs_body["uuid"] == run_uuid
     assert logs_body["run_status"] == "COMPLETED"
     joined_logs = "\n".join(logs_body["logs"])
@@ -173,9 +183,10 @@ def test_run_survives_project_deletion_with_project_id_set_to_null(
     kc_oidc_client: KeycloakOpenID,
 ) -> None:
     # Given a project with a run against it
-    project_uuid = _create_project(app_server, kc_oidc_client)
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
-    body = _create_run(app_server, project_uuid, num_pi_digits=1000)
+    body = _create_run(app_server, project_uuid, num_pi_digits=1000, headers=headers)
     run_uuid = body["uuid"]
 
     # When the project is deleted
@@ -192,6 +203,6 @@ def test_run_survives_project_deletion_with_project_id_set_to_null(
     assert run_row[0] is None
 
     # And the run is still reachable via the API, reporting no project
-    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
     assert response.status_code == 200
     assert response.json()["project_uuid"] is None

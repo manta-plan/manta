@@ -1,4 +1,5 @@
-from typing import Annotated, Any, Mapping
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from fastapi import HTTPException
 from starlette.status import HTTP_403_FORBIDDEN
@@ -11,6 +12,7 @@ class AuthorizationError(HTTPException):
 
     Resolves to a 403 error by default.
     """
+
     def __init__(
         self,
         status_code: Annotated[

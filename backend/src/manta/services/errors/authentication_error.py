@@ -1,4 +1,5 @@
-from typing import Annotated, Any, Mapping
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from fastapi import HTTPException
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -11,6 +12,7 @@ class AuthenticationError(HTTPException):
 
     Resolves to a 401 error by default.
     """
+
     def __init__(
         self,
         status_code: Annotated[

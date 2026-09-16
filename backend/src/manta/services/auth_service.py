@@ -1,14 +1,12 @@
 import logging
 
 from fastapi import Depends
-from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from keycloak import KeycloakConnectionError, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 from keycloak.keycloak_openid import KeycloakAuthenticationError
 from keycloak.openid_connection import KeycloakPostError
 from sqlalchemy.orm import Session
-from starlette.authentication import BaseUser
 
 from manta.config.database_config import get_db_session
 from manta.config.keycloak_config import get_keycloak_openid, well_known
@@ -56,12 +54,12 @@ def authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     return user
 
 
-def require_authenticated(request: Request):
-    if request.state["manta_user"] is None:
-        raise AuthenticationError(detail="authentication information not loaded")
-    user: BaseUser = request.state.manta_user
-    if not user.is_authenticated:
-        raise AuthenticationError(detail="endpoint requires authentication")
+def authenticated_user(token: str = Depends(oauth2_scheme), auth: AuthService = Depends()) -> User:
+    try:
+        return authenticate(auth.db, auth.kc_client, token)
+    except AuthenticationError as e:
+        logger.warning("Rejected token: %s", e)
+        raise
 
 
 class AuthService:
@@ -107,11 +105,3 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
-
-
-def get_current_user(token: str = Depends(oauth2_scheme), auth: AuthService = Depends()) -> User:
-    try:
-        return authenticate(auth.db, auth.kc_client, token)
-    except AuthenticationError as e:
-        logger.warning("Rejected token: %s", e)
-        raise
