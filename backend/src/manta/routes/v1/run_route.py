@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, Query, status
 
 from manta.routes.v1.requests.list_runs_request import ListRunsRequest
 from manta.routes.v1.requests.run_request import CreateRunRequest
+from manta.services.playbook_service import PlaybookService
+from manta.services.results.playbook_result import GetRunOutputsResult
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -50,3 +52,10 @@ def get_run(run_uuid: UUID, service: RunService = Depends()) -> GetRunResult:
 @router.get("/{run_uuid}/logs", response_model=GetRunLogsResult)
 def get_run_logs(run_uuid: UUID, service: RunService = Depends()) -> GetRunLogsResult:
     return service.get_run_logs(run_uuid)
+
+
+@router.get("/{run_uuid}/outputs", response_model=GetRunOutputsResult)
+def get_run_outputs(run_uuid: UUID, service: PlaybookService = Depends()) -> GetRunOutputsResult:
+    # Served by PlaybookService rather than RunService because it owns the run
+    # storage layout (where a run's input was frozen and its blocks write).
+    return service.get_run_outputs(run_uuid)

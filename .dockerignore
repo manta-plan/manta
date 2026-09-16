@@ -1,0 +1,11 @@
+# Keeps local environments, caches, and unrelated trees out of docker build
+# contexts (docker/worker.Dockerfile builds from the repo root).
+.git
+.idea
+**/.venv
+**/.pixi
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+frontend/node_modules
+frontend/dist

@@ -48,9 +48,13 @@ class _MockSession:
         return _FakeQuery(self._query_results.get(model))
 
     def _assign_generated_fields(self, entity) -> None:
+        # Mirrors column defaults: they only fill fields the caller left unset —
+        # an explicitly assigned uuid (e.g. a run's pre-minted uuid) survives.
         entity.id = self.id
-        entity.uuid = self.uuid
-        entity.created_at = self.created_at
+        if entity.uuid is None:
+            entity.uuid = self.uuid
+        if entity.created_at is None:
+            entity.created_at = self.created_at
 
 
 @pytest.fixture
@@ -73,6 +77,7 @@ class _MockS3Client:
         )
         self.head_bucket = MagicMock()
         self.create_bucket = MagicMock()
+        self.copy_object = MagicMock()
         self.delete_object = MagicMock()
         self.get_paginator = MagicMock(return_value=MagicMock(paginate=MagicMock(return_value=[])))
 

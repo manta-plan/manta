@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+globals:
+  expansion_mode: overnight
+
+cluster:
+  n_hours: 3
+
+expansion_overnight: {}
+
+expansion_myopic: {}
+
+dispatch:
+  optimize_config:
+    horizon: 168
+    overlap: 24

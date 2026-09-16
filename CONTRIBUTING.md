@@ -1,9 +1,16 @@
 # Contributing to Manta
 
-Manta is a monorepo containing a Python backend (`backend/`) and, a
-Javascript frontend (`frontend/`). This document is the canonical reference for coding
-standards on the project. It applies to everyone pushing code — core team,
-energy modelers, and outside contributors alike.
+Manta is a monorepo containing a Python backend (`backend/`), a Javascript
+frontend (`frontend/`), and two Python packages developed here but written as
+standalone publishable libraries: `manta-blocks/` (the blocks/playbooks
+framework) and `manta-batteries/` (the standard block library). This document
+is the canonical reference for coding standards on the project. It applies to
+everyone pushing code — core team, energy modelers, and outside contributors
+alike.
+
+The backend sections below apply to `backend/` only; `manta-blocks/` and
+`manta-batteries/` carry their own conventions (see their READMEs and
+pyproject files), since they must stand alone once split out of the monorepo.
 
 If a file or module doesn't clearly fit the conventions below, raise it in your
 PR rather than guessing — conventions get updated by discussion, not by silent

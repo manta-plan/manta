@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "manta-blocks"
+version = "0.1.0"
+description = "Composable units of energy-model work (blocks) and the playbooks that chain them together."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Bryn Pickering", email = "bryn.pickering@openenergytransition.org" },
+    { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
+]
+dependencies = [
+    # Kept in step with the `prefect` pin in backend/pyproject.toml and the
+    # prefect-server image in docker/compose-dev-services.yaml.
+    "prefect>=3.7.8,<4",
+    "pydantic>=2",
+    "pyyaml>=6",
+    # For checking a block's settings where the block itself cannot be imported.
+    "jsonschema>=4"
+]
+
+# PyPSA is deliberately absent: concrete blocks live in block libraries such as
+# manta-batteries, each bringing its own dependencies.
+
+[project.optional-dependencies]
+# Only needed where records point into object storage (s3:// urls).
+s3 = ["boto3>=1.34"]
+# Only needed where docker work pools are provisioned or drained (each job runs
+# in its own container).
+docker = ["prefect-docker>=0.6"]
+
+[dependency-groups]
+dev = [
+    "boto3>=1.34",
+    "prefect-docker>=0.6",
+    "pytest>=8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/manta_blocks", "src/manta_playbooks"]
+exclude = ["**/tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+markers = [
+    "slow: exercises real Prefect flow execution (slower due to server startup)"
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W", "PT", "UP"] # TODO: Add "D" when we have docstrings
+# line too long; the formatter will handle these
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
+
+# Ignore `E402` (import violations) and `F401` (unused imports) in all `__init__.py` files
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "D104"]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
