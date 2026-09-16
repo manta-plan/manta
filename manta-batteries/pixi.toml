@@ -29,9 +29,6 @@ packaging = "<26.3"
 # docker/compose-dev-services.yaml; a client/server version drift is the first
 # thing to suspect when deployments misbehave.
 prefect = "==3.8.3"
-# For docker work pools: provisioning builds their job templates, and the
-# workers in docker/compose-dev-services.yaml drain them.
-prefect-docker = ">=0.6"
 boto3 = ">=1.34"
 manta-blocks = { path = "../manta-blocks", editable = true }
 manta-batteries = { path = ".", editable = true }

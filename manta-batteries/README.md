@@ -64,13 +64,10 @@ state instead of committing it by hand, per the playbooks requirements proposal.
 ## Running under Manta
 
 Manta's dev stack builds one job image from this directory (both environments
-pre-installed) and runs `python -m manta_batteries.provision` once to create the
-work pools and register a Prefect deployment per block plus the playbook
-orchestrator. The pools are docker-type: **every job runs in its own container**
-from that image, with the pool's pixi environment activated; a thin docker
-worker per pool does the spawning. `MANTA_JOB_IMAGE` / `MANTA_JOB_NETWORK` /
-`MANTA_JOB_VOLUMES` tell provisioning what the job containers run as and plug
-into. See [docker/README.md](../docker/README.md).
+pre-installed) and provisions the work pools and deployments itself, from the
+committed `catalogue.json` — nothing in this package is involved. There
+**every block runs in its own container** from that image, spawned by a docker
+worker for the pool. See [docker/README.md](../docker/README.md).
 
 Records are S3 urls there; `manta_blocks.records` stages them for the blocks using
 standard `AWS_*` environment variables (handed to job containers via the pool
@@ -87,12 +84,12 @@ pixi run -e pypsa python -m manta_batteries.examples.seed_network s3://manta/exa
 
 Everything here also runs without the app, against any Prefect server — see
 "Running and deploying" in [manta-blocks' README](../manta-blocks/README.md).
-With no docker in the loop, use process pools (jobs run as subprocesses of a
-worker started inside the matching pixi environment):
+The pools are process-type (jobs run as subprocesses of a worker started inside
+the matching pixi environment), which is all this library needs:
 
 ```bash
 prefect server start                                        # in one window
-MANTA_POOL_TYPE=process pixi run -e pypsa python -m manta_batteries.provision
+pixi run -e pypsa python -m manta_batteries.provision
 pixi run -e pypsa prefect worker start --pool manta-pypsa   # in another window
 pixi run -e orchestrator prefect worker start --pool manta-orchestrator
 ```
