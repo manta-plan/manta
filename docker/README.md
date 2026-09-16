@@ -38,32 +38,45 @@ truth instead of two.
 ## Playbook execution (`--profile playbooks`)
 
 Everything a playbook run needs to actually execute is gated behind the
-`playbooks` compose profile, because the worker image is a heavyweight build
+`playbooks` compose profile, because the job image is a heavyweight build
 (two pixi environments including the PyPSA solver stack):
 
 ```bash
 docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile playbooks up
 ```
 
-The work pools are **docker-type**: every job — each playbook run and each
-block run — executes in its own throwaway container, spawned from the image
-built by [worker.Dockerfile](worker.Dockerfile) with the right pixi
-environment activated (`docker ps` during a run shows them come and go).
+**Every block runs in its own throwaway container** (`docker ps` during a run
+shows them come and go), spawned from the image built by
+[job.Dockerfile](job.Dockerfile) with the block's pixi environment activated.
+The playbook orchestrator does not: it waits out every step of a playbook, so
+it runs in-process in a long-lived worker instead.
 
-- **playbooks-provision** — one-shot: creates the docker work pools (their job
-  templates carry the image, network, volumes, and environment every job
-  container gets) and registers a Prefect deployment per
-  [manta-batteries](../manta-batteries) block plus the playbook orchestrator.
-  Idempotent — re-running updates templates and deployments in place, which is
-  also how image or wiring changes roll out.
-- **prefect-worker-orchestrator** / **prefect-worker-pypsa** — thin
-  dispatchers, one per pool: they poll for work and ask the docker daemon to
-  run each job. They mount `/var/run/docker.sock` for that, which is
-  root-equivalent access to the host's docker — fine for this dev-only stack,
-  and the jobs run as *sibling* containers on the host daemon, not nested ones.
+- **playbooks-provision** — one-shot: creates the work pools — a docker pool
+  per block environment, a process pool for the orchestrator — and registers a
+  Prefect deployment per [manta-batteries](../manta-batteries) block plus the
+  orchestrator. See [provision.py](provision.py): the job templates it writes
+  are what give each job container its image, network, volumes and
+  environment. Idempotent — re-running updates pools and deployments in place,
+  which is also how an image or wiring change rolls out.
+- **prefect-worker-pypsa** — a dispatcher, not an execution environment: it
+  drains the `manta-pypsa` pool and asks the docker daemon to run each block.
+  It mounts `/var/run/docker.sock` for that, which is root-equivalent access to
+  the host's docker — fine for this dev-only stack — and the jobs run as
+  *sibling* containers on the host daemon, not nested ones.
+- **prefect-worker-orchestrator** — runs `run_playbook` itself, on a process
+  pool. It moves record pointers between steps and never reads the data, so it
+  holds no S3 credentials.
 
-Rebuild the image after changing `manta-blocks` or `manta-batteries`
-(`docker compose ... --profile playbooks build`); re-`up` re-provisions.
+Only the containers that run flows — the block jobs and the orchestrator worker
+— need pixi and PyPSA. The dispatcher and the provisioner run from a slim image
+([control.Dockerfile](control.Dockerfile)) carrying `prefect-docker`, the
+dependency `manta-blocks` and `manta-batteries` deliberately do not have.
+
+Rebuild the images after changing `manta-blocks` or `manta-batteries`
+(`docker compose ... --profile playbooks build`); re-`up` re-provisions. The
+provisioner reads the committed `manta-batteries/catalogue.json` rather than
+importing blocks, so regenerate it (`pixi run -e pypsa catalogue`) after adding
+or changing a block, or the stack provisions a stale set.
 
 Block results (record pointers, not model data) are persisted to the
 `prefect-results` volume mounted into every job container; model data itself
@@ -73,12 +86,14 @@ example input network for trying a run end to end:
 ```bash
 docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile playbooks \
   run --rm --no-deps -e AWS_ACCESS_KEY_ID=dev -e AWS_SECRET_ACCESS_KEY=dev -e AWS_ENDPOINT_URL=http://seaweedfs:8333 \
-  prefect-worker-pypsa pixi run -e pypsa python -m manta_batteries.examples.seed_network
+  prefect-worker-orchestrator pixi run -e pypsa python -m manta_batteries.examples.seed_network
 ```
 
-Process pools (jobs as worker subprocesses, no docker-in-the-loop) remain
-available for running outside this stack — set `MANTA_POOL_TYPE=process` for
-the provision script and start workers inside the pixi environments; see
+(Any service on the job image will do; the orchestrator's is the one that
+carries both pixi environments and no docker socket.)
+
+Running without this stack — process pools throughout, workers started inside
+the pixi environments — is described in
 [manta-batteries/README.md](../manta-batteries/README.md). Kubernetes work
 pools (the future `manta-infra` repo from the playbooks proposal)
 intentionally do not exist yet; these services are their local stand-in.

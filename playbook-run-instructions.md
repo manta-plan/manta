@@ -17,7 +17,8 @@ docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile
 
 The `playbooks` profile adds everything that executes runs: two Prefect workers
 and a one-shot provision container that creates the work pools and deployments.
-Each job (playbook run, block run) executes in its own docker container — see
+Each block runs in its own docker container; the playbook orchestrator runs
+in-process in its long-lived worker — see
 [docker/README.md](docker/README.md#playbook-execution---profile-playbooks).
 
 The first `up` builds the ~2 GB job image (PyPSA solver stack); expect a few
@@ -25,7 +26,7 @@ minutes. Check that provisioning succeeded:
 
 ```bash
 docker logs manta-playbooks-provision-1
-# -> Provisioned 4 block(s) and the orchestrator (5 deployment(s)) on docker pools
+# -> Provisioned 4 block(s) and the orchestrator (5 deployment(s)) from /catalogue.json
 ```
 
 ## 2. Start the backend
@@ -50,7 +51,7 @@ A run needs input data in the app bucket. This builds a tiny PyPSA network
 cd docker
 docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile playbooks \
   run --rm --no-deps -e AWS_ACCESS_KEY_ID=dev -e AWS_SECRET_ACCESS_KEY=dev -e AWS_ENDPOINT_URL=http://seaweedfs:8333 \
-  prefect-worker-pypsa pixi run -e pypsa python -m manta_batteries.examples.seed_network
+  prefect-worker-orchestrator pixi run -e pypsa python -m manta_batteries.examples.seed_network
 ```
 
 Only needed once — the file survives restarts (it lives in the SeaweedFS volume).
@@ -122,7 +123,7 @@ Status goes `PENDING → RUNNING → COMPLETED` in roughly 2–3 minutes (each o
 three active blocks pays container startup on top of its solve). While it runs:
 
 - `docker ps` shows a container appear and disappear per block — that is each
-  job running in its own container.
+  block running in its own container.
 - The Prefect UI at <http://localhost:4200> shows the `run_playbook` flow run
   and the `run_block` child runs it dispatches.
 
