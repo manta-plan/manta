@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from uuid import UUID
 
@@ -25,23 +24,23 @@ logger = logging.getLogger(__name__)
 PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
 
 
-async def _read_flow_run(flow_run_id: UUID) -> FlowRun:
-    async with get_client() as client:
-        return await client.read_flow_run(flow_run_id)
+def _read_flow_run(flow_run_id: UUID) -> FlowRun:
+    with get_client(sync_client=True) as client:
+        return client.read_flow_run(flow_run_id)
 
 
-async def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
-    async with get_client() as client:
+def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
+    with get_client(sync_client=True) as client:
         flow_runs = {}
         for flow_run_id in flow_run_ids:
-            flow_runs[flow_run_id] = await client.read_flow_run(flow_run_id)
+            flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
         return flow_runs
 
 
-async def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
-    async with get_client() as client:
-        flow_run = await client.read_flow_run(flow_run_id)
-        logs = await client.read_logs(
+def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
+    with get_client(sync_client=True) as client:
+        flow_run = client.read_flow_run(flow_run_id)
+        logs = client.read_logs(
             log_filter=LogFilter(flow_run_id=LogFilterFlowRunId(any_=[flow_run_id]))
         )
         return flow_run, [log.message for log in logs]
@@ -78,12 +77,6 @@ class RunService:
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        # `run_deployment` is `@async_dispatch`-decorated: called from a sync
-        # context (as here — this method runs in FastAPI's threadpool, with no
-        # running event loop) it executes synchronously and returns a `FlowRun`
-        # directly, not a coroutine — so it must NOT be wrapped in `asyncio.run()`
-        # (unlike `_read_flow_run`/`_read_flow_run_logs` below, which are real
-        # `async def` coroutine functions and do need it).
         flow_run = run_deployment(
             PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
         )
@@ -150,7 +143,7 @@ class RunService:
         )
 
     def _read_project_flow_runs(self, runs: list[Run]) -> dict[UUID, FlowRun]:
-        return asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+        return _read_flow_runs([run.prefect_flow_run_id for run in runs])
 
     def _build_run_results(
         self, project_uuid: UUID, runs: list[Run], flow_runs: dict[UUID, FlowRun]
@@ -170,18 +163,15 @@ class RunService:
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        project_uuid = None
-        if run.project_id is not None:
-            project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
-            if project is None:
-                raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-            project_uuid = project.uuid
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
 
-        flow_run = asyncio.run(_read_flow_run(run.prefect_flow_run_id))
+        flow_run = _read_flow_run(run.prefect_flow_run_id)
 
         return GetRunResult(
             uuid=run.uuid,
-            project_uuid=project_uuid,
+            project_uuid=project.uuid,
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )
@@ -191,6 +181,6 @@ class RunService:
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        flow_run, logs = asyncio.run(_read_flow_run_logs(run.prefect_flow_run_id))
+        flow_run, logs = _read_flow_run_logs(run.prefect_flow_run_id)
 
         return GetRunLogsResult(uuid=run.uuid, logs=logs, run_status=_flow_run_status(flow_run))
