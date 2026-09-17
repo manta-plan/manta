@@ -49,6 +49,30 @@ uv run alembic downgrade -1   # roll back one revision
 uv run alembic current        # show the currently applied revision
 ```
 
+## Playbook runs
+
+Users run modeling work as **playbooks** — chains of **blocks** — defined in
+[manta-blocks](../manta-blocks/README.md). The backend's part is deliberately
+small (see `services/playbook_service.py` and `services/run_service.py`):
+
+- `GET /v1/playbooks` lists the built-in playbooks with default configs;
+- `POST /v1/runs` with `{playbook_name, config?, input_file}` validates the
+  playbook + config against the committed block catalogue (422 with per-step,
+  per-field issues), copies the input file into the run's own storage prefix,
+  and dispatches the `run-playbook` Prefect deployment **by name**;
+- `GET /v1/runs/{uuid}/steps` and `GET /v1/runs/{uuid}/outputs` expose each
+  block's state and produced files.
+
+Execution happens entirely outside this process: the deployment is created at
+stack boot by [manta-runtime](../manta-runtime/README.md), and every block runs
+in its own container from the blocks runner image. The backend never imports
+block code (there's no PyPSA here) — it only talks to the Prefect API, which is
+also why `manta-blocks` is a dependency but `manta-runtime` is not.
+
+A run's artifacts live under `s3://<bucket>/<project>/runs/<run>/`: `input/`
+holds the copy of the file the run started from, `steps/` one output per step
+(plus small `*.record.json` transport files the API filters out of listings).
+
 ## File storage
 
 Files are stored in S3-compatible object storage — [SeaweedFS](https://github.com/seaweedfs/seaweedfs)
@@ -114,6 +138,15 @@ start by hand first, and it won't clash with or affect a dev stack you might
 already have running. Everything is torn down again once the test session
 ends. See [docker/README.md](../docker/README.md#testing) for how the
 isolation works.
+
+The stack includes the playbook execution runtime (Prefect worker + blocks
+runner image), so the playbook suite exercises the real thing: block steps
+running in their own containers against object storage. The first session on a
+machine builds the blocks runner image, which installs the PyPSA stack — expect
+a one-off multi-minute build; it's cached afterwards. If you change
+`manta-blocks/` or `manta-runtime/`, rebuild it before trusting a test run
+(`docker compose --env-file backend/.env -f docker/compose-dev-services.yaml build prefect-deployer`
+from the repo root, or `up --build` on the dev stack).
 
 The app subprocess's logs (including the request log for the endpoint under
 test) stream through as they're the app's own stdout/stderr; the Postgres
