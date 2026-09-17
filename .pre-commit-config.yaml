@@ -1,9 +1,11 @@
+# Ruff discovers the nearest pyproject.toml per file, so each package below is
+# checked against its own configuration.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^backend/
+        files: ^(backend|manta-blocks|manta-runtime)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|manta-blocks|manta-runtime)/
