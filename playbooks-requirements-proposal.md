@@ -115,3 +115,139 @@ This shouldn't be too much more work, since Prefect supports docker envs out of 
 
 Eventually, I like Bryn's PoC idea of generating a catalogue of blocks, their envs, and their descriptions.
 This can be done in the CI of `manta` before we deploy the app, or eventually by the CI of `manta-batteries` and loaded into `manta` dynamically if we want to upgrade blocks without redeployment.
+
+## To implement / fix
+
+Three changes to the PoC as it stands on `sid/docker-pools-in-docker-dir`, in the order
+they should be done.
+Together they replace the one heavyweight image shared by the orchestrator and the PyPSA
+blocks with one image per block environment plus a slim orchestrator image, and remove the
+shared filesystem that stands between the current stack and Kubernetes.
+
+### 1. Persist Prefect results to S3, not a shared volume
+
+**Now**: `run_block` returns a `DataRecord` as `{"url": ...}` and Prefect persists it to
+local disk (`persist_result=True` in `manta-blocks/src/manta_blocks/entrypoint.py` and
+`manta_playbooks/execution.py`).
+The orchestrator reads that value back from another process, so every job container and the
+orchestrator container mount the same `prefect-results` volume at
+`PREFECT_LOCAL_STORAGE_PATH=/prefect-results`.
+A volume is the only reason those containers must sit on one machine.
+
+Note this is *not* about block data: model data (netCDF) already goes straight to S3 through
+`manta_blocks.records` (`stage` / `stage_output`).
+Only Prefect's own small result payloads are on disk.
+
+**Change**: point Prefect's default result storage at the S3 store, which needs no change to
+either package.
+
+1. Install `prefect-aws` in both images that execute flows (`docker/job.Dockerfile`,
+   `docker/control.Dockerfile`).
+2. In `docker/provision.py`, before provisioning, register the storage block on the Prefect
+   server:
+
+   ```python
+   from botocore.config import Config
+   from prefect_aws import AwsCredentials, S3Bucket
+   from prefect_aws.client_parameters import AwsClientParameters
+
+   credentials = AwsCredentials(
+       aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+       aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+       # SeaweedFS has no bucket-subdomain DNS, so path-style addressing, for the same
+       # reason manta_blocks.records uses it.
+       aws_client_parameters=AwsClientParameters(
+           endpoint_url=os.environ["AWS_ENDPOINT_URL"],
+           config=Config(s3={"addressing_style": "path"}),
+       ),
+   )
+   S3Bucket(
+       bucket_name=os.environ.get("MANTA_S3_BUCKET", "manta"),
+       bucket_folder="prefect-results",
+       credentials=credentials,
+   ).save("manta-results", overwrite=True)
+   ```
+
+   `overwrite=True` keeps re-provisioning idempotent, like everything else there.
+3. Set `PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK=s3-bucket/manta-results` in `job_env()` (so
+   every job container gets it) and on the `prefect-worker-orchestrator` service.
+4. Delete from `docker/compose-dev-services.yaml`: the `prefect-results` volume and its two
+   mounts, `MANTA_JOB_VOLUMES`, and `PREFECT_LOCAL_STORAGE_PATH`.
+   Delete `RESULTS_PATH` and the `MANTA_JOB_VOLUMES` handling from `docker/provision.py`.
+
+**Verify**: run the walkthrough in `playbook-run-instructions.md`.
+The run reaches COMPLETED, `docker volume ls` shows no results volume, and objects appear
+under `s3://manta/prefect-results/`.
+The failure to watch for is the orchestrator failing to read a child's result, which shows
+up as the parent flow erroring straight after a block succeeds.
+
+### 2. Run the orchestrator on the slim image
+
+**Now**: `prefect-worker-orchestrator` runs the ~2 GB job image with
+`pixi run -e orchestrator`, purely because both pixi environments come from one
+`manta-batteries/pixi.toml` and one build was simpler.
+The orchestrator imports `manta_playbooks.execution:run_playbook`, resolves blocks from the
+catalogue passed as a run parameter, and never imports a block, so it needs neither pixi nor
+PyPSA.
+
+**Change**: in `docker/compose-dev-services.yaml`, build `prefect-worker-orchestrator` from
+`docker/control.Dockerfile` as `manta-playbooks-control`, with
+`command: prefect worker start --pool manta-orchestrator`.
+That image already installs `manta-blocks`, which ships both `manta_blocks` and
+`manta_playbooks`.
+
+One trap: the orchestrator service is currently the only thing that builds the job image, so
+`up` would stop building it.
+Add a build-only service in the same profile:
+
+```yaml
+  playbooks-job-image:
+    profiles: ["playbooks"]
+    build:
+      context: ..
+      dockerfile: docker/job.Dockerfile
+    image: manta-playbooks-job
+    command: ["true"]
+    restart: "no"
+```
+
+Keep the `orchestrator` pixi environment in `manta-batteries/pixi.toml`: it is how a power
+user starts an orchestrator worker without docker, per that README.
+
+**Verify**: a playbook run still completes, and `docker images` shows the orchestrator
+worker on `manta-playbooks-control`.
+
+### 3. One image per block environment, named by the catalogue
+
+**Now**: `EnvironmentSpec` (in `manta_blocks/environments.py`) declares an `image` field that
+nothing ever sets — `for_block` populates only `name` and `manifest` — so
+`docker/provision.py` uses a single `MANTA_JOB_IMAGE` for every environment.
+With a second modelling framework that means every block run pulls an image carrying every
+framework.
+
+**Change**:
+
+1. Build one image per environment.
+   Give `docker/job.Dockerfile` an `ARG PIXI_ENV` and install only that environment
+   (`RUN pixi install --locked -e ${PIXI_ENV}`), then build it once per environment in
+   compose with its own `image:` tag (`manta-playbooks-job-pypsa`).
+   The job command stays `pixi run -e <env> prefect flow-run execute`; dropping pixi from the
+   command needs the environment baked into the image's entrypoint and is a separate change.
+2. In `docker/provision.py`, resolve each environment's image in this order: `spec.image`
+   from the catalogue, then a `MANTA_ENV_IMAGES="pypsa=manta-playbooks-job-pypsa,..."`
+   mapping, then today's `MANTA_JOB_IMAGE` as the fallback.
+   Reading `spec.image` first means nothing here changes once CI stamps images into the
+   catalogue.
+3. Populate `spec.image` at catalogue-publish time, not in `for_block`: the environment
+   describing itself cannot know which image it was built into.
+   The CI that builds the image is what knows, per "`manta`'s CI generates catalogue of
+   blocks" above.
+
+**Verify**: provision with two environments described in the catalogue and confirm each pool's
+job template carries its own image, and that a run of a PyPSA block pulls only the PyPSA
+image.
+
+**Leaves open**: `MantaBlock.MANIFEST` points at a third-party block's pixi manifest, which
+means nothing once an environment is an image.
+It should either be dropped for container targets or reinterpreted as "where to build the
+image from".
