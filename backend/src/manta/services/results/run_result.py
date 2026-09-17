@@ -12,11 +12,22 @@ class CreateRunResult(BaseModel):
 
 class GetRunResult(BaseModel):
     uuid: UUID
-    # `None` when the run's project has since been deleted (`Run.project_id`
-    # is set to NULL rather than cascade-deleting the run).
-    project_uuid: UUID | None
+    project_uuid: UUID
     status: str
     created_at: datetime
+
+
+class GetRunSummaryResult(BaseModel):
+    total: int
+    statuses: dict[str, int]
+
+
+class ListRunsResult(BaseModel):
+    items: list[GetRunResult]
+    total: int
+    limit: int
+    offset: int
+    summary: GetRunSummaryResult
 
 
 class GetRunLogsResult(BaseModel):
