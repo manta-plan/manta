@@ -9,7 +9,9 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunStepsResult,
     GetRunSummaryResult,
+    ListRunOutputsResult,
     ListRunsResult,
 )
 from manta.services.run_service import RunService
@@ -19,6 +21,13 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 @router.post("", response_model=CreateRunResult, status_code=status.HTTP_201_CREATED)
 def create_run(request: CreateRunRequest, service: RunService = Depends()) -> CreateRunResult:
+    if request.playbook_name is not None:
+        return service.create_playbook_run(
+            project_uuid=request.project_uuid,
+            playbook_name=request.playbook_name,
+            config=request.config,
+            input_file=request.input_file,
+        )
     return service.create_run(
         project_uuid=request.project_uuid, num_pi_digits=request.num_pi_digits
     )
@@ -50,3 +59,13 @@ def get_run(run_uuid: UUID, service: RunService = Depends()) -> GetRunResult:
 @router.get("/{run_uuid}/logs", response_model=GetRunLogsResult)
 def get_run_logs(run_uuid: UUID, service: RunService = Depends()) -> GetRunLogsResult:
     return service.get_run_logs(run_uuid)
+
+
+@router.get("/{run_uuid}/steps", response_model=GetRunStepsResult)
+def get_run_steps(run_uuid: UUID, service: RunService = Depends()) -> GetRunStepsResult:
+    return service.get_run_steps(run_uuid)
+
+
+@router.get("/{run_uuid}/outputs", response_model=ListRunOutputsResult)
+def get_run_outputs(run_uuid: UUID, service: RunService = Depends()) -> ListRunOutputsResult:
+    return service.get_run_outputs(run_uuid)

@@ -8,6 +8,10 @@ dependencies = [
     "alembic>=1.18.5",
     "boto3>=1.43.73",
     "fastapi>=0.141.1",
+    # The blocks/playbooks domain package (repo-local for the MVP). The backend
+    # uses it to list built-in playbooks and validate runs early — never to run
+    # blocks: execution happens in the blocks runner image via manta-runtime.
+    "manta-blocks",
     "prefect==3.8.3",
     "psycopg[binary]>=3.3.4",
     "pynpm>=0.3.1",
@@ -16,6 +20,9 @@ dependencies = [
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.52.0",
 ]
+
+[tool.uv.sources]
+manta-blocks = { path = "../manta-blocks", editable = true }
 
 [project.scripts]
 manta = "manta.main:main"
