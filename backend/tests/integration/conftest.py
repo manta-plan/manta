@@ -182,8 +182,8 @@ def app_server(
         # production-tuned polling intervals.
         "PREFECT_RUNNER_POLL_FREQUENCY": "1",
         "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
-        "KC_HOST": keycloak_service["host"],
-        "KC_PORT": keycloak_service["port"],
+        "KEYCLOAK_HOST": keycloak_service["host"],
+        "KEYCLOAK_PORT": keycloak_service["port"],
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
