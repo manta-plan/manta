@@ -1,168 +1,342 @@
 import { Button } from "@base-ui/react/button";
-import { Menu } from "@base-ui/react/menu";
-import { Select } from "@base-ui/react/select";
-import { format } from "date-fns";
-import { useState } from "react";
-import type { IconType } from "react-icons";
+import type { FormEvent } from "react";
+import { useEffect, useState } from "react";
+import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import {
-  FiAlertCircle,
-  FiCheckCircle,
-  FiChevronDown,
-  FiCheck,
-  FiClock,
-  FiExternalLink,
-  FiMoreHorizontal,
-  FiPlay,
-  FiRefreshCw,
-  FiSearch,
-  FiTrash2,
-} from "react-icons/fi";
+  createRun,
+  getCachedDefaultProject,
+  getOrCreateDefaultProject,
+  getProjectRun,
+  getRun,
+  getRunLogs,
+  getRunSummary,
+  listRuns,
+} from "../features/runs/api";
+import { RunsTable } from "../features/runs/components/runs-table";
+import { StatusFilter } from "../features/runs/components/status-filter";
+import { normalizeRunStatus } from "../features/runs/status";
+import type {
+  DefaultProject,
+  ExpandedRunState,
+  GetRunResponse,
+  GetRunSummaryResponse,
+  RunListItem,
+  RunStatus,
+} from "../features/runs/types";
 
-const statusMeta = {
-  Running: {
-    label: "Running",
-    badgeClassName: "bg-secondary/10 text-secondary",
-    icon: FiRefreshCw,
-    iconClassName: "animate-spin",
-  },
-  Completed: {
-    label: "Completed",
-    badgeClassName: "bg-accent/20 text-primary",
-    icon: FiCheckCircle,
-    iconClassName: undefined,
-  },
-  Failed: {
-    label: "Failed",
-    badgeClassName: "bg-red-50 text-red-700",
-    icon: FiAlertCircle,
-    iconClassName: undefined,
-  },
-  Queued: {
-    label: "Queued",
-    badgeClassName: "bg-surface-alt text-text-secondary",
-    icon: FiClock,
-    iconClassName: undefined,
-  },
-} satisfies Record<
-  string,
-  { label: string; badgeClassName: string; icon: IconType; iconClassName?: string }
->;
-
-type RunStatus = keyof typeof statusMeta;
-
-const statusOptions = Object.entries(statusMeta).map(([value, status]) => ({
-  label: status.label,
-  value: value as RunStatus,
-}));
-
-const demoRuns: Array<{
-  id: string;
-  name: string;
-  playbook: string;
-  status: RunStatus;
-  startedAt: string;
-  durationSeconds: number | null;
-  trigger: string;
-  owner: string;
-}> = [
-  {
-    id: "RUN-2048",
-    name: "North Sea demand forecast",
-    playbook: "Demand Forecast",
-    status: "Running",
-    startedAt: "2026-08-31T04:42:00Z",
-    durationSeconds: 378,
-    trigger: "API",
-    owner: "Planning",
-  },
-  {
-    id: "RUN-2047",
-    name: "Alpine hydro dispatch",
-    playbook: "Dispatch Optimization",
-    status: "Completed",
-    startedAt: "2026-08-31T03:00:00Z",
-    durationSeconds: 1442,
-    trigger: "Manual",
-    owner: "Operations",
-  },
-  {
-    id: "RUN-2046",
-    name: "Iberian solar scenario",
-    playbook: "Scenario Builder",
-    status: "Failed",
-    startedAt: "2026-08-31T02:30:00Z",
-    durationSeconds: 707,
-    trigger: "Manual",
-    owner: "Research",
-  },
-  {
-    id: "RUN-2045",
-    name: "Grid stability baseline",
-    playbook: "Network Simulation",
-    status: "Queued",
-    startedAt: "2026-08-31T02:15:00Z",
-    durationSeconds: null,
-    trigger: "Retry",
-    owner: "Engineering",
-  },
-];
+const runsPageSize = 10;
+const emptyRunSummary: GetRunSummaryResponse = {
+  total: 0,
+  statuses: {},
+};
 
 export function HomePage() {
-  const [runs, setRuns] = useState<typeof demoRuns>([]);
+  const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
+  const [runsOffset, setRunsOffset] = useState(0);
+  const [runSummary, setRunSummary] = useState(emptyRunSummary);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
+  const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
+  const [searchRunId, setSearchRunId] = useState("");
+  const [activeSearchRunId, setActiveSearchRunId] = useState("");
+
+  useEffect(() => {
+    const cachedProject = getCachedDefaultProject();
+    let isActive = true;
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    const project = cachedProject;
+
+    async function loadInitialRuns() {
+      setIsRefreshingRuns(true);
+      setRunCreationError(null);
+
+      try {
+        const fetchedRuns = await listRuns(project, {
+          limit: runsPageSize,
+          offset: 0,
+          statuses: [],
+        });
+
+        if (isActive) {
+          setRuns(fetchedRuns.items.map(toRunListItem));
+          setRunsTotal(fetchedRuns.total);
+          setRunsOffset(fetchedRuns.offset);
+          setRunSummary(fetchedRuns.summary);
+        }
+      } catch (error) {
+        if (isActive) {
+          setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
+        }
+      } finally {
+        if (isActive) {
+          setIsRefreshingRuns(false);
+        }
+      }
+    }
+
+    void loadInitialRuns();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const hasRuns = runs.length > 0;
-  const filteredRuns =
-    selectedStatuses.length > 0
-      ? runs.filter((run) => selectedStatuses.includes(run.status))
-      : runs;
-  const selectedStatusLabel =
-    selectedStatuses.length > 0 ? `${selectedStatuses.length} selected` : "All statuses";
+  const hasProjectRuns = runSummary.total > 0;
+  const hasStatusFilter = selectedStatuses.length > 0;
+  const hasRunSearch = activeSearchRunId.length > 0;
+  const shouldShowTableArea = hasProjectRuns || hasStatusFilter || hasRunSearch;
+  const pageStart = runsTotal > 0 ? runsOffset + 1 : 0;
+  const pageEnd = Math.min(runsOffset + runs.length, runsTotal);
+  const canGoToPreviousPage = runsOffset > 0;
+  const canGoToNextPage = runsOffset + runsPageSize < runsTotal;
 
   const runStats = [
     {
+      label: "Total Runs",
+      value: String(runSummary.total),
+      tone: "text-primary",
+      detail: hasProjectRuns ? "tracked in this project" : "no runs yet",
+    },
+    {
       label: "Running",
-      value: String(runs.filter((run) => run.status === "Running").length),
+      value: String(runSummary.statuses.RUNNING ?? 0),
       tone: "text-secondary",
-      detail: hasRuns ? "active simulations" : "no active runs",
+      detail: hasProjectRuns ? "executing now" : "none active",
     },
     {
       label: "Completed",
-      value: String(runs.filter((run) => run.status === "Completed").length),
+      value: String(runSummary.statuses.COMPLETED ?? 0),
       tone: "text-primary",
-      detail: hasRuns ? "ready to inspect" : "no results yet",
+      detail: hasProjectRuns ? "finished successfully" : "no results yet",
     },
     {
-      label: "Failed",
-      value: String(runs.filter((run) => run.status === "Failed").length),
-      tone: "text-red-600",
-      detail: hasRuns ? "needs review" : "clear",
-    },
-    {
-      label: "Queued",
-      value: String(runs.filter((run) => run.status === "Queued").length),
+      label: "Scheduled",
+      value: String(runSummary.statuses.SCHEDULED ?? 0),
       tone: "text-text",
-      detail: hasRuns ? "waiting for workers" : "empty queue",
+      detail: hasProjectRuns ? "waiting to start" : "empty queue",
     },
   ];
 
-  function handleNewRun() {
+  async function handleNewRun() {
     setIsLoadingRuns(true);
+    setRunCreationError(null);
 
-    window.setTimeout(() => {
-      setRuns(demoRuns);
+    try {
+      const project = await getOrCreateDefaultProject();
+      await createRun(project);
+
+      setSearchRunId("");
+      setActiveSearchRunId("");
+      setRunsOffset(0);
+      await refreshRunsPage(project, 0, selectedStatuses);
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
+    } finally {
       setIsLoadingRuns(false);
-    }, 1000);
+    }
   }
 
-  function handleRefreshRuns() {
-    setIsRefreshingRuns(true);
+  async function refreshRuns(project: DefaultProject) {
+    if (activeSearchRunId.length > 0) {
+      await refreshRunSearch(project, activeSearchRunId);
+      return;
+    }
 
-    window.setTimeout(() => {
-      setRuns((currentRuns) => (currentRuns.length > 0 ? [...currentRuns] : currentRuns));
+    await refreshRunsPage(project, runsOffset, selectedStatuses);
+  }
+
+  async function refreshRunsPage(project: DefaultProject, offset: number, statuses: RunStatus[]) {
+    setIsRefreshingRuns(true);
+    setRunCreationError(null);
+
+    try {
+      const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset, statuses });
+      setRuns(fetchedRuns.items.map(toRunListItem));
+      setRunsTotal(fetchedRuns.total);
+      setRunsOffset(fetchedRuns.offset);
+      setRunSummary(fetchedRuns.summary);
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to refresh runs.");
+    } finally {
       setIsRefreshingRuns(false);
-    }, 1000);
+    }
+  }
+
+  async function refreshRunDetails(runId: string) {
+    setExpandedRuns((currentExpandedRuns) => ({
+      ...currentExpandedRuns,
+      [runId]: {
+        isLoading: true,
+        error: null,
+        detail: currentExpandedRuns[runId]?.detail ?? null,
+        logs: currentExpandedRuns[runId]?.logs ?? null,
+      },
+    }));
+
+    try {
+      const cachedProject = getCachedDefaultProject();
+      const [detail, logs, latestRunSummary] = await Promise.all([
+        getRun(runId),
+        getRunLogs(runId),
+        cachedProject === null ? Promise.resolve(null) : getRunSummary(cachedProject),
+      ]);
+      const runStatus = normalizeRunStatus(logs.run_status || detail.status);
+
+      setRuns((currentRuns) =>
+        currentRuns.map((run) =>
+          run.id === runId ? { ...run, status: runStatus, startedAt: detail.created_at } : run,
+        ),
+      );
+      setExpandedRuns((currentExpandedRuns) => ({
+        ...currentExpandedRuns,
+        [runId]: {
+          isLoading: false,
+          error: null,
+          detail,
+          logs,
+        },
+      }));
+      if (latestRunSummary !== null) {
+        setRunSummary(latestRunSummary);
+      }
+    } catch (error) {
+      setExpandedRuns((currentExpandedRuns) => ({
+        ...currentExpandedRuns,
+        [runId]: {
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load run details.",
+          detail: currentExpandedRuns[runId]?.detail ?? null,
+          logs: currentExpandedRuns[runId]?.logs ?? null,
+        },
+      }));
+    }
+  }
+
+  async function handleToggleRunDetails(runId: string) {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      return;
+    }
+
+    setExpandedRunId(runId);
+
+    const expandedRun = expandedRuns[runId];
+
+    if (expandedRun !== undefined && expandedRun.detail !== null && expandedRun.logs !== null) {
+      return;
+    }
+
+    await refreshRunDetails(runId);
+  }
+
+  async function handleRefreshRuns() {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRuns(cachedProject);
+  }
+
+  async function refreshRunSearch(project: DefaultProject, runId: string) {
+    setIsRefreshingRuns(true);
+    setRunCreationError(null);
+
+    try {
+      const [run, latestRunSummary] = await Promise.all([
+        getProjectRun(project, runId),
+        getRunSummary(project),
+      ]);
+      setRuns(run === null ? [] : [toRunListItem(run)]);
+      setRunsTotal(run === null ? 0 : 1);
+      setRunsOffset(0);
+      setRunSummary(latestRunSummary);
+    } catch (error) {
+      setRunCreationError(error instanceof Error ? error.message : "Failed to search run.");
+    } finally {
+      setIsRefreshingRuns(false);
+    }
+  }
+
+  async function handleRunSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const runId = searchRunId.trim();
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    if (runId.length === 0) {
+      setActiveSearchRunId("");
+      setRunsOffset(0);
+      await refreshRunsPage(cachedProject, 0, selectedStatuses);
+      return;
+    }
+
+    setSelectedStatuses([]);
+    setActiveSearchRunId(runId);
+    await refreshRunSearch(cachedProject, runId);
+  }
+
+  async function handleClearRunSearch() {
+    setSearchRunId("");
+    setActiveSearchRunId("");
+
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    setRunsOffset(0);
+    await refreshRunsPage(cachedProject, 0, selectedStatuses);
+  }
+
+  async function handlePreviousRunsPage() {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, Math.max(runsOffset - runsPageSize, 0), selectedStatuses);
+  }
+
+  async function handleNextRunsPage() {
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, runsOffset + runsPageSize, selectedStatuses);
+  }
+
+  async function handleSelectedStatusesChange(statuses: RunStatus[]) {
+    setSelectedStatuses(statuses);
+    setSearchRunId("");
+    setActiveSearchRunId("");
+    setRunsOffset(0);
+
+    const cachedProject = getCachedDefaultProject();
+
+    if (cachedProject === null) {
+      return;
+    }
+
+    await refreshRunsPage(cachedProject, 0, statuses);
   }
 
   return (
@@ -212,6 +386,12 @@ export function HomePage() {
       </header>
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6">
+        {runCreationError ? (
+          <div className="border-border bg-surface rounded-lg border px-4 py-3 text-sm text-red-700">
+            {runCreationError}
+          </div>
+        ) : null}
+
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {runStats.map((stat) => (
             <div className="border-border bg-surface rounded-lg border px-4 py-3" key={stat.label}>
@@ -234,143 +414,62 @@ export function HomePage() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
-              <label className="border-border bg-surface-alt text-text-secondary flex h-10 min-w-64 items-center gap-2 rounded-md border px-3 text-sm">
+              <form
+                className="border-border bg-surface-alt text-text-secondary flex h-10 min-w-64 items-center gap-2 rounded-md border px-3 text-sm"
+                onSubmit={handleRunSearchSubmit}
+              >
                 <FiSearch className="size-4" aria-hidden="true" />
-                <span className="sr-only">Search runs</span>
+                <label className="sr-only" htmlFor="run-search">
+                  Search by run UUID
+                </label>
                 <input
                   className="placeholder:text-muted text-text min-w-0 flex-1 bg-transparent outline-none"
-                  placeholder="Search runs"
+                  id="run-search"
+                  onChange={(event) => setSearchRunId(event.target.value)}
+                  placeholder="Search by run UUID"
+                  value={searchRunId}
                   type="search"
                 />
-              </label>
-              <Select.Root<RunStatus, true>
-                items={statusOptions}
-                multiple
-                value={selectedStatuses}
-                onValueChange={setSelectedStatuses}
-              >
-                <Select.Trigger className="border-border bg-surface hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-10 min-w-40 items-center justify-between gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2">
-                  <span>{selectedStatusLabel}</span>
-                  <Select.Icon>
-                    <FiChevronDown className="size-4" aria-hidden="true" />
-                  </Select.Icon>
-                </Select.Trigger>
-                <Select.Portal>
-                  <Select.Positioner align="end" className="z-10 outline-none" sideOffset={6}>
-                    <Select.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-[var(--anchor-width)] rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                      <Select.List className="max-h-72 overflow-y-auto py-1">
-                        {statusOptions.map((status) => (
-                          <Select.Item
-                            className={selectItemClass}
-                            key={status.value}
-                            value={status.value}
-                          >
-                            <Select.ItemIndicator className="text-primary">
-                              <FiCheck className="size-4" aria-hidden="true" />
-                            </Select.ItemIndicator>
-                            <Select.ItemText>{status.label}</Select.ItemText>
-                          </Select.Item>
-                        ))}
-                      </Select.List>
-                    </Select.Popup>
-                  </Select.Positioner>
-                </Select.Portal>
-              </Select.Root>
+                {searchRunId.length > 0 ? (
+                  <Button
+                    aria-label="Clear run search"
+                    className="hover:bg-surface focus-visible:outline-secondary text-text-secondary inline-flex size-6 items-center justify-center rounded transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                    onClick={handleClearRunSearch}
+                    type="button"
+                  >
+                    <FiX className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </form>
+              <StatusFilter
+                selectedStatuses={selectedStatuses}
+                onSelectedStatusesChange={handleSelectedStatusesChange}
+              />
             </div>
           </div>
 
-          {hasRuns ? (
-            filteredRuns.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[880px] border-collapse text-left text-sm">
-                  <thead className="bg-surface-alt text-text-secondary">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Run</th>
-                      <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="px-4 py-3 font-semibold">Started</th>
-                      <th className="px-4 py-3 font-semibold">Duration</th>
-                      <th className="px-4 py-3 font-semibold">Trigger</th>
-                      <th className="px-4 py-3 font-semibold">Owner</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-border divide-y">
-                    {filteredRuns.map((run) => {
-                      const status = statusMeta[run.status];
-                      const StatusIcon = status.icon;
-
-                      return (
-                        <tr className="hover:bg-surface-alt/70 transition" key={run.id}>
-                          <td className="px-4 py-4">
-                            <div className="text-text font-semibold">{run.name}</div>
-                            <div className="text-text-secondary mt-1 flex items-center gap-2">
-                              <span>{run.id}</span>
-                              <span aria-hidden="true">/</span>
-                              <span>{run.playbook}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <span
-                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.badgeClassName}`}
-                            >
-                              <StatusIcon
-                                className={`size-3.5 ${status.iconClassName ?? ""}`}
-                                aria-hidden="true"
-                              />
-                              {run.status}
-                            </span>
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">
-                            {formatRunStartedAt(run.startedAt)}
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">
-                            {formatRunDuration(run.durationSeconds)}
-                          </td>
-                          <td className="text-text-secondary px-4 py-4">{run.trigger}</td>
-                          <td className="text-text-secondary px-4 py-4">{run.owner}</td>
-                          <td className="px-4 py-4 text-right">
-                            <Menu.Root>
-                              <Menu.Trigger
-                                aria-label={`Open actions for ${run.name}`}
-                                className="hover:bg-surface-alt data-[popup-open]:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex size-8 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2"
-                              >
-                                <FiMoreHorizontal className="size-4" aria-hidden="true" />
-                              </Menu.Trigger>
-                              <Menu.Portal>
-                                <Menu.Positioner
-                                  align="end"
-                                  className="z-10 outline-none"
-                                  sideOffset={6}
-                                >
-                                  <Menu.Popup className="border-border bg-surface text-text shadow-primary/10 min-w-40 rounded-md border py-1 shadow-xl transition-[opacity,scale] duration-100 ease-out outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                                    <Menu.Item className={menuItemClass}>
-                                      <FiExternalLink className="size-4" aria-hidden="true" />
-                                      View result
-                                    </Menu.Item>
-                                    <Menu.Item className={`${menuItemClass} text-red-700`}>
-                                      <FiTrash2 className="size-4" aria-hidden="true" />
-                                      Remove
-                                    </Menu.Item>
-                                  </Menu.Popup>
-                                </Menu.Positioner>
-                              </Menu.Portal>
-                            </Menu.Root>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+          {shouldShowTableArea ? (
+            hasRuns ? (
+              <RunsTable
+                runs={runs}
+                expandedRunId={expandedRunId}
+                expandedRuns={expandedRuns}
+                onRefreshRunDetails={refreshRunDetails}
+                onToggleRunDetails={handleToggleRunDetails}
+              />
             ) : (
               <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
                 <div className="max-w-sm">
                   <div className="bg-surface-alt text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-lg">
                     <FiSearch className="size-5" aria-hidden="true" />
                   </div>
-                  <h3 className="text-lg font-semibold tracking-normal">No matching runs</h3>
+                  <h3 className="text-lg font-semibold tracking-normal">
+                    {hasRunSearch ? "No run found" : "No matching runs"}
+                  </h3>
                   <p className="text-text-secondary mt-2 text-sm leading-6">
-                    Adjust the status filter to bring more executions back into view.
+                    {hasRunSearch
+                      ? "Check the run UUID and try again."
+                      : "Adjust the status filter to bring more executions back into view."}
                   </p>
                 </div>
               </div>
@@ -386,39 +485,60 @@ export function HomePage() {
                   )}
                 </div>
                 <h3 className="text-lg font-semibold tracking-normal">
-                  {isLoadingRuns ? "Starting demo run" : "No runs yet"}
+                  {isLoadingRuns ? "Starting run" : "No runs yet"}
                 </h3>
                 <p className="text-text-secondary mt-2 text-sm leading-6">
                   {isLoadingRuns
-                    ? "Preparing sample executions for the workspace."
+                    ? "Preparing execution for this workspace."
                     : "Create a run to populate this workspace with execution activity."}
                 </p>
               </div>
             </div>
           )}
+          {shouldShowTableArea ? (
+            <div className="border-border flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-text-secondary text-sm">
+                {hasRunSearch
+                  ? `Search result for ${activeSearchRunId}`
+                  : `Showing ${pageStart}-${pageEnd} of ${runsTotal}`}
+              </p>
+              {hasRunSearch ? null : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canGoToPreviousPage || isRefreshingRuns}
+                    onClick={handlePreviousRunsPage}
+                  >
+                    <FiChevronLeft className="size-4" aria-hidden="true" />
+                    Previous
+                  </Button>
+                  <Button
+                    className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canGoToNextPage || isRefreshingRuns}
+                    onClick={handleNextRunsPage}
+                  >
+                    Next
+                    <FiChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </section>
       </section>
     </main>
   );
 }
 
-const menuItemClass =
-  "flex cursor-default items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
-
-const selectItemClass =
-  "grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none select-none data-highlighted:bg-surface-alt";
-
-function formatRunStartedAt(startedAt: string) {
-  return format(new Date(startedAt), "MMM d, HH:mm");
-}
-
-function formatRunDuration(durationSeconds: number | null) {
-  if (durationSeconds === null) {
-    return "-";
-  }
-
-  const minutes = Math.floor(durationSeconds / 60);
-  const seconds = durationSeconds % 60;
-
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+function toRunListItem(run: GetRunResponse): RunListItem {
+  return {
+    id: run.uuid,
+    name: "Pi digit statistics",
+    playbook: "Pi Digit Statistics",
+    status: normalizeRunStatus(run.status),
+    startedAt: run.created_at,
+    durationSeconds: null,
+    trigger: "Manual",
+    owner: "Guest",
+  };
 }
