@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "manta-blocks"
+version = "0.1.0"
+description = "Composable units of energy-model work (blocks) and the playbooks that chain them together."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Bryn Pickering", email = "bryn.pickering@openenergytransition.org" },
+    { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
+]
+dependencies = [
+    "pydantic>=2",
+    "pyyaml>=6",
+    # For checking a block's settings where the block itself cannot be imported.
+    "jsonschema>=4"
+]
+
+# Deliberately absent from the core dependencies: anything orchestration-related
+# (running blocks in containers is Manta's job, see manta-runtime), and PyPSA
+# (the blocks that need it are imported only when something asks for them by
+# name, so the rest of the code runs without it).
+[project.optional-dependencies]
+# For records that live in S3-compatible object storage (see blocks/storage.py).
+s3 = ["boto3>=1.34"]
+# For running the blocks that ship in `blocks.library`.
+pypsa = [
+    "pypsa>=1.0",
+    "netcdf4>=1.7",
+    "highspy>=1.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/manta-plan/blocks"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blocks", "src/playbooks"]
+exclude = ["**/tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+markers = [
+    "pypsa: needs PyPSA installed (run inside the blocks runner image or a pypsa environment)"
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W", "PT", "UP"] # TODO: Add "D" when we have docstrings
+# line too long; the formatter will handle these
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
+
+# Ignore `E402` (import violations) and `F401` (unused imports) in all `__init__.py` files
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "D104"]
+# These tests skip themselves when PyPSA is missing, which means checking for it
+# before importing anything that needs it.
+"src/blocks/tests/test_library.py" = ["E402"]
+"src/playbooks/tests/test_pypsa_end_to_end.py" = ["E402"]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
