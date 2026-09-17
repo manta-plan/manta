@@ -262,9 +262,10 @@ settings are wired rather than typed in (marked `x-manta-input`). That is enough
 draw a playbook, offer its settings, and check how it is wired, from a process that
 could not import a single one of the blocks it is describing.
 
-Manta keeps a generated catalogue of this library's blocks at
-`catalogue/catalogue.json` so its backend can validate playbooks without PyPSA; see
-that folder's note for how it is regenerated.
+A generated catalogue of this library's blocks ships inside the package
+(`src/blocks/library/catalogue.json`, loaded via `blocks.library.library_catalogue()`)
+so that Manta's backend can list blocks and validate playbooks without PyPSA; see
+`blocks/library/__init__.py` for how it is regenerated.
 
 ## Current limitations
 
