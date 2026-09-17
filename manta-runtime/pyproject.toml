@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "manta-runtime"
+version = "0.1.0"
+description = "Manta's execution runtime: the Prefect flows and deployments that run manta-blocks playbooks."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Pinned to the same version as the Prefect server image and the backend.
+    "prefect==3.8.3",
+    "prefect-docker==0.6.6",
+    "manta-blocks[s3]",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.0",
+]
+
+# Editable so the dev environment sees manta-blocks' test fakes (the built wheel
+# excludes tests); the runner image installs both packages normally instead.
+[tool.uv.sources]
+manta-blocks = { path = "../manta-blocks", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/manta_runtime"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "Q", "W", "PT", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401"]

@@ -1,0 +1,10 @@
+# Re-include what the repo-root .gitignore drops: this package pins its dev
+# environment to Python 3.12, matching the blocks runner image.
+!.python-version
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
