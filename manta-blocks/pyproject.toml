@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 # Deliberately absent from the core dependencies: anything orchestration-related
-# (running blocks in containers is Manta's job, see manta-runtime), and PyPSA
-# (the blocks that need it are imported only when something asks for them by
-# name, so the rest of the code runs without it).
+# (running blocks in containers is the Manta backend's job), and PyPSA (the
+# blocks that need it are imported only when something asks for them by name,
+# so the rest of the code runs without it).
 [project.optional-dependencies]
 # For records that live in S3-compatible object storage (see blocks/storage.py).
 s3 = ["boto3>=1.34"]

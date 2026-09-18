@@ -15,9 +15,9 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 NETWORK_FIXTURE = FIXTURES / "network.nc"
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
-# The prefect-deployer service registers the playbook deployments while the
-# stack boots; compose ordering means it normally finishes before the app is
-# even up, so this is belt and braces.
+# The app's flow-serving subprocess (see main.py) registers the run-playbook
+# deployment with the Prefect server after startup — a cold start, same as the
+# pi-digit-stats flow.
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 60.0
 # A playbook run spawns one container per step (three steps here) plus the
 # orchestrator's own, each polled by Prefect at multi-second intervals, so this

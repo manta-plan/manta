@@ -16,10 +16,10 @@ passed along.
 
 This package is deliberately unaware of any orchestration tool. Running a block is a
 plain method call; everything about *where* and *how* those calls happen in
-production - work pools, containers, schedulers - lives in Manta (see
-[`manta-runtime`](../manta-runtime/README.md)). That is what lets this package move
-to its own repository, and lets modelers write and test blocks without knowing
-anything about Manta's infrastructure.
+production - containers, schedulers - lives in Manta's backend (see
+[backend playbook runs](../backend/README.md#playbook-runs)). That is what lets this
+package move to its own repository, and lets modelers write and test blocks without
+knowing anything about Manta's infrastructure.
 
 > **Note**: this package lives inside the `manta` repository only for the MVP. It is
 > designed to be lifted out into its own `manta-blocks` repository unchanged: nothing

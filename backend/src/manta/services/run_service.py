@@ -5,11 +5,11 @@ from fastapi import Depends, HTTPException
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import (
     FlowRunFilter,
-    FlowRunFilterParentFlowRunId,
+    FlowRunFilterId,
     LogFilter,
     LogFilterFlowRunId,
 )
-from prefect.client.schemas.objects import FlowRun
+from prefect.client.schemas.objects import FlowRun, TaskRun
 from prefect.deployments import run_deployment
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -28,21 +28,11 @@ from manta.services.results.run_result import (
     ListRunsResult,
 )
 from manta.services.s3_file_storage_service import S3FileStorageService
+from manta.workflows.playbook_flows import PLAYBOOK_DEPLOYMENT
 
 logger = logging.getLogger(__name__)
 
 PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
-
-# Created by manta-runtime's deployer at stack boot (see
-# manta-runtime/src/manta_runtime/deploy.py). Duplicated here on purpose: the
-# backend talks to the runtime only through the Prefect API, by name — it never
-# imports manta-runtime, which exists inside the blocks runner image.
-PLAYBOOK_DEPLOYMENT = "run-playbook/run-playbook"
-
-# Result records are how the runtime hands a block's output record across the
-# container boundary (see manta_runtime.flows.result_record_url); they are
-# transport metadata, not outputs a user asked for.
-_RESULT_RECORD_SUFFIX = ".record.json"
 
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
@@ -67,23 +57,26 @@ def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
         return flow_run, [log.message for log in logs]
 
 
-def _read_flow_run_with_children(flow_run_id: UUID) -> tuple[FlowRun, list[FlowRun]]:
-    """The run plus its child flow runs — a playbook run's steps, in start order.
+def _read_flow_run_with_task_runs(flow_run_id: UUID) -> tuple[FlowRun, list[TaskRun]]:
+    """The run plus its task runs — a playbook run's steps, in start order.
 
-    Every step of a playbook (nested ones included) is dispatched by the playbook
-    flow itself, so one level of children is the complete step list.
+    Every step of a playbook (nested ones included) executes as one task run of
+    the playbook flow run, so this one query is the complete step list.
     """
     with get_client(sync_client=True) as client:
         flow_run = client.read_flow_run(flow_run_id)
-        children = client.read_flow_runs(
-            flow_run_filter=FlowRunFilter(
-                parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
-            )
+        task_runs = client.read_task_runs(
+            flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[flow_run_id]))
         )
-        return flow_run, sorted(children, key=lambda child: child.created)
+        return flow_run, sorted(
+            task_runs,
+            key=lambda task_run: (
+                task_run.start_time or task_run.expected_start_time or task_run.created
+            ),
+        )
 
 
-def _flow_run_status(flow_run: FlowRun) -> str:
+def _flow_run_status(flow_run: FlowRun | TaskRun) -> str:
     return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
 
 
@@ -259,19 +252,22 @@ class RunService:
     def get_run_steps(self, run_uuid: UUID) -> GetRunStepsResult:
         """Each step of a playbook run, and how it is doing.
 
-        A step is a child flow run named `<step>[<block>]`; a legacy (non-playbook)
-        run simply has no children, so this degrades to an empty list.
+        A step is a task run of the run's flow run, named `<step>[<block>]`. For a
+        legacy pi-digit run this lists its computation tasks instead — every kind
+        of run reports whatever its flow actually executed.
         """
         run = self._get_run(run_uuid)
 
-        flow_run, children = _read_flow_run_with_children(run.prefect_flow_run_id)
+        flow_run, task_runs = _read_flow_run_with_task_runs(run.prefect_flow_run_id)
 
         return GetRunStepsResult(
             uuid=run.uuid,
             run_status=_flow_run_status(flow_run),
             steps=[
-                GetRunStepResult(name=child.name or str(child.id), status=_flow_run_status(child))
-                for child in children
+                GetRunStepResult(
+                    name=task_run.name or str(task_run.id), status=_flow_run_status(task_run)
+                )
+                for task_run in task_runs
             ],
         )
 
@@ -291,10 +287,7 @@ class RunService:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
 
         files = self.storage.list_files(project.uuid, prefix=f"runs/{run.uuid}/")
-        return ListRunOutputsResult(
-            uuid=run.uuid,
-            items=[file for file in files if not file.key.endswith(_RESULT_RECORD_SUFFIX)],
-        )
+        return ListRunOutputsResult(uuid=run.uuid, items=files)
 
     def _get_project(self, project_uuid: UUID) -> Project:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()

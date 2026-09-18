@@ -1,12 +1,10 @@
 # Build-context allowlist for images built from the repo root (currently only
-# docker/blocks-runner.Dockerfile): everything is excluded except the two
-# packages the image installs, so local venvs, the frontend, git history etc.
-# never reach the docker daemon.
+# docker/blocks-runner.Dockerfile): everything is excluded except the package
+# the image installs, so local venvs, the frontend, git history etc. never
+# reach the docker daemon.
 *
 !manta-blocks
-!manta-runtime
 manta-blocks/.venv
-manta-runtime/.venv
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache

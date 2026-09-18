@@ -6,6 +6,6 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^(backend|manta-blocks|manta-runtime)/
+        files: ^(backend|manta-blocks)/
       - id: ruff-format
-        files: ^(backend|manta-blocks|manta-runtime)/
+        files: ^(backend|manta-blocks)/

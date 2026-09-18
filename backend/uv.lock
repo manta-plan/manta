@@ -943,6 +943,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "boto3" },
+    { name = "docker" },
     { name = "fastapi" },
     { name = "manta-blocks" },
     { name = "prefect" },
@@ -969,6 +970,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
+    { name = "docker", specifier = ">=7.1.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "manta-blocks", editable = "../manta-blocks" },
     { name = "prefect", specifier = "==3.8.3" },

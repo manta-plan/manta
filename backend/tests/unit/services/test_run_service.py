@@ -478,7 +478,7 @@ def test_create_playbook_run_with_missing_input_file_raises_404(
     run_service_module.run_deployment.assert_not_called()
 
 
-def test_get_run_steps_reports_each_child_flow_run(
+def test_get_run_steps_reports_each_task_run_of_the_playbook_flow(
     monkeypatch: pytest.MonkeyPatch, mock_db_class
 ) -> None:
     # Given
@@ -486,20 +486,24 @@ def test_get_run_steps_reports_each_child_flow_run(
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run})
 
-    def _child(name: str, created: int, state: str):
+    def _task_run(name: str, start_time: int | None, state: str):
         return SimpleNamespace(
             name=name,
             id=uuid4(),
-            created=created,
+            start_time=start_time,
+            expected_start_time=start_time if start_time is not None else 3,
+            created=0,
             state=SimpleNamespace(type=SimpleNamespace(value=state)),
         )
 
     fake_client = MagicMock(
         read_flow_run=MagicMock(return_value=_fake_flow_run("RUNNING")),
-        read_flow_runs=MagicMock(
+        read_task_runs=MagicMock(
             return_value=[
-                _child("expansion[overnight_capacity_expansion]", 2, "RUNNING"),
-                _child("cluster[cluster_time]", 1, "COMPLETED"),
+                _task_run("expansion[overnight_capacity_expansion]", 2, "RUNNING"),
+                _task_run("cluster[cluster_time]", 1, "COMPLETED"),
+                # Not started yet: ordered by when it is expected to.
+                _task_run("dispatch[rolling_horizon_dispatch]", None, "PENDING"),
             ]
         ),
     )
@@ -514,10 +518,11 @@ def test_get_run_steps_reports_each_child_flow_run(
     assert [(step.name, step.status) for step in result.steps] == [
         ("cluster[cluster_time]", "COMPLETED"),
         ("expansion[overnight_capacity_expansion]", "RUNNING"),
+        ("dispatch[rolling_horizon_dispatch]", "PENDING"),
     ]
 
 
-def test_get_run_outputs_lists_the_runs_files_without_transport_records(
+def test_get_run_outputs_lists_the_files_under_the_runs_prefix(
     mock_db_class,
 ) -> None:
     # Given
@@ -537,7 +542,6 @@ def test_get_run_outputs_lists_the_runs_files_without_transport_records(
     service.storage.list_files.return_value = [
         _file(f"{project.uuid}/runs/{run.uuid}/input/network.nc"),
         _file(f"{project.uuid}/runs/{run.uuid}/steps/cluster.nc"),
-        _file(f"{project.uuid}/runs/{run.uuid}/steps/cluster.record.json"),
     ]
 
     # When

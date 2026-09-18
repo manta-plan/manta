@@ -52,6 +52,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Semantically: a ready stack is one that can execute playbook runs, which
+      # needs the blocks image built. Mechanically: `up --wait` (used by the
+      # integration suite) treats a cleanly-exited one-shot service as a failure
+      # unless something depends on its completion.
+      blocks-runner:
+        condition: service_completed_successfully
     healthcheck:
       # `curl` isn't installed in this image — so using `python` instead
       test:
@@ -65,52 +71,18 @@ services:
       timeout: 5s
       retries: 10
 
-  # One-shot: creates the manta-blocks docker work pool and the run-playbook /
-  # run-block deployments (see manta-runtime/src/manta_runtime/deploy.py), then
-  # exits. Also the service that builds the blocks runner image, which the
-  # worker below spawns a container from per dispatched flow run.
-  #
-  # Deliberately no env_file: job containers inherit exactly the variables
-  # listed here (stamped into the deployments by the deployer), and those need
-  # compose-internal addresses, not the localhost ones backend/.env carries.
-  prefect-deployer:
+  # One-shot: exists to build (and sanity-check) the blocks runner image, then
+  # exits. The backend spawns one container from this image per block step of a
+  # playbook run (see backend/src/manta/workflows/playbook_flows.py); those
+  # containers are siblings of this stack, joined to its network so they can
+  # reach seaweedfs, and hold nothing but manta-blocks and the blocks' own
+  # dependencies — no Prefect, no Manta.
+  blocks-runner:
     build:
       context: ..
       dockerfile: docker/blocks-runner.Dockerfile
     image: ${MANTA_BLOCKS_IMAGE}
-    command: python -m manta_runtime.deploy
-    environment:
-      PREFECT_API_URL: http://prefect-server:4200/api
-      MANTA_BLOCKS_WORK_POOL: ${MANTA_BLOCKS_WORK_POOL}
-      MANTA_BLOCKS_IMAGE: ${MANTA_BLOCKS_IMAGE}
-      MANTA_DOCKER_NETWORK: ${MANTA_DOCKER_NETWORK}
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      AWS_ENDPOINT_URL: http://seaweedfs:8333
-    depends_on:
-      prefect-server:
-        condition: service_healthy
-
-  # Watches the work pool and turns each dispatched flow run into its own
-  # container from the blocks runner image — which is why it drives the host
-  # docker daemon through the mounted socket. Job containers are siblings of
-  # this stack, joined to its network by the deployments' job variables.
-  prefect-worker:
-    build:
-      context: .
-      dockerfile: prefect-worker.Dockerfile
-    image: manta-prefect-worker:latest
-    command: prefect worker start --pool ${MANTA_BLOCKS_WORK_POOL}
-    environment:
-      PREFECT_API_URL: http://prefect-server:4200/api
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      prefect-server:
-        condition: service_healthy
-      # The pool must exist before the worker starts watching it.
-      prefect-deployer:
-        condition: service_completed_successfully
+    command: python -c "import blocks; print('blocks runner image ready')"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2

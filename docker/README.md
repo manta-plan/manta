@@ -35,20 +35,20 @@ truth instead of two.
   via [localhost:8080](http://localhost:8080)
 - **prefect-server** — workflow orchestration, backed by its own Postgres
   database (not SQLite). UI at [localhost:4200](http://localhost:4200).
-- **prefect-deployer** — one-shot boot step, built from
-  [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile) (the image every
-  block runs in). Creates the `manta-blocks` docker work pool and the
-  `run-playbook`/`run-block` deployments, then exits — see
-  [manta-runtime/README.md](../manta-runtime/README.md).
-- **prefect-worker** — watches that work pool and spawns **one container per
-  dispatched flow run** from the blocks runner image, via the host docker
-  socket. Job containers are siblings of this stack (they won't appear in
+- **blocks-runner** — one-shot boot step that builds (and sanity-checks) the
+  blocks runner image from
+  [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile), then exits. The
+  backend spawns **one container per block step** of a playbook run from this
+  image (see
+  [backend playbook runs](../backend/README.md#playbook-runs)); those
+  containers are siblings of this stack (they won't appear in
   `docker compose ps`; they join the stack's network and remove themselves
-  when done).
+  when done), and contain only manta-blocks and the blocks' dependencies — no
+  Prefect, no Manta.
 
 The first `up` builds the blocks runner image, which installs the PyPSA stack —
 expect a few minutes once; later boots reuse the cache. After changing
-`manta-blocks/` or `manta-runtime/`, rebuild with `... up --build`.
+`manta-blocks/`, rebuild with `... up --build`.
 
 ## Testing
 
