@@ -126,6 +126,7 @@ def provision_catalogue(
     orchestrator_env: str,
     create_pools: bool = True,
     pool_factory: "Callable[[str, str], None] | None" = None,
+    code_path: str | None = None,
 ) -> list[str]:
     """Make everything in `catalogue` runnable, and return the deployment ids.
 
@@ -150,7 +151,18 @@ def provision_catalogue(
     Deployments are registered with module entrypoints rather than file paths, so a
     worker finds the flow by importing it from its own installed packages - the
     provisioning process and the workers need no shared filesystem layout.
+
+    That still leaves Prefect's own storage step, which defaults to copying a
+    deployment's whole working directory before every single run - expensive when
+    that directory also holds the baked pixi environments. `code_path`, when given,
+    points every deployment at a `LocalStorage` pull step instead: "the code is
+    already here", which Prefect takes as a cheap `cd` rather than a copy. An
+    installation whose code is not already baked into the image (blocks pulled from
+    a third-party git repo, say) passes its own `RunnerStorage` per deployment
+    instead - this parameter is deliberately the same "one path for everything"
+    shape as the rest of this function, not a hook for that.
     """
+    from prefect.runner.storage import LocalStorage
     from prefect.types.entrypoint import EntrypointType
 
     from manta_playbooks.execution import run_playbook
@@ -164,6 +176,8 @@ def provision_catalogue(
         for pool, env_name in sorted(pools.items()):
             factory(pool, env_name)
 
+    storage = LocalStorage(path=code_path) if code_path else None
+
     ids = []
     for name, description in sorted(catalogue.blocks.items()):
         spec = catalogue.environments.get(
@@ -175,6 +189,8 @@ def provision_catalogue(
             work_pool_name=spec.resolved_work_pool(),
             entrypoint_type=EntrypointType.MODULE_PATH,
         )
+        if storage is not None:
+            deployment.storage = storage
         ids.append(str(deployment.apply()))
 
     orchestrator = run_playbook.to_deployment(
@@ -182,5 +198,7 @@ def provision_catalogue(
         work_pool_name=f"manta-{orchestrator_env}",
         entrypoint_type=EntrypointType.MODULE_PATH,
     )
+    if storage is not None:
+        orchestrator.storage = storage
     ids.append(str(orchestrator.apply()))
     return ids

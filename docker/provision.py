@@ -139,7 +139,16 @@ def main() -> int:
 
     orchestrator_env = os.environ.get("MANTA_ORCHESTRATOR_ENV", "orchestrator")
     create_pools(catalogue, orchestrator_env)
-    ids = provision_catalogue(catalogue, orchestrator_env=orchestrator_env, create_pools=False)
+    ids = provision_catalogue(
+        catalogue,
+        orchestrator_env=orchestrator_env,
+        create_pools=False,
+        # Matches job.Dockerfile's WORKDIR: the code every job container and the
+        # orchestrator worker run is baked in there at build time, so deployments
+        # can point straight at it instead of paying Prefect's default directory
+        # copy (which would otherwise also re-copy the baked pixi environments).
+        code_path=os.environ.get("MANTA_JOB_CODE_PATH", "/app/manta-batteries"),
+    )
     print(
         f"Provisioned {len(catalogue.blocks)} block(s) and the orchestrator "
         f"({len(ids)} deployment(s)) from {catalogue_path}"
