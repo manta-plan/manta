@@ -8,11 +8,13 @@ block execute in its own container, and inspect the results.
 **What's under the hood** (details in the package READMEs):
 
 - [`manta-blocks/`](manta-blocks/README.md) — blocks & playbooks, orchestration-agnostic.
-- [`manta-runtime/`](manta-runtime/README.md) — the Prefect flows/deployments that run them.
-- [`backend/`](backend/README.md) — the API: validates runs early, dispatches them by
-  deployment name, exposes statuses/steps/outputs. Never runs blocks itself.
-- [`docker/`](docker/README.md) — Prefect server on Postgres, a docker work pool
-  worker, and the one blocks-runner image every block executes in.
+- [`backend/`](backend/README.md) — the API (validates runs early, exposes
+  statuses/steps/outputs) and the execution runtime: the `run-playbook` Prefect
+  flow that spawns one bare container per block step. Block code itself never
+  runs in the backend.
+- [`docker/`](docker/README.md) — Prefect server on Postgres, and the one
+  blocks-runner image (manta-blocks + PyPSA, no Prefect/Manta) every block
+  executes in.
 
 **Prerequisites**: Docker with the compose plugin, [uv](https://docs.astral.sh/uv/),
 and free default ports `5432, 8333, 23646, 4200, 8080, 8000` (all configurable in
@@ -49,12 +51,10 @@ docker compose --env-file backend/.env -f docker/compose-dev-services.yaml up --
 
 This stays in the foreground, streaming every service's logs — leave it running
 and use a **second terminal** for everything that follows. The first boot builds
-the blocks-runner image (Python 3.12 + PyPSA + HiGHS + manta-blocks +
-manta-runtime) — expect **3–6 minutes** once; it's cached afterwards. Boot order
-is handled for you: Postgres → Prefect server (on its own Postgres database) →
-`prefect-deployer` (one-shot: creates the `manta-blocks` docker work pool and
-the `run-playbook` / `run-block` deployments, then exits) → `prefect-worker`
-(watches the pool and spawns one container per dispatched flow run).
+the blocks-runner image (Python 3.12 + PyPSA + HiGHS + manta-blocks) — expect
+**3–6 minutes** once; it's cached afterwards. `blocks-runner` is a one-shot
+service that only exists to build and sanity-check that image, then exits; the
+backend spawns block containers from it during runs.
 
 Verify it came up — in the second terminal, from the **repo root**:
 
@@ -62,11 +62,10 @@ Verify it came up — in the second terminal, from the **repo root**:
 docker compose --env-file backend/.env -f docker/compose-dev-services.yaml ps -a
 ```
 
-Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server` **healthy**,
-`prefect-worker` **up**, and `prefect-deployer` **Exited (0)** — that exit is
-correct, it's a one-shot boot step. You can also open the Prefect UI at
-<http://localhost:4200> → *Work Pools* should show `manta-blocks` with a ready
-worker, and *Deployments* should list `run-playbook` and `run-block`.
+Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server` **healthy**, and
+`blocks-runner` **Exited (0)** — that exit is correct. The Prefect UI is at
+<http://localhost:4200>; its *Deployments* page stays empty until the backend
+starts (step 2), because the backend is what serves the `run-playbook` flow.
 
 ## 2. Start the backend
 
@@ -90,8 +89,9 @@ pnpm install && pnpm build
 mkdir -p frontend/dist && echo '<html><body>manta</body></html>' > frontend/dist/index.html
 ```
 
-Then start the app (it runs DB migrations and creates the S3 bucket on boot) —
-from **`backend/`**:
+Then start the app (it runs DB migrations, creates the S3 bucket, and starts
+the flow-serving subprocesses that register the `run-playbook` and
+`pi-digit-stats` deployments with Prefect) — from **`backend/`**:
 
 ```bash
 uv run manta
@@ -186,10 +186,11 @@ you can watch them come and go:
 docker ps --filter ancestor=manta-blocks-runner:latest --format 'table {{.Names}}\t{{.Status}}'
 ```
 
-You'll see `run-<RUN_UUID>` (the playbook orchestrator) plus one short-lived
-container per block. The same picture, with logs, is in the Prefect UI at
-<http://localhost:4200/runs>: the `run-<RUN_UUID>` flow run has one child per
-step, named `<step>[<block>]`.
+You'll see one short-lived container per block, named
+`manta-block-<step>-<id>`; the playbook flow itself runs inside the backend's
+flow-serving process. The same picture, with each container's logs, is in the
+Prefect UI at <http://localhost:4200/runs>: the `run-<RUN_UUID>` flow run has
+one task run per step, named `<step>[<block>]`.
 
 Per-step states via the API (note `expansion_myopic` never appears — its
 `when:` condition switched it off):
@@ -296,12 +297,6 @@ From **`manta-blocks/`**:
 uv run pytest
 ```
 
-From **`manta-runtime/`**:
-
-```bash
-uv run pytest
-```
-
 From **`backend/`**:
 
 ```bash
@@ -317,17 +312,21 @@ for the frontend-serving test.)
 
 ## Troubleshooting
 
-- **`run-playbook/run-playbook` not found when creating a run** — the deployer
-  didn't finish; check `docker logs manta-prefect-deployer-1`.
-- **Run stuck in PENDING** — the worker isn't picking work up; check
-  `docker logs manta-prefect-worker-1` (it needs `/var/run/docker.sock`).
+- **`run-playbook/run-playbook` not found when creating a run** — the app's
+  flow-serving subprocess hasn't registered the deployment yet (it does so a
+  few seconds after `uv run manta` starts) or died; restart the app and watch
+  its log for "Prefect flow-serving process started".
+- **Run stuck in PENDING** — the serving subprocess isn't picking runs up;
+  restart the app.
+- **A step fails with "blocks runner image ... not available locally"** — the
+  image was never built or was removed: re-run step 1 (`up --build`).
 - **Prefect server unhealthy after changing DB settings** — the Prefect
   database is created on the Postgres volume's first boot only: `down -v` and
   boot again (step 0).
-- **Changed code in `manta-blocks/` or `manta-runtime/` but runs behave old** —
-  the runner image is baked at build time: re-run step 1's `up --build`.
-- Block-level logs live with each step's flow run in the Prefect UI; worker
-  stdout also streams every job container's output.
+- **Changed code in `manta-blocks/` but runs behave old** — the runner image is
+  baked at build time: re-run step 1's `up --build`.
+- Block container logs are relayed live into each step's task run in the
+  Prefect UI (and aggregated under `/v1/runs/{uuid}/logs`).
 
 ## Teardown
 
