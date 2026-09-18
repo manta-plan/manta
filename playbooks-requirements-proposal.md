@@ -251,3 +251,9 @@ image.
 means nothing once an environment is an image.
 It should either be dropped for container targets or reinterpreted as "where to build the
 image from".
+
+### Other To Dos
+
+- Rename Renderer -> Provisioner
+- Figure out a nice way for blocks to write results to S3 without each block def in manta-batteries having to know about S3
+- Make per-step logs and status endpoints so that FE can show the graph and status/logs of each block
