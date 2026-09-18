@@ -34,15 +34,20 @@ def create_app() -> FastAPI:
 
     logger.info("Starting Prefect flow-serving processes...")
     # Each module registers its deployment with the Prefect server and executes
-    # that deployment's runs. TODO(post-MVP): run these as their own long-lived
-    # services so in-flight runs survive app restarts.
+    # that deployment's runs. Their console output goes to /dev/null on purpose:
+    # the app's stdout stays Manta's own, and everything these processes log ships
+    # to the Prefect API anyway (UI, and /v1/runs/{uuid}/logs). Never swap this
+    # for subprocess.PIPE — an unread pipe fills up (Prefect echoes every
+    # flow/task log line, block-container output included) and a full pipe blocks
+    # the next write, freezing runs mid-step. TODO(post-MVP): run these as their
+    # own long-lived services so in-flight runs survive app restarts.
     for serving_module in ("manta.workflows.pi_digit_stats", "manta.workflows.playbook_flows"):
         try:
             subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
                 [sys.executable, "-m", serving_module],
                 env=os.environ.copy(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             logger.info(f"Prefect flow-serving process started ({serving_module})")
         except Exception as e:
