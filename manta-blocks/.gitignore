@@ -1,0 +1,11 @@
+# Re-include what the repo-root .gitignore drops: this package pins its dev
+# environment to Python 3.12 (the pypsa extra does not resolve on newer
+# interpreters yet, and the blocks runner image runs 3.12).
+!.python-version
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/

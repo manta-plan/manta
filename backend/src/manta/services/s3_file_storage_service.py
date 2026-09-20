@@ -58,11 +58,43 @@ class S3FileStorageService:
 
         return GetS3FileResult(key=key, size=size, last_modified=head_response["LastModified"])
 
-    def list_files(self, project_uuid: UUID) -> list[GetS3FileResult]:
-        # TODO: only lists everything under the project's prefix for now —
-        # extend with args for filtering by file type or other business
-        # logic once there's a concrete need.
-        prefix = f"{project_uuid}/"
+    def file_exists(self, project_uuid: UUID, filename: str) -> bool:
+        key = f"{project_uuid}/{filename}"
+
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+        except ClientError as e:
+            if e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                return False
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+        except BotoCoreError as e:
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+        return True
+
+    def copy_file(self, project_uuid: UUID, source_filename: str, dest_filename: str) -> str:
+        """Server-side copy within the project's prefix; returns the destination key."""
+        source_key = f"{project_uuid}/{source_filename}"
+        dest_key = f"{project_uuid}/{dest_filename}"
+
+        try:
+            self.client.copy_object(
+                Bucket=self.bucket,
+                CopySource={"Bucket": self.bucket, "Key": source_key},
+                Key=dest_key,
+            )
+        except (ClientError, BotoCoreError) as e:
+            raise S3StorageError(
+                f"Failed to copy {source_key!r} to {dest_key!r} in bucket {self.bucket!r}"
+            ) from e
+
+        logger.info("Copied %r to %r", source_key, dest_key)
+        return dest_key
+
+    def list_files(self, project_uuid: UUID, prefix: str = "") -> list[GetS3FileResult]:
+        # TODO: only lists everything under the given prefix for now — extend
+        # with args for filtering by file type or other business logic once
+        # there's a concrete need.
+        prefix = f"{project_uuid}/{prefix}"
 
         try:
             paginator = self.client.get_paginator("list_objects_v2")

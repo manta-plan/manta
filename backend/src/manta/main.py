@@ -32,18 +32,27 @@ def create_app() -> FastAPI:
     logger.info("Ensuring S3 bucket exists...")
     S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
 
-    logger.info("Starting Prefect flow-serving process...")
-    try:
-        subprocess.Popen(
-            [sys.executable, "-m", "manta.workflows.pi_digit_stats"],
-            env=os.environ.copy(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        logger.info("Prefect flow-serving process started")
-    except Exception as e:
-        logger.error(f"Failed to start Prefect flow-serving process: {e}")
-        # Non-fatal: app continues, runs just won't execute
+    logger.info("Starting Prefect flow-serving processes...")
+    # Each module registers its deployment with the Prefect server and executes
+    # that deployment's runs. Their console output goes to /dev/null on purpose:
+    # the app's stdout stays Manta's own, and everything these processes log ships
+    # to the Prefect API anyway (UI, and /v1/runs/{uuid}/logs). Never swap this
+    # for subprocess.PIPE — an unread pipe fills up (Prefect echoes every
+    # flow/task log line, block-container output included) and a full pipe blocks
+    # the next write, freezing runs mid-step. TODO(post-MVP): run these as their
+    # own long-lived services so in-flight runs survive app restarts.
+    for serving_module in ("manta.workflows.pi_digit_stats", "manta.workflows.playbook_flows"):
+        try:
+            subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
+                [sys.executable, "-m", serving_module],
+                env=os.environ.copy(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info(f"Prefect flow-serving process started ({serving_module})")
+        except Exception as e:
+            logger.error(f"Failed to start Prefect flow-serving process {serving_module}: {e}")
+            # Non-fatal: app continues, runs just won't execute
 
     app = FastAPI(title="Manta")
     app.frontend("/", directory="../frontend/dist")

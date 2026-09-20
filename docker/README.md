@@ -19,7 +19,11 @@ truth instead of two.
 
 ## Services
 
-- **postgres** — the app database.
+- **postgres** — the app database. Also hosts Keycloak's and Prefect's own
+  databases, created by the init scripts in `conf/postgres-init/` on the
+  volume's **first boot only** — after pulling a change to those scripts, run
+  `docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v`
+  once to re-initialise (this wipes local dev data).
 - **seaweedfs** — S3-compatible object storage (see
   [S3FileStorageService](../backend/src/manta/services/s3_file_storage_service.py)),
   running via SeaweedFS's own `mini` command (single-container
@@ -29,6 +33,22 @@ truth instead of two.
   [`backend/.env`](../backend/.env)).
 - **keycloak** - identity provider, you can access it with bootstrap credentials
   via [localhost:8080](http://localhost:8080)
+- **prefect-server** — workflow orchestration, backed by its own Postgres
+  database (not SQLite). UI at [localhost:4200](http://localhost:4200).
+- **blocks-runner** — one-shot boot step that builds (and sanity-checks) the
+  blocks runner image from
+  [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile), then exits. The
+  backend spawns **one container per block step** of a playbook run from this
+  image (see
+  [backend playbook runs](../backend/README.md#playbook-runs)); those
+  containers are siblings of this stack (they won't appear in
+  `docker compose ps`; they join the stack's network and remove themselves
+  when done), and contain only manta-blocks and the blocks' dependencies — no
+  Prefect, no Manta.
+
+The first `up` builds the blocks runner image, which installs the PyPSA stack —
+expect a few minutes once; later boots reuse the cache. After changing
+`manta-blocks/`, rebuild with `... up --build`.
 
 ## Testing
 

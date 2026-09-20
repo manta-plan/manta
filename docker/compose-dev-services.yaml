@@ -42,10 +42,22 @@ services:
     image: prefecthq/prefect:3.8.3-python3.12
     command: prefect server start --host 0.0.0.0
     env_file: ../backend/.env
+    environment:
+      # Prefect keeps its state in its own database on the shared Postgres
+      # instance (created by conf/postgres-init/create-prefect-db.sh on the
+      # volume's first boot) instead of the SQLite file it defaults to.
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${PREFECT_DB_USER}:${PREFECT_DB_PASSWORD}@postgres:5432/${PREFECT_DB_NAME}
     ports:
       - "${PREFECT_PORT}:4200"
-    volumes:
-      - prefect-data:/root/.prefect
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Semantically: a ready stack is one that can execute playbook runs, which
+      # needs the blocks image built. Mechanically: `up --wait` (used by the
+      # integration suite) treats a cleanly-exited one-shot service as a failure
+      # unless something depends on its completion.
+      blocks-runner:
+        condition: service_completed_successfully
     healthcheck:
       # `curl` isn't installed in this image — so using `python` instead
       test:
@@ -58,6 +70,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-shot: exists to build (and sanity-check) the blocks runner image, then
+  # exits. The backend spawns one container from this image per block step of a
+  # playbook run (see backend/src/manta/workflows/playbook_flows.py); those
+  # containers are siblings of this stack, joined to its network so they can
+  # reach seaweedfs, and hold nothing but manta-blocks and the blocks' own
+  # dependencies — no Prefect, no Manta.
+  blocks-runner:
+    build:
+      context: ..
+      dockerfile: docker/blocks-runner.Dockerfile
+    image: ${MANTA_BLOCKS_IMAGE}
+    command: python -c "import blocks; print('blocks runner image ready')"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2
@@ -144,4 +169,3 @@ services:
 volumes:
   postgres-data:
   seaweedfs-data:
-  prefect-data:
