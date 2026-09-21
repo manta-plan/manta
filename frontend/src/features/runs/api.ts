@@ -1,7 +1,6 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
 import type {
   CreateProjectResponse,
-  CreateRunResponse,
   DefaultProject,
   GetRunLogsResponse,
   GetRunResponse,
@@ -13,10 +12,6 @@ import type {
 const defaultProjectPayload = {
   name: "My First Project",
   description: "Default project for guest user, first time visit.",
-};
-
-const defaultRunPayload = {
-  num_pi_digits: 10_000,
 };
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
@@ -42,21 +37,6 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   window.sessionStorage.setItem(defaultProjectSessionStorageKey, project.uuid);
 
   return { uuid: project.uuid, wasCached: false };
-}
-
-export async function createRun(project: DefaultProject) {
-  try {
-    return await postJson<CreateRunResponse>("/v1/runs", {
-      project_uuid: project.uuid,
-      num_pi_digits: defaultRunPayload.num_pi_digits,
-    });
-  } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
-
-    throw error;
-  }
 }
 
 type ListRunsParams = {

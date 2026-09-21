@@ -3,9 +3,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import {
-  createRun,
   getCachedDefaultProject,
-  getOrCreateDefaultProject,
   getProjectRun,
   getRun,
   getRunLogs,
@@ -35,7 +33,6 @@ export function HomePage() {
   const [runsTotal, setRunsTotal] = useState(0);
   const [runsOffset, setRunsOffset] = useState(0);
   const [runSummary, setRunSummary] = useState(emptyRunSummary);
-  const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
@@ -125,25 +122,6 @@ export function HomePage() {
       detail: hasProjectRuns ? "waiting to start" : "empty queue",
     },
   ];
-
-  async function handleNewRun() {
-    setIsLoadingRuns(true);
-    setRunCreationError(null);
-
-    try {
-      const project = await getOrCreateDefaultProject();
-      await createRun(project);
-
-      setSearchRunId("");
-      setActiveSearchRunId("");
-      setRunsOffset(0);
-      await refreshRunsPage(project, 0, selectedStatuses);
-    } catch (error) {
-      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
-    } finally {
-      setIsLoadingRuns(false);
-    }
-  }
 
   async function refreshRuns(project: DefaultProject) {
     if (activeSearchRunId.length > 0) {
@@ -369,18 +347,6 @@ export function HomePage() {
               />
               {isRefreshingRuns ? "Refreshing..." : "Refresh"}
             </Button>
-            <Button
-              className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={isLoadingRuns}
-              onClick={handleNewRun}
-            >
-              {isLoadingRuns ? (
-                <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <FiPlay className="size-4" aria-hidden="true" />
-              )}
-              {isLoadingRuns ? "Starting..." : "New run"}
-            </Button>
           </div>
         </div>
       </header>
@@ -478,19 +444,11 @@ export function HomePage() {
             <div className="grid min-h-72 place-items-center px-6 py-12 text-center">
               <div className="max-w-sm">
                 <div className="bg-surface-alt text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-lg">
-                  {isLoadingRuns ? (
-                    <FiRefreshCw className="size-5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <FiPlay className="size-5" aria-hidden="true" />
-                  )}
+                  <FiPlay className="size-5" aria-hidden="true" />
                 </div>
-                <h3 className="text-lg font-semibold tracking-normal">
-                  {isLoadingRuns ? "Starting run" : "No runs yet"}
-                </h3>
+                <h3 className="text-lg font-semibold tracking-normal">No runs yet</h3>
                 <p className="text-text-secondary mt-2 text-sm leading-6">
-                  {isLoadingRuns
-                    ? "Preparing execution for this workspace."
-                    : "Create a run to populate this workspace with execution activity."}
+                  Start a playbook run to populate this workspace with execution activity.
                 </p>
               </div>
             </div>

@@ -90,8 +90,8 @@ mkdir -p frontend/dist && echo '<html><body>manta</body></html>' > frontend/dist
 ```
 
 Then start the app (it runs DB migrations, creates the S3 bucket, and starts
-the flow-serving subprocesses that register the `run-playbook` and
-`pi-digit-stats` deployments with Prefect) — from **`backend/`**:
+the flow-serving subprocess that registers the `run-playbook` deployment with
+Prefect) — from **`backend/`**:
 
 ```bash
 uv run manta

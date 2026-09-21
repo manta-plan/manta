@@ -211,7 +211,7 @@ def run_playbook(playbook: dict, config: dict, record: dict, output_prefix: str)
 
 
 if __name__ == "__main__":
-    # Served like the pi-digit-stats flow: a subprocess of the app (see main.py)
-    # that registers the deployment and executes its runs. TODO(post-MVP): run this
-    # as its own long-lived service so in-flight playbook runs survive app restarts.
+    # Served by a subprocess of the app (see main.py) that registers the deployment
+    # and executes its runs. TODO(post-MVP): run this as its own long-lived service
+    # so in-flight playbook runs survive app restarts.
     run_playbook.serve(name=PLAYBOOK_FLOW_NAME)

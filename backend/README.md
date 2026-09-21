@@ -64,8 +64,7 @@ Users run modeling work as **playbooks** — chains of **blocks** — defined in
   block's state and produced files.
 
 The execution runtime is `workflows/playbook_flows.py`: the `run-playbook`
-flow (served by a subprocess of the app, like the pi-digit-stats demo flow)
-walks the playbook with manta-blocks' engine and runs **every block step as a
+flow (served by a subprocess of the app) walks the playbook with manta-blocks' engine and runs **every block step as a
 Prefect task run that spawns its own container** from the blocks runner image
 (see [docker/README.md](../docker/README.md)). Those containers are deliberately
 dumb — manta-blocks plus block dependencies, no Prefect, no Manta — and run the

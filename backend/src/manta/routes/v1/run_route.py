@@ -21,15 +21,11 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 @router.post("", response_model=CreateRunResult, status_code=status.HTTP_201_CREATED)
 def create_run(request: CreateRunRequest, service: RunService = Depends()) -> CreateRunResult:
-    if request.playbook_name is not None:
-        return service.create_playbook_run(
-            project_uuid=request.project_uuid,
-            playbook_name=request.playbook_name,
-            config=request.config,
-            input_file=request.input_file,
-        )
-    return service.create_run(
-        project_uuid=request.project_uuid, num_pi_digits=request.num_pi_digits
+    return service.create_playbook_run(
+        project_uuid=request.project_uuid,
+        playbook_name=request.playbook_name,
+        config=request.config,
+        input_file=request.input_file,
     )
 
 

@@ -35,8 +35,8 @@ manta-blocks:
 - **The `run-playbook` flow** — rebuilds the playbook from its submitted document
   (blocks resolved from the committed catalogue, since this process cannot import
   them), validates it, and walks it with manta-blocks' engine. It is served as a
-  Prefect deployment by a subprocess the app starts (the same pattern as the
-  pi-digit-stats demo flow), which is what lets the API dispatch runs by name.
+  Prefect deployment by a subprocess the app starts, which is what lets the API
+  dispatch runs by name.
 - **One Prefect task per step** (`run_block`, task-run name `<step>[<block>]`) —
   spawns the step's container, relays its log lines live into the task run,
   parses the result, and cleans the container up.

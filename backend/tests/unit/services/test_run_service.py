@@ -44,79 +44,19 @@ def _existing_project() -> Project:
 
 
 def _existing_run(project: Project) -> Run:
-    run = Run(project_id=project.id, prefect_flow_run_id=uuid4())
+    run = Run(
+        project_id=project.id,
+        prefect_flow_run_id=uuid4(),
+        playbook_name="cluster-expand-dispatch",
+        playbook_doc={"name": "cluster-expand-dispatch"},
+        playbook_config={},
+        input_url="s3://manta/input/network.nc",
+        output_prefix="s3://manta/steps",
+    )
     run.id = 1
     run.uuid = uuid4()
     run.created_at = datetime.now(UTC)
     return run
-
-
-def test_create_run_persists_a_run_and_returns_its_dto(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class
-) -> None:
-    # Given
-    project = _existing_project()
-    db = mock_db_class(query_results={Project: project})
-    flow_run_id = uuid4()
-    # `run_deployment` runs synchronously when called from a sync context (see
-    # the comment in `RunService.create_run`) — a plain `MagicMock`, not
-    # `AsyncMock`, mirrors that real call shape.
-    monkeypatch.setattr(
-        run_service_module,
-        "run_deployment",
-        MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
-    )
-    service = RunService(db=db)
-
-    # When
-    result = service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
-
-    # Then
-    db.add.assert_called_once()
-    db.commit.assert_called_once()
-    persisted_run = db.add.call_args.args[0]
-    assert isinstance(persisted_run, Run)
-    assert persisted_run.project_id == project.id
-    assert persisted_run.prefect_flow_run_id == flow_run_id
-    assert result.uuid == db.uuid
-    assert result.project_uuid == project.uuid
-    assert result.created_at == db.created_at
-
-
-def test_create_run_logs_orphaned_flow_run_when_commit_fails(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class, caplog: pytest.LogCaptureFixture
-) -> None:
-    # Given
-    project = _existing_project()
-    db = mock_db_class(query_results={Project: project})
-    flow_run_id = uuid4()
-    db.commit.side_effect = RuntimeError("connection lost")
-    monkeypatch.setattr(
-        run_service_module,
-        "run_deployment",
-        MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
-    )
-    service = RunService(db=db)
-
-    # When/Then
-    with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
-        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
-    assert str(flow_run_id) in caplog.text
-    assert str(project.uuid) in caplog.text
-
-
-def test_create_run_with_unknown_project_raises_404(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class
-) -> None:
-    # Given
-    db = mock_db_class(query_results={Project: None})
-    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
-    service = RunService(db=db)
-
-    # When/Then
-    with pytest.raises(HTTPException) as exc_info:
-        service.create_run(project_uuid=uuid4(), num_pi_digits=1_000)
-    assert exc_info.value.status_code == 404
 
 
 def test_get_run_returns_dto_for_a_known_run(
@@ -555,16 +495,42 @@ def test_get_run_outputs_lists_the_files_under_the_runs_prefix(
     ]
 
 
-def test_get_run_outputs_for_a_legacy_run_is_empty(mock_db_class) -> None:
-    # Given: a run from before playbooks (no output prefix recorded).
+def test_create_playbook_run_logs_orphaned_flow_run_when_commit_fails(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Given: the flow run is dispatched before the row is committed, so a commit
+    # failure leaves a run executing that Manta has no record of.
     project = _existing_project()
-    run = _existing_run(project)
-    db = mock_db_class(query_results={Run: run, Project: project})
-    service = _playbook_run_service(db)
+    db = mock_db_class(query_results={Project: project})
+    db.commit.side_effect = RuntimeError("connection lost")
+    flow_run_id = uuid4()
+    service = _playbook_run_service(db, monkeypatch, flow_run_id)
 
-    # When
-    result = service.get_run_outputs(run_uuid=run.uuid)
+    # When/Then
+    with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
+        service.create_playbook_run(
+            project_uuid=project.uuid,
+            playbook_name="cluster-expand-dispatch",
+            config=None,
+            input_file="network.nc",
+        )
+    assert str(flow_run_id) in caplog.text
+    assert str(project.uuid) in caplog.text
 
-    # Then
-    assert result.items == []
-    service.storage.list_files.assert_not_called()
+
+def test_create_playbook_run_with_unknown_project_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    db = mock_db_class(query_results={Project: None})
+    service = _playbook_run_service(db, monkeypatch)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_playbook_run(
+            project_uuid=uuid4(),
+            playbook_name="cluster-expand-dispatch",
+            config=None,
+            input_file="network.nc",
+        )
+    assert exc_info.value.status_code == 404

@@ -32,8 +32,6 @@ from manta.workflows.playbook_flows import PLAYBOOK_DEPLOYMENT
 
 logger = logging.getLogger(__name__)
 
-PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
-
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
     with get_client(sync_client=True) as client:
@@ -108,18 +106,6 @@ class RunService:
         self.db = db
         self.storage = storage
         self.playbooks = playbooks
-
-    def create_run(self, project_uuid: UUID, num_pi_digits: int) -> CreateRunResult:
-        project = self._get_project(project_uuid)
-
-        flow_run = run_deployment(
-            PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
-        )
-
-        run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)
-        self._persist_run(run, project)
-
-        return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
     def create_playbook_run(
         self, project_uuid: UUID, playbook_name: str, config: dict | None, input_file: str
@@ -252,9 +238,7 @@ class RunService:
     def get_run_steps(self, run_uuid: UUID) -> GetRunStepsResult:
         """Each step of a playbook run, and how it is doing.
 
-        A step is a task run of the run's flow run, named `<step>[<block>]`. For a
-        legacy pi-digit run this lists its computation tasks instead — every kind
-        of run reports whatever its flow actually executed.
+        A step is a task run of the run's flow run, named `<step>[<block>]`.
         """
         run = self._get_run(run_uuid)
 
@@ -278,10 +262,6 @@ class RunService:
         still going: finished steps' outputs appear as they land.
         """
         run = self._get_run(run_uuid)
-        if run.output_prefix is None:
-            # A legacy pi-digit run: it never had file outputs.
-            return ListRunOutputsResult(uuid=run.uuid, items=[])
-
         project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
