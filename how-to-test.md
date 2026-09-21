@@ -8,10 +8,11 @@ block execute in its own container, and inspect the results.
 **What's under the hood** (details in the package READMEs):
 
 - [`manta-blocks/`](manta-blocks/README.md) — blocks & playbooks, orchestration-agnostic.
-- [`backend/`](backend/README.md) — the API (validates runs early, exposes
-  statuses/steps/outputs) and the execution runtime: the `run-playbook` Prefect
-  flow that spawns one bare container per block step. Block code itself never
-  runs in the backend.
+- [`manta-runtime/`](manta-runtime/README.md) — the execution runtime: the
+  `run-playbook` Prefect flow that spawns one bare container per block step.
+- [`backend/`](backend/README.md) — the API: validates runs early, dispatches
+  them at the runtime's deployment, and exposes statuses/steps/outputs. Neither
+  block code nor the flow runs in the backend process.
 - [`docker/`](docker/README.md) — Prefect server on Postgres, and the one
   blocks-runner image (manta-blocks + PyPSA, no Prefect/Manta) every block
   executes in.

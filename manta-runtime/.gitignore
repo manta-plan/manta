@@ -1,0 +1,11 @@
+# Re-include what the repo-root .gitignore drops: this package pins its dev
+# environment to Python 3.12, the version the control image (built on Prefect's
+# own image) runs.
+!.python-version
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/

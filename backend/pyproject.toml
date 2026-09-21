@@ -7,14 +7,14 @@ requires-python = "==3.14.*"
 dependencies = [
     "alembic>=1.18.5",
     "boto3>=1.43.73",
-    # Drives the block containers (see workflows/playbook_flows.py). Blocks never
-    # run in this process; the SDK spawns them from the blocks runner image.
-    "docker>=7.1.0",
     "fastapi>=0.141.1",
     # The blocks/playbooks domain package (repo-local for the MVP): built-in
-    # playbook listing, early run validation, and the playbook engine that
-    # workflows/playbook_flows.py executes runs with.
+    # playbook listing and early run validation.
     "manta-blocks",
+    # The playbook execution runtime (repo-local for the MVP). The app starts it
+    # as a subprocess and dispatches runs at its deployment by name; nothing here
+    # imports a flow at request time.
+    "manta-runtime",
     "prefect==3.8.3",
     "psycopg[binary]>=3.3.4",
     "pynpm>=0.3.1",
@@ -26,6 +26,7 @@ dependencies = [
 
 [tool.uv.sources]
 manta-blocks = { path = "../manta-blocks", editable = true }
+manta-runtime = { path = "../manta-runtime", editable = true }
 
 [project.scripts]
 manta = "manta.main:main"

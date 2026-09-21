@@ -63,15 +63,12 @@ Users run modeling work as **playbooks** — chains of **blocks** — defined in
 - `GET /v1/runs/{uuid}/steps` and `GET /v1/runs/{uuid}/outputs` expose each
   block's state and produced files.
 
-The execution runtime is `workflows/playbook_flows.py`: the `run-playbook`
-flow (served by a subprocess of the app) walks the playbook with manta-blocks' engine and runs **every block step as a
-Prefect task run that spawns its own container** from the blocks runner image
-(see [docker/README.md](../docker/README.md)). Those containers are deliberately
-dumb — manta-blocks plus block dependencies, no Prefect, no Manta — and run the
-orchestration-agnostic `python -m blocks.run_one` entrypoint; the result comes
-back through the container's output. Block *code* never runs in the backend
-process (there is no PyPSA here): blocks are resolved from the committed
-catalogue, and the flow only drives containers via the Docker SDK.
+The execution runtime is not here: it is [manta-runtime](../manta-runtime),
+which the app starts as a subprocess and then only ever addresses by deployment
+name. Its `run-playbook` flow walks the playbook with manta-blocks' engine and
+runs **every block step as a Prefect task run that spawns its own container**
+from the blocks runner image (see [docker/README.md](../docker/README.md)).
+Block *code* never runs in the backend process, and neither does the flow.
 
 A run's artifacts live under `s3://<bucket>/<project>/runs/<run>/`: `input/`
 holds the copy of the file the run started from, `steps/` one output per

@@ -12,11 +12,12 @@ package, and local deployment tooling:
 
 ```
 manta/
-├── backend/        # Python/FastAPI backend, incl. the playbook execution runtime
-│                   #   — see backend/README.md
+├── backend/        # Python/FastAPI backend — see backend/README.md
 ├── frontend/       # React/Vite frontend — see frontend/README.md
 ├── manta-blocks/   # blocks & playbooks: units of modeling work, orchestration-agnostic
 │                   #   (destined for its own repository — see manta-blocks/README.md)
+├── manta-runtime/  # the playbook execution runtime: Prefect flows and block containers
+│                   #   — see manta-runtime/README.md
 └── docker/         # local dev services (Postgres, SeaweedFS, Prefect, ...) — see docker/README.md
 ```
 
@@ -26,4 +27,5 @@ the package-level READMEs for setup instructions:
 - [backend/README.md](backend/README.md) for the FastAPI backend and playbook runs.
 - [frontend/README.md](frontend/README.md) for the React frontend.
 - [manta-blocks/README.md](manta-blocks/README.md) for writing blocks and playbooks.
+- [manta-runtime/README.md](manta-runtime/README.md) for how a playbook run executes.
 - [docker/README.md](docker/README.md) for local services and Docker notes.

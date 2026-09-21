@@ -7,13 +7,13 @@ Companion reading: [manta-blocks/README.md](manta-blocks/README.md),
 
 ## Where does playbook orchestration live, and why?
 
-In the backend — `workflows/playbook_flows.py` — and nowhere else. Two boundaries
-force that placement:
+In `manta-runtime` — a package of its own, beside `manta-blocks` and `backend` —
+and nowhere else. Two boundaries force that placement:
 
 - **`manta-blocks` must stay orchestration-agnostic** (proposal requirements 7/8):
   blocks and playbooks are written and tested by modelers, the package is destined
   for its own repository, and nothing in it may import Prefect or Docker. It
-  exposes a `StepRunner` protocol instead, and the backend plugs into it.
+  exposes a `StepRunner` protocol instead, and `manta-runtime` plugs into it.
 - **Block containers must stay bare.** The runner image holds `manta-blocks` plus
   the blocks' own dependencies — no Prefect, no Manta. Containers that run
   modeling code (eventually third-party code) carry no app code, no framework,
@@ -29,14 +29,13 @@ ordinary import, not a cross-package contract.
 
 ## What does the execution runtime consist of?
 
-One module (`workflows/playbook_flows.py`, ~200 lines) plus one contract in
-manta-blocks:
+`manta_runtime.flows` (~200 lines) plus one contract in manta-blocks:
 
 - **The `run-playbook` flow** — rebuilds the playbook from its submitted document
   (blocks resolved from the committed catalogue, since this process cannot import
   them), validates it, and walks it with manta-blocks' engine. It is served as a
-  Prefect deployment by a subprocess the app starts, which is what lets the API
-  dispatch runs by name.
+  Prefect deployment by `manta_runtime.serve`, which the app starts as a
+  subprocess — that is what lets the API dispatch runs by name.
 - **One Prefect task per step** (`run_block`, task-run name `<step>[<block>]`) —
   spawns the step's container, relays its log lines live into the task run,
   parses the result, and cleans the container up.
@@ -49,8 +48,7 @@ manta-blocks:
   `blocks/run_one.py`, so the protocol cannot drift.
 
 Configuration (image name, docker network, the object-store endpoint as seen from
-inside containers) comes from `config/blocks_runtime_config.py`. Not the
-runtime's job: deciding *what* to run (API services) and *how* blocks work or
+inside containers) comes from `manta_runtime.config`. Not the runtime's job: deciding *what* to run (API services) and *how* blocks work or
 steps are wired (manta-blocks).
 
 ## How does a block execute in isolation?

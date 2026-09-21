@@ -1,3 +1,9 @@
+"""How this runtime reaches the things it drives: the block image, the network
+its containers join, and the object store as they see it from inside.
+
+Values come from the environment (and the app's `.env`), never from code.
+"""
+
 import os
 
 from dotenv import load_dotenv

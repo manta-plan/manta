@@ -2,6 +2,7 @@ import logging
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
+from manta_runtime import PLAYBOOK_DEPLOYMENT
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import (
     FlowRunFilter,
@@ -28,7 +29,6 @@ from manta.services.results.run_result import (
     ListRunsResult,
 )
 from manta.services.s3_file_storage_service import S3FileStorageService
-from manta.workflows.playbook_flows import PLAYBOOK_DEPLOYMENT
 
 logger = logging.getLogger(__name__)
 

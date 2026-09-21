@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from manta.workflows import playbook_flows
-from manta.workflows.playbook_flows import BlockRunFailedError, _run_block_in_container
+from manta_runtime import flows
+from manta_runtime.flows import BlockRunFailedError, _run_block_in_container
 
 
 class _FakeContainer:
@@ -26,7 +26,7 @@ def _fake_docker(monkeypatch, container: _FakeContainer) -> MagicMock:
     client = MagicMock()
     client.images.get.return_value = object()  # the image exists
     client.containers.run.return_value = container
-    monkeypatch.setattr(playbook_flows, "_docker_client", lambda: client)
+    monkeypatch.setattr(flows, "_docker_client", lambda: client)
     return client
 
 
@@ -152,7 +152,7 @@ def test_a_missing_runner_image_fails_before_any_container_starts(
     _job_env(monkeypatch)
     client = MagicMock()
     client.images.get.side_effect = RuntimeError("not found")
-    monkeypatch.setattr(playbook_flows, "_docker_client", lambda: client)
+    monkeypatch.setattr(flows, "_docker_client", lambda: client)
 
     # When/Then
     with pytest.raises(BlockRunFailedError, match="not available locally"):

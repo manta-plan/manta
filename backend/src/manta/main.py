@@ -33,17 +33,17 @@ def create_app() -> FastAPI:
     S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
 
     logger.info("Starting the Prefect flow-serving process...")
-    # Registers the run-playbook deployment with the Prefect server and executes its
-    # runs. Its console output goes to /dev/null on purpose: the app's stdout stays
-    # Manta's own, and everything it logs ships to the Prefect API anyway (UI, and
-    # /v1/runs/{uuid}/logs). Never swap this for subprocess.PIPE — an unread pipe
-    # fills up (Prefect echoes every flow/task log line, block-container output
-    # included) and a full pipe blocks the next write, freezing runs mid-step.
-    # TODO(post-MVP): run this as its own long-lived service so in-flight runs
-    # survive app restarts.
+    # manta-runtime registers the run-playbook deployment with the Prefect server
+    # and executes its runs. Its console output goes to /dev/null on purpose: the
+    # app's stdout stays Manta's own, and everything it logs ships to the Prefect
+    # API anyway (UI, and /v1/runs/{uuid}/logs). Never swap this for
+    # subprocess.PIPE — an unread pipe fills up (Prefect echoes every flow/task
+    # log line, block-container output included) and a full pipe blocks the next
+    # write, freezing runs mid-step. TODO(post-MVP): run this as its own
+    # long-lived service so in-flight runs survive app restarts.
     try:
         subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
-            [sys.executable, "-m", "manta.workflows.playbook_flows"],
+            [sys.executable, "-m", "manta_runtime.serve"],
             env=os.environ.copy(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

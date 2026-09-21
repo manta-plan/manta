@@ -943,9 +943,9 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "boto3" },
-    { name = "docker" },
     { name = "fastapi" },
     { name = "manta-blocks" },
+    { name = "manta-runtime" },
     { name = "prefect" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pynpm" },
@@ -970,9 +970,9 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
-    { name = "docker", specifier = ">=7.1.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "manta-blocks", editable = "../manta-blocks" },
+    { name = "manta-runtime", editable = "../manta-runtime" },
     { name = "prefect", specifier = "==3.8.3" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pynpm", specifier = ">=0.3.1" },
@@ -1018,6 +1018,31 @@ provides-extras = ["s3", "pypsa"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.16.0" },
+]
+
+[[package]]
+name = "manta-runtime"
+version = "0.1.0"
+source = { editable = "../manta-runtime" }
+dependencies = [
+    { name = "docker" },
+    { name = "manta-blocks" },
+    { name = "prefect" },
+    { name = "python-dotenv" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docker", specifier = ">=7.1.0" },
+    { name = "manta-blocks", editable = "../manta-blocks" },
+    { name = "prefect", specifier = "==3.8.3" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.16.0" },
 ]
 

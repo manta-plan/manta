@@ -1,9 +1,8 @@
 """The Prefect flow that runs playbooks, and the containers it drives blocks in.
 
-This module is the whole execution runtime: `run-playbook` (served as a
-deployment by a subprocess of the app, see main.py and the __main__ block below)
-walks a playbook document with manta-blocks' engine, and every block step becomes
-one Prefect task run that spawns one container from the blocks runner image.
+`run-playbook` (registered and executed by `manta_runtime.serve`) walks a
+playbook document with manta-blocks' engine, and every block step becomes one
+Prefect task run that spawns one container from the blocks runner image.
 
 The containers are deliberately dumb: the image holds only manta-blocks and the
 blocks' own dependencies — no Prefect, no Manta — and each one runs the
@@ -27,13 +26,13 @@ from blocks.run_one import parse_result_line
 from playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow, task
 
-from manta.config.blocks_runtime_config import blocks_image, docker_network, job_environment
+from manta_runtime.config import blocks_image, docker_network, job_environment
 
 logger = logging.getLogger(__name__)
 
 PLAYBOOK_FLOW_NAME = "run-playbook"
 PLAYBOOK_DEPLOYMENT = f"{PLAYBOOK_FLOW_NAME}/{PLAYBOOK_FLOW_NAME}"
-"""Created by this flow's serve() below; RunService dispatches runs at it by name."""
+"""Created by `manta_runtime.serve`; RunService dispatches runs at it by name."""
 
 
 class BlockRunFailedError(Exception):
@@ -208,10 +207,3 @@ def run_playbook(playbook: dict, config: dict, record: dict, output_prefix: str)
         runner=DockerStepRunner(),
     )
     return result.to_dict()
-
-
-if __name__ == "__main__":
-    # Served by a subprocess of the app (see main.py) that registers the deployment
-    # and executes its runs. TODO(post-MVP): run this as its own long-lived service
-    # so in-flight playbook runs survive app restarts.
-    run_playbook.serve(name=PLAYBOOK_FLOW_NAME)
