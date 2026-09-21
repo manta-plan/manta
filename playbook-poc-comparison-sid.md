@@ -4,7 +4,7 @@ A human comparison of:
 
 | Label | Branch | Head commit | Shorthand |
 | --- | --- | --- | --- |
-| **A** | `sid/docker-pools-in-docker-dir` | `67975b1` | Docker-Pool |
+| **A** | `sid/docker-pools-in-docker-dir` | `67975b1` | Docker-Pools |
 | **B** | `prefect-isolation-backend-integration-claude-poc` | `cfcc840` | Backend-Isolation |
 
 Both branch from `main` at `2e17900`.
@@ -37,7 +37,7 @@ Both PoCs either satisfy, or can easily be amended to satisfy the above requirem
 
 ## Other Citeria
 
-| Criteria | (A) Docker-Pool | (B) Backend-Isolation |
+| Criteria | (A) Docker-Pools | (B) Backend-Isolation |
 | --- | --- | --- |
 | **Kubernetes**: it should be easy to migrate to the k8s production environment | Yes, it's a configuration change to switch from a docker work pool to a k8s one (assuming Todo A1) | No, needs a k8s equivalent of `DockerStepRunner`. TODO maybe easier if we migrate `DockerStepRunner` -> docker work pool? |
 | The definition of blocks and playbooks is separated from the library of blocks and playbooks | Yes, `manta-blocks` and `manta-batteries` | No both are in `manta-blocks`, but it can (and should) be done (Todo B4) |
@@ -52,17 +52,17 @@ Both PoCs either satisfy, or can easily be amended to satisfy the above requirem
 
 Sid's suggestions for ways to improve each PoC to meet the requirements better / learn from each other's strengths:
 
-### (A) Docker-Pool
-- 1. Use S3-backed Prefect result storage instead of the shared Docker volume
-- 2. Make the playbook orchestrator run on a slim image
-- 3. Use one image per block environment. This will be required once 3rd party block contributors contribute non-PyPSA blocks.
+### (A) Docker-Pools
+1. Use S3-backed Prefect result storage instead of the shared Docker volume
+2. Make the playbook orchestrator run on a slim image
+3. Use one image per block environment. This will be required once 3rd party block contributors contribute non-PyPSA blocks.
 
-An implementation plan for these is at the end of `playbooks-requirements-proposal.md` in `sid/docker-pools-in-docker-dir`.
+An implementation plan for these is at the end of `playbooks-requirements-proposal.md` in `sid/docker-poolss-in-docker-dir`.
 
 ### (B) Backend-Isolation
-- 1. Use the docker work pool (like used by Docker-Pool) instead of `DockerStepRunner`
-- 2. Run the playbook orchestrator on a process work pool instead of a subprocess of the backend. This allows in-flight flows to survive a backend restart.
-- 3. Run each block environment in a separate image. This will be required once 3rd party block contributors contribute non-PyPSA blocks.
-- 4. Separate the library of PyPSA blocks into a new top-level directory & package `manta-batteries` (but let's call it something else)
+1. Use the docker work pool (like used by Docker-Pools) instead of `DockerStepRunner`
+2. Run the playbook orchestrator on a process work pool instead of a subprocess of the backend. This allows in-flight flows to survive a backend restart.
+3. Run each block environment in a separate image. This will be required once 3rd party block contributors contribute non-PyPSA blocks.
+4. Separate the library of PyPSA blocks into a new top-level directory & package `manta-batteries` (but let's call it something else)
 
 I tested the implementation of the first 3 above in [`sid/prefect-isolation-fixes-poc`](https://github.com/manta-plan/manta/compare/prefect-isolation-backend-integration-claude-poc...sid/prefect-isolation-fixes-poc)
