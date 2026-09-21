@@ -31,6 +31,8 @@ def test_the_committed_catalogue_carries_enough_to_validate_settings():
 def test_the_committed_catalogue_is_not_stale():
     # Regenerate with:
     #   MANTA_ENV=pypsa uv run python -m blocks > src/blocks/library/catalogue.json
+    pytest.importorskip("pypsa", reason="describing the blocks means importing them")
+
     from blocks.registry import catalogue
 
     # Other tests register fake blocks in this process, so compare only the
