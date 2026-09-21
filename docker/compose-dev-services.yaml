@@ -72,8 +72,8 @@ services:
       retries: 10
 
   # One-shot: exists to build (and sanity-check) the blocks runner image, then
-  # exits. The backend spawns one container from this image per block step of a
-  # playbook run (see backend/src/manta/workflows/playbook_flows.py); those
+  # exits. The orchestrator worker below spawns one container from this image per
+  # block step of a playbook run (see manta-runtime/src/manta_runtime/flows.py); those
   # containers are siblings of this stack, joined to its network so they can
   # reach seaweedfs, and hold nothing but manta-blocks and the blocks' own
   # dependencies — no Prefect, no Manta.
@@ -83,6 +83,63 @@ services:
       dockerfile: docker/blocks-runner.Dockerfile
     image: ${MANTA_BLOCKS_IMAGE}
     command: python -c "import blocks; print('blocks runner image ready')"
+
+  # One-shot: creates the orchestrator's process work pool and registers the
+  # run-playbook deployment, then exits. Idempotent — the pool is left alone if
+  # it exists and the deployment is updated rather than duplicated, which is how
+  # a code change rolls out. The backend only ever starts runs on the deployment
+  # this container has registered.
+  playbooks-provision:
+    build:
+      context: ..
+      dockerfile: docker/control.Dockerfile
+    image: ${MANTA_CONTROL_IMAGE}
+    command: python -m manta_runtime.deploy
+    restart: "no"
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      MANTA_ORCHESTRATOR_POOL: ${MANTA_ORCHESTRATOR_POOL}
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+
+  # Runs `run_playbook` itself, on a process pool. A playbook run waits out every
+  # one of its steps, so a container per run would idle for hours and take the
+  # run down with it if it were evicted; a long-lived worker costs almost nothing
+  # because it calls out and waits.
+  #
+  # This is also what makes a playbook run survive a backend restart: the app
+  # dispatches by deployment name and is not in the execution path at all.
+  prefect-worker-orchestrator:
+    image: ${MANTA_CONTROL_IMAGE}
+    command: prefect worker start --pool ${MANTA_ORCHESTRATOR_POOL} --type process
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      # How often this worker looks for work, and how fast a running flow ships
+      # its logs. Defaults (10s / 2s) are production-tuned; the integration suite
+      # lowers both via .env.test so a test run doesn't pay for them.
+      PREFECT_WORKER_QUERY_SECONDS: ${PREFECT_WORKER_QUERY_SECONDS:-10}
+      PREFECT_LOGGING_TO_API_BATCH_INTERVAL: ${PREFECT_LOGGING_TO_API_BATCH_INTERVAL:-2}
+      # What this worker starts per block step, and how those containers reach
+      # the object store. Compose-internal names: they are siblings on this
+      # stack's network, not children of this container.
+      MANTA_BLOCKS_IMAGE: ${MANTA_BLOCKS_IMAGE}
+      MANTA_DOCKER_NETWORK: ${MANTA_DOCKER_NETWORK}
+      MANTA_JOB_S3_ENDPOINT: ${MANTA_JOB_S3_ENDPOINT}
+      # Handed on to every block container; this worker never reads the data
+      # itself, it only moves record pointers between steps.
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes:
+      # Block containers are *siblings* on the host's daemon, not nested ones.
+      # Socket access is root-equivalent control of the host's docker; acceptable
+      # for this dev stack only, and Kubernetes replaces it with a k8s pool.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      playbooks-provision:
+        condition: service_completed_successfully
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2

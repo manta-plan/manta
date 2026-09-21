@@ -19,7 +19,12 @@ import the flow at request time; it dispatches runs by deployment name.
 | --- | --- |
 | `flows.py` | the `run-playbook` flow, the `run_block` task, and `DockerStepRunner` |
 | `config.py` | image name, docker network, and the object-store endpoint as containers see it |
-| `serve.py` | registers the deployment and executes its runs |
+| `deploy.py` | creates the work pool and registers the deployment (`python -m manta_runtime.deploy`) |
+
+`run-playbook` runs on a **process** work pool, drained by a long-lived worker
+(`docker/control.Dockerfile`). A playbook run holds one worker slot for its whole
+duration while it starts a container per step — which is why a run is unaffected
+by restarting the backend.
 
 Tracking: one flow run per playbook run (named `run-<run uuid>` by the
 backend), one task run per executed step (named `<step>[<block>]`).

@@ -176,16 +176,11 @@ def app_server(
         "POSTGRES_PORT": postgres_service["port"],
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
+        # Runs are dispatched at the run-playbook deployment and read back from
+        # here; the app neither executes flows nor starts containers, so nothing
+        # about block execution is configured on this process (the stack's
+        # orchestrator worker owns all of it — see docker/.env.test).
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
-        # Speed up the flow-serving subprocess's runner (default 10s) and log
-        # shipping (default 2s) so integration tests don't pay for Prefect's
-        # production-tuned polling intervals.
-        "PREFECT_RUNNER_POLL_FREQUENCY": "1",
-        "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
-        # Block containers spawned by playbook runs must join the test stack's
-        # network (the compose project is manta-test, not manta) to reach its
-        # seaweedfs; backend/.env carries the dev value.
-        "MANTA_DOCKER_NETWORK": "manta-test_default",
         "KC_HOST": keycloak_service["host"],
         "KC_PORT": keycloak_service["port"],
     }

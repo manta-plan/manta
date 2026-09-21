@@ -37,18 +37,35 @@ truth instead of two.
   database (not SQLite). UI at [localhost:4200](http://localhost:4200).
 - **blocks-runner** — one-shot boot step that builds (and sanity-checks) the
   blocks runner image from
-  [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile), then exits. The
-  backend spawns **one container per block step** of a playbook run from this
-  image (see
-  [backend playbook runs](../backend/README.md#playbook-runs)); those
-  containers are siblings of this stack (they won't appear in
-  `docker compose ps`; they join the stack's network and remove themselves
-  when done), and contain only manta-blocks and the blocks' dependencies — no
-  Prefect, no Manta.
+  [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile), then exits.
+  **One container per block step** of a playbook run is spawned from this image
+  (see [manta-runtime](../manta-runtime/README.md)); those containers are
+  siblings of this stack (they won't appear in `docker compose ps`; they join
+  the stack's network and remove themselves when done), and contain only
+  manta-blocks and the blocks' dependencies — no Prefect, no Manta.
+- **playbooks-provision** — one-shot boot step that creates the orchestrator's
+  process work pool and registers the `run-playbook` deployment, then exits.
+  Idempotent, so re-running `up` is how a code change rolls out.
+- **prefect-worker-orchestrator** — long-lived, and what actually runs a
+  playbook. It drains the process pool, and each playbook run holds one of its
+  slots for the run's whole duration while it starts a container per step. This
+  is also why a run survives restarting the backend: the backend dispatches at a
+  deployment by name and is never in the execution path.
+
+Both of the last two run the **control image**
+([`control.Dockerfile`](control.Dockerfile)): Prefect's own image plus
+manta-runtime and manta-blocks, with neither pixi nor PyPSA. Orchestration only
+moves record pointers between steps and resolves blocks from the committed
+catalogue, so it never imports one.
+
+The orchestrator worker mounts the host's docker socket, since block containers
+are siblings on that daemon rather than children of it. Socket access is
+root-equivalent control of the host's docker and is acceptable for this dev
+stack only; Kubernetes replaces it with a k8s work pool.
 
 The first `up` builds the blocks runner image, which installs the PyPSA stack —
 expect a few minutes once; later boots reuse the cache. After changing
-`manta-blocks/`, rebuild with `... up --build`.
+`manta-blocks/` or `manta-runtime/`, rebuild with `... up --build`.
 
 ## Testing
 

@@ -1,7 +1,4 @@
 import logging
-import os
-import subprocess
-import sys
 
 import uvicorn
 from fastapi import FastAPI
@@ -31,27 +28,6 @@ def create_app() -> FastAPI:
     run_migrations()
     logger.info("Ensuring S3 bucket exists...")
     S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
-
-    logger.info("Starting the Prefect flow-serving process...")
-    # manta-runtime registers the run-playbook deployment with the Prefect server
-    # and executes its runs. Its console output goes to /dev/null on purpose: the
-    # app's stdout stays Manta's own, and everything it logs ships to the Prefect
-    # API anyway (UI, and /v1/runs/{uuid}/logs). Never swap this for
-    # subprocess.PIPE — an unread pipe fills up (Prefect echoes every flow/task
-    # log line, block-container output included) and a full pipe blocks the next
-    # write, freezing runs mid-step. TODO(post-MVP): run this as its own
-    # long-lived service so in-flight runs survive app restarts.
-    try:
-        subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
-            [sys.executable, "-m", "manta_runtime.serve"],
-            env=os.environ.copy(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        logger.info("Prefect flow-serving process started")
-    except Exception as e:
-        logger.error(f"Failed to start the Prefect flow-serving process: {e}")
-        # Non-fatal: app continues, runs just won't execute
 
     app = FastAPI(title="Manta")
     app.frontend("/", directory="../frontend/dist")

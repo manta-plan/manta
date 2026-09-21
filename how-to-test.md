@@ -53,9 +53,11 @@ docker compose --env-file backend/.env -f docker/compose-dev-services.yaml up --
 This stays in the foreground, streaming every service's logs — leave it running
 and use a **second terminal** for everything that follows. The first boot builds
 the blocks-runner image (Python 3.12 + PyPSA + HiGHS + manta-blocks) — expect
-**3–6 minutes** once; it's cached afterwards. `blocks-runner` is a one-shot
-service that only exists to build and sanity-check that image, then exits; the
-backend spawns block containers from it during runs.
+**3–6 minutes** once; it's cached afterwards — and the much smaller control
+image the orchestrator runs on. Two one-shot services exit on purpose:
+`blocks-runner` exists only to build and sanity-check the block image, and
+`playbooks-provision` creates the orchestrator's work pool and registers the
+`run-playbook` deployment.
 
 Verify it came up — in the second terminal, from the **repo root**:
 
@@ -63,10 +65,13 @@ Verify it came up — in the second terminal, from the **repo root**:
 docker compose --env-file backend/.env -f docker/compose-dev-services.yaml ps -a
 ```
 
-Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server` **healthy**, and
-`blocks-runner` **Exited (0)** — that exit is correct. The Prefect UI is at
-<http://localhost:4200>; its *Deployments* page stays empty until the backend
-starts (step 2), because the backend is what serves the `run-playbook` flow.
+Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server` and
+`prefect-worker-orchestrator` **running**, with `blocks-runner` and
+`playbooks-provision` **Exited (0)** — those exits are correct. The Prefect UI
+is at <http://localhost:4200>: *Work Pools* shows `manta-orchestrator` with a
+live worker, and *Deployments* shows `run-playbook`, both before the backend
+starts. The backend is not in the execution path — it only dispatches runs at
+that deployment by name, which is why a run survives restarting it.
 
 ## 2. Start the backend
 

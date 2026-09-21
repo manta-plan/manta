@@ -34,8 +34,9 @@ ordinary import, not a cross-package contract.
 - **The `run-playbook` flow** — rebuilds the playbook from its submitted document
   (blocks resolved from the committed catalogue, since this process cannot import
   them), validates it, and walks it with manta-blocks' engine. It is served as a
-  Prefect deployment by `manta_runtime.serve`, which the app starts as a
-  subprocess — that is what lets the API dispatch runs by name.
+  Prefect deployment on a **process work pool**, drained by a long-lived worker
+  container — that is what lets the API dispatch runs by name, and what keeps an
+  in-flight run alive across a backend restart.
 - **One Prefect task per step** (`run_block`, task-run name `<step>[<block>]`) —
   spawns the step's container, relays its log lines live into the task run,
   parses the result, and cleans the container up.
@@ -131,11 +132,18 @@ machine, per-task retries and timeouts available, per-step tracking, log
 aggregation, and a UI — none of which is worth hand-building. Avoiding it would
 mean owning queueing, state, and observability ourselves.
 
-There is exactly **one** deployment, `run-playbook`, registered when the app's
-flow-serving subprocess starts. Playbooks, configs, records, and output locations
-all travel as flow-run *parameters*, so nothing is ever deployed per playbook or
-per block — editing a playbook redeploys nothing. Blocks need no deployments at
-all: a step is a task run that drives a container directly.
+There is one deployment, `run-playbook`, registered by the one-shot
+`playbooks-provision` service when the stack boots. Playbooks, configs, records
+and output locations all travel as flow-run *parameters*, so nothing is ever
+deployed per playbook or per block — editing a playbook redeploys nothing.
+Blocks need no deployments at all: a step is a task run that drives a container
+directly.
+
+It runs on a **process** work pool rather than a docker one. `run_playbook`
+blocks for the whole playbook while its steps run, so as a per-run container it
+would idle for hours, exposed to eviction, and would orphan its already-started
+steps if it died. A long-lived process worker costs almost nothing, since it
+calls out and waits.
 
 ## How are the blocks of one playbook run tracked and grouped?
 
@@ -153,11 +161,6 @@ playbooks appear in the same flat list; their storage paths
 (`steps/<nesting>/<step>.<ext>`) encode the nesting.
 
 ## What is missing for production, what can go wrong, and what are the alternatives?
-
-**Durability (top gap):** the `run-playbook` flow executes in a subprocess of the
-app, so in-flight runs do not survive an app restart. The fix is mechanical:
-serve the flow from its own long-lived worker service (same codebase and image as
-the backend); the API already only talks to Prefect by name.
 
 **Correctness & robustness:** no retries or timeouts on steps yet (both are
 one-line Prefect task options; a retried step overwrites its own `output_base`,

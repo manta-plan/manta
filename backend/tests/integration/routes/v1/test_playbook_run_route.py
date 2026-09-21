@@ -15,12 +15,13 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 NETWORK_FIXTURE = FIXTURES / "network.nc"
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
-# The app's flow-serving subprocess (see main.py) registers the run-playbook
-# deployment with the Prefect server after startup — a cold start.
+# The stack's playbooks-provision service registers the run-playbook deployment
+# at boot and `up --wait` gates on it, so this is a guard against racing a
+# still-settling stack rather than a real wait.
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 60.0
-# A playbook run spawns one container per step (three steps here) plus the
-# orchestrator's own, each polled by Prefect at multi-second intervals, so this
-# is dominated by infrastructure latency rather than the (sub-second) solves.
+# A playbook run spawns one container per step (three steps here), picked up by
+# the orchestrator worker at its polling interval, so this is dominated by
+# infrastructure latency rather than the (sub-second) solves.
 _PLAYBOOK_RUN_COMPLETION_TIMEOUT = 300.0
 
 _RUN_CONFIG = {
@@ -176,8 +177,8 @@ def test_a_playbook_runs_end_to_end_with_a_container_per_block(
     assert UUID(run_uuid)
     assert body["playbook_name"] == "cluster-expand-dispatch"
 
-    # Then it completes, executed by the docker work pool (orchestrator and each
-    # block step in their own containers)
+    # Then it completes, executed by the orchestrator worker with each block step
+    # in its own container
     assert _wait_for_terminal_status(app_server, run_uuid) == "COMPLETED"
 
     # And each step of the playbook reports its own (completed) state; the myopic

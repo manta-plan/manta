@@ -14,9 +14,9 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 NETWORK_FIXTURE = FIXTURES / "network.nc"
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
-# The flow-serving subprocess (spawned by create_app()) needs to start up and
-# register its deployment with the Prefect server before `POST /runs` can
-# submit a run against it — a cold start.
+# The stack's playbooks-provision service registers the deployment at boot and
+# `up --wait` gates on it, so this should be immediate — it is a guard against
+# racing a still-settling stack, not a real wait.
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 60.0
 
 _RUN_CONFIG = {
