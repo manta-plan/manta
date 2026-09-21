@@ -12,11 +12,18 @@ dependencies = [
     "manta-blocks",
     # Pinned to the Prefect server's version: this process talks to its API.
     "prefect==3.8.3",
-    # Drives the block containers. Blocks never run in this process; the SDK
-    # spawns them from the blocks runner image.
-    "docker>=7.1.0",
+    # Prefect's result storage on the object store, which is how a block's output
+    # record travels from its container back to the orchestrator. Both sides need
+    # it: the block container writes, the orchestrator reads.
+    "prefect-aws>=0.5",
     "python-dotenv>=1.2.2",
 ]
+
+[project.optional-dependencies]
+# Only what creates and drains the docker work pool needs this: the one-shot
+# provisioner and the worker. Block containers never import it, which is what
+# lets the execution image stay a thin layer on the bare blocks image.
+docker = ["prefect-docker>=0.6"]
 
 [tool.uv.sources]
 manta-blocks = { path = "../manta-blocks", editable = true }
@@ -47,4 +54,6 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]  # bare `assert` is how pytest expresses assertions
+# S101: bare `assert` is how pytest expresses assertions.
+# S105/S106: test fixtures spell out fake credentials on purpose.
+"tests/**" = ["S101", "S105", "S106"]

@@ -6,11 +6,11 @@ from manta_runtime import PLAYBOOK_DEPLOYMENT
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import (
     FlowRunFilter,
-    FlowRunFilterId,
+    FlowRunFilterParentFlowRunId,
     LogFilter,
     LogFilterFlowRunId,
 )
-from prefect.client.schemas.objects import FlowRun, TaskRun
+from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunStepLogsResult,
     GetRunStepResult,
     GetRunStepsResult,
     GetRunSummaryResult,
@@ -46,6 +47,14 @@ def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
         return flow_runs
 
 
+def _read_logs(flow_run_id: UUID) -> list[str]:
+    with get_client(sync_client=True) as client:
+        logs = client.read_logs(
+            log_filter=LogFilter(flow_run_id=LogFilterFlowRunId(any_=[flow_run_id]))
+        )
+        return [log.message for log in logs]
+
+
 def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
     with get_client(sync_client=True) as client:
         flow_run = client.read_flow_run(flow_run_id)
@@ -55,26 +64,28 @@ def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
         return flow_run, [log.message for log in logs]
 
 
-def _read_flow_run_with_task_runs(flow_run_id: UUID) -> tuple[FlowRun, list[TaskRun]]:
-    """The run plus its task runs — a playbook run's steps, in start order.
+def _read_flow_run_with_steps(flow_run_id: UUID) -> tuple[FlowRun, list[FlowRun]]:
+    """The run plus its steps, in start order.
 
-    Every step of a playbook (nested ones included) executes as one task run of
-    the playbook flow run, so this one query is the complete step list.
+    Every step of a playbook (nested ones included) executes as its own child
+    flow run of the playbook's flow run, so this one query is the complete step
+    list. Steps are identified by flow *run* name (`<step>[<block>]`); the flow
+    name is `run-block` for every one of them.
     """
     with get_client(sync_client=True) as client:
         flow_run = client.read_flow_run(flow_run_id)
-        task_runs = client.read_task_runs(
-            flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[flow_run_id]))
+        steps = client.read_flow_runs(
+            flow_run_filter=FlowRunFilter(
+                parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
+            )
         )
         return flow_run, sorted(
-            task_runs,
-            key=lambda task_run: (
-                task_run.start_time or task_run.expected_start_time or task_run.created
-            ),
+            steps,
+            key=lambda step: step.start_time or step.expected_start_time or step.created,
         )
 
 
-def _flow_run_status(flow_run: FlowRun | TaskRun) -> str:
+def _flow_run_status(flow_run: FlowRun) -> str:
     return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
 
 
@@ -238,21 +249,42 @@ class RunService:
     def get_run_steps(self, run_uuid: UUID) -> GetRunStepsResult:
         """Each step of a playbook run, and how it is doing.
 
-        A step is a task run of the run's flow run, named `<step>[<block>]`.
+        A step is a child flow run of the run's flow run, named `<step>[<block>]`.
         """
         run = self._get_run(run_uuid)
 
-        flow_run, task_runs = _read_flow_run_with_task_runs(run.prefect_flow_run_id)
+        flow_run, steps = _read_flow_run_with_steps(run.prefect_flow_run_id)
 
         return GetRunStepsResult(
             uuid=run.uuid,
             run_status=_flow_run_status(flow_run),
             steps=[
-                GetRunStepResult(
-                    name=task_run.name or str(task_run.id), status=_flow_run_status(task_run)
-                )
-                for task_run in task_runs
+                GetRunStepResult(name=step.name or str(step.id), status=_flow_run_status(step))
+                for step in steps
             ],
+        )
+
+    def get_run_step_logs(self, run_uuid: UUID, step: str) -> GetRunStepLogsResult:
+        """One step's own logs: what the block printed and logged, and nothing else.
+
+        A step is its own flow run, so its logs are already separate — the block's
+        solver output goes straight from its container to the Prefect API, with
+        nothing relaying it.
+        """
+        run = self._get_run(run_uuid)
+
+        _, steps = _read_flow_run_with_steps(run.prefect_flow_run_id)
+        matched = next((candidate for candidate in steps if candidate.name == step), None)
+        if matched is None:
+            raise HTTPException(
+                status_code=404, detail=f"Run {run_uuid} has no step named {step!r}"
+            )
+
+        return GetRunStepLogsResult(
+            uuid=run.uuid,
+            step=step,
+            step_status=_flow_run_status(matched),
+            logs=_read_logs(matched.id),
         )
 
     def get_run_outputs(self, run_uuid: UUID) -> ListRunOutputsResult:

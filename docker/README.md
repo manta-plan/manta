@@ -43,25 +43,40 @@ truth instead of two.
   siblings of this stack (they won't appear in `docker compose ps`; they join
   the stack's network and remove themselves when done), and contain only
   manta-blocks and the blocks' dependencies — no Prefect, no Manta.
-- **playbooks-provision** — one-shot boot step that creates the orchestrator's
-  process work pool and registers the `run-playbook` deployment, then exits.
-  Idempotent, so re-running `up` is how a code change rolls out.
+- **blocks-exec** — one-shot boot step that builds the **execution image**
+  ([`exec.Dockerfile`](exec.Dockerfile)) as a thin layer over the blocks runner
+  image, adding Prefect and manta-runtime. A Prefect worker never marks a flow
+  run completed itself — the state and result are reported by the engine inside
+  the container — so a bare block image would run its block, exit 0, and leave
+  the run pending for ever. Block authors neither build nor name this image.
+- **playbooks-provision** — one-shot boot step that creates both work pools,
+  registers the `run-block` and `run-playbook` deployments, and points Prefect's
+  result storage at the object store, then exits. Idempotent, so re-running `up`
+  is how an image or wiring change rolls out.
+- **prefect-worker-blocks** — long-lived dispatcher for the **docker** pool: it
+  asks the daemon for a fresh container per block step and reaps it. It never
+  imports a block and holds no block dependencies.
 - **prefect-worker-orchestrator** — long-lived, and what actually runs a
-  playbook. It drains the process pool, and each playbook run holds one of its
-  slots for the run's whole duration while it starts a container per step. This
-  is also why a run survives restarting the backend: the backend dispatches at a
+  playbook. It drains the **process** pool, and each playbook run holds one of its
+  slots for the run's whole duration while its steps run elsewhere. This is also
+  why a run survives restarting the backend: the backend dispatches at a
   deployment by name and is never in the execution path.
 
-Both of the last two run the **control image**
+The last three run the **control image**
 ([`control.Dockerfile`](control.Dockerfile)): Prefect's own image plus
 manta-runtime and manta-blocks, with neither pixi nor PyPSA. Orchestration only
 moves record pointers between steps and resolves blocks from the committed
 catalogue, so it never imports one.
 
-The orchestrator worker mounts the host's docker socket, since block containers
+Only the blocks worker mounts the host's docker socket, since block containers
 are siblings on that daemon rather than children of it. Socket access is
 root-equivalent control of the host's docker and is acceptable for this dev
 stack only; Kubernetes replaces it with a k8s work pool.
+
+A step's output record travels back through Prefect's result storage, which
+points at SeaweedFS rather than a shared volume — a volume would be the one thing
+tying every container to a single machine. Only the small record pointers go that
+way; model data goes straight from block to object store.
 
 The first `up` builds the blocks runner image, which installs the PyPSA stack —
 expect a few minutes once; later boots reuse the cache. After changing

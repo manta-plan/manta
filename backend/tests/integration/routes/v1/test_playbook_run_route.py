@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx2
@@ -192,6 +193,23 @@ def test_a_playbook_runs_end_to_end_with_a_container_per_block(
         "dispatch[rolling_horizon_dispatch]",
     ]
     assert {step["status"] for step in steps} == {"COMPLETED"}
+
+    # And each step's own log is available on its own — a step is its own flow
+    # run, so nothing relays anything
+    step_logs_response = httpx2.get(
+        f"{app_server}/v1/runs/{run_uuid}/steps/{quote(steps[0]['name'])}/logs"
+    )
+    assert step_logs_response.status_code == 200
+    step_logs = step_logs_response.json()
+    assert step_logs["step"] == steps[0]["name"]
+    assert step_logs["step_status"] == "COMPLETED"
+    assert step_logs["logs"]
+
+    # And asking for a step that never ran says so
+    missing_logs_response = httpx2.get(
+        f"{app_server}/v1/runs/{run_uuid}/steps/{quote('expansion_myopic[myopic]')}/logs"
+    )
+    assert missing_logs_response.status_code == 404
 
     # And the run's outputs are browsable: the input copy plus one file per step
     # that ran, all under the run's own prefix (requirement: users can view each

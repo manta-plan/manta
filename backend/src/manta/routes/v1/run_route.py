@@ -9,6 +9,7 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunStepLogsResult,
     GetRunStepsResult,
     GetRunSummaryResult,
     ListRunOutputsResult,
@@ -60,6 +61,13 @@ def get_run_logs(run_uuid: UUID, service: RunService = Depends()) -> GetRunLogsR
 @router.get("/{run_uuid}/steps", response_model=GetRunStepsResult)
 def get_run_steps(run_uuid: UUID, service: RunService = Depends()) -> GetRunStepsResult:
     return service.get_run_steps(run_uuid)
+
+
+@router.get("/{run_uuid}/steps/{step}/logs", response_model=GetRunStepLogsResult)
+def get_run_step_logs(
+    run_uuid: UUID, step: str, service: RunService = Depends()
+) -> GetRunStepLogsResult:
+    return service.get_run_step_logs(run_uuid, step)
 
 
 @router.get("/{run_uuid}/outputs", response_model=ListRunOutputsResult)

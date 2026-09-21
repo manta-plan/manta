@@ -35,6 +35,18 @@ def _fake_flow_run(state_type: str):
     return SimpleNamespace(state=SimpleNamespace(type=SimpleNamespace(value=state_type)))
 
 
+def _step_flow_run(name: str, start_time: int | None, state: str):
+    """A step: a child flow run of the playbook's flow run."""
+    return SimpleNamespace(
+        name=name,
+        id=uuid4(),
+        start_time=start_time,
+        expected_start_time=start_time if start_time is not None else 3,
+        created=0,
+        state=SimpleNamespace(type=SimpleNamespace(value=state)),
+    )
+
+
 def _existing_project() -> Project:
     project = Project(name="North Sea Wind")
     project.id = 1
@@ -418,7 +430,7 @@ def test_create_playbook_run_with_missing_input_file_raises_404(
     run_service_module.run_deployment.assert_not_called()
 
 
-def test_get_run_steps_reports_each_task_run_of_the_playbook_flow(
+def test_get_run_steps_reports_each_child_flow_run_of_the_playbook_flow(
     monkeypatch: pytest.MonkeyPatch, mock_db_class
 ) -> None:
     # Given
@@ -426,24 +438,14 @@ def test_get_run_steps_reports_each_task_run_of_the_playbook_flow(
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run})
 
-    def _task_run(name: str, start_time: int | None, state: str):
-        return SimpleNamespace(
-            name=name,
-            id=uuid4(),
-            start_time=start_time,
-            expected_start_time=start_time if start_time is not None else 3,
-            created=0,
-            state=SimpleNamespace(type=SimpleNamespace(value=state)),
-        )
-
     fake_client = MagicMock(
         read_flow_run=MagicMock(return_value=_fake_flow_run("RUNNING")),
-        read_task_runs=MagicMock(
+        read_flow_runs=MagicMock(
             return_value=[
-                _task_run("expansion[overnight_capacity_expansion]", 2, "RUNNING"),
-                _task_run("cluster[cluster_time]", 1, "COMPLETED"),
+                _step_flow_run("expansion[overnight_capacity_expansion]", 2, "RUNNING"),
+                _step_flow_run("cluster[cluster_time]", 1, "COMPLETED"),
                 # Not started yet: ordered by when it is expected to.
-                _task_run("dispatch[rolling_horizon_dispatch]", None, "PENDING"),
+                _step_flow_run("dispatch[rolling_horizon_dispatch]", None, "PENDING"),
             ]
         ),
     )
@@ -460,6 +462,59 @@ def test_get_run_steps_reports_each_task_run_of_the_playbook_flow(
         ("expansion[overnight_capacity_expansion]", "RUNNING"),
         ("dispatch[rolling_horizon_dispatch]", "PENDING"),
     ]
+
+
+def test_get_run_step_logs_returns_only_that_steps_logs(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose steps are separate flow runs, each with its own logs
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run})
+    cluster = _step_flow_run("cluster[cluster_time]", 1, "COMPLETED")
+    dispatch = _step_flow_run("dispatch[rolling_horizon_dispatch]", 2, "RUNNING")
+
+    logs_by_flow_run = {
+        cluster.id: [SimpleNamespace(message="clustering 24 snapshots")],
+        dispatch.id: [SimpleNamespace(message="solving horizon 1")],
+    }
+    fake_client = MagicMock(
+        read_flow_run=MagicMock(return_value=_fake_flow_run("RUNNING")),
+        read_flow_runs=MagicMock(return_value=[cluster, dispatch]),
+        read_logs=MagicMock(
+            side_effect=lambda log_filter: logs_by_flow_run[log_filter.flow_run_id.any_[0]]
+        ),
+    )
+    _patch_get_client(monkeypatch, fake_client)
+    service = _playbook_run_service(db)
+
+    # When
+    result = service.get_run_step_logs(run_uuid=run.uuid, step="cluster[cluster_time]")
+
+    # Then only that step's own logs come back, with its own state
+    assert result.step == "cluster[cluster_time]"
+    assert result.step_status == "COMPLETED"
+    assert result.logs == ["clustering 24 snapshots"]
+
+
+def test_get_run_step_logs_for_an_unknown_step_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run})
+    fake_client = MagicMock(
+        read_flow_run=MagicMock(return_value=_fake_flow_run("RUNNING")),
+        read_flow_runs=MagicMock(return_value=[_step_flow_run("cluster[cluster_time]", 1, "OK")]),
+    )
+    _patch_get_client(monkeypatch, fake_client)
+    service = _playbook_run_service(db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.get_run_step_logs(run_uuid=run.uuid, step="nope[nope]")
+    assert exc_info.value.status_code == 404
 
 
 def test_get_run_outputs_lists_the_files_under_the_runs_prefix(

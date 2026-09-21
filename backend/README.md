@@ -60,20 +60,23 @@ Users run modeling work as **playbooks** — chains of **blocks** — defined in
   playbook + config against the committed block catalogue (422 with per-step,
   per-field issues), copies the input file into the run's own storage prefix,
   and dispatches the `run-playbook` Prefect deployment;
-- `GET /v1/runs/{uuid}/steps` and `GET /v1/runs/{uuid}/outputs` expose each
-  block's state and produced files.
+- `GET /v1/runs/{uuid}/steps`, `GET /v1/runs/{uuid}/steps/{step}/logs` and
+  `GET /v1/runs/{uuid}/outputs` expose each block's state, its own log, and the
+  files it produced.
 
 The execution runtime is not here: it is [manta-runtime](../manta-runtime),
-which the app starts as a subprocess and then only ever addresses by deployment
-name. Its `run-playbook` flow walks the playbook with manta-blocks' engine and
-runs **every block step as a Prefect task run that spawns its own container**
-from the blocks runner image (see [docker/README.md](../docker/README.md)).
-Block *code* never runs in the backend process, and neither does the flow.
+which the stack runs as its own services and the app only ever addresses by
+deployment name. Its `run-playbook` flow walks the playbook with manta-blocks'
+engine and dispatches **every block step as its own flow run on a docker work
+pool**, so each step executes in a fresh container (see
+[docker/README.md](../docker/README.md)). Neither block code nor the flow runs in
+the backend process, and the backend needs no Docker access.
 
 A run's artifacts live under `s3://<bucket>/<project>/runs/<run>/`: `input/`
 holds the copy of the file the run started from, `steps/` one output per
 executed step. Tracking: the playbook's flow run is named `run-<run uuid>` and
-each step is a task run named `<step>[<block>]` inside it.
+each step is a child flow run named `<step>[<block>]` under it, which is what
+`/steps` and `/steps/{step}/logs` read.
 
 ## File storage
 

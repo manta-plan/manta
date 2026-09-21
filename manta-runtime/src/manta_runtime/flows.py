@@ -1,176 +1,91 @@
-"""The Prefect flow that runs playbooks, and the containers it drives blocks in.
+"""The two Prefect flows every playbook run is made of.
 
-`run-playbook` (registered and executed by `manta_runtime.serve`) walks a
-playbook document with manta-blocks' engine, and every block step becomes one
-Prefect task run that spawns one container from the blocks runner image.
+`run-playbook` walks a playbook document with manta-blocks' engine and dispatches
+each step to `run-block`. Every `run-block` flow run is picked up by the docker
+work pool, so each step executes in its own throwaway container from that
+environment's execution image.
 
-The containers are deliberately dumb: the image holds only manta-blocks and the
-blocks' own dependencies — no Prefect, no Manta — and each one runs the
-orchestration-agnostic `python -m blocks.run_one` entrypoint. Everything Prefect-
-or Docker-shaped stays on this side of the boundary, so the block image is
-exactly what an outside block author tests against.
+Both flows are deployed once, statically (see `deploy.py`). Playbooks are data
+passed in as parameters, so nothing is ever deployed per playbook or per block.
+
+Everything passed in has crossed a process boundary, so records arrive as plain
+`{"url": ...}` data. A loaded model could never travel this way, which is exactly
+why blocks pass pointers to data rather than the data itself.
 
 Tracking: one flow run per playbook run (named `run-<run uuid>` by the backend),
-one task run per executed step (named `<step>[<block>]`), queryable by the flow
-run's id — see RunService.get_run_steps.
+one child flow run per executed step (named `<step>[<block>]`), queryable by the
+playbook flow run's id — see RunService.get_run_steps.
 """
 
-import contextlib
-import json
 import logging
-from uuid import uuid4
 
-from blocks import DataRecord
+from blocks import BlockSpec, DataRecord
 from blocks.library import library_catalogue
-from blocks.run_one import parse_result_line
+from blocks.registry import get_block
 from playbooks import execute_playbook, parse_doc, playbook_from_doc
-from prefect import flow, task
-
-from manta_runtime.config import blocks_image, docker_network, job_environment
+from prefect import flow
+from prefect.deployments import run_deployment
 
 logger = logging.getLogger(__name__)
 
+BLOCK_FLOW_NAME = "run-block"
+BLOCK_DEPLOYMENT = f"{BLOCK_FLOW_NAME}/{BLOCK_FLOW_NAME}"
+
 PLAYBOOK_FLOW_NAME = "run-playbook"
 PLAYBOOK_DEPLOYMENT = f"{PLAYBOOK_FLOW_NAME}/{PLAYBOOK_FLOW_NAME}"
-"""Created by `manta_runtime.serve`; RunService dispatches runs at it by name."""
+"""Created by `manta_runtime.deploy`; RunService dispatches runs at it by name."""
 
 
 class BlockRunFailedError(Exception):
-    """Raised when a block's container did not produce a result."""
+    """Raised when a step's flow run did not complete."""
 
 
-def _docker_client():
-    # Imported lazily so importing this module (e.g. for PLAYBOOK_DEPLOYMENT) never
-    # requires a reachable Docker daemon.
-    import docker
-
-    return docker.from_env()
-
-
-def _step_logger() -> logging.Logger:
-    """The task run's logger inside Prefect (so step logs land with the step in the
-    API/UI), this module's logger anywhere else (unit tests call the plain
-    function without a run context)."""
-    try:
-        from prefect import get_run_logger
-
-        return get_run_logger()
-    except Exception:
-        return logger
-
-
-def _run_block_in_container(
-    block_name: str,
+@flow(
+    name=BLOCK_FLOW_NAME,
+    flow_run_name="{step_name}[{block}]",
+    # The step's output record, read back by the orchestrator from the object
+    # store. The data itself never travels this way — only the pointer to it.
+    persist_result=True,
+    # A block's own print()s are part of its log, and solvers are talkative.
+    log_prints=True,
+)
+def run_block(
+    block: str,
     step_name: str,
     config: dict,
     record: dict,
-    inputs: dict[str, dict],
+    inputs: dict[str, dict] | None,
     output_base: str,
 ) -> dict:
-    """Run one block in its own container and return the record it produced.
+    """Run one block by name, in this container, and report where its result went.
 
-    The container's stdout/stderr is relayed line by line into this task's log, so
-    a block's solver output lands in Prefect next to the step it belongs to. The
-    result comes back as the entrypoint's final RESULT_MARKER line — parsed here,
-    in the same process that orchestrates the playbook, so there is no result
-    side-channel to keep consistent.
+    There is one deployment of this flow, shared by every block: the block to run
+    arrives as a parameter and the flow run is named after the step, so per-step
+    visibility survives without a deployment per block.
+
+    This is the only Manta code that runs inside a block's environment, and it
+    does not import a block until asked for one by name.
     """
-    client = _docker_client()
-    image = blocks_image()
-    try:
-        client.images.get(image)
-    except Exception as exc:
-        raise BlockRunFailedError(
-            f"blocks runner image {image!r} is not available locally; build it with "
-            "the compose stack (see docker/README.md)"
-        ) from exc
-
-    command = [
-        "python",
-        "-m",
-        "blocks.run_one",
-        block_name,
-        "--record",
-        json.dumps(record),
-        "--output-base",
-        output_base,
-        "--config",
-        json.dumps(config),
-        "--inputs",
-        json.dumps(inputs),
-    ]
-    container = client.containers.run(
-        image,
-        command=command,
-        environment=job_environment(),
-        network=docker_network(),
-        name=f"manta-block-{step_name}-{uuid4().hex[:8]}",
-        detach=True,
+    block_cls = get_block(block)
+    wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
+    result = block_cls(block_cls.merge_config(config, wired)).run(
+        DataRecord.from_dict(record), output_base
     )
-
-    step_logger = _step_logger()
-    try:
-        result: DataRecord | None = None
-        for line in _log_lines(container):
-            step_logger.info("[%s] %s", step_name, line)
-            parsed = parse_result_line(line)
-            if parsed is not None:
-                result = parsed
-        exit_code = container.wait().get("StatusCode", -1)
-    finally:
-        # Cleanup only; the run's outcome is decided by exit code and result line.
-        with contextlib.suppress(Exception):
-            container.remove(force=True)
-
-    if exit_code != 0:
-        raise BlockRunFailedError(
-            f"step {step_name!r} ({block_name}) exited with code {exit_code}; "
-            "its log is in this task's output above"
-        )
-    if result is None:
-        raise BlockRunFailedError(
-            f"step {step_name!r} ({block_name}) exited cleanly but never reported a result record"
-        )
     return result.to_dict()
 
 
-def _log_lines(container):
-    """The container's output, line by line, as it is produced."""
-    buffer = b""
-    for chunk in container.logs(stream=True, follow=True):
-        buffer += chunk
-        while b"\n" in buffer:
-            line, _, buffer = buffer.partition(b"\n")
-            yield line.decode(errors="replace").rstrip("\r")
-    if buffer:
-        yield buffer.decode(errors="replace")
-
-
-@task(task_run_name="{step_name}[{block_name}]")
-def run_block(
-    block_name: str,
-    step_name: str,
-    config: dict,
-    record: dict,
-    inputs: dict[str, dict],
-    output_base: str,
-) -> dict:
-    """One playbook step: one task run, one container."""
-    return _run_block_in_container(block_name, step_name, config, record, inputs, output_base)
-
-
-class DockerStepRunner:
-    """manta-blocks' StepRunner seam, implemented as one container per step.
+class PrefectStepRunner:
+    """manta-blocks' StepRunner seam, implemented as one flow run per step.
 
     The engine hands over one fully spelled-out block invocation at a time; each
-    becomes a `run_block` task run inside the current playbook flow run. Moving
-    execution to k8s later means swapping the container call in
-    `_run_block_in_container` for a Job — nothing above this class changes.
+    becomes a `run-block` flow run on the docker work pool, which the worker turns
+    into a fresh container. Moving execution to Kubernetes later means changing
+    the work pool's type, not this class.
     """
 
     def run_block(
         self,
-        block,
+        block: BlockSpec,
         *,
         step_name: str,
         config: dict,
@@ -178,15 +93,27 @@ class DockerStepRunner:
         inputs: dict[str, DataRecord],
         output_base: str,
     ) -> DataRecord:
-        result = run_block(
-            block_name=block.name,
-            step_name=step_name,
-            config=config,
-            record=record.to_dict(),
-            inputs={name: value.to_dict() for name, value in inputs.items()},
-            output_base=output_base,
+        # Dispatching from inside a flow makes the block run a child of the
+        # playbook run, which is what groups a run's steps under it in Prefect.
+        flow_run = run_deployment(
+            name=BLOCK_DEPLOYMENT,
+            parameters={
+                "block": block.name,
+                "step_name": step_name,
+                "config": config,
+                "record": record.to_dict(),
+                "inputs": {name: value.to_dict() for name, value in inputs.items()},
+                "output_base": output_base,
+            },
         )
-        return DataRecord.from_dict(result)
+        state = flow_run.state
+        if state is None or not state.is_completed():
+            raise BlockRunFailedError(
+                f"step {step_name!r} ({block.name}) ended in state "
+                f"{state.type.value if state else 'UNKNOWN'}; "
+                f"its log is on flow run {flow_run.id}"
+            )
+        return DataRecord.from_dict(state.result())
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)
@@ -195,8 +122,8 @@ def run_playbook(playbook: dict, config: dict, record: dict, output_prefix: str)
 
     This is what the backend dispatches when a user presses Run. Blocks are
     resolved from the committed catalogue — this process never imports them (they
-    need PyPSA, which only exists inside the runner image) — and the document is
-    validated again here before any container is started.
+    need their own environment, which only the execution images have) — and the
+    document is validated again here before any step is dispatched.
     """
     built = playbook_from_doc(parse_doc(playbook), catalogue=library_catalogue())
     result = execute_playbook(
@@ -204,6 +131,6 @@ def run_playbook(playbook: dict, config: dict, record: dict, output_prefix: str)
         DataRecord.from_dict(record),
         config,
         output_prefix=output_prefix,
-        runner=DockerStepRunner(),
+        runner=PrefectStepRunner(),
     )
     return result.to_dict()

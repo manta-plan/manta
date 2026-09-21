@@ -1,167 +1,156 @@
+"""The transport between the orchestrator and a block's own container.
+
+`run-block` is what executes inside that container, and `PrefectStepRunner` is
+what dispatches at it. Both are exercised without Prefect infrastructure: the
+flow through its undecorated function, the runner with `run_deployment` stubbed.
+"""
+
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from blocks.registry import BlockDescription, BlockSpec, register
 
 from manta_runtime import flows
-from manta_runtime.flows import BlockRunFailedError, _run_block_in_container
+from manta_runtime.flows import BLOCK_DEPLOYMENT, BlockRunFailedError, PrefectStepRunner
 
 
-class _FakeContainer:
-    def __init__(self, log_chunks: list[bytes], exit_code: int = 0) -> None:
-        self._log_chunks = log_chunks
-        self._exit_code = exit_code
-        self.removed = False
-
-    def logs(self, stream: bool, follow: bool):
-        yield from self._log_chunks
-
-    def wait(self) -> dict:
-        return {"StatusCode": self._exit_code}
-
-    def remove(self, force: bool = False) -> None:
-        self.removed = True
+class _FakeConfig(ConfigSchema):
+    label: str = ""
+    source: DataRecord | None = None
 
 
-def _fake_docker(monkeypatch, container: _FakeContainer) -> MagicMock:
-    client = MagicMock()
-    client.images.get.return_value = object()  # the image exists
-    client.containers.run.return_value = container
-    monkeypatch.setattr(flows, "_docker_client", lambda: client)
-    return client
+@register("runtime_fake")
+class _RuntimeFake(MantaBlock[_FakeConfig]):
+    """Records what it was given, so the transport can be checked end to end."""
+
+    ENV = "default"
+    CONFIG = _FakeConfig
+    DIMS = BlockDims()
+    INPUTS = frozenset({"source"})
+
+    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+        wired = self.config.source.url if self.config.source else "-"
+        return DataRecord(url=f"{output_base}|{record.url}|{self.config.label}|{wired}")
 
 
-def _job_env(monkeypatch) -> None:
-    monkeypatch.setenv("S3_ACCESS_KEY", "test-key")
-    monkeypatch.setenv("S3_SECRET_KEY", "test-secret")
-    monkeypatch.setenv("MANTA_JOB_S3_ENDPOINT", "http://seaweedfs:8333")
-    monkeypatch.setenv("MANTA_BLOCKS_IMAGE", "manta-blocks-runner:test")
-    monkeypatch.setenv("MANTA_DOCKER_NETWORK", "manta-test-net")
+def _spec(name: str = "runtime_fake") -> BlockSpec:
+    return BlockSpec(BlockDescription(name=name, env="default", module="tests:_RuntimeFake"))
 
 
-def test_a_block_runs_in_a_container_and_returns_its_result(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given a container that logs solver output and ends with a result line
-    _job_env(monkeypatch)
-    container = _FakeContainer(
-        [
-            b"INFO solving 8 snapshots\n",
-            b'MANTA_BLOCK_RESULT {"url": "s3://manta/p/runs/1/steps/cluster.nc"}\n',
-        ]
+def _completed(result: dict):
+    state = SimpleNamespace(
+        is_completed=lambda: True, result=lambda: result, type=SimpleNamespace(value="COMPLETED")
     )
-    client = _fake_docker(monkeypatch, container)
+    return SimpleNamespace(id="flow-run-id", state=state)
 
-    # When
-    result = _run_block_in_container(
-        block_name="cluster_time",
+
+def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs() -> None:
+    # When: the flow's own body, as it runs inside the block's container
+    result = flows.run_block.fn(
+        block="runtime_fake",
         step_name="cluster",
-        config={"n_hours": 3},
-        record={"url": "s3://manta/p/runs/1/input/network.nc"},
-        inputs={},
-        output_base="s3://manta/p/runs/1/steps/cluster",
+        config={"label": "tidy"},
+        record={"url": "s3://bucket/in.nc"},
+        inputs={"source": {"url": "s3://bucket/earlier.nc"}},
+        output_base="s3://bucket/steps/cluster",
     )
 
-    # Then the result came back through the container's output...
-    assert result == {"url": "s3://manta/p/runs/1/steps/cluster.nc"}
-
-    # ...the container ran the bare blocks entrypoint from the runner image, on
-    # the stack's network, with the object-store environment blocks expect...
-    run_kwargs = client.containers.run.call_args.kwargs
-    run_args = client.containers.run.call_args.args
-    assert run_args[0] == "manta-blocks-runner:test"
-    assert run_kwargs["command"][:4] == ["python", "-m", "blocks.run_one", "cluster_time"]
-    assert run_kwargs["network"] == "manta-test-net"
-    assert run_kwargs["environment"] == {
-        "AWS_ACCESS_KEY_ID": "test-key",
-        "AWS_SECRET_ACCESS_KEY": "test-secret",
-        "AWS_ENDPOINT_URL": "http://seaweedfs:8333",
+    # Then: the record, the settings and the wired input all arrived, and the
+    # result comes back as plain data, ready to cross a process boundary.
+    assert result == {
+        "url": "s3://bucket/steps/cluster|s3://bucket/in.nc|tidy|s3://bucket/earlier.nc"
     }
-    assert run_kwargs["name"].startswith("manta-block-cluster-")
-
-    # ...and was cleaned up.
-    assert container.removed
 
 
-def test_a_result_line_split_across_log_chunks_is_still_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given docker delivering the result line in two chunks
-    _job_env(monkeypatch)
-    container = _FakeContainer([b'MANTA_BLOCK_RESULT {"url": ', b'"out/cluster.nc"}\n'])
-    _fake_docker(monkeypatch, container)
-
+def test_the_block_flow_accepts_a_step_with_nothing_wired_into_it() -> None:
     # When
-    result = _run_block_in_container(
-        block_name="cluster_time",
+    result = flows.run_block.fn(
+        block="runtime_fake",
         step_name="cluster",
         config={},
         record={"url": "in.nc"},
-        inputs={},
+        inputs=None,
         output_base="out/cluster",
     )
 
     # Then
-    assert result == {"url": "out/cluster.nc"}
+    assert result == {"url": "out/cluster|in.nc||-"}
 
 
-def test_a_failing_container_raises_and_is_still_cleaned_up(
+def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given a container that logs a traceback and exits non-zero
-    _job_env(monkeypatch)
-    container = _FakeContainer([b"Traceback ...\n"], exit_code=1)
-    _fake_docker(monkeypatch, container)
+    # Given
+    dispatch = MagicMock(return_value=_completed({"url": "s3://bucket/steps/cluster.nc"}))
+    monkeypatch.setattr(flows, "run_deployment", dispatch)
 
-    # When/Then
-    with pytest.raises(BlockRunFailedError, match=r"'solve'.*exited with code 1"):
-        _run_block_in_container(
-            block_name="overnight_capacity_expansion",
-            step_name="solve",
-            config={},
-            record={"url": "in.nc"},
-            inputs={},
-            output_base="out/solve",
-        )
-    assert container.removed
+    # When
+    result = PrefectStepRunner().run_block(
+        _spec(),
+        step_name="cluster",
+        config={"label": "tidy"},
+        record=DataRecord(url="s3://bucket/in.nc"),
+        inputs={"source": DataRecord(url="s3://bucket/earlier.nc")},
+        output_base="s3://bucket/steps/cluster",
+    )
+
+    # Then: one deployment for every block, with the block named as a parameter,
+    # and everything crossing as plain data.
+    assert dispatch.call_args.kwargs["name"] == BLOCK_DEPLOYMENT
+    assert dispatch.call_args.kwargs["parameters"] == {
+        "block": "runtime_fake",
+        "step_name": "cluster",
+        "config": {"label": "tidy"},
+        "record": {"url": "s3://bucket/in.nc"},
+        "inputs": {"source": {"url": "s3://bucket/earlier.nc"}},
+        "output_base": "s3://bucket/steps/cluster",
+    }
+    assert result == DataRecord(url="s3://bucket/steps/cluster.nc")
 
 
-def test_a_clean_exit_without_a_result_line_is_an_error(
+def test_a_step_that_did_not_complete_fails_the_playbook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given a container that exits 0 but never reports where its output went
-    _job_env(monkeypatch)
-    container = _FakeContainer([b"did some work, told nobody\n"], exit_code=0)
-    _fake_docker(monkeypatch, container)
+    # Given a step whose flow run ended badly
+    crashed = SimpleNamespace(
+        id="flow-run-id",
+        state=SimpleNamespace(is_completed=lambda: False, type=SimpleNamespace(value="CRASHED")),
+    )
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=crashed))
 
-    # When/Then
-    with pytest.raises(BlockRunFailedError, match="never reported a"):
-        _run_block_in_container(
-            block_name="cluster_time",
+    # When/Then: the error says which step, which block, and where to look
+    with pytest.raises(BlockRunFailedError) as exc_info:
+        PrefectStepRunner().run_block(
+            _spec(),
             step_name="cluster",
             config={},
-            record={"url": "in.nc"},
+            record=DataRecord(url="in.nc"),
             inputs={},
             output_base="out/cluster",
         )
+    message = str(exc_info.value)
+    assert "cluster" in message
+    assert "runtime_fake" in message
+    assert "CRASHED" in message
+    assert "flow-run-id" in message
 
 
-def test_a_missing_runner_image_fails_before_any_container_starts(
+def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given no locally built blocks runner image
-    _job_env(monkeypatch)
-    client = MagicMock()
-    client.images.get.side_effect = RuntimeError("not found")
-    monkeypatch.setattr(flows, "_docker_client", lambda: client)
+    # Given
+    stateless = SimpleNamespace(id="flow-run-id", state=None)
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=stateless))
 
     # When/Then
-    with pytest.raises(BlockRunFailedError, match="not available locally"):
-        _run_block_in_container(
-            block_name="cluster_time",
+    with pytest.raises(BlockRunFailedError, match="UNKNOWN"):
+        PrefectStepRunner().run_block(
+            _spec(),
             step_name="cluster",
             config={},
-            record={"url": "in.nc"},
+            record=DataRecord(url="in.nc"),
             inputs={},
             output_base="out/cluster",
         )
-    client.containers.run.assert_not_called()

@@ -17,8 +17,12 @@ COPY manta-runtime/ /app/manta-runtime/
 # manta-blocks first and on its own: manta-runtime depends on it by name, and
 # pip resolves that against what is already installed rather than an index (the
 # package is not published, and `tool.uv.sources` means nothing to pip).
+#
+# The `docker` extra adds prefect-docker, which is what creates the blocks work
+# pool's job template and drains it. Only this image has it: block containers
+# never talk to a daemon.
 RUN pip install --no-cache-dir /app/manta-blocks \
-    && pip install --no-cache-dir /app/manta-runtime
+    && pip install --no-cache-dir "/app/manta-runtime[docker]"
 
 # Matches MANTA_CODE_PATH: the deployment points Prefect at a directory the
 # worker already has, so starting a flow run is a `cd` rather than a copy.

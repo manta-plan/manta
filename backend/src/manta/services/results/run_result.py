@@ -52,6 +52,13 @@ class GetRunStepsResult(BaseModel):
     steps: list[GetRunStepResult]
 
 
+class GetRunStepLogsResult(BaseModel):
+    uuid: UUID
+    step: str
+    step_status: str
+    logs: list[str]
+
+
 class ListRunOutputsResult(BaseModel):
     uuid: UUID
     items: list[GetS3FileResult]
