@@ -26,6 +26,8 @@ from playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
 from prefect.deployments import run_deployment
 
+from manta_runtime.config import exec_image
+
 logger = logging.getLogger(__name__)
 
 BLOCK_FLOW_NAME = "run-block"
@@ -81,6 +83,11 @@ class PrefectStepRunner:
     becomes a `run-block` flow run on the docker work pool, which the worker turns
     into a fresh container. Moving execution to Kubernetes later means changing
     the work pool's type, not this class.
+
+    A block declares the environment it needs as a name, and that name picks the
+    container image for its step alone. Two frameworks that could never share a
+    virtualenv can therefore appear in one playbook: `block.env` is on the spec
+    the catalogue provides, so this works in a process that cannot import a block.
     """
 
     def run_block(
@@ -95,8 +102,11 @@ class PrefectStepRunner:
     ) -> DataRecord:
         # Dispatching from inside a flow makes the block run a child of the
         # playbook run, which is what groups a run's steps under it in Prefect.
+        # Prefect records job_variables on the flow run, so which image ran a
+        # given step stays answerable after the fact.
         flow_run = run_deployment(
             name=BLOCK_DEPLOYMENT,
+            job_variables={"image": exec_image(block.env)},
             parameters={
                 "block": block.name,
                 "step_name": step_name,

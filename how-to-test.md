@@ -14,8 +14,9 @@ block execute in its own container, and inspect the results.
   them at the runtime's deployment, and exposes statuses/steps/outputs. Neither
   block code nor the flow runs in the backend process.
 - [`docker/`](docker/README.md) — Prefect server on Postgres, and the one
-  blocks-runner image (manta-blocks + PyPSA, no Prefect/Manta) every block
-  executes in.
+  images every block executes in: one bare image per block environment
+  (manta-blocks + that environment's dependencies, no Prefect/Manta) and the
+  execution image Manta derives from each.
 
 **Prerequisites**: Docker with the compose plugin, [uv](https://docs.astral.sh/uv/),
 and free default ports `5432, 8333, 23646, 4200, 8080, 8000` (all configurable in
@@ -39,7 +40,7 @@ docker compose --env-file backend/.env -f docker/compose-dev-services.yaml down 
 ```
 
 ```bash
-docker rmi -f manta-blocks-runner:latest manta-prefect-worker:latest
+docker rmi -f manta-blocks-runner:pypsa manta-exec:pypsa manta-control:latest
 ```
 
 ## 1. Boot the services
@@ -52,12 +53,13 @@ docker compose --env-file backend/.env -f docker/compose-dev-services.yaml up --
 
 This stays in the foreground, streaming every service's logs — leave it running
 and use a **second terminal** for everything that follows. The first boot builds
-the blocks-runner image (Python 3.12 + PyPSA + HiGHS + manta-blocks) — expect
-**3–6 minutes** once; it's cached afterwards — and the much smaller control
-image the orchestrator runs on. Two one-shot services exit on purpose:
-`blocks-runner` exists only to build and sanity-check the block image, and
-`playbooks-provision` creates the orchestrator's work pool and registers the
-`run-playbook` deployment.
+pypsa block image (Python 3.12 + PyPSA + HiGHS + manta-blocks) — expect
+**3–6 minutes** once; it's cached afterwards — then the execution image layered
+on it and the much smaller control image the workers run on. Three one-shot
+services exit on purpose: `blocks-runner-pypsa` and `blocks-exec-pypsa` exist
+only to build and sanity-check those two images, and `playbooks-provision`
+creates both work pools and registers the `run-block` and `run-playbook`
+deployments.
 
 Verify it came up — in the second terminal, from the **repo root**:
 
@@ -65,12 +67,13 @@ Verify it came up — in the second terminal, from the **repo root**:
 docker compose --env-file backend/.env -f docker/compose-dev-services.yaml ps -a
 ```
 
-Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server` and
-`prefect-worker-orchestrator` **running**, with `blocks-runner` and
-`playbooks-provision` **Exited (0)** — those exits are correct. The Prefect UI
-is at <http://localhost:4200>: *Work Pools* shows `manta-orchestrator` with a
-live worker, and *Deployments* shows `run-playbook`, both before the backend
-starts. The backend is not in the execution path — it only dispatches runs at
+Expected: `postgres`, `seaweedfs`, `keycloak`, `prefect-server`,
+`prefect-worker-blocks` and `prefect-worker-orchestrator` **running**, with
+`blocks-runner-pypsa`, `blocks-exec-pypsa` and `playbooks-provision`
+**Exited (0)** — those exits are correct. The Prefect UI is at
+<http://localhost:4200>: *Work Pools* shows `manta-blocks` (docker) and
+`manta-orchestrator` (process), each with a live worker, and *Deployments* shows
+`run-block` and `run-playbook`, all before the backend starts. The backend is not in the execution path — it only dispatches runs at
 that deployment by name, which is why a run survives restarting it.
 
 ## 2. Start the backend
@@ -189,7 +192,7 @@ you can watch them come and go:
 **From `backend/`, same shell:**
 
 ```bash
-docker ps --filter ancestor=manta-blocks-runner:latest --format 'table {{.Names}}\t{{.Status}}'
+docker ps --filter ancestor=manta-exec:pypsa --format 'table {{.Names}}\t{{.Status}}'
 ```
 
 You'll see one short-lived container per block, named
@@ -293,9 +296,13 @@ with `step: cluster, field: [n_hours]`.
 ## 5. The automated suites
 
 Each package tests its own layer; the backend integration suite is the
-end-to-end proof (it boots its own isolated stack on random ports — the dev
-stack from step 1 can stay up, but note the first session builds the runner
-image if you removed it).
+end-to-end proof. It boots its own isolated stack on random ports, and the first
+session builds the images if you removed them.
+
+**Stop the dev stack from step 1 first.** Two full stacks do not fit in Docker's
+default memory allowance: the Prefect server starts timing out, block containers
+crawl, and the end-to-end test fails on a timeout that has nothing to do with the
+code.
 
 From **`manta-blocks/`**:
 

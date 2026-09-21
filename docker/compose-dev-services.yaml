@@ -57,7 +57,7 @@ services:
       # Mechanically: `up --wait` (used by the integration suite) treats a
       # cleanly-exited one-shot service as a failure unless something depends on
       # its completion.
-      blocks-exec:
+      blocks-exec-pypsa:
         condition: service_completed_successfully
     healthcheck:
       # `curl` isn't installed in this image — so using `python` instead
@@ -71,17 +71,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # On a fresh database the server runs Prefect's own schema migrations
+      # before it serves anything, which outlasts retries x interval. Failures in
+      # this window don't count against them.
+      start_period: 120s
 
-  # One-shot: exists to build (and sanity-check) the blocks runner image, then
-  # exits. This is the image a block author writes and tests against — manta-blocks
-  # and the blocks' own dependencies, no Prefect, no Manta — and the base the
-  # execution image below is layered on.
-  blocks-runner:
+  # One pair of one-shot build steps per block environment. Adding an
+  # environment means copying this pair, and adding it to MANTA_ENV_IMAGES so
+  # steps declaring it are dispatched to its image.
+  #
+  # The image a block author writes and tests against: manta-blocks and that
+  # environment's own dependencies, no Prefect, no Manta.
+  blocks-runner-pypsa:
     build:
       context: ..
       dockerfile: docker/blocks-runner.Dockerfile
-    image: ${MANTA_BLOCKS_IMAGE}
-    command: python -c "import blocks; print('blocks runner image ready')"
+      args:
+        BLOCK_EXTRAS: s3,pypsa
+        ENV_NAME: pypsa
+    image: ${MANTA_BLOCKS_IMAGE_PYPSA}
+    command: python -c "import blocks, pypsa; print('pypsa blocks image ready')"
 
   # One-shot: builds the execution image, a thin layer over the blocks runner
   # image adding Prefect and manta-runtime. One container per block step of a
@@ -93,16 +102,19 @@ services:
   # itself — it only reports CRASHED on a non-zero exit, and the terminal state
   # and result come from the Prefect engine inside the container. A bare block
   # image would run the block, exit 0, and leave the run PENDING forever.
-  blocks-exec:
+  blocks-exec-pypsa:
     build:
       context: ..
       dockerfile: docker/exec.Dockerfile
-      args:
-        BLOCKS_IMAGE: ${MANTA_BLOCKS_IMAGE}
-    image: ${MANTA_EXEC_IMAGE}
-    command: python -c "import blocks, manta_runtime; print('block execution image ready')"
+      # Names this image's base as a *build* dependency. depends_on only orders
+      # startup, so without this the two builds race and this one looks for a
+      # base image that does not exist yet.
+      additional_contexts:
+        blocks_image: "service:blocks-runner-pypsa"
+    image: ${MANTA_EXEC_IMAGE_PYPSA}
+    command: python -c "import blocks, manta_runtime; print('pypsa execution image ready')"
     depends_on:
-      blocks-runner:
+      blocks-runner-pypsa:
         condition: service_completed_successfully
 
   # One-shot: creates both work pools, registers the two deployments, and points
@@ -124,7 +136,7 @@ services:
       # Everything below ends up in the blocks pool's job template, i.e. in every
       # block container: what to run, which network to join, and how to reach the
       # object store. Compose-internal names throughout.
-      MANTA_EXEC_IMAGE: ${MANTA_EXEC_IMAGE}
+      MANTA_ENV_IMAGES: ${MANTA_ENV_IMAGES}
       MANTA_DOCKER_NETWORK: ${MANTA_DOCKER_NETWORK}
       MANTA_JOB_S3_ENDPOINT: ${MANTA_JOB_S3_ENDPOINT}
       MANTA_BLOCK_LOGGERS: ${MANTA_BLOCK_LOGGERS}
@@ -150,7 +162,7 @@ services:
       # for this dev stack only, and Kubernetes replaces it with a k8s pool.
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      blocks-exec:
+      blocks-exec-pypsa:
         condition: service_completed_successfully
       playbooks-provision:
         condition: service_completed_successfully
@@ -176,6 +188,8 @@ services:
       # lowers both via .env.test so a test run doesn't pay for them.
       PREFECT_WORKER_QUERY_SECONDS: ${PREFECT_WORKER_QUERY_SECONDS:-10}
       PREFECT_LOGGING_TO_API_BATCH_INTERVAL: ${PREFECT_LOGGING_TO_API_BATCH_INTERVAL:-2}
+      # Each step is dispatched to the image its own block environment names.
+      MANTA_ENV_IMAGES: ${MANTA_ENV_IMAGES}
     depends_on:
       prefect-server:
         condition: service_healthy

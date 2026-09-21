@@ -54,9 +54,14 @@ steps are wired (manta-blocks).
 
 ## How does a block execute in isolation?
 
-One fresh container per step, started by the docker work pool's worker from that
-environment's execution image, joined to the stack's network and removed when it
-finishes. Data never travels through the orchestrator: blocks read and write S3
+One fresh container per step, started by the docker work pool's worker from the
+image that step's block environment names, joined to the stack's network and
+removed when it finishes. A block declares the environment it needs as a name;
+`MANTA_ENV_IMAGES` turns that name into an image, and the orchestrator passes it
+per run, so one pool and one worker serve every environment and two frameworks
+that could never share a virtualenv can both appear in a playbook. Prefect
+records those job variables on the flow run, so which image ran a given step
+stays answerable afterwards. Data never travels through the orchestrator: blocks read and write S3
 records directly, each step at
 `s3://<bucket>/<project>/runs/<run>/steps/<step>.<ext>`, so a finished run is a
 browsable folder of every step's output. The step's *record* — the pointer, not
@@ -133,7 +138,7 @@ Docker, or S3 involved:
 
 Two properties connect that to production with no Manta PR: the runner image *is*
 manta-blocks plus dependencies, so running their suite inside it
-(`docker run manta-blocks-runner … pytest`) is an exact environment-parity check;
+(`docker run manta-blocks-runner:<env> … pytest`) is an exact environment-parity check;
 and `python -m blocks` (the catalogue) is how their blocks get described to Manta
 without Manta importing them.
 
@@ -210,6 +215,25 @@ playbooks appear in the same flat list; their storage paths
 
 ## What is missing for production, what can go wrong, and what are the alternatives?
 
+**Latency.** A step pays 8-11 seconds of startup before its block does any work,
+measured warm on an otherwise idle dev stack: ~2s for the worker to pick the run
+up, ~1s to create the container, ~3s for it to boot and `prefect flow-run execute`
+to start, ~2s to import the flow module, ~3s to import the modelling stack and
+resolve the block. Roughly 6s of that is Prefect's, and is what the work pool
+adds over the Docker-SDK transport it replaced; the rest was paid by both. The
+first container from a freshly built image costs ~34s instead, as its layers are
+read for the first time. For solves measured in minutes this is noise; for a
+playbook of many short steps it is not.
+
+Worth knowing what it is *not*: Prefect is not copying the deployment's directory
+before each run. `LocalStorage` makes the pull step a `set_working_directory`
+that completes in under 0.1s.
+
+Also worth knowing: those figures degrade badly under memory pressure — the same
+step took 91s with a second full stack running on a 4 GiB Docker VM, and the
+Prefect server began timing out. Running the dev and test stacks at once does not
+fit.
+
 **Correctness & robustness:** no retries or timeouts on steps yet (a retried step
 overwrites its own `output_base`, which is the intended idempotent behavior); the
 job template declares no per-container memory/CPU limits, and the proposal's
@@ -228,8 +252,8 @@ pool removes it.
 **Operability:** `list_runs` makes one Prefect call per run (bulk-read, or sync
 state into Manta's DB via events); Prefect's flow-run/log history and its result
 objects grow unbounded (retention and lifecycle rules needed for both); the
-images need a registry + digest pinning, with the digest recorded per run for
-full reproducibility; outputs have no download (presigned-URL) route yet; block
+images need a registry and digest pinning — each step already records the image
+*tag* it ran on, so pinning turns that into full reproducibility; outputs have no download (presigned-URL) route yet; block
 storage grows as steps × model size because PyPSA cannot diff networks (needs
 lifecycle/GC).
 

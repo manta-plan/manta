@@ -76,16 +76,15 @@ def register_result_storage() -> None:
 def docker_job_template() -> dict:
     """A docker work pool's job template: each job is a container running a block.
 
-    The image, network and environment become defaults for every job the pool
-    runs; a deployment, or a single run, can still override any of them through
-    its own job variables — which is how a per-environment image is chosen.
+    The network and environment become defaults for every job the pool runs. The
+    image deliberately does not: it is a property of the *step's* environment, not
+    of the pool, so every run supplies its own (see PrefectStepRunner).
     """
     from prefect_docker.worker import DockerWorker
 
     template = DockerWorker.get_default_base_job_template()
     defaults = {
-        "image": config.exec_image(),
-        # The image is built locally and never pushed, so a `latest` tag must not
+        # Images are built locally and never pushed, so a `latest` tag must not
         # send the worker to a registry first.
         "image_pull_policy": "Never",
         # Job containers are throwaway by design; their logs live in Prefect.

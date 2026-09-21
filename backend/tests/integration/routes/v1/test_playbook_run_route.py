@@ -20,10 +20,13 @@ BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 # at boot and `up --wait` gates on it, so this is a guard against racing a
 # still-settling stack rather than a real wait.
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 60.0
-# A playbook run spawns one container per step (three steps here), picked up by
-# the orchestrator worker at its polling interval, so this is dominated by
-# infrastructure latency rather than the (sub-second) solves.
-_PLAYBOOK_RUN_COMPLETION_TIMEOUT = 300.0
+# A playbook run spawns one container per step (three steps here), and each pays
+# ~10s of startup before the block's own work begins — container boot, Prefect's
+# engine starting inside it, importing the modelling stack — or ~35s for the
+# first container off a freshly built image. The solves themselves are
+# sub-second, so this budget is almost entirely infrastructure, and generous
+# because a cold CI machine pays the higher figure on every step.
+_PLAYBOOK_RUN_COMPLETION_TIMEOUT = 600.0
 
 _RUN_CONFIG = {
     "globals": {"expansion_mode": "overnight"},

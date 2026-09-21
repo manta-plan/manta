@@ -13,6 +13,7 @@ from blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from blocks.registry import BlockDescription, BlockSpec, register
 
 from manta_runtime import flows
+from manta_runtime.config import UnknownEnvironmentError
 from manta_runtime.flows import BLOCK_DEPLOYMENT, BlockRunFailedError, PrefectStepRunner
 
 
@@ -35,8 +36,15 @@ class _RuntimeFake(MantaBlock[_FakeConfig]):
         return DataRecord(url=f"{output_base}|{record.url}|{self.config.label}|{wired}")
 
 
-def _spec(name: str = "runtime_fake") -> BlockSpec:
-    return BlockSpec(BlockDescription(name=name, env="default", module="tests:_RuntimeFake"))
+def _spec(name: str = "runtime_fake", env: str = "default") -> BlockSpec:
+    return BlockSpec(BlockDescription(name=name, env=env, module="tests:_RuntimeFake"))
+
+
+@pytest.fixture(autouse=True)
+def _env_images(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One image per block environment, as an installation configures them."""
+    monkeypatch.setenv("MANTA_ENV_IMAGES", "default=manta-exec:default,pypsa=manta-exec:pypsa")
+    monkeypatch.delenv("MANTA_EXEC_IMAGE", raising=False)
 
 
 def _completed(result: dict):
@@ -99,6 +107,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     # Then: one deployment for every block, with the block named as a parameter,
     # and everything crossing as plain data.
     assert dispatch.call_args.kwargs["name"] == BLOCK_DEPLOYMENT
+    assert dispatch.call_args.kwargs["job_variables"] == {"image": "manta-exec:default"}
     assert dispatch.call_args.kwargs["parameters"] == {
         "block": "runtime_fake",
         "step_name": "cluster",
@@ -154,3 +163,49 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
             inputs={},
             output_base="out/cluster",
         )
+
+
+def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given two steps whose blocks declare different environments
+    dispatch = MagicMock(return_value=_completed({"url": "out.nc"}))
+    monkeypatch.setattr(flows, "run_deployment", dispatch)
+    runner = PrefectStepRunner()
+
+    # When each is dispatched
+    for env in ("default", "pypsa"):
+        runner.run_block(
+            _spec(env=env),
+            step_name="step",
+            config={},
+            record=DataRecord(url="in.nc"),
+            inputs={},
+            output_base="out/step",
+        )
+
+    # Then each went to the image its own environment names — which is what lets
+    # two frameworks that cannot share a virtualenv appear in one playbook.
+    assert [call.kwargs["job_variables"]["image"] for call in dispatch.call_args_list] == [
+        "manta-exec:default",
+        "manta-exec:pypsa",
+    ]
+
+
+def test_a_step_needing_an_unconfigured_environment_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a block declaring an environment this installation has no image for
+    monkeypatch.setattr(flows, "run_deployment", MagicMock())
+
+    # When/Then: it fails naming the environment and what to set, rather than
+    # silently running the block in some other environment's image.
+    with pytest.raises(UnknownEnvironmentError) as exc_info:
+        PrefectStepRunner().run_block(
+            _spec(env="julia"),
+            step_name="step",
+            config={},
+            record=DataRecord(url="in.nc"),
+            inputs={},
+            output_base="out/step",
+        )
+    assert "julia" in str(exc_info.value)
+    assert "MANTA_ENV_IMAGES" in str(exc_info.value)

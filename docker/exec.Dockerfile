@@ -14,9 +14,11 @@
 # container. A container with no Prefect would run the block correctly, exit 0,
 # and leave the flow run PENDING forever.
 #
-# Block authors neither build nor name this image. Build context is the repo root.
-ARG BLOCKS_IMAGE=manta-blocks-runner:latest
-FROM ${BLOCKS_IMAGE}
+# Block authors neither build nor name this image. Build context is the repo root;
+# `blocks_image` is a named build context supplied by compose, which is what makes
+# this image's dependency on its base a build-ordering dependency rather than a
+# race against whichever finishes first.
+FROM blocks_image
 
 COPY manta-runtime/ /app/manta-runtime/
 

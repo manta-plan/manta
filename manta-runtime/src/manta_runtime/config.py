@@ -17,15 +17,45 @@ RESULT_STORAGE_BLOCK = f"s3-bucket/{RESULT_STORAGE_BLOCK_NAME}"
 """What PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK is set to, on both sides."""
 
 
-def exec_image() -> str:
-    """The image a block's flow run executes in (docker/exec.Dockerfile).
+class UnknownEnvironmentError(Exception):
+    """Raised when a block needs an environment this installation has no image for."""
 
-    A thin layer over the bare blocks image: the same environment a block author
-    tests against, plus the Prefect the work pool needs in order to report the
-    run's state. Block authors neither build nor name it.
+
+def exec_images() -> dict[str, str]:
+    """Each block environment's execution image, from `MANTA_ENV_IMAGES`.
+
+    Written as `pypsa=manta-exec:pypsa,other=manta-exec:other`. A block declares
+    the environment it needs as a name; this is where a name becomes an image, so
+    two frameworks that could never share a virtualenv can appear in one playbook.
+
+    Deliberately not read from the catalogue, even though `EnvironmentSpec.image`
+    exists there: the catalogue describes what a *block* needs and stays
+    orchestration-agnostic, so any image it names is the bare environment image a
+    block author publishes. A work pool needs the execution image derived from it,
+    and that derivation is Manta's, not the block library's.
     """
     load_dotenv()
-    return os.environ.get("MANTA_EXEC_IMAGE", "manta-exec:latest")
+    raw = os.environ.get("MANTA_ENV_IMAGES", "")
+    return dict(
+        entry.split("=", 1) for entry in (part.strip() for part in raw.split(",")) if "=" in entry
+    )
+
+
+def exec_image(env: str) -> str:
+    """The image a block declaring environment `env` executes in.
+
+    A thin layer over that environment's bare blocks image: what a block author
+    tests against, plus the Prefect the work pool needs in order to report the
+    run's state (see docker/exec.Dockerfile). Block authors neither build nor
+    name it.
+    """
+    images = exec_images()
+    if env not in images:
+        raise UnknownEnvironmentError(
+            f"no execution image for environment {env!r}: add it to MANTA_ENV_IMAGES "
+            f"(configured: {sorted(images) or 'none'})"
+        )
+    return images[env]
 
 
 def blocks_pool() -> str:

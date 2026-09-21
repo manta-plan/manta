@@ -35,17 +35,17 @@ truth instead of two.
   via [localhost:8080](http://localhost:8080)
 - **prefect-server** — workflow orchestration, backed by its own Postgres
   database (not SQLite). UI at [localhost:4200](http://localhost:4200).
-- **blocks-runner** — one-shot boot step that builds (and sanity-checks) the
-  blocks runner image from
+- **blocks-runner-`<env>`** — one-shot boot step that builds (and sanity-checks)
+  one block environment's bare image from
   [`blocks-runner.Dockerfile`](blocks-runner.Dockerfile), then exits.
   **One container per block step** of a playbook run is spawned from this image
   (see [manta-runtime](../manta-runtime/README.md)); those containers are
   siblings of this stack (they won't appear in `docker compose ps`; they join
   the stack's network and remove themselves when done), and contain only
   manta-blocks and the blocks' dependencies — no Prefect, no Manta.
-- **blocks-exec** — one-shot boot step that builds the **execution image**
-  ([`exec.Dockerfile`](exec.Dockerfile)) as a thin layer over the blocks runner
-  image, adding Prefect and manta-runtime. A Prefect worker never marks a flow
+- **blocks-exec-`<env>`** — one-shot boot step that builds that environment's
+  **execution image** ([`exec.Dockerfile`](exec.Dockerfile)) as a thin layer over
+  its bare image, adding Prefect and manta-runtime. A Prefect worker never marks a flow
   run completed itself — the state and result are reported by the engine inside
   the container — so a bare block image would run its block, exit 0, and leave
   the run pending for ever. Block authors neither build nor name this image.
@@ -78,7 +78,15 @@ points at SeaweedFS rather than a shared volume — a volume would be the one th
 tying every container to a single machine. Only the small record pointers go that
 way; model data goes straight from block to object store.
 
-The first `up` builds the blocks runner image, which installs the PyPSA stack —
+A block declares the environment it needs as a name, and one pair of images is
+built per environment, so two frameworks that could never share a virtualenv can
+both appear in a playbook. `MANTA_ENV_IMAGES` maps a declared environment to the
+image its steps run in, and the orchestrator passes that image per step, so the
+work pool itself names none. Adding an environment is a pair of build services,
+an entry in that map, and nothing else. A step whose environment is unmapped
+fails saying so rather than running in some other environment's image.
+
+The first `up` builds the pypsa block image, which installs the PyPSA stack —
 expect a few minutes once; later boots reuse the cache. After changing
 `manta-blocks/` or `manta-runtime/`, rebuild with `... up --build`.
 

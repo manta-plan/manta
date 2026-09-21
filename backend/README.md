@@ -149,7 +149,7 @@ the real thing: block steps running in their own containers against object
 storage. The first session on a machine builds that image, which installs the
 PyPSA stack — expect a one-off multi-minute build; it's cached afterwards. If
 you change `manta-blocks/`, rebuild it before trusting a test run
-(`docker compose --env-file backend/.env -f docker/compose-dev-services.yaml build blocks-runner`
+(`docker compose --env-file backend/.env -f docker/compose-dev-services.yaml build blocks-runner-pypsa`
 from the repo root, or `up --build` on the dev stack).
 
 The app subprocess's logs (including the request log for the endpoint under

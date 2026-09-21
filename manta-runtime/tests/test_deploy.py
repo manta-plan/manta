@@ -8,7 +8,6 @@ from manta_runtime import config, deploy
 @pytest.fixture(autouse=True)
 def _stack_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, value in {
-        "MANTA_EXEC_IMAGE": "manta-exec:test",
         "MANTA_DOCKER_NETWORK": "manta-test_default",
         "MANTA_JOB_S3_ENDPOINT": "http://seaweedfs:8333",
         "PREFECT_API_URL": "http://prefect-server:4200/api",
@@ -32,13 +31,15 @@ def test_the_job_template_says_what_a_block_container_is() -> None:
     # When
     defaults = _defaults(deploy.docker_job_template())
 
-    # Then: the execution image, on the stack's network, removed when done.
-    assert defaults["image"] == "manta-exec:test"
+    # Then: on the stack's network, removed when done...
     assert defaults["networks"] == ["manta-test_default"]
     assert defaults["auto_remove"] is True
-    # The image is built locally and never pushed, so a `latest` tag must not
-    # send the worker to a registry.
+    # ...images are built locally and never pushed, so a `latest` tag must not
+    # send the worker to a registry...
     assert defaults["image_pull_policy"] == "Never"
+    # ...and the pool names no image at all: which one a step runs in is a
+    # property of the block's environment, supplied per run.
+    assert "image" not in defaults
 
 
 def test_a_block_container_is_told_how_to_report_back_and_where_records_live() -> None:
