@@ -1,7 +1,8 @@
 # Contributing to Manta
 
-Manta is a monorepo containing a Python backend (`backend/`) and, a
-Javascript frontend (`frontend/`). This document is the canonical reference for coding
+Manta is a monorepo containing a Python backend (`backend/`), a Javascript
+frontend (`frontend/`), and the modelling packages `playbook/` and
+`playbook-library/`. This document is the canonical reference for coding
 standards on the project. It applies to everyone pushing code — core team,
 energy modelers, and outside contributors alike.
 
@@ -102,10 +103,11 @@ initialization instead of hand-rolled setup.
 ### Linting & formatting
 
 Python code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/),
-configured in `backend/pyproject.toml`.
+configured per package in its own `pyproject.toml` — the same rule set
+everywhere, so which package a file is in never changes how it should look.
 
-- **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against
-  `backend/` and auto-fixes what it can before each commit — see
+- **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against every
+  Python package and auto-fixes what it can before each commit — see
   [backend/README.md](backend/README.md) for one-time setup.
 - **In CI**, the same Ruff checks run read-only on every PR: they fail the
   build on violations but never push a fixup commit. If pre-commit was
@@ -127,6 +129,30 @@ Structure test bodies as **Given/When/Then**, using plain comments.
 **TODO**: expand this with more guidance (fixtures, mocking conventions, what
 belongs in unit vs. integration) as we accumulate more tests to draw examples
 from.
+
+## Playbooks (`playbook/`, `playbook-library/`)
+
+These two are **not** backend code and deliberately do not follow the MSC pattern
+above: they are standalone libraries that must keep working outside Manta entirely.
+
+- `playbook/` defines what a block and a playbook are, and runs playbooks.
+- `playbook-library/` is the modelling content — the blocks and playbooks Manta
+  ships, built on PyPSA.
+
+Two boundaries matter more than anything else here, and both are enforced by tests:
+
+- **Neither package may import an orchestration tool** (Prefect, Docker, a scheduler)
+  or anything from `manta`. Running a block is a plain method call; what schedules
+  that call plugs in from outside through the `StepRunner` protocol. This is what
+  lets a modeller write and test a block without any of Manta's infrastructure.
+- **`playbook.blocks` may not import `playbook.playbooks`.** A block library depends
+  on the block layer alone.
+
+They keep the same Ruff rules as the backend, but are managed by their own tools:
+`playbook/` uses uv, and `playbook-library/` uses pixi, because the solver stack
+installs far more reliably from conda-forge and a block library needs several
+environments side by side. Each package's README explains how to run its tests, and
+a change to either is expected to keep both suites green.
 
 ## Frontend
 
