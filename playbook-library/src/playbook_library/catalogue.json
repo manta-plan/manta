@@ -1,0 +1,713 @@
+{
+  "blocks": {
+    "cluster_time": {
+      "config_schema": {
+        "properties": {
+          "n_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "N Hours"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Segments"
+          }
+        },
+        "title": "ClusterTimeConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Shorten a model's time series, so later blocks have less to solve.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.time_cluster:ClusterTime",
+      "name": "cluster_time",
+      "outputs": [
+        "output"
+      ]
+    },
+    "myopic_capacity_expansion": {
+      "config_schema": {
+        "$defs": {
+          "LinopyModelSchema": {
+            "properties": {
+              "auto_mask": {
+                "default": false,
+                "title": "Auto Mask",
+                "type": "boolean"
+              },
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chunk"
+              },
+              "force_dim_names": {
+                "default": false,
+                "title": "Force Dim Names",
+                "type": "boolean"
+              },
+              "freeze_constraints": {
+                "default": false,
+                "title": "Freeze Constraints",
+                "type": "boolean"
+              },
+              "set_names_in_solver_io": {
+                "default": true,
+                "title": "Set Names In Solver Io",
+                "type": "boolean"
+              },
+              "solver_dir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Dir"
+              }
+            },
+            "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "PyPSAOptimizeSchema": {
+            "properties": {
+              "assign_all_duals": {
+                "default": false,
+                "title": "Assign All Duals",
+                "type": "boolean"
+              },
+              "committable_big_m": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Committable Big M"
+              },
+              "include_objective_constant": {
+                "default": false,
+                "title": "Include Objective Constant",
+                "type": "boolean"
+              },
+              "linearized_unit_commitment": {
+                "default": false,
+                "title": "Linearized Unit Commitment",
+                "type": "boolean"
+              },
+              "meshed_thresholds": {
+                "items": {
+                  "type": "integer"
+                },
+                "title": "Meshed Thresholds",
+                "type": "array"
+              },
+              "model_kwargs": {
+                "$ref": "#/$defs/LinopyModelSchema"
+              },
+              "multi_investment_periods": {
+                "default": false,
+                "title": "Multi Investment Periods",
+                "type": "boolean"
+              },
+              "piecewise_options": {
+                "items": {},
+                "title": "Piecewise Options",
+                "type": "array"
+              },
+              "snapshots": {
+                "anyOf": [
+                  {
+                    "items": {},
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshots"
+              },
+              "solver_name": {
+                "const": "highs",
+                "default": "highs",
+                "title": "Solver Name",
+                "type": "string"
+              },
+              "transmission_losses": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_PyPSAOptimizeTransmissionLossesSchema"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "PyPSAOptimizeSchema",
+            "type": "object"
+          },
+          "_PyPSAOptimizeTransmissionLossesSchema": {
+            "properties": {
+              "atol": {
+                "default": 1.0,
+                "title": "Atol",
+                "type": "number"
+              },
+              "max_segments": {
+                "default": 20,
+                "title": "Max Segments",
+                "type": "integer"
+              },
+              "mode": {
+                "default": "secant",
+                "enum": [
+                  "secant",
+                  "tangent"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "rtol": {
+                "default": 0.1,
+                "title": "Rtol",
+                "type": "number"
+              },
+              "segments": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Segments"
+              }
+            },
+            "title": "_PyPSAOptimizeTransmissionLossesSchema",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "optimize_config": {
+            "$ref": "#/$defs/PyPSAOptimizeSchema"
+          }
+        },
+        "title": "MyopicCapacityExpansionConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "investment_period",
+          "snapshot"
+        ]
+      },
+      "doc": "Decide what to build one investment period at a time, in order.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.myopic_capacity_expansion:MyopicCapacityExpansion",
+      "name": "myopic_capacity_expansion",
+      "outputs": [
+        "output"
+      ]
+    },
+    "overnight_capacity_expansion": {
+      "config_schema": {
+        "$defs": {
+          "LinopyModelSchema": {
+            "properties": {
+              "auto_mask": {
+                "default": false,
+                "title": "Auto Mask",
+                "type": "boolean"
+              },
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chunk"
+              },
+              "force_dim_names": {
+                "default": false,
+                "title": "Force Dim Names",
+                "type": "boolean"
+              },
+              "freeze_constraints": {
+                "default": false,
+                "title": "Freeze Constraints",
+                "type": "boolean"
+              },
+              "set_names_in_solver_io": {
+                "default": true,
+                "title": "Set Names In Solver Io",
+                "type": "boolean"
+              },
+              "solver_dir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Dir"
+              }
+            },
+            "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "PyPSAOptimizeSchema": {
+            "properties": {
+              "assign_all_duals": {
+                "default": false,
+                "title": "Assign All Duals",
+                "type": "boolean"
+              },
+              "committable_big_m": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Committable Big M"
+              },
+              "include_objective_constant": {
+                "default": false,
+                "title": "Include Objective Constant",
+                "type": "boolean"
+              },
+              "linearized_unit_commitment": {
+                "default": false,
+                "title": "Linearized Unit Commitment",
+                "type": "boolean"
+              },
+              "meshed_thresholds": {
+                "items": {
+                  "type": "integer"
+                },
+                "title": "Meshed Thresholds",
+                "type": "array"
+              },
+              "model_kwargs": {
+                "$ref": "#/$defs/LinopyModelSchema"
+              },
+              "multi_investment_periods": {
+                "default": false,
+                "title": "Multi Investment Periods",
+                "type": "boolean"
+              },
+              "piecewise_options": {
+                "items": {},
+                "title": "Piecewise Options",
+                "type": "array"
+              },
+              "snapshots": {
+                "anyOf": [
+                  {
+                    "items": {},
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshots"
+              },
+              "solver_name": {
+                "const": "highs",
+                "default": "highs",
+                "title": "Solver Name",
+                "type": "string"
+              },
+              "transmission_losses": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_PyPSAOptimizeTransmissionLossesSchema"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "PyPSAOptimizeSchema",
+            "type": "object"
+          },
+          "_PyPSAOptimizeTransmissionLossesSchema": {
+            "properties": {
+              "atol": {
+                "default": 1.0,
+                "title": "Atol",
+                "type": "number"
+              },
+              "max_segments": {
+                "default": 20,
+                "title": "Max Segments",
+                "type": "integer"
+              },
+              "mode": {
+                "default": "secant",
+                "enum": [
+                  "secant",
+                  "tangent"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "rtol": {
+                "default": 0.1,
+                "title": "Rtol",
+                "type": "number"
+              },
+              "segments": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Segments"
+              }
+            },
+            "title": "_PyPSAOptimizeTransmissionLossesSchema",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "optimize_config": {
+            "$ref": "#/$defs/PyPSAOptimizeSchema"
+          }
+        },
+        "title": "OvernightCapacityExpansionConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Decide what to build, treating the whole model as one moment in time.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.overnight_capacity_expansion:OvernightCapacityExpansion",
+      "name": "overnight_capacity_expansion",
+      "outputs": [
+        "output"
+      ]
+    },
+    "rolling_horizon_dispatch": {
+      "config_schema": {
+        "$defs": {
+          "DataRecord": {
+            "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL is either\na local path or an `s3://bucket/key` address; `playbook.blocks.storage` turns both into\nbytes.",
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "title": "DataRecord",
+            "type": "object"
+          },
+          "LinopyModelSchema": {
+            "properties": {
+              "auto_mask": {
+                "default": false,
+                "title": "Auto Mask",
+                "type": "boolean"
+              },
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chunk"
+              },
+              "force_dim_names": {
+                "default": false,
+                "title": "Force Dim Names",
+                "type": "boolean"
+              },
+              "freeze_constraints": {
+                "default": false,
+                "title": "Freeze Constraints",
+                "type": "boolean"
+              },
+              "set_names_in_solver_io": {
+                "default": true,
+                "title": "Set Names In Solver Io",
+                "type": "boolean"
+              },
+              "solver_dir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Dir"
+              }
+            },
+            "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "PyPSAOptimizeRollingHorizonConfig": {
+            "properties": {
+              "assign_all_duals": {
+                "default": false,
+                "title": "Assign All Duals",
+                "type": "boolean"
+              },
+              "committable_big_m": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Committable Big M"
+              },
+              "horizon": {
+                "default": 100,
+                "title": "Horizon",
+                "type": "integer"
+              },
+              "include_objective_constant": {
+                "default": false,
+                "title": "Include Objective Constant",
+                "type": "boolean"
+              },
+              "linearized_unit_commitment": {
+                "default": false,
+                "title": "Linearized Unit Commitment",
+                "type": "boolean"
+              },
+              "meshed_thresholds": {
+                "items": {
+                  "type": "integer"
+                },
+                "title": "Meshed Thresholds",
+                "type": "array"
+              },
+              "model_kwargs": {
+                "$ref": "#/$defs/LinopyModelSchema"
+              },
+              "multi_investment_periods": {
+                "default": false,
+                "title": "Multi Investment Periods",
+                "type": "boolean"
+              },
+              "overlap": {
+                "default": 0,
+                "title": "Overlap",
+                "type": "integer"
+              },
+              "piecewise_options": {
+                "items": {},
+                "title": "Piecewise Options",
+                "type": "array"
+              },
+              "snapshots": {
+                "anyOf": [
+                  {
+                    "items": {},
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshots"
+              },
+              "solver_name": {
+                "const": "highs",
+                "default": "highs",
+                "title": "Solver Name",
+                "type": "string"
+              },
+              "transmission_losses": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_PyPSAOptimizeTransmissionLossesSchema"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "PyPSAOptimizeRollingHorizonConfig",
+            "type": "object"
+          },
+          "_PyPSAOptimizeTransmissionLossesSchema": {
+            "properties": {
+              "atol": {
+                "default": 1.0,
+                "title": "Atol",
+                "type": "number"
+              },
+              "max_segments": {
+                "default": 20,
+                "title": "Max Segments",
+                "type": "integer"
+              },
+              "mode": {
+                "default": "secant",
+                "enum": [
+                  "secant",
+                  "tangent"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "rtol": {
+                "default": 0.1,
+                "title": "Rtol",
+                "type": "number"
+              },
+              "segments": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Segments"
+              }
+            },
+            "title": "_PyPSAOptimizeTransmissionLossesSchema",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "capacity_source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DataRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Capacity data source",
+            "x-manta-input": true
+          },
+          "optimize_config": {
+            "$ref": "#/$defs/PyPSAOptimizeRollingHorizonConfig"
+          }
+        },
+        "title": "RollingHorizonDispatchConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Decide how to run a system, a stretch of time at a time.",
+      "env": "pypsa",
+      "inputs": [
+        "capacity_source"
+      ],
+      "manifest": null,
+      "module": "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
+      "name": "rolling_horizon_dispatch",
+      "outputs": [
+        "output"
+      ]
+    }
+  },
+  "catalogue_version": 1,
+  "environments": {
+    "pypsa": {
+      "image": null,
+      "manifest": null,
+      "name": "pypsa"
+    }
+  },
+  "generated_in_env": "pypsa"
+}

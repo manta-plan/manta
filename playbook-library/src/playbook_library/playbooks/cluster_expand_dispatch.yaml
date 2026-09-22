@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+name: cluster-expand-dispatch
+
+initial_data:
+  dims: [snapshot]
+
+steps:
+  - name: cluster
+    block: cluster_time
+
+  - name: expansion_overnight
+    block: overnight_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: overnight
+
+  - name: expansion_myopic
+    block: myopic_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: myopic
+
+  - name: dispatch
+    block: rolling_horizon_dispatch
+    when:
+      config: globals.expansion_mode
+      equals: overnight
+    inputs:
+      capacity_source: ${steps.expansion_overnight.output}
