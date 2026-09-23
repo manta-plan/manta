@@ -56,8 +56,10 @@ def _spec(name: str = "runtime_fake", env: str = "default") -> BlockSpec:
 @pytest.fixture(autouse=True)
 def _env_images(monkeypatch: pytest.MonkeyPatch) -> None:
     """One image per block environment, as an installation configures them."""
-    monkeypatch.setenv("MANTA_ENV_IMAGES", "default=exec:default,pypsa=exec:pypsa")
-    monkeypatch.delenv("MANTA_EXEC_IMAGE", raising=False)
+    monkeypatch.setenv(
+        "MANTA_ENV_IMAGES",
+        "default=block-prefect-runtime:default,pypsa=block-prefect-runtime:pypsa",
+    )
 
 
 def _completed(result: dict):
@@ -142,7 +144,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     # Then: one deployment for every block, with the block named as a parameter,
     # and everything crossing as plain data.
     assert dispatch.call_args.kwargs["name"] == BLOCK_DEPLOYMENT
-    assert dispatch.call_args.kwargs["job_variables"] == {"image": "exec:default"}
+    assert dispatch.call_args.kwargs["job_variables"] == {"image": "block-prefect-runtime:default"}
     assert dispatch.call_args.kwargs["parameters"] == {
         "block": "runtime_fake",
         "step_name": "cluster",
@@ -220,8 +222,8 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
     # Then each went to the image its own environment names — which is what lets
     # two frameworks that cannot share a virtualenv appear in one playbook.
     assert [call.kwargs["job_variables"]["image"] for call in dispatch.call_args_list] == [
-        "exec:default",
-        "exec:pypsa",
+        "block-prefect-runtime:default",
+        "block-prefect-runtime:pypsa",
     ]
 
 

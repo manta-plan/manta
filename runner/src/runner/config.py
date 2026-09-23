@@ -28,9 +28,10 @@ class UnknownEnvironmentError(Exception):
 def exec_images() -> dict[str, str]:
     """Each block environment's execution image, from `MANTA_ENV_IMAGES`.
 
-    Written as `pypsa=exec:pypsa,other=exec:other`. A block declares the
-    environment it needs as a name; this is where a name becomes an image, so two
-    frameworks that could never share a virtualenv can appear in one playbook.
+    Written as `pypsa=block-prefect-runtime:pypsa,other=block-prefect-runtime:other`.
+    A block declares the environment it needs as a name; this is where a name
+    becomes an image, so two frameworks that could never share a virtualenv can
+    appear in one playbook.
 
     Deliberately not read from the catalogue, even though `EnvironmentSpec.image`
     exists there: the catalogue describes what a *block* needs and stays
@@ -39,16 +40,24 @@ def exec_images() -> dict[str, str]:
     it, and that derivation belongs to whatever deploys this runtime, not to the
     block library.
 
-    TODO(post-MVP): this whole function is a build-time shortcut. The intended
-    direction is per-step, run-time resolution — a playbook names the blocks it
-    needs and its container fetches exactly those from whichever library
-    publishes them (see `MantaBlock.MANIFEST` / `EnvironmentSpec.manifest` /
-    `.image`, unused today), so the targeted library can change per run with no
-    image rebuild. That will need a cached or prebuilt environment layer
-    underneath it — installing a PyPSA/HiGHS stack at container start takes
-    minutes — but `exec_image()` staying the single place a declared environment
-    becomes something concrete is what keeps that change to one function plus a
-    fetch step, not a refactor of every call site below.
+    TODO(post-MVP): this whole function is a build-time shortcut, and it's a
+    real limitation, not just a stopgap detail: every block environment has to
+    be baked into an image maintained *here*, in this repo, so a third-party
+    author adding a new modelling framework (Calliope, say) cannot do it without
+    a PR against this codebase and a rebuild of its images. One possible
+    direction — not a decision — is per-step, run-time resolution instead: a
+    playbook names the blocks it needs and its container fetches exactly those
+    from whichever library publishes them (see `MantaBlock.MANIFEST` /
+    `EnvironmentSpec.manifest` / `.image`, unused today), so the targeted
+    library could change per run with no image rebuild. That would need real
+    design work of its own — a fetch mechanism, and a cached or prebuilt
+    environment layer underneath it, since installing a solver stack from
+    scratch at container start takes minutes, not seconds. `exec_image()`
+    staying the single place a declared environment becomes something concrete
+    is what would keep that change to one function plus a fetch step, whichever
+    direction it ends up taking. See the TODO on `docker/block-image.Dockerfile`
+    for the same limitation one level earlier: that file, not just this name
+    mapping, is what should move to the library's own repo once it exists.
     """
     load_dotenv()
     raw = os.environ.get("MANTA_ENV_IMAGES", "")
@@ -62,8 +71,8 @@ def exec_image(env: str) -> str:
 
     A thin layer over that environment's bare blocks image: what a block author
     tests against, plus the Prefect the work pool needs in order to report the
-    run's state (see docker/exec.Dockerfile). Block authors neither build nor
-    name it.
+    run's state (see docker/block-image.Dockerfile). Block authors neither
+    build nor name it.
     """
     images = exec_images()
     if env not in images:

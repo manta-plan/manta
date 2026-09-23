@@ -39,7 +39,9 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 CODE_PATH = "/app"
-"""Where the worker already has this package; matches control.Dockerfile's WORKDIR.
+"""Where the worker already has this package; matches the WORKDIR both
+`docker/runner-image.Dockerfile` and `docker/block-image.Dockerfile`'s
+`block-prefect-runtime` stage set, since both deployments below use it.
 
 Prefect's default storage step copies a deployment's whole working directory
 before every run. Pointing it at a directory that is already there makes starting

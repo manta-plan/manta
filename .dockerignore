@@ -1,0 +1,14 @@
+# Build-context allowlist for images built from the repo root
+# (docker/blocks-runner.Dockerfile and docker/control.Dockerfile): everything is
+# excluded except the packages those images install, so local venvs, the
+# frontend, backend, git history etc. never reach the docker daemon.
+*
+!playbook
+!playbook-library
+!runner
+playbook/.venv
+playbook-library/.pixi
+runner/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
