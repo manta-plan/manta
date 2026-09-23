@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+[project]
+name = "runner"
+version = "0.1.0"
+description = "Manta's playbook execution runtime: the Prefect flows that run playbooks and the blocks in them."
+readme = "README.md"
+# Not pinned to the backend's 3.14: this package also runs inside the control
+# image, which is built on Prefect's own (3.12) image.
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    # The playbook engine this runtime walks, and the block catalogue it resolves
+    # steps against. Block libraries (e.g. playbook-library) are never imported
+    # here — see tests/test_isolation.py.
+    "playbook",
+    # Pinned to the Prefect server's version: this process talks to its API.
+    "prefect==3.8.3",
+    # Prefect's result storage on the object store, which is how a block's output
+    # record travels from its container back to the orchestrator. Both sides need
+    # it: the block container writes, the orchestrator reads.
+    "prefect-aws>=0.5",
+    "python-dotenv>=1.2.2",
+]
+
+# Deliberately absent: any modelling framework, and anything naming Manta's own
+# block library. This package is meant to be published so that any block
+# library's own author can reuse it to run and test their playbooks without
+# Manta — depending on one particular library would make that a cycle.
+[project.optional-dependencies]
+# Only what creates and drains the docker work pool needs this: the one-shot
+# provisioner and the worker. Block containers never import it, which is what
+# lets the execution image stay a thin layer on the bare blocks image.
+docker = ["prefect-docker>=0.6"]
+
+[tool.uv.sources]
+playbook = { path = "../playbook", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/runner"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+    # docker_job_template() (exercised by tests/test_deploy.py) imports
+    # prefect-docker just to read its default job template — needed for local
+    # testing even though the [docker] extra is what a real install declares.
+    "prefect-docker>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Same rules as the backend and playbook, minus FastAPI's B008 exception. The
+# lower target-version follows requires-python above.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: bare `assert` is how pytest expresses assertions.
+# S105/S106: test fixtures spell out fake credentials on purpose.
+"tests/**" = ["S101", "S105", "S106"]

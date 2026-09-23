@@ -15,7 +15,7 @@ import pytest
 
 import playbook.blocks.tests.fakes  # noqa: F401 - registers the fake blocks used by name
 from playbook.blocks.core import DataRecord
-from playbook.blocks.registry import BlockNotFoundError
+from playbook.blocks.registry import BlockNotRegisteredError
 from playbook.blocks.run_one import RESULT_MARKER, main, parse_result_line, result_line
 
 
@@ -60,7 +60,7 @@ def test_config_and_wired_inputs_reach_the_block(capsys):
 
 
 def test_an_unknown_block_fails_rather_than_guessing():
-    with pytest.raises(BlockNotFoundError):
+    with pytest.raises(BlockNotRegisteredError):
         main(["no_such_block", "--record", "{}", "--output-base", "out/x"])
 
 
