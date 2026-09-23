@@ -81,31 +81,55 @@ infrastructure and waits, and reports `CRASHED` only on a non-zero exit
 the Prefect engine *inside* the container. A container with no Prefect would run
 its block correctly, exit 0, and leave the flow run `PENDING` for ever.
 
-So the image a block runs in is built in two layers:
+So the image a block runs in is built in two stages, in one file
+(`docker/block-image.Dockerfile`):
 
 ```
-blocks-runner:<env>   the artifact a block author writes, tests and runs
-        │ FROM         against. No Prefect. No orchestration code.
-        ▼
-exec:<env>            + prefect, prefect-aws, runner.
-                       Built and registered by whatever deploys this runtime;
-                       block authors never build it, name it, or depend on it.
+bare                     (stage 1)   the artifact a block author writes, tests
+        │ FROM                        and runs against. No Prefect. No
+        ▼                             orchestration code.
+block-prefect-runtime    (stage 2)   + prefect, prefect-aws, runner. Named for
+                                      what it specifically is: the
+                                      Prefect-flavored runtime a block executes
+                                      under, not "the" runtime a block needs in
+                                      general. Built and registered by whatever
+                                      deploys this runtime; block authors never
+                                      build it, name it, or depend on it.
 ```
 
-Running a block library's own test suite inside the base image stays an exact
-environment-parity check, and the ~15 lines that reach the execution image
-(`run_block`) import a block only when asked for one by name.
+Only `block-prefect-runtime` is compose-managed; `bare` exists so the split
+above is real and testable — running a block library's own test suite inside
+it stays an exact environment-parity check — not so anyone builds and runs it
+on its own. The ~15 lines that reach `block-prefect-runtime` (`run_block`)
+import a block only when asked for one by name.
 
-TODO(post-MVP): both layers are built with the library baked in at image-build
-time today. The intended direction is run-time, per-step resolution — a
-playbook names the blocks it needs, and the container fetches exactly those
-from whichever library publishes them (see `MantaBlock.MANIFEST` /
-`EnvironmentSpec.manifest` / `.image`, unused today) — so the targeted library
-can change per run with no image rebuild. `config.exec_image()` staying the
-single place a declared environment becomes something concrete is what will
-keep that change to one function plus a fetch step. That fetch step will also
-need a cached or prebuilt environment layer underneath it: installing a
-PyPSA/HiGHS stack from scratch at container start takes minutes, not seconds.
+TODO(post-MVP): this file bakes one specific block library into the image at
+build time today, and that's a real limitation, not just a stopgap detail:
+every block environment has to be baked into an image maintained in *this*
+repo, so a third-party author adding a new modelling framework (Calliope, say)
+cannot do it without a PR here and a rebuild of these images. Two things should
+change together, post-MVP, once `playbook` is published and a block library
+can be its own, separately versioned thing:
+
+- `docker/block-image.Dockerfile`'s `bare` stage belongs in the library's own
+  repo — it should build and publish its own bare image, and this file should
+  only build `block-prefect-runtime`, `FROM` whatever the library publishes.
+- Per-step, run-time resolution could replace the static `MANTA_ENV_IMAGES`
+  mapping entirely: a playbook names the blocks it needs, and the container
+  fetches exactly those from whichever library publishes them (see
+  `MantaBlock.MANIFEST` / `EnvironmentSpec.manifest` / `.image`, unused today),
+  so the targeted library could change per run with no image rebuild. Not a
+  decision, just one option — it would need real design work of its own, a
+  fetch mechanism, and a cached or prebuilt environment layer underneath it,
+  since installing a solver stack from scratch at container start takes
+  minutes, not seconds.
+
+Neither is done now because `playbook` isn't published yet — a library's own
+build still needs `playbook`'s source copied in alongside it, so the two can't
+really be built or resolved independently until that changes.
+`config.exec_image()` staying the single place a declared environment becomes
+something concrete is what will keep either change to one function plus a new
+step, not a refactor of every call site.
 
 ## Configuration
 
