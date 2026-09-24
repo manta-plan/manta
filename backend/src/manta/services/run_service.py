@@ -30,6 +30,20 @@ from manta.services.results.run_result import (
 logger = logging.getLogger(__name__)
 
 
+class PrefectUnavailableError(Exception):
+    pass
+
+
+def ensure_prefect_ready() -> None:
+    """Called once at app startup (see main.create_app()) — confirms the
+    configured Prefect API (PREFECT_API_URL) is actually reachable, the same
+    way S3FileStorageService.ensure_bucket_exists() confirms S3 is."""
+    with get_client(sync_client=True) as client:
+        error = client.api_healthcheck()
+    if error is not None:
+        raise PrefectUnavailableError(f"Prefect API is not reachable: {error}") from error
+
+
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
     with get_client(sync_client=True) as client:
         return client.read_flow_run(flow_run_id)
