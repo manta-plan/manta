@@ -8,14 +8,29 @@ dependencies = [
     "alembic>=1.18.5",
     "boto3>=1.43.73",
     "fastapi>=0.141.1",
+    # TODO(post-MVP): this is the same corner-cut flagged in runner/README.md
+    # and docker/block-image.Dockerfile — depending on one concrete block
+    # library here is an MVP shortcut, not the intended shape. Long term,
+    # nothing in Manta (backend included) should depend on a specific block
+    # library; which libraries exist should reach the backend through the
+    # planned HTTP syncing endpoints or some other manner instead
+    # (see the TODO in playbook/blocks/registry.py's own module docstring).
+    "playbook",
+    "playbook-library",
     "prefect==3.8.3",
     "psycopg[binary]>=3.3.4",
     "pynpm>=0.3.1",
     "python-dotenv>=1.2.2",
     "python-keycloak>=7.1.1",
+    "runner",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.52.0",
 ]
+
+[tool.uv.sources]
+playbook = { path = "../playbook", editable = true }
+playbook-library = { path = "../playbook-library", editable = true }
+runner = { path = "../runner", editable = true }
 
 [project.scripts]
 manta = "manta.main:main"

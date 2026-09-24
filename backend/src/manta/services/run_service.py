@@ -1,15 +1,23 @@
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
+
+# TODO(post-MVP): a direct dependency on one concrete block library here is an
+# MVP corner-cut, not the intended shape — see the TODO on these two
+# dependencies in backend/pyproject.toml.
+from playbook_library import library_catalogue
+from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
+from manta.config.s3_config import s3_bucket_name
 from manta.entities import Project, Run
 from manta.services.results.run_result import (
     CreateRunResult,
@@ -20,8 +28,6 @@ from manta.services.results.run_result import (
 )
 
 logger = logging.getLogger(__name__)
-
-PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
 
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
@@ -72,16 +78,33 @@ class RunService:
     def __init__(self, db: Session = Depends(get_db_session)) -> None:
         self.db = db
 
-    def create_run(self, project_uuid: UUID, num_pi_digits: int) -> CreateRunResult:
+    def create_run(
+        self, project_uuid: UUID, playbook: str, config: dict | None, data_record_url: str
+    ) -> CreateRunResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
+        library_playbook = library_playbooks().get(playbook)
+        if library_playbook is None:
+            raise HTTPException(status_code=404, detail=f"Playbook {playbook!r} not found")
+
+        run_uuid = uuid4()
+        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/runs/{run_uuid}/output"
+
         flow_run = run_deployment(
-            PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
+            PLAYBOOK_DEPLOYMENT,
+            parameters={
+                "playbook": library_playbook.doc.model_dump(mode="json"),
+                "config": config if config is not None else library_playbook.default_config,
+                "record": {"url": data_record_url},
+                "output_prefix": output_prefix,
+                "catalogue": catalogue_parameter(library_catalogue()),
+            },
+            timeout=0,
         )
 
-        run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)
+        run = Run(uuid=run_uuid, project_id=project.id, prefect_flow_run_id=flow_run.id)
         self.db.add(run)
         try:
             self.db.commit()
