@@ -106,6 +106,43 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
 
 
 @pytest.fixture(scope="session")
+def prefect_db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connection]:
+    """A direct connection to Prefect's own Postgres database (see
+    docker/conf/postgres-init/create-prefect-db.sh), for asserting Prefect is
+    actually persisting state there rather than falling back to SQLite."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    with psycopg.connect(
+        host=postgres_service["host"],
+        port=postgres_service["port"],
+        user=env["PREFECT_DB_USER"],
+        password=env["PREFECT_DB_PASSWORD"],
+        dbname=env["PREFECT_DB_NAME"],
+        autocommit=True,
+    ) as conn:
+        yield conn
+
+
+@pytest.fixture(scope="session")
+def prefect_role_app_db_connection(
+    postgres_service: dict[str, str],
+) -> Iterator[psycopg.Connection]:
+    """A connection to the *app's* database, authenticated as Prefect's own
+    Postgres role — for asserting that role is confined to its own database
+    (see docker/conf/postgres-init/create-prefect-db.sh) and can't read the
+    app's tables."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    with psycopg.connect(
+        host=postgres_service["host"],
+        port=postgres_service["port"],
+        user=env["PREFECT_DB_USER"],
+        password=env["PREFECT_DB_PASSWORD"],
+        dbname=env["POSTGRES_DB"],
+        autocommit=True,
+    ) as conn:
+        yield conn
+
+
+@pytest.fixture(scope="session")
 def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     env = dotenv_values(BACKEND_ENV_FILE)
     return boto3.client(  # pyright: ignore[reportUnknownMemberType]

@@ -145,8 +145,9 @@ def _create_completed_runs(
 def test_create_and_run_pi_digit_stats(
     app_server: str,
     db_connection: psycopg.Connection,
-    prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
+    prefect_db_connection: psycopg.Connection,
+    prefect_service: dict[str, str],
 ) -> None:
     # Given a project, and the flow-serving subprocess's deployment registered
     # with the Prefect server
@@ -192,6 +193,14 @@ def test_create_and_run_pi_digit_stats(
     run_project_id, prefect_flow_run_id = run_row
     assert run_project_id == project_row[0]
     assert prefect_flow_run_id is not None
+
+    # And the flow run is persisted in Prefect's own Postgres database — proof
+    # it's actually backed by Postgres rather than an ephemeral/SQLite store
+    with prefect_db_connection.cursor() as cursor:
+        cursor.execute("SELECT id FROM flow_run WHERE id = %s", (prefect_flow_run_id,))
+        flow_run_row = cursor.fetchone()
+
+    assert flow_run_row is not None
 
 
 def test_run_is_cascade_deleted_when_project_is_deleted(

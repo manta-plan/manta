@@ -19,7 +19,11 @@ truth instead of two.
 
 ## Services
 
-- **postgres** — the app database.
+- **postgres** — the app database. Also hosts Keycloak's and Prefect's own
+  databases, each created by the matching script in `conf/postgres-init/` on
+  the volume's **first boot only** — after pulling a change to those
+  scripts, remove the volume to re-initialise (this wipes local dev data):
+  `docker volume rm manta_postgres-data`.
 - **seaweedfs** — S3-compatible object storage (see
   [S3FileStorageService](../backend/src/manta/services/s3_file_storage_service.py)),
   running via SeaweedFS's own `mini` command (single-container
@@ -27,6 +31,8 @@ truth instead of two.
   Once running, the Admin UI (bucket/object browser, cluster status) is at
   `http://localhost:23646` by default (`SEAWEEDFS_ADMIN_PORT` in
   [`backend/.env`](../backend/.env)).
+- **prefect-server** — workflow orchestration, backed by its own Postgres
+  database (not SQLite). UI at [localhost:4200](http://localhost:4200).
 - **keycloak** - identity provider, you can access it with bootstrap credentials
   via [localhost:8080](http://localhost:8080)
 
