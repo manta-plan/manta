@@ -533,8 +533,8 @@ export function HomePage() {
 function toRunListItem(run: GetRunResponse): RunListItem {
   return {
     id: run.uuid,
-    name: "Pi digit statistics",
-    playbook: "Pi Digit Statistics",
+    name: "Cluster expand dispatch",
+    playbook: "cluster-expand-dispatch",
     status: normalizeRunStatus(run.status),
     startedAt: run.created_at,
     durationSeconds: null,
