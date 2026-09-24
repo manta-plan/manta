@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from manta.routes.v1.requests.login_request import LoginRequest
 from manta.routes.v1.requests.register_request import RegisterRequest
@@ -14,7 +14,7 @@ def login(request: LoginRequest, service: AuthService = Depends()) -> LoginResul
     return service.login(request.username, request.password)
 
 
-@router.post("/register", response_model=RegisterResult)
+@router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)
 def register(request: RegisterRequest, service: AuthService = Depends()) -> RegisterResult:
     # No bearer token required here - idp_subject/idp_source are trusted as given,
     # not verified against a real token. Anyone can currently register any identity

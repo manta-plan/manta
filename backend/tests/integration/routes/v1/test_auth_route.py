@@ -22,7 +22,7 @@ def test_register_creates_new_user(
     )
 
     # Then
-    assert response.status_code == 200
+    assert response.status_code == 201
     body = response.json()
     assert body["username"] == "manta-admin"
     assert body["idp_subject"] == idp_subject
@@ -47,8 +47,8 @@ def test_register_is_idempotent(app_server: str, kc_oidc_client: KeycloakOpenID)
     second = httpx2.post(f"{app_server}/v1/auth/register", json=payload)
 
     # Then
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.status_code == 201
+    assert second.status_code == 201
     assert first.json()["uuid"] == second.json()["uuid"]
 
 

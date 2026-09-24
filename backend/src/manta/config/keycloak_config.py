@@ -32,8 +32,16 @@ def keycloak_client_secret() -> str:
 
 @lru_cache
 def get_keycloak_openid() -> KeycloakOpenID:
-    # Cached so repeated calls reuse the same client, including its internal
-    # JWKS cache — token validation would otherwise refetch signing keys every time.
+    # Cached so repeated calls reuse the same client (avoids rebuilding config/
+    # connection state each time). This does NOT cache JWKS: python-keycloak's
+    # decode_token(validate=True) calls certs() on every invocation, which does
+    # a synchronous HTTP GET to Keycloak's /certs endpoint with no caching of
+    # its own. authenticate()/authenticated_user() are sync defs, so FastAPI
+    # runs this in a threadpool worker per request — every authenticated
+    # request ties up a worker thread for a live network round trip to
+    # Keycloak just to re-fetch the same signing keys, before the token
+    # signature is even checked.
+    # See https://github.com/marcospereirampj/python-keycloak/blob/v7.1.1/src/keycloak/keycloak_openid.py#L587
     return KeycloakOpenID(
         server_url=keycloak_server_url(),
         realm_name=keycloak_realm(),

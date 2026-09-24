@@ -60,8 +60,6 @@ for how this maps onto FastAPI specifically, see
 | Service             | All business logic. Implemented as a class, returns dedicated `Result` objects rather than raw data. |
 | Entity (Model)      | Business entities, kept separate from both of the above. Called `entities/` in code, not `models/`, to avoid clashing with energy *models* (PyPSA etc.) elsewhere in the domain. |
 
-Cross-cutting concerns (auth, CORS, etc.) live in `middleware/`, not in services.
-
 ### Directory structure
 
 Files are grouped by type (not feature) for discoverability.

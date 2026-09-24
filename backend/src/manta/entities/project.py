@@ -9,4 +9,4 @@ class Project(Base):
 
     name: Mapped[str]
     description: Mapped[str | None] = mapped_column(Text)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

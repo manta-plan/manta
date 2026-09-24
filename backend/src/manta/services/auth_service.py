@@ -42,6 +42,7 @@ def authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     # but NOT iss or aud - check iss explicitly against our single known realm.
     # aud is intentionally not checked: manta-client has no audience mapper
     # configured yet, so the claim isn't meaningful.
+    # TODO: configure / add an auth mapper
     expected_issuer = well_known(kc_client)["issuer"]
     if claims.get("iss") != expected_issuer:
         raise AuthenticationError(

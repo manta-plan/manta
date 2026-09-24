@@ -39,7 +39,7 @@ def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, 
             "idp_source": claims["iss"],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     return headers
 
 
