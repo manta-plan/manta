@@ -156,6 +156,20 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
+def data_record_url(s3_client: S3Client, app_server: str) -> str:
+    """Uploads the committed example network once per session and returns its
+    `s3://` URL — a real starting record for tests that run a playbook to
+    completion. `app_server` is an ordering dependency, not a used value: the
+    bucket only exists once the app has started (see create_app())."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    bucket = env["S3_BUCKET"]
+    key = "integration-tests/example_network.nc"
+    fixture_path = Path(__file__).parent / "fixtures" / "example_network.nc"
+    s3_client.upload_file(str(fixture_path), bucket, key)
+    return f"s3://{bucket}/{key}"
+
+
+@pytest.fixture(scope="session")
 def kc_oidc_client(keycloak_service: dict[str, str]) -> KeycloakOpenID:
     return KeycloakOpenID(
         server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
@@ -214,11 +228,6 @@ def app_server(
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
-        # Speed up the flow-serving subprocess's runner (default 10s) and log
-        # shipping (default 2s) so integration tests don't pay for Prefect's
-        # production-tuned polling intervals.
-        "PREFECT_RUNNER_POLL_FREQUENCY": "1",
-        "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
         "KC_HOST": keycloak_service["host"],
         "KC_PORT": keycloak_service["port"],
     }

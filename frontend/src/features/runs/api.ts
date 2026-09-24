@@ -16,7 +16,12 @@ const defaultProjectPayload = {
 };
 
 const defaultRunPayload = {
-  num_pi_digits: 10_000,
+  playbook: "cluster-expand-dispatch",
+  // TODO: there is no data-record creation in the frontend yet (file upload,
+  // or any other way to point a run at real data). This placeholder satisfies
+  // the API shape but doesn't resolve to anything real, so a run created this
+  // way won't complete — replace once that functionality exists.
+  data_record_url: "s3://manta/placeholder/input.nc",
 };
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
@@ -48,7 +53,8 @@ export async function createRun(project: DefaultProject) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      num_pi_digits: defaultRunPayload.num_pi_digits,
+      playbook: defaultRunPayload.playbook,
+      data_record_url: defaultRunPayload.data_record_url,
     });
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {

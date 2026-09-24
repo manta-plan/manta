@@ -1,7 +1,4 @@
 import logging
-import os
-import subprocess
-import sys
 
 import uvicorn
 from fastapi import FastAPI
@@ -10,6 +7,7 @@ from manta.config.logging_config import configure_logging
 from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
 from manta.routes.v1 import router as v1_router
+from manta.services.run_service import ensure_prefect_ready
 from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
@@ -31,19 +29,8 @@ def create_app() -> FastAPI:
     run_migrations()
     logger.info("Ensuring S3 bucket exists...")
     S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
-
-    logger.info("Starting Prefect flow-serving process...")
-    try:
-        subprocess.Popen(
-            [sys.executable, "-m", "manta.workflows.pi_digit_stats"],
-            env=os.environ.copy(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        logger.info("Prefect flow-serving process started")
-    except Exception as e:
-        logger.error(f"Failed to start Prefect flow-serving process: {e}")
-        # Non-fatal: app continues, runs just won't execute
+    logger.info("Ensuring Prefect is ready...")
+    ensure_prefect_ready()
 
     app = FastAPI(title="Manta")
     app.frontend("/", directory="../frontend/dist")

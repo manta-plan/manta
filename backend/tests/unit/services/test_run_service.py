@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -5,10 +6,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from playbook_library.playbooks import library_playbooks
 
 from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
 from manta.services.run_service import RunService
+
+_LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
+_RECORD_URL = "s3://bucket/in.nc"
 
 
 class _FakeClientContext:
@@ -61,17 +66,19 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     # `run_deployment` runs synchronously when called from a sync context (see
     # the comment in `RunService.create_run`) — a plain `MagicMock`, not
     # `AsyncMock`, mirrors that real call shape.
-    monkeypatch.setattr(
-        run_service_module,
-        "run_deployment",
-        MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
-    )
+    dispatch = MagicMock(return_value=SimpleNamespace(id=flow_run_id))
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
     service = RunService(db=db)
 
     # When
-    result = service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+    result = service.create_run(
+        project_uuid=project.uuid,
+        playbook=_LIBRARY_PLAYBOOK,
+        config=None,
+        data_record_url=_RECORD_URL,
+    )
 
-    # Then
+    # Then: the run is persisted against the deployment's flow run...
     db.add.assert_called_once()
     db.commit.assert_called_once()
     persisted_run = db.add.call_args.args[0]
@@ -81,6 +88,46 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     assert result.uuid == db.uuid
     assert result.project_uuid == project.uuid
     assert result.created_at == db.created_at
+
+    # ...and what actually reaches Prefect is the playbook resolved by name, the
+    # library's own default_config (none was supplied), the record as plain
+    # data, an output prefix scoped to this project, and the catalogue encoded
+    # as a JSON string (never a dict — see runner.flows.catalogue_parameter).
+    library_playbook = library_playbooks()[_LIBRARY_PLAYBOOK]
+    assert dispatch.call_args.args[0] == run_service_module.PLAYBOOK_DEPLOYMENT
+    parameters = dispatch.call_args.kwargs["parameters"]
+    assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
+    assert parameters["config"] == library_playbook.default_config
+    assert parameters["record"] == {"url": _RECORD_URL}
+    output_prefix = parameters["output_prefix"]
+    assert output_prefix.startswith("s3://")
+    assert output_prefix.endswith("/output")
+    assert str(project.uuid) in output_prefix
+    assert isinstance(parameters["catalogue"], str)
+    assert "blocks" in json.loads(parameters["catalogue"])
+
+
+def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    service = RunService(db=db)
+    custom_config = {"globals": {"expansion_mode": "myopic"}}
+
+    # When
+    service.create_run(
+        project_uuid=project.uuid,
+        playbook=_LIBRARY_PLAYBOOK,
+        config=custom_config,
+        data_record_url=_RECORD_URL,
+    )
+
+    # Then
+    assert dispatch.call_args.kwargs["parameters"]["config"] == custom_config
 
 
 def test_create_run_logs_orphaned_flow_run_when_commit_fails(
@@ -100,7 +147,12 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
 
     # When/Then
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
-        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            data_record_url=_RECORD_URL,
+        )
     assert str(flow_run_id) in caplog.text
     assert str(project.uuid) in caplog.text
 
@@ -115,8 +167,36 @@ def test_create_run_with_unknown_project_raises_404(
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.create_run(project_uuid=uuid4(), num_pi_digits=1_000)
+        service.create_run(
+            project_uuid=uuid4(),
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            data_record_url=_RECORD_URL,
+        )
     assert exc_info.value.status_code == 404
+
+
+def test_create_run_with_unknown_playbook_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    dispatch = MagicMock()
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook="does-not-exist",
+            config=None,
+            data_record_url=_RECORD_URL,
+        )
+    assert exc_info.value.status_code == 404
+    # And no run was ever dispatched for a playbook that doesn't exist.
+    dispatch.assert_not_called()
 
 
 def test_get_run_returns_dto_for_a_known_run(
