@@ -15,10 +15,6 @@ const defaultProjectPayload = {
   description: "Default project for guest user, first time visit.",
 };
 
-const defaultRunPayload = {
-  num_pi_digits: 10_000,
-};
-
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
 
 export function getCachedDefaultProject(): DefaultProject | null {
@@ -44,11 +40,11 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject) {
+export async function createRun(project: DefaultProject, numPiDigits: number) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      num_pi_digits: defaultRunPayload.num_pi_digits,
+      num_pi_digits: numPiDigits,
     });
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {

@@ -13,6 +13,7 @@ import {
   listRuns,
 } from "../features/runs/api";
 import { RunsTable } from "../features/runs/components/runs-table";
+import { CreateRunDialog } from "../features/runs/components/create-run-dialog";
 import { StatusFilter } from "../features/runs/components/status-filter";
 import { normalizeRunStatus } from "../features/runs/status";
 import type {
@@ -38,6 +39,7 @@ export function HomePage() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  const [isCreateRunDialogOpen, setIsCreateRunDialogOpen] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
@@ -126,18 +128,19 @@ export function HomePage() {
     },
   ];
 
-  async function handleNewRun() {
+  async function handleNewRun(numPiDigits: number) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project);
+      await createRun(project, numPiDigits);
 
       setSearchRunId("");
       setActiveSearchRunId("");
       setRunsOffset(0);
       await refreshRunsPage(project, 0, selectedStatuses);
+      setIsCreateRunDialogOpen(false);
     } catch (error) {
       setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
@@ -371,19 +374,28 @@ export function HomePage() {
             </Button>
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={isLoadingRuns}
-              onClick={handleNewRun}
+              onClick={() => setIsCreateRunDialogOpen(true)}
             >
               {isLoadingRuns ? (
                 <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
               ) : (
                 <FiPlay className="size-4" aria-hidden="true" />
               )}
-              {isLoadingRuns ? "Starting..." : "New run"}
+              New run
             </Button>
           </div>
         </div>
       </header>
+
+      <CreateRunDialog
+        error={runCreationError}
+        isSubmitting={isLoadingRuns}
+        onOpenChange={setIsCreateRunDialogOpen}
+        // TODO: wire name/playbook through once the backend supports named,
+        // multi-playbook runs — for now only num_pi_digits reaches the API.
+        onSubmit={(_name, _playbook, numPiDigits) => handleNewRun(numPiDigits)}
+        open={isCreateRunDialogOpen}
+      />
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6">
         {runCreationError ? (
