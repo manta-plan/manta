@@ -20,7 +20,10 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 @router.post("", response_model=CreateRunResult, status_code=status.HTTP_201_CREATED)
 def create_run(request: CreateRunRequest, service: RunService = Depends()) -> CreateRunResult:
     return service.create_run(
-        project_uuid=request.project_uuid, num_pi_digits=request.num_pi_digits
+        project_uuid=request.project_uuid,
+        playbook=request.playbook,
+        config=request.config,
+        data_record_url=request.data_record_url,
     )
 
 
