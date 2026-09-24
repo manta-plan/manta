@@ -28,7 +28,7 @@ def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) ->
     )
 
 
-def authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
+def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     try:
         claims = kc_client.decode_token(token, validate=True)
     except (KeycloakAuthenticationError, ValueError) as e:
@@ -55,9 +55,13 @@ def authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     return user
 
 
-def authenticated_user(token: str = Depends(oauth2_scheme), auth: AuthService = Depends()) -> User:
+def authenticated_user(
+    db: Session = Depends(get_db_session),
+    kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
+    token: str = Depends(oauth2_scheme),
+) -> User:
     try:
-        return authenticate(auth.db, auth.kc_client, token)
+        return _authenticate(db, kc_client, token)
     except AuthenticationError as e:
         logger.warning("Rejected token: %s", e)
         raise

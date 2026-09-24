@@ -5,7 +5,7 @@ import pytest
 from keycloak.exceptions import KeycloakError
 
 from manta.entities import User
-from manta.services.auth_service import AuthService, authenticate
+from manta.services.auth_service import AuthService, _authenticate
 from manta.services.errors import AuthenticationError, BackendError
 
 ISSUER = "http://localhost:8080/realms/manta"
@@ -26,7 +26,7 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
 
     # When
-    user = authenticate(mock_db, mock_kc_client, "some-token")
+    user = _authenticate(mock_db, mock_kc_client, "some-token")
 
     # Then
     assert user is existing_user
@@ -38,7 +38,7 @@ def test_authenticate_rejects_unregistered_user(mock_db, mock_kc_client) -> None
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, "some-token")
 
 
 def test_authenticate_rejects_wrong_issuer(mock_db, mock_kc_client) -> None:
@@ -50,7 +50,7 @@ def test_authenticate_rejects_wrong_issuer(mock_db, mock_kc_client) -> None:
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, "some-token")
 
 
 def test_authenticate_rejects_invalid_token(mock_db, mock_kc_client) -> None:
@@ -61,7 +61,7 @@ def test_authenticate_rejects_invalid_token(mock_db, mock_kc_client) -> None:
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        authenticate(mock_db, mock_kc_client, "bad-token")
+        _authenticate(mock_db, mock_kc_client, "bad-token")
 
 
 def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_client) -> None:
@@ -70,7 +70,7 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
 
     # When / Then
     with pytest.raises(BackendError):
-        authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, "some-token")
 
 
 def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
