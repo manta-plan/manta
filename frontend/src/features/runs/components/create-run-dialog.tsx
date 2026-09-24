@@ -4,6 +4,8 @@ import { Background, ReactFlow, type Edge, type Node, type NodeProps } from "@xy
 import { useEffect, useState, type FormEvent } from "react";
 import { FiCheck, FiChevronDown, FiPlay, FiX } from "react-icons/fi";
 import "@xyflow/react/dist/style.css";
+import { getPlaybook, listPlaybooks } from "../../playbooks/api";
+import type { PlaybookDetail, PlaybookSummary } from "../../playbooks/types";
 
 type CreateRunDialogProps = {
   error: string | null;
@@ -13,21 +15,15 @@ type CreateRunDialogProps = {
   onSubmit: (name: string, playbook: string, numPiDigits: number) => Promise<void>;
 };
 
-const playbookOptions = [
-  { label: "Pi Digit Statistics", value: "pi-digit-statistics" },
-  { label: "Grid Demand Forecast (coming soon)", value: "grid-demand-forecast", disabled: true },
-  {
-    label: "Renewable Dispatch Planning (coming soon)",
-    value: "renewable-dispatch-planning",
-    disabled: true,
-  },
-];
+type PlaybookCanvasNode = Node<{ label: string }, "playbook">;
 
-type PlaybookNode = Node<{ label: string }, "playbook">;
-
-const emptyNodes: PlaybookNode[] = [];
+const emptyNodes: PlaybookCanvasNode[] = [];
 const emptyEdges: Edge[] = [];
 const nodeTypes = { playbook: PlaybookNodeComponent };
+
+function playbookOptionLabel(playbook: PlaybookSummary): string {
+  return playbook.status === "coming_soon" ? `${playbook.name} (coming soon)` : playbook.name;
+}
 
 export function CreateRunDialog({
   error,
@@ -38,13 +34,20 @@ export function CreateRunDialog({
 }: CreateRunDialogProps) {
   const [name, setName] = useState("My First Run");
   const [playbook, setPlaybook] = useState("");
-  const [availablePlaybooks, setAvailablePlaybooks] = useState<typeof playbookOptions>([]);
+  const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookSummary[]>([]);
   const [isLoadingPlaybooks, setIsLoadingPlaybooks] = useState(false);
+  const [playbooksError, setPlaybooksError] = useState<string | null>(null);
+  const [playbookDetail, setPlaybookDetail] = useState<PlaybookDetail | null>(null);
   const [isLoadingCanvas, setIsLoadingCanvas] = useState(false);
-  const [nodes, setNodes] = useState<PlaybookNode[]>(emptyNodes);
+  const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [nodes, setNodes] = useState<PlaybookCanvasNode[]>(emptyNodes);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [numPiDigits, setNumPiDigits] = useState("10000");
+  const [numPiDigits, setNumPiDigits] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const selectedNode = playbookDetail?.nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const numPiDigitsField =
+    selectedNode?.config.find((field) => field.key === "num_pi_digits") ?? null;
 
   useEffect(() => {
     if (!open) {
@@ -53,46 +56,91 @@ export function CreateRunDialog({
 
     setAvailablePlaybooks([]);
     setPlaybook("");
-    setNodes(emptyNodes);
-    setSelectedNodeId(null);
-    setIsLoadingCanvas(false);
+    setPlaybooksError(null);
     setIsLoadingPlaybooks(true);
 
-    const timeoutId = window.setTimeout(() => {
-      setAvailablePlaybooks(playbookOptions);
-      setPlaybook("pi-digit-statistics");
-      setIsLoadingPlaybooks(false);
-    }, 500);
+    let cancelled = false;
 
-    return () => window.clearTimeout(timeoutId);
+    listPlaybooks()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        setAvailablePlaybooks(response.items);
+        const firstAvailable = response.items.find((item) => item.status === "available");
+        setPlaybook(firstAvailable?.id ?? "");
+      })
+      .catch((fetchError) => {
+        if (!cancelled) {
+          setPlaybooksError(
+            fetchError instanceof Error ? fetchError.message : "Failed to load playbooks.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingPlaybooks(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   useEffect(() => {
-    if (!open || playbook !== "pi-digit-statistics") {
-      setNodes(emptyNodes);
-      setSelectedNodeId(null);
+    setNodes(emptyNodes);
+    setSelectedNodeId(null);
+    setPlaybookDetail(null);
+    setCanvasError(null);
+
+    if (!open || playbook.length === 0) {
       setIsLoadingCanvas(false);
       return;
     }
 
-    setNodes(emptyNodes);
-    setSelectedNodeId(null);
     setIsLoadingCanvas(true);
 
-    const timeoutId = window.setTimeout(() => {
-      setNodes([
-        {
-          id: "pi-digit-statistics",
-          type: "playbook",
-          position: { x: 130, y: 80 },
-          data: { label: "pi digit statistic" },
-        },
-      ]);
-      setIsLoadingCanvas(false);
-    }, 500);
+    let cancelled = false;
 
-    return () => window.clearTimeout(timeoutId);
+    getPlaybook(playbook)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+
+        setPlaybookDetail(detail);
+        setNodes(
+          detail.nodes.map((node, index) => ({
+            id: node.id,
+            type: "playbook",
+            position: { x: 130 + index * 220, y: 80 },
+            data: { label: node.label },
+          })),
+        );
+      })
+      .catch((fetchError) => {
+        if (!cancelled) {
+          setCanvasError(
+            fetchError instanceof Error ? fetchError.message : "Failed to load playbook canvas.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingCanvas(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, playbook]);
+
+  useEffect(() => {
+    setNumPiDigits(numPiDigitsField?.default != null ? String(numPiDigitsField.default) : "");
+  }, [selectedNodeId, numPiDigitsField?.default]);
 
   function handleOpenChange(nextOpen: boolean) {
     if (!isSubmitting) {
@@ -103,15 +151,23 @@ export function CreateRunDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const parsedNumPiDigits = Number(numPiDigits);
-
-    if (name.trim().length === 0 || playbook.length === 0 || selectedNodeId === null) {
+    if (
+      name.trim().length === 0 ||
+      playbook.length === 0 ||
+      selectedNodeId === null ||
+      numPiDigitsField === null
+    ) {
       setValidationError("Select a playbook and configure its required node.");
       return;
     }
 
-    if (!Number.isInteger(parsedNumPiDigits) || parsedNumPiDigits <= 0) {
-      setValidationError("Enter a positive whole number for num_pi_digits.");
+    const parsedNumPiDigits = Number(numPiDigits);
+    const minValue = numPiDigitsField.min ?? 1;
+
+    if (!Number.isInteger(parsedNumPiDigits) || parsedNumPiDigits < minValue) {
+      setValidationError(
+        `Enter a whole number of at least ${minValue} for ${numPiDigitsField.label}.`,
+      );
       return;
     }
 
@@ -169,9 +225,17 @@ export function CreateRunDialog({
                   <div className="border-border bg-surface-alt text-text-secondary flex h-10 items-center rounded-md border px-3 text-sm">
                     Loading playbooks...
                   </div>
+                ) : playbooksError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {playbooksError}
+                  </div>
                 ) : (
                   <Select.Root
-                    items={availablePlaybooks}
+                    items={availablePlaybooks.map((item) => ({
+                      label: playbookOptionLabel(item),
+                      value: item.id,
+                      disabled: item.status !== "available",
+                    }))}
                     onValueChange={(value) => {
                       if (value !== null) {
                         setPlaybook(value);
@@ -201,15 +265,15 @@ export function CreateRunDialog({
                             {availablePlaybooks.map((option) => (
                               <Select.Item
                                 className="data-highlighted:bg-surface-alt grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none data-disabled:cursor-not-allowed data-disabled:opacity-50"
-                                disabled={option.disabled}
-                                key={option.value}
-                                value={option.value}
+                                disabled={option.status !== "available"}
+                                key={option.id}
+                                value={option.id}
                               >
                                 <Select.ItemIndicator className="text-primary">
                                   <FiCheck className="size-4" aria-hidden="true" />
                                 </Select.ItemIndicator>
                                 <Select.ItemText className="col-start-2">
-                                  {option.label}
+                                  {playbookOptionLabel(option)}
                                 </Select.ItemText>
                               </Select.Item>
                             ))}
@@ -230,54 +294,65 @@ export function CreateRunDialog({
                   className="border-border bg-surface-alt relative h-56 overflow-hidden rounded-md border"
                   aria-label="Playbook canvas"
                 >
-                  <ReactFlow
-                    edges={emptyEdges}
-                    fitView={false}
-                    nodeTypes={nodeTypes}
-                    nodes={nodes}
-                    onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                    zoomOnScroll={false}
-                  >
-                    <Background color="var(--color-border)" gap={18} size={1} />
-                  </ReactFlow>
-                  {isLoadingCanvas ? (
-                    <div className="bg-surface/80 text-text-secondary absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm">
-                      <FiPlay className="size-4 animate-pulse" aria-hidden="true" />
-                      Loading playbook canvas...
+                  {canvasError ? (
+                    <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-red-700">
+                      {canvasError}
                     </div>
-                  ) : null}
-                  {!isLoadingCanvas && nodes.length === 0 ? (
-                    <div className="text-text-secondary pointer-events-none absolute inset-0 flex items-center justify-center text-sm">
-                      Select a playbook to load its canvas.
-                    </div>
-                  ) : null}
+                  ) : (
+                    <>
+                      <ReactFlow
+                        edges={emptyEdges}
+                        fitView={false}
+                        nodeTypes={nodeTypes}
+                        nodes={nodes}
+                        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                        zoomOnScroll={false}
+                      >
+                        <Background color="var(--color-border)" gap={18} size={1} />
+                      </ReactFlow>
+                      {isLoadingCanvas ? (
+                        <div className="bg-surface/80 text-text-secondary absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm">
+                          <FiPlay className="size-4 animate-pulse" aria-hidden="true" />
+                          Loading playbook canvas...
+                        </div>
+                      ) : null}
+                      {!isLoadingCanvas && nodes.length === 0 ? (
+                        <div className="text-text-secondary pointer-events-none absolute inset-0 flex items-center justify-center text-sm">
+                          Select a playbook to load its canvas.
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
 
-              {selectedNodeId !== null ? (
+              {selectedNode !== null ? (
                 <div className="border-border bg-surface-alt grid gap-4 rounded-md border p-4">
                   <div>
-                    <h3 className="text-sm font-semibold">pi digit statistic configuration</h3>
+                    <h3 className="text-sm font-semibold">{selectedNode.label} configuration</h3>
                     <p className="text-text-secondary mt-1 text-xs">
                       This node is configurable and requires a value before the run can be created.
                     </p>
                   </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-semibold" htmlFor="num-pi-digits">
-                      num_pi_digits
-                    </label>
-                    <input
-                      className="border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 rounded-md border px-3 text-sm transition outline-none focus:ring-2"
-                      id="num-pi-digits"
-                      min="1"
-                      onChange={(event) => {
-                        setNumPiDigits(event.target.value);
-                        setValidationError(null);
-                      }}
-                      type="number"
-                      value={numPiDigits}
-                    />
-                  </div>
+                  {numPiDigitsField ? (
+                    <div className="grid gap-2">
+                      <label className="text-sm font-semibold" htmlFor="num-pi-digits">
+                        {numPiDigitsField.label}
+                      </label>
+                      <input
+                        className="border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 rounded-md border px-3 text-sm transition outline-none focus:ring-2"
+                        id="num-pi-digits"
+                        min={numPiDigitsField.min ?? undefined}
+                        onChange={(event) => {
+                          setNumPiDigits(event.target.value);
+                          setValidationError(null);
+                        }}
+                        required={numPiDigitsField.required}
+                        type="number"
+                        value={numPiDigits}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -312,7 +387,7 @@ export function CreateRunDialog({
   );
 }
 
-function PlaybookNodeComponent({ data, selected }: NodeProps<PlaybookNode>) {
+function PlaybookNodeComponent({ data, selected }: NodeProps<PlaybookCanvasNode>) {
   return (
     <div
       className={`border-primary bg-surface min-w-48 rounded-md border-2 px-4 py-3 shadow-sm ${
