@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
+from manta.services.errors import AuthorizationError
 from manta.services.run_service import RunService
 
 
@@ -35,11 +36,13 @@ def _fake_flow_run(state_type: str):
     return SimpleNamespace(state=SimpleNamespace(type=SimpleNamespace(value=state_type)))
 
 
-def _existing_user() -> User:
+def _existing_user(user_id: int = 1, username: str = "alice") -> User:
     user = User(
-        username="alice", idp_subject="abc-123", idp_source="https://idp.example/realms/manta"
+        username=username,
+        idp_subject=f"abc-{user_id}",
+        idp_source="https://idp.example/realms/manta",
     )
-    user.id = 1
+    user.id = user_id
     user.uuid = uuid4()
     user.created_at = datetime.now(UTC)
     return user
@@ -385,3 +388,68 @@ def test_get_run_logs_with_unknown_run_raises_404(mock_db_class) -> None:
     with pytest.raises(HTTPException) as exc_info:
         service.get_run_logs(run_uuid=uuid4(), user=_existing_user())
     assert exc_info.value.status_code == 404
+
+
+def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000, user=other_user)
+
+
+def test_list_runs_rejects_non_owner(mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.list_runs(
+            project_uuid=project.uuid, limit=10, offset=0, status_filters=None, user=other_user
+        )
+
+
+def test_get_run_summary_rejects_non_owner(mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_summary(project_uuid=project.uuid, user=other_user)
+
+
+def test_get_run_rejects_non_owner(mock_db_class) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Run: run, Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run(run_uuid=run.uuid, user=other_user)
+
+
+def test_get_run_logs_rejects_non_owner(mock_db_class) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Run: run, Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_logs(run_uuid=run.uuid, user=other_user)

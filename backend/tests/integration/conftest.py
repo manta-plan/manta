@@ -5,6 +5,7 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import boto3
 import httpx2
@@ -175,6 +176,38 @@ def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
         password=keycloak_service["admin_password"],
     )
     return KeycloakAdmin(connection=kc_adm_connection)
+
+
+@pytest.fixture(scope="session")
+def second_user_headers(
+    app_server: str, kc_oidc_client: KeycloakOpenID, kc_admin_client: KeycloakAdmin
+) -> dict[str, str]:
+    """A second, distinct registered identity — for asserting that one user
+    can't act on another user's resources (e.g. project ownership checks).
+    Session-scoped: created once via the Keycloak admin API and reused by
+    every test that needs a non-owner, rather than provisioning a fresh
+    Keycloak user per test."""
+    username = f"mallory-{uuid4()}"
+    password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
+    kc_admin_client.create_user(
+        {
+            "username": username,
+            "enabled": True,
+            "emailVerified": True,
+            "email": f"{username}@example.com",
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
+        }
+    )
+
+    token = kc_oidc_client.token(username, password)
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
+    response = httpx2.post(
+        f"{app_server}/v1/auth/register",
+        json={"username": username, "idp_subject": claims["sub"], "idp_source": claims["iss"]},
+    )
+    assert response.status_code == 201
+    return headers
 
 
 def _free_port() -> int:

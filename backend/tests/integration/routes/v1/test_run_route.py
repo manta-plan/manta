@@ -507,3 +507,61 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     logs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/logs", headers=headers)
     assert logs_response.status_code == 404
+
+
+def test_get_run_rejects_non_owner(
+    app_server: str, kc_oidc_client: KeycloakOpenID, second_user_headers: dict[str, str]
+) -> None:
+    # Ownership-denial logic itself is exhaustively unit-tested in
+    # test_run_service.py; this single endpoint proves the real wiring —
+    # that Security(authenticated_user) resolves the right user and the
+    # route actually threads it through to RunService — end to end.
+
+    # Given a run owned by one user
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    body = _create_run(app_server, project_uuid, num_pi_digits=1000, headers=headers)
+    run_uuid = body["uuid"]
+
+    # When a different, authenticated-but-unrelated user requests it
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=second_user_headers)
+
+    # Then they're rejected, not just an unauthenticated caller
+    assert response.status_code == 403
+
+
+def test_list_runs_does_not_leak_other_users_runs(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    second_user_headers: dict[str, str],
+) -> None:
+    # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
+    # and the unit-level *_rejects_non_owner tests) — it's testing that the
+    # query behind a *legitimate* access is actually scoped to the requested
+    # project, not just any project the caller happens to own. A mocked
+    # `.filter()` can't distinguish "filtered correctly" from "not filtered
+    # at all", so this can only be proven against a real database.
+
+    # Given two users, each with their own project and a completed run in it
+    headers_a = _auth_headers(app_server, kc_oidc_client)
+    project_a = _create_project(app_server, headers_a)
+    _create_completed_runs(app_server, prefect_service, project_a, count=1, headers=headers_a)
+
+    project_b = _create_project(app_server, second_user_headers)
+    run_b = _create_completed_runs(
+        app_server, prefect_service, project_b, count=1, headers=second_user_headers
+    )
+
+    # When user B lists runs for their own project (legitimate access)
+    response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_b},
+        headers=second_user_headers,
+    )
+
+    # Then only user B's own run is returned — user A's never leaks in
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert {item["uuid"] for item in body["items"]} == set(run_b)
