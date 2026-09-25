@@ -227,9 +227,10 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
 
     assert run_row is None
 
-    # And the run is no longer reachable via the API, due to not being accessible
-    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
-    assert response.status_code == 401
+    # And the run is no longer reachable via the API, even for the project's
+    # former owner, since the run row itself is gone
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
+    assert response.status_code == 404
 
 
 def test_list_runs_returns_project_runs_with_pagination_and_summary(
@@ -315,6 +316,17 @@ def test_list_runs_filters_project_runs_by_status(
     assert running_body["summary"]["total"] == 2
     assert running_body["summary"]["statuses"] == {"COMPLETED": 2}
 
+    # And filtering is case-insensitive end-to-end, not just at the unit level
+    lowercase_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "statuses": "completed", "limit": 10, "offset": 0},
+        headers=headers,
+    )
+    assert lowercase_response.status_code == 200
+    lowercase_body = lowercase_response.json()
+    assert lowercase_body["total"] == 2
+    assert {item["uuid"] for item in lowercase_body["items"]} == set(run_uuids)
+
 
 def test_get_run_summary_returns_project_counts(
     app_server: str, prefect_service: dict[str, str], kc_oidc_client: KeycloakOpenID
@@ -351,3 +363,30 @@ def test_list_runs_with_unknown_project_returns_404(
 
     # Then the API reports that the project does not exist
     assert response.status_code == 404
+
+
+def test_run_endpoints_return_empty_for_project_with_no_runs(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a project with no runs against it
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # When listing its runs
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+
+    # Then the list is empty, not an error
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["items"] == []
+    assert list_body["total"] == 0
+    assert list_body["summary"] == {"total": 0, "statuses": {}}
+
+    # And the summary endpoint agrees
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 200
+    assert summary_response.json() == {"total": 0, "statuses": {}}

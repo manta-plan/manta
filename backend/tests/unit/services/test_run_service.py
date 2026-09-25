@@ -154,6 +154,25 @@ def test_get_run_returns_dto_for_a_known_run(
     assert result.created_at == run.created_at
 
 
+def test_get_run_returns_dto_with_non_completed_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose flow is in a non-COMPLETED terminal state
+    project = _existing_project()
+    user = _existing_user()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("CRASHED")))
+    _patch_get_client(monkeypatch, fake_client)
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run(run_uuid=run.uuid, user=user)
+
+    # Then the status is surfaced as-is, not silently coerced to COMPLETED
+    assert result.status == "CRASHED"
+
+
 def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})
