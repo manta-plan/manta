@@ -1,6 +1,6 @@
 import re
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx2
 import psycopg
@@ -227,9 +227,10 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
 
     assert run_row is None
 
-    # And the run is no longer reachable via the API, due to not being accessible
-    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
-    assert response.status_code == 401
+    # And the run is no longer reachable via the API, even for the project's
+    # former owner, since the run row itself is gone
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
+    assert response.status_code == 404
 
 
 def test_list_runs_returns_project_runs_with_pagination_and_summary(
@@ -315,6 +316,17 @@ def test_list_runs_filters_project_runs_by_status(
     assert running_body["summary"]["total"] == 2
     assert running_body["summary"]["statuses"] == {"COMPLETED": 2}
 
+    # And filtering is case-insensitive end-to-end, not just at the unit level
+    lowercase_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "statuses": "completed", "limit": 10, "offset": 0},
+        headers=headers,
+    )
+    assert lowercase_response.status_code == 200
+    lowercase_body = lowercase_response.json()
+    assert lowercase_body["total"] == 2
+    assert {item["uuid"] for item in lowercase_body["items"]} == set(run_uuids)
+
 
 def test_get_run_summary_returns_project_counts(
     app_server: str, prefect_service: dict[str, str], kc_oidc_client: KeycloakOpenID
@@ -351,3 +363,205 @@ def test_list_runs_with_unknown_project_returns_404(
 
     # Then the API reports that the project does not exist
     assert response.status_code == 404
+
+
+def test_run_endpoints_return_empty_for_project_with_no_runs(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a project with no runs against it
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # When listing its runs
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+
+    # Then the list is empty, not an error
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["items"] == []
+    assert list_body["total"] == 0
+    assert list_body["summary"] == {"total": 0, "statuses": {}}
+
+    # And the summary endpoint agrees
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 200
+    assert summary_response.json() == {"total": 0, "statuses": {}}
+
+
+def test_run_endpoints_require_authentication(app_server: str) -> None:
+    # Given no Authorization header at all
+    project_uuid = "00000000-0000-0000-0000-000000000000"
+    run_uuid = "00000000-0000-0000-0000-000000000000"
+
+    # Then every endpoint rejects the request before doing any work
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs", json={"project_uuid": project_uuid, "num_pi_digits": 100}
+    )
+    assert create_response.status_code == 401
+
+    list_response = httpx2.get(f"{app_server}/v1/runs", params={"project_uuid": project_uuid})
+    assert list_response.status_code == 401
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}
+    )
+    assert summary_response.status_code == 401
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
+    assert get_response.status_code == 401
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs")
+    assert logs_response.status_code == 401
+
+
+def test_run_endpoints_reject_malformed_uuid(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a well-formed request, but a UUID-shaped field that isn't one
+    headers = _auth_headers(app_server, kc_oidc_client)
+
+    # Then FastAPI's own UUID coercion rejects it before any service logic runs
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={"project_uuid": "not-a-uuid", "num_pi_digits": 100},
+        headers=headers,
+    )
+    assert create_response.status_code == 422
+
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert list_response.status_code == 422
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert summary_response.status_code == 422
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid", headers=headers)
+    assert get_response.status_code == 422
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/logs", headers=headers)
+    assert logs_response.status_code == 422
+
+
+def test_list_runs_rejects_invalid_pagination_params(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a real project
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # Then out-of-bounds limit/offset values are rejected, per ListRunsRequest's
+    # declared bounds (limit: 1-100, offset: >=0)
+    zero_limit_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid, "limit": 0}, headers=headers
+    )
+    assert zero_limit_response.status_code == 422
+
+    oversized_limit_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "limit": 101},
+        headers=headers,
+    )
+    assert oversized_limit_response.status_code == 422
+
+    negative_offset_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "offset": -1},
+        headers=headers,
+    )
+    assert negative_offset_response.status_code == 422
+
+
+def test_run_endpoints_return_404_for_unknown_ids(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a syntactically valid but nonexistent project/run UUID. Covers:
+    #   POST   /runs
+    #   GET    /runs/summary
+    #   GET    /runs/{run_uuid}
+    #   GET    /runs/{run_uuid}/logs
+    # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
+    headers = _auth_headers(app_server, kc_oidc_client)
+    unknown_uuid = str(uuid4())
+
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={"project_uuid": unknown_uuid, "num_pi_digits": 100},
+        headers=headers,
+    )
+    assert create_response.status_code == 404
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": unknown_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 404
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}", headers=headers)
+    assert get_response.status_code == 404
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/logs", headers=headers)
+    assert logs_response.status_code == 404
+
+
+def test_get_run_rejects_non_owner(
+    app_server: str, kc_oidc_client: KeycloakOpenID, second_user_headers: dict[str, str]
+) -> None:
+    # Ownership-denial logic itself is exhaustively unit-tested in
+    # test_run_service.py; this single endpoint proves the real wiring —
+    # that Security(authenticated_user) resolves the right user and the
+    # route actually threads it through to RunService — end to end.
+
+    # Given a run owned by one user
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    body = _create_run(app_server, project_uuid, num_pi_digits=1000, headers=headers)
+    run_uuid = body["uuid"]
+
+    # When a different, authenticated-but-unrelated user requests it
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=second_user_headers)
+
+    # Then they're rejected, not just an unauthenticated caller
+    assert response.status_code == 403
+
+
+def test_list_runs_does_not_leak_other_users_runs(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    second_user_headers: dict[str, str],
+) -> None:
+    # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
+    # and the unit-level *_rejects_non_owner tests) — it's testing that the
+    # query behind a *legitimate* access is actually scoped to the requested
+    # project, not just any project the caller happens to own. A mocked
+    # `.filter()` can't distinguish "filtered correctly" from "not filtered
+    # at all", so this can only be proven against a real database.
+
+    # Given two users, each with their own project and a completed run in it
+    headers_a = _auth_headers(app_server, kc_oidc_client)
+    project_a = _create_project(app_server, headers_a)
+    _create_completed_runs(app_server, prefect_service, project_a, count=1, headers=headers_a)
+
+    project_b = _create_project(app_server, second_user_headers)
+    run_b = _create_completed_runs(
+        app_server, prefect_service, project_b, count=1, headers=second_user_headers
+    )
+
+    # When user B lists runs for their own project (legitimate access)
+    response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_b},
+        headers=second_user_headers,
+    )
+
+    # Then only user B's own run is returned — user A's never leaks in
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert {item["uuid"] for item in body["items"]} == set(run_b)

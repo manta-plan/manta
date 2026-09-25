@@ -6,8 +6,9 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from manta.entities import Project, Run
+from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
+from manta.services.errors import AuthorizationError
 from manta.services.run_service import RunService
 
 
@@ -35,10 +36,23 @@ def _fake_flow_run(state_type: str):
     return SimpleNamespace(state=SimpleNamespace(type=SimpleNamespace(value=state_type)))
 
 
-def _existing_project() -> Project:
+def _existing_user(user_id: int = 1, username: str = "alice") -> User:
+    user = User(
+        username=username,
+        idp_subject=f"abc-{user_id}",
+        idp_source="https://idp.example/realms/manta",
+    )
+    user.id = user_id
+    user.uuid = uuid4()
+    user.created_at = datetime.now(UTC)
+    return user
+
+
+def _existing_project(owner_id: int = 1) -> Project:
     project = Project(name="North Sea Wind")
     project.id = 1
     project.uuid = uuid4()
+    project.owner_id = owner_id
     project.created_at = datetime.now(UTC)
     return project
 
@@ -56,6 +70,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
 ) -> None:
     # Given
     project = _existing_project()
+    user = _existing_user()
     db = mock_db_class(query_results={Project: project})
     flow_run_id = uuid4()
     # `run_deployment` runs synchronously when called from a sync context (see
@@ -69,7 +84,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     service = RunService(db=db)
 
     # When
-    result = service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+    result = service.create_run(project_uuid=project.uuid, num_pi_digits=1_000, user=user)
 
     # Then
     db.add.assert_called_once()
@@ -88,6 +103,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
 ) -> None:
     # Given
     project = _existing_project()
+    user = _existing_user()
     db = mock_db_class(query_results={Project: project})
     flow_run_id = uuid4()
     db.commit.side_effect = RuntimeError("connection lost")
@@ -100,7 +116,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
 
     # When/Then
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
-        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000, user=user)
     assert str(flow_run_id) in caplog.text
     assert str(project.uuid) in caplog.text
 
@@ -115,7 +131,7 @@ def test_create_run_with_unknown_project_raises_404(
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.create_run(project_uuid=uuid4(), num_pi_digits=1_000)
+        service.create_run(project_uuid=uuid4(), num_pi_digits=1_000, user=_existing_user())
     assert exc_info.value.status_code == 404
 
 
@@ -124,6 +140,7 @@ def test_get_run_returns_dto_for_a_known_run(
 ) -> None:
     # Given
     project = _existing_project()
+    user = _existing_user()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED")))
@@ -131,13 +148,32 @@ def test_get_run_returns_dto_for_a_known_run(
     service = RunService(db=db)
 
     # When
-    result = service.get_run(run_uuid=run.uuid)
+    result = service.get_run(run_uuid=run.uuid, user=user)
 
     # Then
     assert result.uuid == run.uuid
     assert result.project_uuid == project.uuid
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
+
+
+def test_get_run_returns_dto_with_non_completed_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose flow is in a non-COMPLETED terminal state
+    project = _existing_project()
+    user = _existing_user()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("CRASHED")))
+    _patch_get_client(monkeypatch, fake_client)
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run(run_uuid=run.uuid, user=user)
+
+    # Then the status is surfaced as-is, not silently coerced to COMPLETED
+    assert result.status == "CRASHED"
 
 
 def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
@@ -147,7 +183,7 @@ def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.get_run(run_uuid=uuid4())
+        service.get_run(run_uuid=uuid4(), user=_existing_user())
     assert exc_info.value.status_code == 404
 
 
@@ -175,7 +211,13 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     service = RunService(db=db)
 
     # When
-    result = service.list_runs(project_uuid=project.uuid, limit=10, offset=0, status_filters=None)
+    result = service.list_runs(
+        project_uuid=project.uuid,
+        limit=10,
+        offset=0,
+        status_filters=None,
+        user=_existing_user(),
+    )
 
     # Then
     assert result.total == 2
@@ -214,7 +256,11 @@ def test_list_runs_filters_project_runs_by_status(
 
     # When
     result = service.list_runs(
-        project_uuid=project.uuid, limit=10, offset=0, status_filters=["running"]
+        project_uuid=project.uuid,
+        limit=10,
+        offset=0,
+        status_filters=["running"],
+        user=_existing_user(),
     )
 
     # Then
@@ -269,7 +315,7 @@ def test_get_run_summary_returns_project_status_counts(
     service = RunService(db=db)
 
     # When
-    result = service.get_run_summary(project_uuid=project.uuid)
+    result = service.get_run_summary(project_uuid=project.uuid, user=_existing_user())
 
     # Then
     assert result.total == 5
@@ -289,7 +335,7 @@ def test_get_run_summary_with_unknown_project_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.get_run_summary(project_uuid=uuid4())
+        service.get_run_summary(project_uuid=uuid4(), user=_existing_user())
     assert exc_info.value.status_code == 404
 
 
@@ -300,7 +346,9 @@ def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.list_runs(project_uuid=uuid4(), limit=10, offset=0, status_filters=None)
+        service.list_runs(
+            project_uuid=uuid4(), limit=10, offset=0, status_filters=None, user=_existing_user()
+        )
     assert exc_info.value.status_code == 404
 
 
@@ -310,6 +358,7 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
 ) -> None:
     # Given
     project = _existing_project()
+    user = _existing_user()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(
@@ -322,7 +371,7 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
     service = RunService(db=db)
 
     # When
-    result = service.get_run_logs(run_uuid=run.uuid)
+    result = service.get_run_logs(run_uuid=run.uuid, user=user)
 
     # Then
     assert result.uuid == run.uuid
@@ -337,5 +386,70 @@ def test_get_run_logs_with_unknown_run_raises_404(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.get_run_logs(run_uuid=uuid4())
+        service.get_run_logs(run_uuid=uuid4(), user=_existing_user())
     assert exc_info.value.status_code == 404
+
+
+def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000, user=other_user)
+
+
+def test_list_runs_rejects_non_owner(mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.list_runs(
+            project_uuid=project.uuid, limit=10, offset=0, status_filters=None, user=other_user
+        )
+
+
+def test_get_run_summary_rejects_non_owner(mock_db_class) -> None:
+    # Given a project owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_summary(project_uuid=project.uuid, user=other_user)
+
+
+def test_get_run_rejects_non_owner(mock_db_class) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Run: run, Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run(run_uuid=run.uuid, user=other_user)
+
+
+def test_get_run_logs_rejects_non_owner(mock_db_class) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Run: run, Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_logs(run_uuid=run.uuid, user=other_user)
