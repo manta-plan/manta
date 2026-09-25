@@ -390,3 +390,89 @@ def test_run_endpoints_return_empty_for_project_with_no_runs(
     )
     assert summary_response.status_code == 200
     assert summary_response.json() == {"total": 0, "statuses": {}}
+
+
+def test_run_endpoints_require_authentication(app_server: str) -> None:
+    # Given no Authorization header at all
+    project_uuid = "00000000-0000-0000-0000-000000000000"
+    run_uuid = "00000000-0000-0000-0000-000000000000"
+
+    # Then every endpoint rejects the request before doing any work
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs", json={"project_uuid": project_uuid, "num_pi_digits": 100}
+    )
+    assert create_response.status_code == 401
+
+    list_response = httpx2.get(f"{app_server}/v1/runs", params={"project_uuid": project_uuid})
+    assert list_response.status_code == 401
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}
+    )
+    assert summary_response.status_code == 401
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
+    assert get_response.status_code == 401
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs")
+    assert logs_response.status_code == 401
+
+
+def test_run_endpoints_reject_malformed_uuid(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a well-formed request, but a UUID-shaped field that isn't one
+    headers = _auth_headers(app_server, kc_oidc_client)
+
+    # Then FastAPI's own UUID coercion rejects it before any service logic runs
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={"project_uuid": "not-a-uuid", "num_pi_digits": 100},
+        headers=headers,
+    )
+    assert create_response.status_code == 422
+
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert list_response.status_code == 422
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert summary_response.status_code == 422
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid", headers=headers)
+    assert get_response.status_code == 422
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/logs", headers=headers)
+    assert logs_response.status_code == 422
+
+
+def test_list_runs_rejects_invalid_pagination_params(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a real project
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # Then out-of-bounds limit/offset values are rejected, per ListRunsRequest's
+    # declared bounds (limit: 1-100, offset: >=0)
+    zero_limit_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid, "limit": 0}, headers=headers
+    )
+    assert zero_limit_response.status_code == 422
+
+    oversized_limit_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "limit": 101},
+        headers=headers,
+    )
+    assert oversized_limit_response.status_code == 422
+
+    negative_offset_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "offset": -1},
+        headers=headers,
+    )
+    assert negative_offset_response.status_code == 422
