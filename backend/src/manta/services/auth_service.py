@@ -77,6 +77,9 @@ class AuthService:
         self.kc_client = kc_client
 
     def login(self, username: str, password: str) -> LoginResult:
+        # This doesn't currently update the user object if the Identity Provider
+        # has new claims regarding the entity.
+        # TODO: fix update functionality here
         try:
             token = self.kc_client.token(username, password)
         except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
