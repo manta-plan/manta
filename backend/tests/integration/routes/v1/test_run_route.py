@@ -1,6 +1,6 @@
 import re
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx2
 import psycopg
@@ -476,3 +476,34 @@ def test_list_runs_rejects_invalid_pagination_params(
         headers=headers,
     )
     assert negative_offset_response.status_code == 422
+
+
+def test_run_endpoints_return_404_for_unknown_ids(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a syntactically valid but nonexistent project/run UUID. Covers:
+    #   POST   /runs
+    #   GET    /runs/summary
+    #   GET    /runs/{run_uuid}
+    #   GET    /runs/{run_uuid}/logs
+    # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
+    headers = _auth_headers(app_server, kc_oidc_client)
+    unknown_uuid = str(uuid4())
+
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={"project_uuid": unknown_uuid, "num_pi_digits": 100},
+        headers=headers,
+    )
+    assert create_response.status_code == 404
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": unknown_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 404
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}", headers=headers)
+    assert get_response.status_code == 404
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/logs", headers=headers)
+    assert logs_response.status_code == 404
