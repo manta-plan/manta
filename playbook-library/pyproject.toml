@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "playbook-library"
+version = "0.1.0"
+description = "The blocks and playbooks Manta ships: energy-model work built on PyPSA."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Bryn Pickering", email = "bryn.pickering@openenergytransition.org" },
+    { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
+]
+dependencies = [
+    # Records live in object storage when run under Manta, hence the s3 extra.
+    "playbook[s3]",
+    "pyyaml>=6",
+]
+
+# PyPSA itself is an extra rather than a requirement: this package must stay
+# importable - for names, schemas, and the catalogue - in environments that cannot
+# install a solver stack. Only the environment a block actually runs in needs it.
+[project.optional-dependencies]
+pypsa = ["pypsa>=1.2,<2", "highspy", "netcdf4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/playbook_library"]
+exclude = ["**/tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+markers = [
+    "pypsa: needs PyPSA installed (run in the `full` environment)"
+]
+
+# Same rules as the framework next door and the backend; see CONTRIBUTING.md.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: bare `assert` is how pytest expresses assertions.
+# E402: these tests skip themselves when PyPSA is missing, which means checking for
+# it before importing anything that needs it.
+"**/tests/**" = ["S101", "E402"]
+# F401/E402: registering this library's blocks is an import side effect.
+"__init__.py" = ["F401", "E402"]

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+globals:
+  mode: full
+cluster:
+  label: clustering
+expand:
+  label: expansion
+dispatch:
+  label: dispatch

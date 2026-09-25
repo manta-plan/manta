@@ -12,6 +12,9 @@ htmlcov/
 .venv/
 .python-version
 
+# pixi-managed environments
+.pixi/
+
 # JavaScript
 logs/
 *.log
