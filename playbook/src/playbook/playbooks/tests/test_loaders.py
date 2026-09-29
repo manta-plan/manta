@@ -92,6 +92,31 @@ def test_a_file_reference_is_resolved_next_to_the_playbook_that_made_it(tmp_path
     assert pb.steps[0].playbook.name == "child"
 
 
+def test_a_reference_cannot_reach_outside_the_first_playbooks_directory(tmp_path):
+    (tmp_path / "secret.yaml").write_text("name: secret\nsteps: []\n")
+    (tmp_path / "playbooks").mkdir()
+    (tmp_path / "playbooks" / "outer.yaml").write_text(
+        "name: outer\nsteps:\n  - name: sneaky\n    playbook: ../secret.yaml\n"
+    )
+
+    with pytest.raises(PlaybookLoadError, match="points outside"):
+        load_playbook(tmp_path / "playbooks" / "outer.yaml")
+
+
+def test_a_chain_of_references_cannot_walk_out_one_directory_at_a_time(tmp_path):
+    (tmp_path / "secret.yaml").write_text("name: secret\nsteps: []\n")
+    (tmp_path / "playbooks" / "nested").mkdir(parents=True)
+    (tmp_path / "playbooks" / "outer.yaml").write_text(
+        "name: outer\nsteps:\n  - name: down\n    playbook: nested/inner.yaml\n"
+    )
+    (tmp_path / "playbooks" / "nested" / "inner.yaml").write_text(
+        "name: inner\nsteps:\n  - name: out\n    playbook: ../../secret.yaml\n"
+    )
+
+    with pytest.raises(PlaybookLoadError, match="points outside"):
+        load_playbook(tmp_path / "playbooks" / "outer.yaml")
+
+
 def test_the_same_playbook_used_twice_is_not_mistaken_for_a_loop(tmp_path):
     (tmp_path / "child.yaml").write_text(
         "name: child\nsteps:\n  - name: inner\n    block: fake_passthrough\n"

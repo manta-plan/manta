@@ -111,21 +111,31 @@ class PlaybookLoader(Protocol):
 class FilePlaybookLoader:
     """Reads playbooks from files, relative to the one that referred to them."""
 
-    def __init__(self, base: Path | None = None) -> None:
+    def __init__(self, base: Path | None = None, root: Path | None = None) -> None:
         self._base = base
+        self._root = root
 
     def load(self, locator: str) -> LoadedPlaybook:
         path = Path(locator)
         if self._base is not None and not path.is_absolute():
             path = self._base.parent / path
+
+        path = path.resolve()
+        root = self._root if self._root is not None else path.parent
+        if not path.is_relative_to(root):
+            raise PlaybookLoadError(
+                f"playbook reference {locator!r} points outside {root}, which is the "
+                "directory the first playbook was read from"
+            )
+
         try:
             raw = yaml.safe_load(path.read_text())
         except OSError as exc:
             raise PlaybookLoadError(f"could not read playbook file {path}: {exc}") from exc
         return LoadedPlaybook(
-            key=str(path.resolve()),
+            key=str(path),
             doc=parse_doc(raw, source=str(path)),
-            loader=FilePlaybookLoader(base=path),
+            loader=FilePlaybookLoader(base=path, root=root),
         )
 
 
