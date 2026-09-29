@@ -143,7 +143,7 @@ Two boundaries matter more than anything else here, and both are enforced by tes
 
 - **Neither package may import an orchestration tool** (Prefect, Docker, a scheduler)
   or anything from `manta`. Running a block is a plain method call; what schedules
-  that call plugs in from outside through the `StepRunner` protocol. This is what
+  that call plugs in from outside through the `BlockRunner` protocol. This is what
   lets a modeller write and test a block without any of Manta's infrastructure.
 - **`playbook.blocks` may not import `playbook.playbooks`.** A block library depends
   on the block layer alone.

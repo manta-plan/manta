@@ -4,7 +4,7 @@
 
 """The seam between a playbook and whatever actually runs its blocks.
 
-An orchestrator plugs in a `StepRunner` and receives one fully spelled-out block
+An orchestrator plugs in a `BlockRunner` and receives one fully spelled-out block
 invocation at a time; nothing else about running a playbook changes. These tests
 drive the executor with a recording runner, exactly the way Manta's own runner is
 driven, so the contract an orchestrator relies on is pinned down here.

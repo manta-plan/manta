@@ -9,7 +9,7 @@ further back, and is told where to put its output: every step's result lands und
 one `output_prefix`, named after the step, so a finished run reads as a folder of
 outputs a user can browse.
 
-How a single block actually runs is behind `StepRunner`. The default runner executes
+How a single block actually runs is behind `BlockRunner`. The default runner executes
 blocks in this process, which is what tests and plain local use want. An orchestrator
 (Manta) plugs in a runner that hands each block to whatever isolated environment it
 manages - a container, a cluster job - and this package never learns which
@@ -26,11 +26,13 @@ from playbook.blocks import BlockSpec, DataRecord
 from playbook.playbooks.playbook import BlockStep, Playbook, Step, child_config
 
 
-class StepRunner(Protocol):
-    """Runs one block step, wherever blocks happen to run.
+class BlockRunner(Protocol):
+    """Runs one block, wherever blocks happen to run.
 
-    `execute_playbook` does all the walking and wiring; a runner only ever sees one
-    block at a time, with everything it needs spelled out.
+    `execute_playbook` does all the walking and wiring, so a runner never sees a
+    playbook or a step: it is handed one block at a time with everything already
+    spelled out. `step_name` comes along only as a label, for naming the work in
+    whatever system the runner drives.
     """
 
     def run_block(
@@ -47,7 +49,7 @@ class StepRunner(Protocol):
         ...
 
 
-class LocalStepRunner:
+class LocalBlockRunner:
     """Runs each block in this process. The block must be importable here."""
 
     def run_block(
@@ -71,7 +73,7 @@ def execute_playbook(
     config: dict,
     *,
     output_prefix: str,
-    runner: StepRunner | None = None,
+    runner: BlockRunner | None = None,
 ) -> DataRecord:
     """Run `playbook`, returning the final step's record.
 
@@ -83,7 +85,7 @@ def execute_playbook(
     wired to results that exist, and that each block finds the data it needs - is a
     separate concern, and not yet part of this package.
     """
-    return _execute(playbook, record, config, output_prefix, runner or LocalStepRunner(), {})
+    return _execute(playbook, record, config, output_prefix, runner or LocalBlockRunner(), {})
 
 
 def _execute(
@@ -91,7 +93,7 @@ def _execute(
     record: DataRecord,
     config: dict,
     output_prefix: str,
-    runner: StepRunner,
+    runner: BlockRunner,
     external_inputs: dict[str, DataRecord],
 ) -> DataRecord:
     results: dict[str, dict[str, DataRecord]] = {}

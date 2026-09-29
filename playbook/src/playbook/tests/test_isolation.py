@@ -42,7 +42,7 @@ def test_there_are_source_files_to_check():
 @pytest.mark.parametrize("path", source_files(), ids=lambda p: p.name)
 def test_nothing_imports_an_orchestration_tool(path: Path):
     # Running a block is a plain method call. What schedules that call lives outside
-    # this package, behind the StepRunner protocol, and must stay there: it is what
+    # this package, behind the BlockRunner protocol, and must stay there: it is what
     # lets a modeller test a block without any of Manta's infrastructure.
     assert not (imported_roots(path) & ORCHESTRATION)
 

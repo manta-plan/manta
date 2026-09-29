@@ -31,7 +31,7 @@ from playbook.blocks import (
 
 if TYPE_CHECKING:
     from playbook.blocks import Catalogue
-    from playbook.playbooks.execution import StepRunner
+    from playbook.playbooks.execution import BlockRunner
 
 _REF_RE = re.compile(r"^\$\{steps\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$")
 
@@ -247,7 +247,7 @@ class Playbook(BaseModel):
         record: DataRecord,
         config: dict,
         output_prefix: str,
-        runner: "StepRunner | None" = None,
+        runner: "BlockRunner | None" = None,
     ) -> DataRecord:
         """Run this playbook.
 

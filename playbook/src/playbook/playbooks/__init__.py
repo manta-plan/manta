@@ -4,7 +4,7 @@
 
 """Playbooks: blocks chained together into a piece of work that can be run."""
 
-from playbook.playbooks.execution import LocalStepRunner, StepRunner, execute_playbook
+from playbook.playbooks.execution import BlockRunner, LocalBlockRunner, execute_playbook
 from playbook.playbooks.playbook import (
     BlockStep,
     NestedPlaybookStep,
@@ -28,9 +28,10 @@ from playbook.playbooks.yaml_io import (
 )
 
 __all__ = [
+    "BlockRunner",
     "BlockStep",
     "FilePlaybookLoader",
-    "LocalStepRunner",
+    "LocalBlockRunner",
     "NestedPlaybookStep",
     "OutputRef",
     "Playbook",
@@ -39,7 +40,6 @@ __all__ = [
     "PlaybookLoader",
     "StepDoc",
     "StepHandle",
-    "StepRunner",
     "When",
     "WhenDoc",
     "execute_playbook",

@@ -23,7 +23,7 @@ the way your own library would.
 
 **Nothing about orchestration.** Running a block is a plain method call. Everything
 about *where* and *how* those calls happen in production — containers, schedulers,
-Prefect — lives in Manta's backend, behind the `StepRunner` seam described below.
+Prefect — lives in Manta's backend, behind the `BlockRunner` seam described below.
 Nothing in this package imports Prefect, Docker, or Manta, and nothing ever should:
 that is what lets a modeller write and test a block without knowing anything about
 Manta's infrastructure, and what lets this package move to its own repository later.
@@ -46,7 +46,7 @@ src/playbook/
   playbooks/       Blocks chained together
     playbook.py    What a playbook is: steps, wiring, conditions
     yaml_io.py     Playbooks as documents: reading, writing, sending
-    execution.py   Running a playbook, in-process or through a pluggable StepRunner
+    execution.py   Running a playbook, in-process or through a pluggable BlockRunner
 ```
 
 `blocks` never imports `playbooks`. A block library only depends on the half it
@@ -218,10 +218,10 @@ nesting step's name. A finished run is therefore a browsable folder of every ste
 output.
 
 By default every block runs in the current process, which is what tests and local use
-want. To run blocks anywhere else, pass a `StepRunner`:
+want. To run blocks anywhere else, pass a `BlockRunner`:
 
 ```python
-class StepRunner(Protocol):
+class BlockRunner(Protocol):
     def run_block(self, block, *, step_name, config, record, inputs, output_base): ...
 ```
 
