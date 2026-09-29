@@ -6,13 +6,13 @@ SPDX-License-Identifier: MIT
 
 # playbook
 
-A **block** is one unit of work on an energy model. A **playbook** chains blocks
+A **block** is one unit of work in an energy model workflow. A **playbook** chains blocks
 together into something you can run.
 
-Blocks are written in Python. Playbooks can be written in YAML or Python. Each block
-declares which environment it needs, so one playbook can span environments that could
-never be installed side by side: each step runs where it belongs, and the results are
-passed along.
+Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in 
+python for testing purposes only). Each block declares which environment it needs, 
+so one playbook can span environments that could never be installed side by side: 
+each step runs where it belongs, and the results are passed along.
 
 This package is the *framework*: what a block is, what a playbook is, and how to run
 one. It ships no blocks and no playbooks of its own — the ones Manta ships live next
