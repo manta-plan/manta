@@ -125,3 +125,79 @@ they're still shown for any failing test:
 ```bash
 uv run pytest tests/integration -s
 ```
+
+## Manually testing a run (temporary, will be removed)
+
+This section exists only until the frontend can create a run with real data
+on its own, and will be removed once that lands.
+
+1. In one terminal, bring up the stack (from `docker/`) and leave it running
+   so you can see the container logs:
+
+   ```bash
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
+   ```
+
+   Wait until the logs settle, then do the rest of the steps in a second
+   terminal.
+
+2. Start the backend (from `backend/`):
+
+   ```bash
+   uv run manta
+   ```
+
+3. Create a project:
+
+   ```bash
+   curl -s -X POST http://localhost:8000/v1/projects \
+     -H "Content-Type: application/json" \
+     -d '{"name": "Manual test", "description": "Manual test project"}'
+   ```
+
+   Copy the returned `uuid` as `PROJECT_UUID`.
+
+4. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
+   works (from `backend/`):
+
+   ```bash
+   uv run python -c "
+   import boto3
+   from botocore.config import Config
+   client = boto3.client(
+       's3',
+       endpoint_url='http://localhost:8333',
+       aws_access_key_id='dev',
+       aws_secret_access_key='dev',
+       config=Config(s3={'addressing_style': 'path'}),
+   )
+   client.upload_file('tests/integration/fixtures/example_network.nc', 'manta', 'manual-test/input.nc')
+   "
+   ```
+
+5. Create a run:
+
+   ```bash
+   curl -s -X POST http://localhost:8000/v1/runs \
+     -H "Content-Type: application/json" \
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/input.nc"}'
+   ```
+
+   Copy the returned `uuid` as `RUN_UUID`.
+
+6. Poll status and logs:
+
+   ```bash
+   curl -s http://localhost:8000/v1/runs/RUN_UUID
+   curl -s http://localhost:8000/v1/runs/RUN_UUID/logs
+   ```
+
+   A completed run writes its outputs to
+   `s3://manta/PROJECT_UUID/runs/RUN_UUID/output/`.
+
+7. Tear down (from `docker/`, in the second terminal — this also stops the
+   first terminal's `up`):
+
+   ```bash
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+   ```

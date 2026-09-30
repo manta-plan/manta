@@ -14,7 +14,7 @@ from playbook.blocks.core import (
 from playbook.blocks.environments import EnvironmentConflictError, EnvironmentSpec, current_env
 from playbook.blocks.registry import (
     BlockDescription,
-    BlockNotFoundError,
+    BlockNotRegisteredError,
     BlockRegistrationError,
     BlockSpec,
     BlockUnavailableError,
@@ -34,7 +34,7 @@ __all__ = [
     "BlockDefinitionError",
     "BlockDescription",
     "BlockDims",
-    "BlockNotFoundError",
+    "BlockNotRegisteredError",
     "BlockRegistrationError",
     "BlockSpec",
     "BlockUnavailableError",

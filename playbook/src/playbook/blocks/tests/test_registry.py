@@ -6,9 +6,11 @@ import pytest
 
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from playbook.blocks.registry import (
-    BlockNotFoundError,
+    BlockDescription,
+    BlockNotRegisteredError,
     BlockRegistrationError,
     BlockUnavailableError,
+    Catalogue,
     available_blocks,
     block_name,
     describe_block,
@@ -26,7 +28,7 @@ def test_get_block_resolves_registered_name():
 
 
 def test_get_block_raises_on_unknown_name():
-    with pytest.raises(BlockNotFoundError):
+    with pytest.raises(BlockNotRegisteredError):
         get_block("does_not_exist")
 
 
@@ -97,7 +99,7 @@ def test_block_name_refuses_to_guess_for_an_unregistered_block():
 
     # Guessing here would produce a name that nothing could look up, and the mistake
     # would only surface once something tried to run the block.
-    with pytest.raises(BlockNotFoundError, match="register"):
+    with pytest.raises(BlockNotRegisteredError, match="register"):
         block_name(NeverRegistered)
 
 
@@ -114,6 +116,28 @@ def test_describe_block_reads_what_the_block_declares():
 def test_resolve_block_by_name_gives_a_usable_block():
     spec = resolve_block("fake_passthrough")
     assert spec.block_class() is FakePassthrough
+
+
+def test_resolve_block_falls_back_to_the_catalogue_for_a_name_nothing_has_registered():
+    # A process that never imports any block library (an orchestrator resolving
+    # blocks purely from a catalogue passed to it) hits BlockNotRegisteredError, not
+    # BlockUnavailableError, for every block it resolves — the catalogue must still
+    # cover it.
+    catalogue = Catalogue(
+        blocks={
+            "fake_never_registered_here": BlockDescription(
+                name="fake_never_registered_here", env="solver", module="somewhere:FarAway"
+            )
+        }
+    )
+    spec = resolve_block("fake_never_registered_here", catalogue)
+    assert spec.env == "solver"
+    assert not spec.available
+
+
+def test_resolve_block_raises_when_neither_registered_nor_in_the_catalogue():
+    with pytest.raises(BlockNotRegisteredError):
+        resolve_block("fake_never_registered_here", Catalogue())
 
 
 class NotADataRecordConfig(ConfigSchema):

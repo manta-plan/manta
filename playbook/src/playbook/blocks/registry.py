@@ -50,8 +50,13 @@ class BlockRegistrationError(Exception):
     """Raised when registering a block under a name that is already taken."""
 
 
-class BlockNotFoundError(Exception):
-    """Raised when asking for a block name that nothing has registered."""
+class BlockNotRegisteredError(Exception):
+    """Raised by `get_block` when nothing in this process has registered a name.
+
+    A statement about this process only, not about the name overall: a `Catalogue`
+    built somewhere else may still describe it, which is what lets `resolve_block`
+    use one as a second, out-of-band source before treating the name as unknown.
+    """
 
 
 class BlockUnavailableError(Exception):
@@ -300,7 +305,7 @@ def get_block(name: str) -> type[MantaBlock]:
         _REGISTRY[name] = block
         return block
 
-    raise BlockNotFoundError(
+    raise BlockNotRegisteredError(
         f"No block registered under {name!r}. Available blocks: {sorted(available_blocks())}"
     )
 
@@ -318,7 +323,7 @@ def block_name(cls: type[MantaBlock]) -> str:
         module_name, _, class_name = locator.partition(":")
         if cls.__module__ == module_name and cls.__qualname__ == class_name:
             return name
-    raise BlockNotFoundError(
+    raise BlockNotRegisteredError(
         f"{cls.__name__} is not registered, so it has no name that a playbook could "
         f"refer to it by. Add the `@register(...)` decorator to the class."
     )
@@ -342,11 +347,14 @@ def resolve_block(name: str, catalogue: Catalogue | None = None) -> BlockSpec:
 
     If the block cannot be imported here but `catalogue` describes it, the description
     is used instead. That is enough to build, check, draw, and deploy a playbook; only
-    running the block itself needs the real class.
+    running the block itself needs the real class. This covers a block that is known
+    here but whose import failed (`BlockUnavailableError`) as well as one nothing in
+    this process has registered at all (`BlockNotRegisteredError`) — an orchestrator that
+    never imports any block library hits the latter for every block it resolves.
     """
     try:
         return describe_block(get_block(name), name)
-    except BlockUnavailableError:
+    except (BlockUnavailableError, BlockNotRegisteredError):
         if catalogue is not None and name in catalogue.blocks:
             return BlockSpec(catalogue.blocks[name])
         raise
