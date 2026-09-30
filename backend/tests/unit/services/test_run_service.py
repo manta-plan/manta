@@ -69,7 +69,12 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     service = RunService(db=db)
 
     # When
-    result = service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+    result = service.create_run(
+        project_uuid=project.uuid,
+        name="My First Run",
+        playbook_id="pi-digit-statistics",
+        playbook_config=[{"num_digits": 1_000}],
+    )
 
     # Then
     db.add.assert_called_once()
@@ -100,7 +105,12 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
 
     # When/Then
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
-        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000)
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[{"num_digits": 1_000}],
+        )
     assert str(flow_run_id) in caplog.text
     assert str(project.uuid) in caplog.text
 
@@ -115,8 +125,133 @@ def test_create_run_with_unknown_project_raises_404(
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.create_run(project_uuid=uuid4(), num_pi_digits=1_000)
+        service.create_run(
+            project_uuid=uuid4(),
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[{"num_digits": 1_000}],
+        )
     assert exc_info.value.status_code == 404
+
+
+def test_create_run_with_unknown_playbook_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="unknown-playbook",
+            playbook_config=[],
+        )
+    assert exc_info.value.status_code == 404
+
+
+def test_create_run_with_a_coming_soon_playbook_raises_400(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="grid-demand-forecast",
+            playbook_config=[],
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_create_run_with_missing_required_config_field_raises_400(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[{}],
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_create_run_with_config_value_below_minimum_raises_400(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[{"num_digits": 0}],
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_create_run_with_unknown_config_field_raises_400(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[{"num_digits": 1_000, "unexpected": 1}],
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_create_run_with_wrong_number_of_playbook_config_entries_raises_400(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a playbook with exactly one node
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
+    service = RunService(db=db)
+
+    # When/Then a playbook_config with zero entries doesn't match its node count
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            name="My First Run",
+            playbook_id="pi-digit-statistics",
+            playbook_config=[],
+        )
+    assert exc_info.value.status_code == 400
 
 
 def test_get_run_returns_dto_for_a_known_run(

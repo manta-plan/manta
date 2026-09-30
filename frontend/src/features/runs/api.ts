@@ -40,11 +40,18 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject, numPiDigits: number) {
+export async function createRun(
+  project: DefaultProject,
+  name: string,
+  playbookId: string,
+  playbookConfig: Record<string, number>[],
+) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      num_pi_digits: numPiDigits,
+      name,
+      playbook_id: playbookId,
+      playbook_config: playbookConfig,
     });
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {

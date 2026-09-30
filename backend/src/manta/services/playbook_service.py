@@ -26,8 +26,11 @@ _PLAYBOOKS: dict[str, PlaybookDetailResult] = {
                     label="pi digit statistic",
                     config=[
                         PlaybookNodeConfigField(
-                            key="num_pi_digits",
-                            label="num_pi_digits",
+                            # `key` matches the pi-digit-stats flow's own parameter name
+                            # (see workflows/pi_digit_stats.py) — RunService forwards
+                            # `config` straight through to `run_deployment`.
+                            key="num_digits",
+                            label="num_digits",
                             type="integer",
                             required=True,
                             min=1,

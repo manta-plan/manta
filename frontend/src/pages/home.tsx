@@ -128,13 +128,17 @@ export function HomePage() {
     },
   ];
 
-  async function handleNewRun(numPiDigits: number) {
+  async function handleNewRun(
+    name: string,
+    playbookId: string,
+    playbookConfig: Record<string, number>[],
+  ) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project, numPiDigits);
+      await createRun(project, name, playbookId, playbookConfig);
 
       setSearchRunId("");
       setActiveSearchRunId("");
@@ -391,9 +395,7 @@ export function HomePage() {
         error={runCreationError}
         isSubmitting={isLoadingRuns}
         onOpenChange={setIsCreateRunDialogOpen}
-        // TODO: wire name/playbook through once the backend supports named,
-        // multi-playbook runs — for now only num_pi_digits reaches the API.
-        onSubmit={(_name, _playbook, numPiDigits) => handleNewRun(numPiDigits)}
+        onSubmit={handleNewRun}
         open={isCreateRunDialogOpen}
       />
 

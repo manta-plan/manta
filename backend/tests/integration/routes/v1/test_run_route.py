@@ -51,10 +51,15 @@ def _wait_for_deployment_registered(
     )
 
 
-def _create_run(app_server: str, project_uuid: str, num_pi_digits: int) -> dict:
+def _create_run(app_server: str, project_uuid: str, num_digits: int) -> dict:
     response = httpx2.post(
         f"{app_server}/v1/runs",
-        json={"project_uuid": project_uuid, "num_pi_digits": num_pi_digits},
+        json={
+            "project_uuid": project_uuid,
+            "name": "Pi Digit Stats Run",
+            "playbook_id": "pi-digit-statistics",
+            "playbook_config": [{"num_digits": num_digits}],
+        },
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -102,7 +107,7 @@ def _create_completed_runs(
     run_uuids = []
 
     for _ in range(count):
-        run_uuid = _create_run(app_server, project_uuid, num_pi_digits=100)["uuid"]
+        run_uuid = _create_run(app_server, project_uuid, num_digits=100)["uuid"]
         assert _wait_for_terminal_status(app_server, run_uuid) == "COMPLETED"
         run_uuids.append(run_uuid)
 
@@ -119,7 +124,7 @@ def test_create_and_run_pi_digit_stats(
 
     # When a run is created against it, with a small digit count to keep the
     # actual flow execution fast
-    body = _create_run(app_server, project_uuid, num_pi_digits=1000)
+    body = _create_run(app_server, project_uuid, num_digits=1000)
 
     # Then it's accepted and returns a run uuid linked to the project
     run_uuid = body["uuid"]
@@ -163,7 +168,7 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
     # Given a project with a run against it
     project_uuid = _create_project(app_server)
     _wait_for_deployment_registered(prefect_service)
-    body = _create_run(app_server, project_uuid, num_pi_digits=1000)
+    body = _create_run(app_server, project_uuid, num_digits=1000)
     run_uuid = body["uuid"]
 
     # When the project is deleted

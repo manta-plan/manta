@@ -12,7 +12,11 @@ type CreateRunDialogProps = {
   open: boolean;
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (name: string, playbook: string, numPiDigits: number) => Promise<void>;
+  onSubmit: (
+    name: string,
+    playbookId: string,
+    playbookConfig: Record<string, number>[],
+  ) => Promise<void>;
 };
 
 type PlaybookCanvasNode = Node<{ label: string }, "playbook">;
@@ -42,12 +46,10 @@ export function CreateRunDialog({
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [nodes, setNodes] = useState<PlaybookCanvasNode[]>(emptyNodes);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [numPiDigits, setNumPiDigits] = useState("");
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const selectedNode = playbookDetail?.nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const numPiDigitsField =
-    selectedNode?.config.find((field) => field.key === "num_pi_digits") ?? null;
 
   useEffect(() => {
     if (!open) {
@@ -139,8 +141,13 @@ export function CreateRunDialog({
   }, [open, playbook]);
 
   useEffect(() => {
-    setNumPiDigits(numPiDigitsField?.default != null ? String(numPiDigitsField.default) : "");
-  }, [selectedNodeId, numPiDigitsField?.default]);
+    const fields = selectedNode?.config ?? [];
+    setConfigValues(
+      Object.fromEntries(
+        fields.map((field) => [field.key, field.default != null ? String(field.default) : ""]),
+      ),
+    );
+  }, [selectedNode]);
 
   function handleOpenChange(nextOpen: boolean) {
     if (!isSubmitting) {
@@ -151,28 +158,45 @@ export function CreateRunDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (
-      name.trim().length === 0 ||
-      playbook.length === 0 ||
-      selectedNodeId === null ||
-      numPiDigitsField === null
-    ) {
+    if (name.trim().length === 0 || playbook.length === 0 || selectedNode === null) {
       setValidationError("Select a playbook and configure its required node.");
       return;
     }
 
-    const parsedNumPiDigits = Number(numPiDigits);
-    const minValue = numPiDigitsField.min ?? 1;
+    const parsedConfig: Record<string, number> = {};
 
-    if (!Number.isInteger(parsedNumPiDigits) || parsedNumPiDigits < minValue) {
-      setValidationError(
-        `Enter a whole number of at least ${minValue} for ${numPiDigitsField.label}.`,
-      );
-      return;
+    for (const field of selectedNode.config) {
+      const rawValue = (configValues[field.key] ?? "").trim();
+
+      if (rawValue.length === 0) {
+        if (field.required) {
+          setValidationError(`Enter a value for ${field.label}.`);
+          return;
+        }
+        continue;
+      }
+
+      const parsedValue = Number(rawValue);
+      const minValue = field.min ?? -Infinity;
+
+      if (!Number.isInteger(parsedValue) || parsedValue < minValue) {
+        setValidationError(
+          `Enter a whole number${field.min != null ? ` of at least ${minValue}` : ""} for ${field.label}.`,
+        );
+        return;
+      }
+
+      parsedConfig[field.key] = parsedValue;
     }
 
+    // One entry per playbook node, in the playbook's own node order — not
+    // keyed by node id — matching what POST /v1/runs expects.
+    const playbookConfig = (playbookDetail?.nodes ?? []).map((node) =>
+      node.id === selectedNode.id ? parsedConfig : {},
+    );
+
     setValidationError(null);
-    await onSubmit(name.trim(), playbook, parsedNumPiDigits);
+    await onSubmit(name.trim(), playbook, playbookConfig);
   }
 
   return (
@@ -334,25 +358,28 @@ export function CreateRunDialog({
                       This node is configurable and requires a value before the run can be created.
                     </p>
                   </div>
-                  {numPiDigitsField ? (
-                    <div className="grid gap-2">
-                      <label className="text-sm font-semibold" htmlFor="num-pi-digits">
-                        {numPiDigitsField.label}
+                  {selectedNode.config.map((field) => (
+                    <div className="grid gap-2" key={field.key}>
+                      <label className="text-sm font-semibold" htmlFor={`config-${field.key}`}>
+                        {field.label}
                       </label>
                       <input
                         className="border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 rounded-md border px-3 text-sm transition outline-none focus:ring-2"
-                        id="num-pi-digits"
-                        min={numPiDigitsField.min ?? undefined}
+                        id={`config-${field.key}`}
+                        min={field.min ?? undefined}
                         onChange={(event) => {
-                          setNumPiDigits(event.target.value);
+                          setConfigValues((current) => ({
+                            ...current,
+                            [field.key]: event.target.value,
+                          }));
                           setValidationError(null);
                         }}
-                        required={numPiDigitsField.required}
+                        required={field.required}
                         type="number"
-                        value={numPiDigits}
+                        value={configValues[field.key] ?? ""}
                       />
                     </div>
-                  ) : null}
+                  ))}
                 </div>
               ) : null}
 
@@ -368,7 +395,7 @@ export function CreateRunDialog({
                 <button
                   className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                   disabled={
-                    isSubmitting || isLoadingPlaybooks || isLoadingCanvas || selectedNodeId === null
+                    isSubmitting || isLoadingPlaybooks || isLoadingCanvas || selectedNode === null
                   }
                   type="submit"
                 >

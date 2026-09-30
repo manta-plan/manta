@@ -40,7 +40,7 @@ def test_get_playbook_returns_detail_with_nodes() -> None:
     assert node.id == "pi-digit-statistics"
     assert len(node.config) == 1
     config_field = node.config[0]
-    assert config_field.key == "num_pi_digits"
+    assert config_field.key == "num_digits"
     assert config_field.required is True
     assert config_field.min == 1
     assert config_field.default == 10_000

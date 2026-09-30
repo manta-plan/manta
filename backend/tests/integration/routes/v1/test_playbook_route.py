@@ -23,7 +23,7 @@ def test_get_playbook(app_server: str) -> None:
     assert body["id"] == "pi-digit-statistics"
     assert body["status"] == "available"
     assert len(body["nodes"]) == 1
-    assert body["nodes"][0]["config"][0]["key"] == "num_pi_digits"
+    assert body["nodes"][0]["config"][0]["key"] == "num_digits"
 
 
 def test_get_playbook_with_unknown_id_returns_404(app_server: str) -> None:

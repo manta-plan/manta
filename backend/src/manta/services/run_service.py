@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.entities import Project, Run
+from manta.services.playbook_service import PlaybookService
+from manta.services.results.playbook_result import PlaybookDetailResult
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -22,6 +24,53 @@ from manta.services.results.run_result import (
 logger = logging.getLogger(__name__)
 
 PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
+
+# Only playbooks with an entry here can actually be run — the others in the
+# static catalog (see playbook_service.py) are still "coming soon".
+_DEPLOYMENT_BY_PLAYBOOK_ID = {
+    "pi-digit-statistics": PI_DIGIT_STATS_DEPLOYMENT,
+}
+
+
+def _validate_and_flatten_run_config(
+    playbook: PlaybookDetailResult, playbook_config: list[dict[str, int]]
+) -> dict[str, int]:
+    if len(playbook_config) != len(playbook.nodes):
+        raise HTTPException(
+            status_code=400,
+            detail=f"playbook_config must have exactly {len(playbook.nodes)} entrie(s) for "
+            f"playbook {playbook.id}, one per node in order",
+        )
+
+    parameters: dict[str, int] = {}
+
+    for node, node_config in zip(playbook.nodes, playbook_config, strict=True):
+        config_fields_by_key = {field.key: field for field in node.config}
+
+        unknown_keys = set(node_config) - set(config_fields_by_key)
+        if unknown_keys:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown config field(s) for node {node.id}: "
+                f"{', '.join(sorted(unknown_keys))}",
+            )
+
+        for key, field in config_fields_by_key.items():
+            if key not in node_config:
+                if field.required:
+                    raise HTTPException(
+                        status_code=400, detail=f"Missing required config field: {key}"
+                    )
+                continue
+
+            if field.min is not None and node_config[key] < field.min:
+                raise HTTPException(
+                    status_code=400, detail=f"Config field {key} must be at least {field.min}"
+                )
+
+        parameters.update(node_config)
+
+    return parameters
 
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
@@ -71,15 +120,29 @@ def _build_run_summary(run_results: list[GetRunResult]) -> GetRunSummaryResult:
 class RunService:
     def __init__(self, db: Session = Depends(get_db_session)) -> None:
         self.db = db
+        self.playbooks = PlaybookService()
 
-    def create_run(self, project_uuid: UUID, num_pi_digits: int) -> CreateRunResult:
+    def create_run(
+        self,
+        project_uuid: UUID,
+        name: str,
+        playbook_id: str,
+        playbook_config: list[dict[str, int]],
+    ) -> CreateRunResult:
+        # `name` is accepted but not persisted — `runs` has no name column yet.
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
 
-        flow_run = run_deployment(
-            PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
-        )
+        playbook = self.playbooks.get_playbook(playbook_id)
+        deployment_name = _DEPLOYMENT_BY_PLAYBOOK_ID.get(playbook_id)
+        if playbook.status != "available" or deployment_name is None:
+            raise HTTPException(
+                status_code=400, detail=f"Playbook {playbook_id} is not available for runs"
+            )
+        parameters = _validate_and_flatten_run_config(playbook, playbook_config)
+
+        flow_run = run_deployment(deployment_name, parameters=parameters, timeout=0)
 
         run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)
         self.db.add(run)
