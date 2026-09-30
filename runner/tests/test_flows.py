@@ -4,7 +4,7 @@
 
 """The transport between the orchestrator and a block's own container.
 
-`run-block` is what executes inside that container, and `PrefectStepRunner` is
+`run-block` is what executes inside that container, and `PrefectBlockRunner` is
 what dispatches at it. Both are exercised without Prefect infrastructure: the
 flow through its undecorated function, the runner with `run_deployment` stubbed.
 """
@@ -23,7 +23,7 @@ from runner.config import UnknownEnvironmentError
 from runner.flows import (
     BLOCK_DEPLOYMENT,
     BlockRunFailedError,
-    PrefectStepRunner,
+    PrefectBlockRunner,
     catalogue_parameter,
     parse_catalogue_parameter,
     run_playbook,
@@ -132,7 +132,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     monkeypatch.setattr(flows, "run_deployment", dispatch)
 
     # When
-    result = PrefectStepRunner().run_block(
+    result = PrefectBlockRunner().run_block(
         _spec(),
         step_name="cluster",
         config={"label": "tidy"},
@@ -168,7 +168,7 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
 
     # When/Then: the error says which step, which block, and where to look
     with pytest.raises(BlockRunFailedError) as exc_info:
-        PrefectStepRunner().run_block(
+        PrefectBlockRunner().run_block(
             _spec(),
             step_name="cluster",
             config={},
@@ -192,7 +192,7 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
 
     # When/Then
     with pytest.raises(BlockRunFailedError, match="UNKNOWN"):
-        PrefectStepRunner().run_block(
+        PrefectBlockRunner().run_block(
             _spec(),
             step_name="cluster",
             config={},
@@ -206,7 +206,7 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
     # Given two steps whose blocks declare different environments
     dispatch = MagicMock(return_value=_completed({"url": "out.nc"}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
-    runner = PrefectStepRunner()
+    runner = PrefectBlockRunner()
 
     # When each is dispatched
     for env in ("default", "pypsa"):
@@ -236,7 +236,7 @@ def test_a_step_needing_an_unconfigured_environment_says_so(
     # When/Then: it fails naming the environment and what to set, rather than
     # silently running the block in some other environment's image.
     with pytest.raises(UnknownEnvironmentError) as exc_info:
-        PrefectStepRunner().run_block(
+        PrefectBlockRunner().run_block(
             _spec(env="julia"),
             step_name="step",
             config={},

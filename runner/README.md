@@ -13,7 +13,7 @@ It sits between two things that must not know about each other:
 
 - **[`playbook`](../playbook)** owns the playbook *language* and engine — which
   steps run, what feeds what, where outputs go — and never imports Prefect or
-  Docker. It exposes a `StepRunner` protocol; this package implements it.
+  Docker. It exposes a `BlockRunner` protocol; this package implements it.
 - **The blocks image** holds only a block library (e.g.
   [`playbook-library`](../playbook-library)) and its own dependencies. It is what
   a block author writes, tests and runs against.
@@ -26,7 +26,7 @@ promising it.
 
 | Module | What it is |
 | --- | --- |
-| `flows.py` | the `run-playbook` and `run-block` flows, and `PrefectStepRunner` |
+| `flows.py` | the `run-playbook` and `run-block` flows, and `PrefectBlockRunner` |
 | `config.py` | the images, pools, network and object store, all from the environment |
 | `deploy.py` | creates the work pools and registers the deployments (`python -m runner.deploy`) |
 
@@ -147,7 +147,7 @@ uv run pytest
 ```
 
 Tests live in `tests/`, exercising the flows through their undecorated
-functions and `PrefectStepRunner` with `run_deployment` stubbed — no live
+functions and `PrefectBlockRunner` with `run_deployment` stubbed — no live
 Prefect server or Docker daemon needed. `tests/test_isolation.py` is the
 boundary this package cannot afford to lose by accident: that it never imports
 this monorepo's own backend or a block library.

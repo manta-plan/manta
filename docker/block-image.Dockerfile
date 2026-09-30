@@ -10,7 +10,7 @@
 # `runner`. Named for what it specifically is — the Prefect-flavored runtime a
 # block executes under, not "the" runtime a block needs in general; `playbook`
 # itself has no opinion about Prefect at all, and a caller using
-# `LocalStepRunner` directly needs none of this. One throwaway container per
+# `LocalBlockRunner` directly needs none of this. One throwaway container per
 # block step of a playbook run is started from it by the docker work pool's
 # worker; those containers are siblings of the compose stack (they won't
 # appear in `docker compose ps`), joined to its network so they can reach

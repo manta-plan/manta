@@ -113,8 +113,8 @@ def run_block(
     return result.to_dict()
 
 
-class PrefectStepRunner:
-    """`playbook`'s StepRunner seam, implemented as one flow run per step.
+class PrefectBlockRunner:
+    """`playbook`'s BlockRunner seam, implemented as one flow run per block.
 
     The engine hands over one fully spelled-out block invocation at a time; each
     becomes a `run-block` flow run on the docker work pool, which the worker turns
@@ -122,7 +122,7 @@ class PrefectStepRunner:
     the work pool's type, not this class.
 
     A block declares the environment it needs as a name, and that name picks the
-    container image for its step alone. Two frameworks that could never share a
+    container image for that block alone. Two frameworks that could never share a
     virtualenv can therefore appear in one playbook: `block.env` is on the spec
     the catalogue provides, so this works in a process that cannot import a block.
     """
@@ -181,6 +181,6 @@ def run_playbook(
         DataRecord.from_dict(record),
         config,
         output_prefix=output_prefix,
-        runner=PrefectStepRunner(),
+        runner=PrefectBlockRunner(),
     )
     return result.to_dict()

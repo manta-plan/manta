@@ -84,7 +84,7 @@ def docker_job_template() -> dict:
 
     The network and environment become defaults for every job the pool runs. The
     image deliberately does not: it is a property of the *step's* environment, not
-    of the pool, so every run supplies its own (see PrefectStepRunner).
+    of the pool, so every run supplies its own (see PrefectBlockRunner).
     """
     from prefect_docker.worker import DockerWorker
 
