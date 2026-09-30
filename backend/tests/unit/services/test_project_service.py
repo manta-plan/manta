@@ -1,5 +1,6 @@
 import pytest
 
+from manta.entities import User
 from manta.services.project_service import ProjectService
 
 
@@ -11,9 +12,11 @@ from manta.services.project_service import ProjectService
 def test_create_project(description, mock_db) -> None:
     # Given
     service = ProjectService(db=mock_db)
+    owner = User(username="alice")
+    owner.id = 1
 
     # When
-    result = service.create_project(name="North Sea Wind", description=description)
+    result = service.create_project(name="North Sea Wind", description=description, owner=owner)
 
     # Then
     mock_db.add.assert_called_once()
