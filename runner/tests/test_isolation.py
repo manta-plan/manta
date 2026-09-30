@@ -20,7 +20,8 @@ FORBIDDEN = {"manta", "playbook_library"}
 it to run and test their playbooks without Manta. Depending on Manta's own
 library — or on Manta itself — would make that a cycle. Prefect and Docker, by
 contrast, are exactly what this package exists to wrap, so they are not checked
-here (see playbook/tests/test_isolation.py for that boundary, one layer down)."""
+here (see playbook/src/playbook/tests/test_isolation.py for that boundary, one layer
+down)."""
 
 
 def source_files() -> list[Path]:

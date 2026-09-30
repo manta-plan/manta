@@ -13,8 +13,7 @@ dependencies = [
     # library here is an MVP shortcut, not the intended shape. Long term,
     # nothing in Manta (backend included) should depend on a specific block
     # library; which libraries exist should reach the backend through the
-    # planned HTTP syncing endpoints or some other manner instead
-    # (see the TODO in playbook/blocks/registry.py's own module docstring).
+    # planned HTTP syncing endpoints or some other manner instead.
     "playbook",
     "playbook-library",
     "prefect==3.8.3",

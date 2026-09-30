@@ -170,7 +170,7 @@ def run_playbook(
     """Run a whole playbook, given its document rather than the playbook itself.
 
     `catalogue` is what `playbook`'s blocks are resolved against — this process
-    never imports a block library itself (see tests/test_isolation.py), so the
+    never imports a block library itself (see runner/tests/test_isolation.py), so the
     caller has to describe every block the playbook could use, encoded with
     `catalogue_parameter`.
     """
