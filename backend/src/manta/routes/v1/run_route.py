@@ -26,7 +26,11 @@ def create_run(
     service: RunService = Depends(),
 ) -> CreateRunResult:
     return service.create_run(
-        project_uuid=request.project_uuid, num_pi_digits=request.num_pi_digits, user=user
+        project_uuid=request.project_uuid,
+        playbook=request.playbook,
+        config=request.config,
+        data_record_url=request.data_record_url,
+        user=user,
     )
 
 

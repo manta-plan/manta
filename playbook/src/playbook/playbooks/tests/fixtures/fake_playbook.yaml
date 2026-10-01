@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+name: fake-playbook
+initial_data:
+  dims: [investment_period]
+steps:
+  - name: cluster
+    block: fake_adds_clustered
+  - name: expand
+    block: fake_passthrough
+  - name: dispatch
+    block: fake_needs_upstream
+    when:
+      config: globals.mode
+      equals: full
+    inputs:
+      source: ${steps.expand.output}
