@@ -441,7 +441,12 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
 
     # Then every endpoint rejects the request before doing any work
     create_response = httpx2.post(
-        f"{app_server}/v1/runs", json={"project_uuid": project_uuid, "num_pi_digits": 100}
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": project_uuid,
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
     )
     assert create_response.status_code == 401
 
@@ -469,7 +474,11 @@ def test_run_endpoints_reject_malformed_uuid(
     # Then FastAPI's own UUID coercion rejects it before any service logic runs
     create_response = httpx2.post(
         f"{app_server}/v1/runs",
-        json={"project_uuid": "not-a-uuid", "num_pi_digits": 100},
+        json={
+            "project_uuid": "not-a-uuid",
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
         headers=headers,
     )
     assert create_response.status_code == 422
@@ -534,7 +543,11 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     create_response = httpx2.post(
         f"{app_server}/v1/runs",
-        json={"project_uuid": unknown_uuid, "num_pi_digits": 100},
+        json={
+            "project_uuid": unknown_uuid,
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
         headers=headers,
     )
     assert create_response.status_code == 404
@@ -552,7 +565,10 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
 
 def test_get_run_rejects_non_owner(
-    app_server: str, kc_oidc_client: KeycloakOpenID, second_user_headers: dict[str, str]
+    app_server: str,
+    kc_oidc_client: KeycloakOpenID,
+    second_user_headers: dict[str, str],
+    data_record_url: str,
 ) -> None:
     # Ownership-denial logic itself is exhaustively unit-tested in
     # test_run_service.py; this single endpoint proves the real wiring —
@@ -562,7 +578,7 @@ def test_get_run_rejects_non_owner(
     # Given a run owned by one user
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
-    body = _create_run(app_server, project_uuid, num_pi_digits=1000, headers=headers)
+    body = _create_run(app_server, project_uuid, data_record_url, headers)
     run_uuid = body["uuid"]
 
     # When a different, authenticated-but-unrelated user requests it
@@ -577,6 +593,7 @@ def test_list_runs_does_not_leak_other_users_runs(
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
     second_user_headers: dict[str, str],
+    data_record_url: str,
 ) -> None:
     # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
     # and the unit-level *_rejects_non_owner tests) — it's testing that the
@@ -588,11 +605,18 @@ def test_list_runs_does_not_leak_other_users_runs(
     # Given two users, each with their own project and a completed run in it
     headers_a = _auth_headers(app_server, kc_oidc_client)
     project_a = _create_project(app_server, headers_a)
-    _create_completed_runs(app_server, prefect_service, project_a, count=1, headers=headers_a)
+    _create_completed_runs(
+        app_server, prefect_service, project_a, data_record_url, count=1, headers=headers_a
+    )
 
     project_b = _create_project(app_server, second_user_headers)
     run_b = _create_completed_runs(
-        app_server, prefect_service, project_b, count=1, headers=second_user_headers
+        app_server,
+        prefect_service,
+        project_b,
+        data_record_url,
+        count=1,
+        headers=second_user_headers,
     )
 
     # When user B lists runs for their own project (legitimate access)
