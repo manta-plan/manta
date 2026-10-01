@@ -191,6 +191,7 @@ def test_create_run_with_unknown_project_raises_404(
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
             data_record_url=_RECORD_URL,
+            user=_existing_user(),
         )
     assert exc_info.value.status_code == 404
 
@@ -212,6 +213,7 @@ def test_create_run_with_unknown_playbook_raises_404(
             playbook="does-not-exist",
             config=None,
             data_record_url=_RECORD_URL,
+            user=_existing_user(),
         )
     assert exc_info.value.status_code == 404
     # And no run was ever dispatched for a playbook that doesn't exist.
@@ -483,7 +485,13 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
 
     # When/Then
     with pytest.raises(AuthorizationError):
-        service.create_run(project_uuid=project.uuid, num_pi_digits=1_000, user=other_user)
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            data_record_url=_RECORD_URL,
+            user=other_user,
+        )
 
 
 def test_list_runs_rejects_non_owner(mock_db_class) -> None:
