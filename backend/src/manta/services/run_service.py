@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.config.s3_config import s3_bucket_name
-from manta.entities import Project, Run
+from manta.entities import Project, Run, User
+from manta.services.errors import AuthorizationError
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -93,11 +94,18 @@ class RunService:
         self.db = db
 
     def create_run(
-        self, project_uuid: UUID, playbook: str, config: dict | None, data_record_url: str
+        self,
+        project_uuid: UUID,
+        playbook: str,
+        config: dict | None,
+        data_record_url: str,
+        user: User,
     ) -> CreateRunResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         library_playbook = library_playbooks().get(playbook)
         if library_playbook is None:
@@ -136,11 +144,18 @@ class RunService:
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
     def list_runs(
-        self, project_uuid: UUID, limit: int, offset: int, status_filters: list[str] | None
+        self,
+        project_uuid: UUID,
+        limit: int,
+        offset: int,
+        status_filters: list[str] | None,
+        user: User,
     ) -> ListRunsResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -162,10 +177,12 @@ class RunService:
             summary=_build_run_summary(run_results),
         )
 
-    def get_run_summary(self, project_uuid: UUID) -> GetRunSummaryResult:
+    def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -195,7 +212,7 @@ class RunService:
             for run in runs
         ]
 
-    def get_run(self, run_uuid: UUID) -> GetRunResult:
+    def get_run(self, run_uuid: UUID, user: User) -> GetRunResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
@@ -203,6 +220,8 @@ class RunService:
         project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         flow_run = _read_flow_run(run.prefect_flow_run_id)
 
@@ -213,10 +232,16 @@ class RunService:
             created_at=run.created_at,
         )
 
-    def get_run_logs(self, run_uuid: UUID) -> GetRunLogsResult:
+    def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
+
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         flow_run, logs = _read_flow_run_logs(run.prefect_flow_run_id)
 
