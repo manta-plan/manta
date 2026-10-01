@@ -63,7 +63,7 @@ def _existing_project(owner_id: int = 1) -> Project:
 
 
 def _existing_run(project: Project) -> Run:
-    run = Run(project_id=project.id, prefect_flow_run_id=uuid4())
+    run = Run(project_id=project.id, prefect_flow_run_id=uuid4(), playbook=_LIBRARY_PLAYBOOK)
     run.id = 1
     run.uuid = uuid4()
     run.created_at = datetime.now(UTC)
@@ -101,8 +101,10 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     assert isinstance(persisted_run, Run)
     assert persisted_run.project_id == project.id
     assert persisted_run.prefect_flow_run_id == flow_run_id
+    assert persisted_run.playbook == _LIBRARY_PLAYBOOK
     assert result.uuid == db.uuid
     assert result.project_uuid == project.uuid
+    assert result.playbook == _LIBRARY_PLAYBOOK
     assert result.created_at == db.created_at
 
     # ...and what actually reaches Prefect is the playbook resolved by name, the
@@ -238,6 +240,7 @@ def test_get_run_returns_dto_for_a_known_run(
     # Then
     assert result.uuid == run.uuid
     assert result.project_uuid == project.uuid
+    assert result.playbook == _LIBRARY_PLAYBOOK
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
 
@@ -312,6 +315,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
     assert [run.uuid for run in result.items] == [first_run.uuid, second_run.uuid]
     assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
+    assert [run.playbook for run in result.items] == [_LIBRARY_PLAYBOOK, _LIBRARY_PLAYBOOK]
     assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
     assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
 

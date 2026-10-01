@@ -167,10 +167,11 @@ def test_create_and_run_a_playbook(
     # When a run is created against it
     body = _create_run(app_server, project_uuid, data_record_url, headers)
 
-    # Then it's accepted and returns a run uuid linked to the project
+    # Then it's accepted and returns a run uuid linked to the project and playbook
     run_uuid = body["uuid"]
     assert UUID(run_uuid)
     assert body["project_uuid"] == project_uuid
+    assert body["playbook"] == _LIBRARY_PLAYBOOK
 
     # And it eventually completes: dispatched through a real Prefect server,
     # the playbook worker walking the playbook, and three real block
@@ -192,15 +193,17 @@ def test_create_and_run_a_playbook(
         cursor.execute("SELECT id FROM projects WHERE uuid = %s", (project_uuid,))
         project_row = cursor.fetchone()
         cursor.execute(
-            "SELECT project_id, prefect_flow_run_id FROM runs WHERE uuid = %s", (run_uuid,)
+            "SELECT project_id, prefect_flow_run_id, playbook FROM runs WHERE uuid = %s",
+            (run_uuid,),
         )
         run_row = cursor.fetchone()
 
     assert project_row is not None
     assert run_row is not None
-    run_project_id, prefect_flow_run_id = run_row
+    run_project_id, prefect_flow_run_id, run_playbook = run_row
     assert run_project_id == project_row[0]
     assert prefect_flow_run_id is not None
+    assert run_playbook == _LIBRARY_PLAYBOOK
 
     # And the flow run is persisted in Prefect's own Postgres database — proof
     # it's actually backed by Postgres rather than an ephemeral/SQLite store
@@ -293,6 +296,7 @@ def test_list_runs_returns_project_runs_with_pagination_and_summary(
     assert len(first_page["items"]) == 2
     assert {item["uuid"] for item in first_page["items"]}.issubset(set(run_uuids))
     assert {item["project_uuid"] for item in first_page["items"]} == {project_uuid}
+    assert {item["playbook"] for item in first_page["items"]} == {_LIBRARY_PLAYBOOK}
     assert {item["status"] for item in first_page["items"]} == {"COMPLETED"}
     assert first_page["summary"] == {
         "total": 3,

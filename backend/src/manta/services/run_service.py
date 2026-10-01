@@ -126,7 +126,12 @@ class RunService:
             timeout=0,
         )
 
-        run = Run(uuid=run_uuid, project_id=project.id, prefect_flow_run_id=flow_run.id)
+        run = Run(
+            uuid=run_uuid,
+            project_id=project.id,
+            prefect_flow_run_id=flow_run.id,
+            playbook=playbook,
+        )
         self.db.add(run)
         try:
             self.db.commit()
@@ -141,7 +146,12 @@ class RunService:
             f"Created run {run.uuid} for project {project.uuid} (prefect_flow_run_id={flow_run.id})"
         )
 
-        return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
+        return CreateRunResult(
+            uuid=run.uuid,
+            project_uuid=project.uuid,
+            playbook=run.playbook,
+            created_at=run.created_at,
+        )
 
     def list_runs(
         self,
@@ -206,6 +216,7 @@ class RunService:
             GetRunResult(
                 uuid=run.uuid,
                 project_uuid=project_uuid,
+                playbook=run.playbook,
                 status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
                 created_at=run.created_at,
             )
@@ -228,6 +239,7 @@ class RunService:
         return GetRunResult(
             uuid=run.uuid,
             project_uuid=project.uuid,
+            playbook=run.playbook,
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )

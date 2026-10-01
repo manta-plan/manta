@@ -7,12 +7,14 @@ from pydantic import BaseModel
 class CreateRunResult(BaseModel):
     uuid: UUID
     project_uuid: UUID
+    playbook: str
     created_at: datetime
 
 
 class GetRunResult(BaseModel):
     uuid: UUID
     project_uuid: UUID
+    playbook: str
     status: str
     created_at: datetime
 
