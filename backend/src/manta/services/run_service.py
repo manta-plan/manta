@@ -2,6 +2,7 @@ import logging
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
+from playbook.playbooks import BlockStep, NestedPlaybookStep, Playbook, parse_doc, playbook_from_doc
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
 # MVP corner-cut, not the intended shape — see the TODO on these two
@@ -9,10 +10,15 @@ from fastapi import Depends, HTTPException
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import get_client
-from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
+from prefect.client.schemas.filters import (
+    FlowRunFilter,
+    FlowRunFilterParentFlowRunId,
+    LogFilter,
+    LogFilterFlowRunId,
+)
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
-from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter
+from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter, parse_catalogue_parameter
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -24,8 +30,10 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunStepsResult,
     GetRunSummaryResult,
     ListRunsResult,
+    RunStepResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +75,23 @@ def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
         return flow_run, [log.message for log in logs]
 
 
+def _read_flow_run_with_block_runs(flow_run_id: UUID) -> tuple[FlowRun, list[FlowRun]]:
+    """A playbook's flow run, plus the flow run of every block it has dispatched so far.
+
+    Each block runs as a child flow run of its playbook's flow run (see
+    runner.flows.PrefectBlockRunner). `parent_flow_run_id` is the filter that finds
+    those — not `parent_task_run_id`, which matches something else entirely.
+    """
+    with get_client(sync_client=True) as client:
+        flow_run = client.read_flow_run(flow_run_id)
+        block_runs = client.read_flow_runs(
+            flow_run_filter=FlowRunFilter(
+                parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
+            )
+        )
+        return flow_run, block_runs
+
+
 def _flow_run_status(flow_run: FlowRun) -> str:
     return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
 
@@ -78,6 +103,47 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
     # the playbook entity is defined (see the TODOs on Run.playbook and
     # CreateRunRequest.config), store it on Run itself and read it from there.
     return flow_run.parameters["config"]
+
+
+def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
+    # TODO(post-MVP): the same shortcut as _flow_run_config — the playbook a run
+    # was started with is rebuilt from its flow run's parameters (the document and
+    # catalogue it was dispatched with), rather than looked up live in the library
+    # by Run.playbook, which may have changed since. Read it from the playbook
+    # entity once that exists (see the TODO on Run.playbook).
+    parameters = flow_run.parameters
+    return playbook_from_doc(
+        parse_doc(parameters["playbook"]),
+        catalogue=parse_catalogue_parameter(parameters["catalogue"]),
+    )
+
+
+def _build_run_step_result(
+    step: BlockStep | NestedPlaybookStep,
+    active_step_names: set[str],
+    block_runs_by_step_name: dict[str, FlowRun],
+) -> RunStepResult:
+    block = step.block.name if isinstance(step, BlockStep) else None
+    block_run = block_runs_by_step_name.get(step.name) if block is not None else None
+
+    if block_run is not None:
+        status = _flow_run_status(block_run)
+    elif step.name not in active_step_names:
+        status = "SKIPPED"
+    elif block is None:
+        # A nested playbook has no flow run of its own: its blocks run as children
+        # of this run under their own step names, so they can't be told apart yet.
+        status = "UNKNOWN"
+    else:
+        status = "NOT_STARTED"
+
+    return RunStepResult(
+        name=step.name,
+        block=block,
+        status=status,
+        start_time=block_run.start_time if block_run is not None else None,
+        end_time=block_run.end_time if block_run is not None else None,
+    )
 
 
 def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | None:
@@ -253,6 +319,38 @@ class RunService:
             config=_flow_run_config(flow_run),
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
+        )
+
+    def get_run_steps(self, run_uuid: UUID, user: User) -> GetRunStepsResult:
+        run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
+
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
+
+        flow_run, block_runs = _read_flow_run_with_block_runs(run.prefect_flow_run_id)
+        playbook = _flow_run_playbook(flow_run)
+        active_step_names = {
+            step.name for step in playbook.active(_flow_run_config(flow_run)).steps
+        }
+        # Matched by the step name each block run was dispatched with. Should a step
+        # ever have more than one (the playbook run was retried), the latest wins.
+        block_runs_by_step_name = {
+            block_run.parameters["step_name"]: block_run
+            for block_run in sorted(block_runs, key=lambda block_run: block_run.created)
+        }
+
+        return GetRunStepsResult(
+            uuid=run.uuid,
+            steps=[
+                _build_run_step_result(step, active_step_names, block_runs_by_step_name)
+                for step in playbook.steps
+            ],
+            run_status=_flow_run_status(flow_run),
         )
 
     def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:

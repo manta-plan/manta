@@ -13,6 +13,9 @@ _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 """Runs cluster → expansion_overnight → dispatch under the library's own
 default config (globals.expansion_mode: overnight) — three real blocks, a
 real PyPSA/HiGHS solve each, dispatched through the actual docker work pool."""
+_STEP_NAMES = ["cluster", "expansion_overnight", "expansion_myopic", "dispatch"]
+"""Every step of _LIBRARY_PLAYBOOK, in playbook order — including the myopic
+branch, which its default config skips."""
 
 # The provisioner registers this deployment as part of bringing the stack up
 # (see docker_services in conftest.py, which waits on it via `--wait`), so this
@@ -92,6 +95,14 @@ def _create_run(
     response = httpx2.post(f"{app_server}/v1/runs", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _get_steps(app_server: str, run_uuid: str, headers: dict[str, str]) -> list[dict]:
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["uuid"] == run_uuid
+    return body["steps"]
 
 
 def _wait_for_terminal_status(
@@ -177,6 +188,13 @@ def test_create_and_run_a_playbook(
     assert body["project_uuid"] == project_uuid
     assert body["playbook"] == _LIBRARY_PLAYBOOK
 
+    # And its steps are reported straight away, before any has finished: every
+    # step of the playbook in order, with the myopic branch skipped under the
+    # default config (globals.expansion_mode: overnight)
+    early_steps = _get_steps(app_server, run_uuid, headers)
+    assert [step["name"] for step in early_steps] == _STEP_NAMES
+    assert early_steps[2]["status"] == "SKIPPED"
+
     # And it eventually completes: dispatched through a real Prefect server,
     # the playbook worker walking the playbook, and three real block
     # containers — cluster_time, overnight_capacity_expansion,
@@ -191,6 +209,19 @@ def test_create_and_run_a_playbook(
     assert logs_body["uuid"] == run_uuid
     assert logs_body["run_status"] == "COMPLETED"
     assert logs_body["logs"]
+
+    # And each step reports its own block run's outcome, not just the playbook's
+    steps = _get_steps(app_server, run_uuid, headers)
+    assert [(step["name"], step["block"], step["status"]) for step in steps] == [
+        ("cluster", "cluster_time", "COMPLETED"),
+        ("expansion_overnight", "overnight_capacity_expansion", "COMPLETED"),
+        ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
+        ("dispatch", "rolling_horizon_dispatch", "COMPLETED"),
+    ]
+    for step in steps:
+        ran = step["status"] == "COMPLETED"
+        assert (step["start_time"] is not None) == ran
+        assert (step["end_time"] is not None) == ran
 
     # And the run reports which playbook it ran, and the config it was started
     # with — the library's own default_config, since none was supplied
@@ -507,6 +538,9 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     logs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs")
     assert logs_response.status_code == 401
 
+    steps_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps")
+    assert steps_response.status_code == 401
+
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -541,6 +575,9 @@ def test_run_endpoints_reject_malformed_uuid(
 
     logs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/logs", headers=headers)
     assert logs_response.status_code == 422
+
+    steps_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/steps", headers=headers)
+    assert steps_response.status_code == 422
 
 
 def test_list_runs_rejects_invalid_pagination_params(
@@ -580,6 +617,7 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/summary
     #   GET    /runs/{run_uuid}
     #   GET    /runs/{run_uuid}/logs
+    #   GET    /runs/{run_uuid}/steps
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -605,6 +643,9 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     logs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/logs", headers=headers)
     assert logs_response.status_code == 404
+
+    steps_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/steps", headers=headers)
+    assert steps_response.status_code == 404
 
 
 def test_get_run_rejects_non_owner(

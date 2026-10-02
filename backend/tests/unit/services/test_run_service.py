@@ -6,7 +6,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
+from runner.flows import catalogue_parameter
 
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
@@ -449,6 +451,197 @@ def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
             project_uuid=uuid4(), limit=10, offset=0, status_filters=None, user=_existing_user()
         )
     assert exc_info.value.status_code == 404
+
+
+def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | None = None):
+    """The playbook's own flow run, carrying the parameters it was dispatched with."""
+    if playbook_doc is None:
+        playbook_doc = library_playbooks()[_LIBRARY_PLAYBOOK].doc.model_dump(mode="json")
+    return SimpleNamespace(
+        id=uuid4(),
+        state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
+        parameters={
+            "playbook": playbook_doc,
+            "config": config,
+            "catalogue": catalogue_parameter(library_catalogue()),
+        },
+    )
+
+
+def _fake_block_run(step_name: str, block: str, state_type: str, created: datetime):
+    return SimpleNamespace(
+        state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
+        parameters={"step_name": step_name, "block": block},
+        created=created,
+        start_time=created,
+        end_time=created if state_type == "COMPLETED" else None,
+    )
+
+
+def _patch_flow_runs(monkeypatch: pytest.MonkeyPatch, playbook_flow_run, block_runs) -> MagicMock:
+    fake_client = MagicMock(
+        read_flow_run=MagicMock(return_value=playbook_flow_run),
+        read_flow_runs=MagicMock(return_value=block_runs),
+    )
+    _patch_get_client(monkeypatch, fake_client)
+    return fake_client
+
+
+def test_get_run_steps_reports_every_step_with_its_own_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run of the library playbook under its default config (overnight
+    # expansion), part-way through: cluster done, overnight expansion running
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    started = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    fake_client = _patch_flow_runs(
+        monkeypatch,
+        _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        [
+            _fake_block_run("cluster", "cluster_time", "COMPLETED", started),
+            _fake_block_run(
+                "expansion_overnight", "overnight_capacity_expansion", "RUNNING", started
+            ),
+        ],
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then every step of the playbook is reported, in playbook order
+    assert result.uuid == run.uuid
+    assert result.run_status == "RUNNING"
+    assert [(step.name, step.block, step.status) for step in result.steps] == [
+        ("cluster", "cluster_time", "COMPLETED"),
+        ("expansion_overnight", "overnight_capacity_expansion", "RUNNING"),
+        # Its `when` is false for this run's config, so it never runs.
+        ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
+        # It will run, but hasn't been dispatched yet.
+        ("dispatch", "rolling_horizon_dispatch", "NOT_STARTED"),
+    ]
+    assert result.steps[0].start_time == started
+    assert result.steps[0].end_time == started
+    assert result.steps[3].start_time is None
+    assert result.steps[3].end_time is None
+
+    # And the block runs were looked up as children of the playbook's flow run
+    flow_run_filter = fake_client.read_flow_runs.call_args.kwargs["flow_run_filter"]
+    assert flow_run_filter.parent_flow_run_id.any_ == [run.prefect_flow_run_id]
+
+
+def test_get_run_steps_decides_skipped_steps_from_the_runs_own_config(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run started in myopic mode, with nothing dispatched yet
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    _patch_flow_runs(
+        monkeypatch,
+        _fake_playbook_flow_run("PENDING", {"globals": {"expansion_mode": "myopic"}}),
+        [],
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then the overnight branch is the one skipped this time
+    assert {step.name: step.status for step in result.steps} == {
+        "cluster": "NOT_STARTED",
+        "expansion_overnight": "SKIPPED",
+        "expansion_myopic": "NOT_STARTED",
+        "dispatch": "SKIPPED",
+    }
+
+
+def test_get_run_steps_reports_the_latest_block_run_of_a_step_run_twice(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a step with two block runs, e.g. after the playbook run was retried
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    first = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    second = datetime(2026, 10, 2, 13, 0, tzinfo=UTC)
+    _patch_flow_runs(
+        monkeypatch,
+        _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        # Deliberately newest first, so list order can't be what decides it.
+        [
+            _fake_block_run("cluster", "cluster_time", "COMPLETED", second),
+            _fake_block_run("cluster", "cluster_time", "FAILED", first),
+        ],
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then
+    assert result.steps[0].status == "COMPLETED"
+    assert result.steps[0].start_time == second
+
+
+def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run of a playbook with a step that runs another playbook
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    playbook_doc = {
+        "name": "outer",
+        "steps": [
+            {"name": "cluster", "block": "cluster_time"},
+            {
+                "name": "inner",
+                "playbook": {
+                    "name": "inner",
+                    "steps": [{"name": "dispatch", "block": "rolling_horizon_dispatch"}],
+                },
+            },
+        ],
+    }
+    _patch_flow_runs(monkeypatch, _fake_playbook_flow_run("RUNNING", {}, playbook_doc), [])
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then the nested step is listed without a block, and without a status it
+    # can't actually know
+    assert [(step.name, step.block, step.status) for step in result.steps] == [
+        ("cluster", "cluster_time", "NOT_STARTED"),
+        ("inner", None, "UNKNOWN"),
+    ]
+
+
+def test_get_run_steps_with_unknown_run_raises_404(mock_db_class) -> None:
+    # Given
+    db = mock_db_class(query_results={Run: None})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.get_run_steps(run_uuid=uuid4(), user=_existing_user())
+    assert exc_info.value.status_code == 404
+
+
+def test_get_run_steps_rejects_non_owner(mock_db_class) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    db = mock_db_class(query_results={Run: run, Project: project})
+    service = RunService(db=db)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_steps(run_uuid=run.uuid, user=other_user)
 
 
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(

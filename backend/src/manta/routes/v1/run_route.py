@@ -11,6 +11,7 @@ from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
     GetRunResult,
+    GetRunStepsResult,
     GetRunSummaryResult,
     ListRunsResult,
 )
@@ -65,6 +66,15 @@ def get_run(
     service: RunService = Depends(),
 ) -> GetRunResult:
     return service.get_run(run_uuid, user=user)
+
+
+@router.get("/{run_uuid}/steps", response_model=GetRunStepsResult)
+def get_run_steps(
+    run_uuid: UUID,
+    user: User = Security(authenticated_user),
+    service: RunService = Depends(),
+) -> GetRunStepsResult:
+    return service.get_run_steps(run_uuid, user=user)
 
 
 @router.get("/{run_uuid}/logs", response_model=GetRunLogsResult)
