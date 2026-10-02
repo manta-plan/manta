@@ -4,10 +4,13 @@ from uuid import UUID, uuid4
 import httpx2
 import psycopg
 from keycloak.openid_connection import KeycloakOpenID
+from mypy_boto3_s3.client import S3Client
 from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import SyncPrefectClient
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
+
+from manta.config.s3_config import s3_bucket_name
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 """Runs cluster → expansion_overnight → dispatch under the library's own
@@ -172,6 +175,7 @@ def test_create_and_run_a_playbook(
     prefect_db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
     data_record_url: str,
+    s3_client: S3Client,
 ) -> None:
     # Given a project, and the provisioner's deployment registered with the
     # Prefect server
@@ -222,6 +226,32 @@ def test_create_and_run_a_playbook(
         ran = step["status"] == "COMPLETED"
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
+
+    # And its output files are listed by name — one per step that ran — without
+    # the caller needing to know where in S3 they live
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs", headers=headers)
+    assert outputs_response.status_code == 200
+    outputs = {item["name"]: item for item in outputs_response.json()["items"]}
+    assert set(outputs) == {"cluster.nc", "expansion_overnight.nc", "dispatch.nc"}
+
+    # And each can be downloaded through the backend, byte for byte what is in S3
+    download = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc", headers=headers)
+    assert download.status_code == 200
+    stored = s3_client.get_object(
+        Bucket=s3_bucket_name(), Key=f"{project_uuid}/runs/{run_uuid}/output/dispatch.nc"
+    )["Body"].read()
+    assert download.content == stored
+    assert int(download.headers["content-length"]) == outputs["dispatch.nc"]["size"]
+    assert download.headers["content-disposition"] == "attachment; filename*=utf-8''dispatch.nc"
+
+    # And nothing the run didn't output can be downloaded: neither a missing
+    # file, nor the run's own input, which really exists in the bucket, reached
+    # by climbing out of the output folder (`../` percent-encoded, so the HTTP
+    # client sends it as-is instead of resolving it itself first)
+    climbing_to_the_input = "%2E%2E%2F" * 4 + "integration-tests%2Fexample_network.nc"
+    for name in ("missing.nc", climbing_to_the_input):
+        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/{name}", headers=headers)
+        assert response.status_code == 404, name
 
     # And the run reports which playbook it ran, and the config it was started
     # with — the library's own default_config, since none was supplied
@@ -541,6 +571,12 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     steps_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps")
     assert steps_response.status_code == 401
 
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
+    assert outputs_response.status_code == 401
+
+    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
+    assert output_response.status_code == 401
+
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -578,6 +614,14 @@ def test_run_endpoints_reject_malformed_uuid(
 
     steps_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/steps", headers=headers)
     assert steps_response.status_code == 422
+
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
+    assert outputs_response.status_code == 422
+
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 422
 
 
 def test_list_runs_rejects_invalid_pagination_params(
@@ -618,6 +662,8 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/{run_uuid}
     #   GET    /runs/{run_uuid}/logs
     #   GET    /runs/{run_uuid}/steps
+    #   GET    /runs/{run_uuid}/outputs
+    #   GET    /runs/{run_uuid}/outputs/{name}
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -646,6 +692,14 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     steps_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/steps", headers=headers)
     assert steps_response.status_code == 404
+
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
+    assert outputs_response.status_code == 404
+
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 404
 
 
 def test_get_run_rejects_non_owner(

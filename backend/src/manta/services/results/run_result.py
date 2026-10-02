@@ -68,6 +68,22 @@ class GetRunStepsResult(BaseModel):
     run_status: str
 
 
+class RunOutputFileResult(BaseModel):
+    name: str
+    """The file's path within the run's outputs, e.g. `dispatch.nc` — what it is
+    downloaded by (GET /v1/runs/{uuid}/outputs/{name}). Each step writes
+    `<step name>.<suffix>`."""
+
+    size: int
+    last_modified: datetime
+
+
+class ListRunOutputsResult(BaseModel):
+    uuid: UUID
+    items: list[RunOutputFileResult]
+    total: int
+
+
 class GetRunLogsResult(BaseModel):
     uuid: UUID
     logs: list[str]

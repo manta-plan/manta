@@ -32,9 +32,13 @@ from manta.services.results.run_result import (
     GetRunResult,
     GetRunStepsResult,
     GetRunSummaryResult,
+    ListRunOutputsResult,
     ListRunsResult,
+    RunOutputFileResult,
     RunStepResult,
 )
+from manta.services.results.s3_file_result import GetS3FileContentResult, GetS3FileResult
+from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,13 @@ def ensure_prefect_ready() -> None:
         error = client.api_healthcheck()
     if error is not None:
         raise PrefectUnavailableError(f"Prefect API is not reachable: {error}") from error
+
+
+def _run_output_folder(run_uuid: UUID) -> str:
+    """Where a run's outputs are written, relative to its project's own prefix in the
+    bucket. Every step writes `<step name>.<suffix>` in here (see
+    playbook.playbooks.execute_playbook)."""
+    return f"runs/{run_uuid}/output"
 
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
@@ -165,8 +176,13 @@ def _build_run_summary(run_results: list[GetRunResult]) -> GetRunSummaryResult:
 
 
 class RunService:
-    def __init__(self, db: Session = Depends(get_db_session)) -> None:
+    def __init__(
+        self,
+        db: Session = Depends(get_db_session),
+        storage: S3FileStorageService = Depends(),
+    ) -> None:
         self.db = db
+        self.storage = storage
 
     def create_run(
         self,
@@ -187,7 +203,7 @@ class RunService:
             raise HTTPException(status_code=404, detail=f"Playbook {playbook!r} not found")
 
         run_uuid = uuid4()
-        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/runs/{run_uuid}/output"
+        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/{_run_output_folder(run_uuid)}"
 
         flow_run = run_deployment(
             PLAYBOOK_DEPLOYMENT,
@@ -299,7 +315,7 @@ class RunService:
             for run in runs
         ]
 
-    def get_run(self, run_uuid: UUID, user: User) -> GetRunResult:
+    def _get_run_with_project(self, run_uuid: UUID, user: User) -> tuple[Run, Project]:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
@@ -310,6 +326,10 @@ class RunService:
         if project.owner_id != user.id:
             raise AuthorizationError(detail="not the project owner")
 
+        return run, project
+
+    def get_run(self, run_uuid: UUID, user: User) -> GetRunResult:
+        run, project = self._get_run_with_project(run_uuid, user)
         flow_run = _read_flow_run(run.prefect_flow_run_id)
 
         return GetRunResult(
@@ -322,16 +342,7 @@ class RunService:
         )
 
     def get_run_steps(self, run_uuid: UUID, user: User) -> GetRunStepsResult:
-        run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
-        if run is None:
-            raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
-
-        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
-
+        run, _ = self._get_run_with_project(run_uuid, user)
         flow_run, block_runs = _read_flow_run_with_block_runs(run.prefect_flow_run_id)
         playbook = _flow_run_playbook(flow_run)
         active_step_names = {
@@ -353,17 +364,44 @@ class RunService:
             run_status=_flow_run_status(flow_run),
         )
 
+    def list_run_outputs(self, run_uuid: UUID, user: User) -> ListRunOutputsResult:
+        run, project = self._get_run_with_project(run_uuid, user)
+        items = [
+            RunOutputFileResult(name=name, size=file.size, last_modified=file.last_modified)
+            for name, file in self._list_run_output_files(project.uuid, run.uuid).items()
+        ]
+        return ListRunOutputsResult(uuid=run.uuid, items=items, total=len(items))
+
+    def get_run_output(self, run_uuid: UUID, name: str, user: User) -> GetS3FileContentResult:
+        run, project = self._get_run_with_project(run_uuid, user)
+        # Only a name the run's own listing returns is ever served, so nothing
+        # outside its output folder can be reached, however `name` is spelled.
+        if name not in self._list_run_output_files(project.uuid, run.uuid):
+            raise HTTPException(
+                status_code=404, detail=f"Output {name!r} not found for run {run_uuid}"
+            )
+        return self.storage.get_file(project.uuid, f"{_run_output_folder(run.uuid)}/{name}")
+
+    def _list_run_output_files(
+        self, project_uuid: UUID, run_uuid: UUID
+    ) -> dict[str, GetS3FileResult]:
+        """A run's output files, by their path within its output folder."""
+        # TODO: temporary, until the concept of a data record is properly
+        # introduced in Manta. For now a run's outputs are found only by listing its
+        # output folder in S3 — by naming convention — and downloaded by file name.
+        # Data records (a run's outputs as well as its inputs) should be tracked
+        # through Manta's own database instead, and served by record: the download
+        # then moves to its own data_record_route.py as
+        # GET /v1/data-records/{uuid}/content, and GET /v1/runs/{uuid}/outputs lists
+        # the run's records.
+        folder = f"{_run_output_folder(run_uuid)}/"
+        return {
+            file.key.removeprefix(f"{project_uuid}/{folder}"): file
+            for file in self.storage.list_files(project_uuid, prefix=folder)
+        }
+
     def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:
-        run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
-        if run is None:
-            raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
-
-        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
-
+        run, _ = self._get_run_with_project(run_uuid, user)
         flow_run, logs = _read_flow_run_logs(run.prefect_flow_run_id)
 
         return GetRunLogsResult(uuid=run.uuid, logs=logs, run_status=_flow_run_status(flow_run))

@@ -14,6 +14,7 @@ from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
 from manta.services.run_service import RunService
+from manta.services.s3_file_storage_service import S3FileStorageService
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 _RECORD_URL = "s3://bucket/in.nc"
@@ -642,6 +643,136 @@ def test_get_run_steps_rejects_non_owner(mock_db_class) -> None:
     # When/Then
     with pytest.raises(AuthorizationError):
         service.get_run_steps(run_uuid=run.uuid, user=other_user)
+
+
+def _service_with_output_files(
+    mock_db_class, mock_s3_client, project: Project, run: Run, names: list[str]
+) -> RunService:
+    """A RunService whose S3 holds `names` in `run`'s output folder."""
+    last_modified = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    output_folder = f"{project.uuid}/runs/{run.uuid}/output/"
+    mock_s3_client.get_paginator.return_value.paginate.return_value = [
+        {
+            "Contents": [
+                {"Key": f"{output_folder}{name}", "Size": 42, "LastModified": last_modified}
+                for name in names
+            ]
+        }
+    ]
+    return RunService(
+        db=mock_db_class(query_results={Run: run, Project: project}),
+        storage=S3FileStorageService(client=mock_s3_client, bucket="manta"),
+    )
+
+
+def test_list_run_outputs_lists_the_runs_files_by_name(mock_db_class, mock_s3_client) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    service = _service_with_output_files(
+        mock_db_class, mock_s3_client, project, run, ["cluster.nc", "dispatch.nc"]
+    )
+
+    # When
+    result = service.list_run_outputs(run_uuid=run.uuid, user=_existing_user())
+
+    # Then only the run's own output folder is listed...
+    mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="manta", Prefix=f"{project.uuid}/runs/{run.uuid}/output/"
+    )
+    # ...and each file is named by its path within it, never by its S3 key
+    assert result.uuid == run.uuid
+    assert result.total == 2
+    assert [(item.name, item.size) for item in result.items] == [
+        ("cluster.nc", 42),
+        ("dispatch.nc", 42),
+    ]
+
+
+def test_list_run_outputs_with_unknown_run_raises_404(mock_db_class) -> None:
+    # Given
+    service = RunService(db=mock_db_class(query_results={Run: None}))
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.list_run_outputs(run_uuid=uuid4(), user=_existing_user())
+    assert exc_info.value.status_code == 404
+
+
+def test_get_run_output_streams_a_listed_file(mock_db_class, mock_s3_client) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    service = _service_with_output_files(
+        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
+    )
+    mock_s3_client.get_object.return_value = {
+        "ContentLength": 7,
+        "LastModified": datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+        "Body": MagicMock(iter_chunks=MagicMock(return_value=iter([b"network"]))),
+    }
+
+    # When
+    result = service.get_run_output(run_uuid=run.uuid, name="dispatch.nc", user=_existing_user())
+
+    # Then
+    mock_s3_client.get_object.assert_called_once_with(
+        Bucket="manta", Key=f"{project.uuid}/runs/{run.uuid}/output/dispatch.nc"
+    )
+    assert list(result.content) == [b"network"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["missing.nc", "../../../other-project/secret.nc", "../input.nc"],
+    ids=["not_written", "outside_the_bucket_layout", "outside_the_output_folder"],
+)
+def test_get_run_output_refuses_a_name_the_run_did_not_output(
+    mock_db_class, mock_s3_client, name: str
+) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    service = _service_with_output_files(
+        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
+    )
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.get_run_output(run_uuid=run.uuid, name=name, user=_existing_user())
+    assert exc_info.value.status_code == 404
+    # And S3 was never even asked for it
+    mock_s3_client.get_object.assert_not_called()
+
+
+def test_list_run_outputs_rejects_non_owner(mock_db_class, mock_s3_client) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    service = _service_with_output_files(
+        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
+    )
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.list_run_outputs(run_uuid=run.uuid, user=other_user)
+
+
+def test_get_run_output_rejects_non_owner(mock_db_class, mock_s3_client) -> None:
+    # Given a run whose project is owned by someone other than the requesting user
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    other_user = _existing_user(user_id=2, username="mallory")
+    service = _service_with_output_files(
+        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
+    )
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.get_run_output(run_uuid=run.uuid, name="dispatch.nc", user=other_user)
+    # And S3 was never even asked for the file
+    mock_s3_client.get_object.assert_not_called()
 
 
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(

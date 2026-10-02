@@ -1,16 +1,25 @@
 import logging
+from collections.abc import Iterator
 from typing import IO
 from uuid import UUID
 
-from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
+from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
+from botocore.response import StreamingBody
 from fastapi import Depends
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import get_s3_client, s3_bucket_name
-from manta.services.results.s3_file_result import GetS3FileResult, UploadS3FileResult
+from manta.services.results.s3_file_result import (
+    GetS3FileContentResult,
+    GetS3FileResult,
+    UploadS3FileResult,
+)
 
 logger = logging.getLogger(__name__)
+
+_STREAM_CHUNK_SIZE = 1024 * 1024
+"""How much of a file get_file() holds in memory at once while streaming it."""
 
 
 class S3StorageError(Exception):
@@ -42,27 +51,47 @@ class S3FileStorageService:
 
         return UploadS3FileResult(key=key, size=size)
 
-    def get_file(
-        self, project_uuid: UUID, filename: str, destination: IO[bytes]
-    ) -> GetS3FileResult:
+    def get_file(self, project_uuid: UUID, filename: str) -> GetS3FileContentResult:
+        """A file's metadata, plus its content as a stream.
+
+        Only opening the file happens here, so a missing file or an unreachable S3
+        fails straight away. The bytes themselves are only read as `content` is
+        iterated, so a failure part-way through surfaces then instead.
+        """
         key = f"{project_uuid}/{filename}"
 
         try:
-            self.client.download_fileobj(self.bucket, key, destination)
-            head_response = self.client.head_object(Bucket=self.bucket, Key=key)
-        except (ClientError, BotoCoreError, S3TransferFailedError) as e:
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+        except (ClientError, BotoCoreError) as e:
             raise S3StorageError(f"Failed to download {key!r} from bucket {self.bucket!r}") from e
 
-        size = head_response["ContentLength"]
-        logger.info("Downloaded %r (%d bytes)", key, size)
+        size = response["ContentLength"]
+        logger.info("Streaming %r (%d bytes)", key, size)
 
-        return GetS3FileResult(key=key, size=size, last_modified=head_response["LastModified"])
+        return GetS3FileContentResult(
+            key=key,
+            size=size,
+            last_modified=response["LastModified"],
+            content_type=response.get("ContentType", "application/octet-stream"),
+            content=self._stream_body(key, response["Body"]),
+        )
 
-    def list_files(self, project_uuid: UUID) -> list[GetS3FileResult]:
-        # TODO: only lists everything under the project's prefix for now —
-        # extend with args for filtering by file type or other business
+    def _stream_body(self, key: str, body: StreamingBody) -> Iterator[bytes]:
+        try:
+            yield from body.iter_chunks(_STREAM_CHUNK_SIZE)
+        except (ClientError, BotoCoreError) as e:
+            raise S3StorageError(f"Failed to download {key!r} from bucket {self.bucket!r}") from e
+        finally:
+            # Also reached when the caller stops early (e.g. a client hanging up
+            # mid-download), so the S3 connection is always handed back.
+            body.close()
+
+    def list_files(self, project_uuid: UUID, prefix: str = "") -> list[GetS3FileResult]:
+        """Every file under the project's own prefix, optionally narrowed to `prefix`
+        within it, e.g. `runs/<run uuid>/output/`."""
+        # TODO: extend with args for filtering by file type or other business
         # logic once there's a concrete need.
-        prefix = f"{project_uuid}/"
+        prefix = f"{project_uuid}/{prefix}"
 
         try:
             paginator = self.client.get_paginator("list_objects_v2")
