@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import httpx2
 import psycopg
 from keycloak.openid_connection import KeycloakOpenID
+from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import SyncPrefectClient
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
@@ -75,17 +76,20 @@ def _wait_for_deployment_registered(
 
 
 def _create_run(
-    app_server: str, project_uuid: str, data_record_url: str, headers: dict[str, str]
+    app_server: str,
+    project_uuid: str,
+    data_record_url: str,
+    headers: dict[str, str],
+    config: dict | None = None,
 ) -> dict:
-    response = httpx2.post(
-        f"{app_server}/v1/runs",
-        json={
-            "project_uuid": project_uuid,
-            "playbook": _LIBRARY_PLAYBOOK,
-            "data_record_url": data_record_url,
-        },
-        headers=headers,
-    )
+    payload = {
+        "project_uuid": project_uuid,
+        "playbook": _LIBRARY_PLAYBOOK,
+        "data_record_url": data_record_url,
+    }
+    if config is not None:
+        payload["config"] = config
+    response = httpx2.post(f"{app_server}/v1/runs", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -188,6 +192,12 @@ def test_create_and_run_a_playbook(
     assert logs_body["run_status"] == "COMPLETED"
     assert logs_body["logs"]
 
+    # And the run reports which playbook it ran, and the config it was started
+    # with — the library's own default_config, since none was supplied
+    run_body = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers).json()
+    assert run_body["playbook"] == _LIBRARY_PLAYBOOK
+    assert run_body["config"] == library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+
     # And the Run row is persisted with the right linkage
     with db_connection.cursor() as cursor:
         cursor.execute("SELECT id FROM projects WHERE uuid = %s", (project_uuid,))
@@ -234,6 +244,35 @@ def test_create_run_with_unknown_playbook_returns_404(
 
     # Then the API reports that the playbook does not exist, and nothing is dispatched
     assert response.status_code == 404
+
+
+def test_get_run_returns_the_config_it_was_started_with(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    data_record_url: str,
+) -> None:
+    # Given a run started with a config changed from the library's defaults
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    _wait_for_deployment_registered(prefect_service)
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    changed_config = {**default_config, "cluster": {"n_hours": 6}}
+    run_uuid = _create_run(
+        app_server, project_uuid, data_record_url, headers, config=changed_config
+    )["uuid"]
+
+    # When it is fetched, alone and as part of its project's runs
+    run_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+
+    # Then both report exactly the changed config, not the defaults
+    assert run_response.status_code == 200
+    assert run_response.json()["config"] == changed_config
+    assert list_response.status_code == 200
+    assert [item["config"] for item in list_response.json()["items"]] == [changed_config]
 
 
 def test_run_is_cascade_deleted_when_project_is_deleted(

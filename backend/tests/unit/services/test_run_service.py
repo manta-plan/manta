@@ -36,9 +36,13 @@ def _patch_get_client(monkeypatch: pytest.MonkeyPatch, client) -> None:
     )
 
 
-def _fake_flow_run(state_type: str):
-    # `_flow_run_status` reads `flow_run.state.type.value`.
-    return SimpleNamespace(state=SimpleNamespace(type=SimpleNamespace(value=state_type)))
+def _fake_flow_run(state_type: str, config: dict | None = None):
+    # `_flow_run_status` reads `flow_run.state.type.value`, and `_flow_run_config`
+    # reads the config back from the parameters Prefect stored on the flow run.
+    return SimpleNamespace(
+        state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
+        parameters={"config": config if config is not None else {}},
+    )
 
 
 def _existing_user(user_id: int = 1, username: str = "alice") -> User:
@@ -230,7 +234,10 @@ def test_get_run_returns_dto_for_a_known_run(
     user = _existing_user()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
-    fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED")))
+    started_with_config = {"globals": {"expansion_mode": "overnight"}, "cluster": {"n_hours": 6}}
+    fake_client = MagicMock(
+        read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED", started_with_config))
+    )
     _patch_get_client(monkeypatch, fake_client)
     service = RunService(db=db)
 
@@ -241,6 +248,8 @@ def test_get_run_returns_dto_for_a_known_run(
     assert result.uuid == run.uuid
     assert result.project_uuid == project.uuid
     assert result.playbook == _LIBRARY_PLAYBOOK
+    # The config is whatever the run was dispatched with, read back from Prefect.
+    assert result.config == started_with_config
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
 
@@ -291,8 +300,8 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
         "_read_flow_runs",
         MagicMock(
             return_value={
-                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
-                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING"),
+                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED", {"cluster": {}}),
+                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING", {"dispatch": {}}),
             }
         ),
     )
@@ -317,6 +326,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
     assert [run.playbook for run in result.items] == [_LIBRARY_PLAYBOOK, _LIBRARY_PLAYBOOK]
     assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
+    assert [run.config for run in result.items] == [{"cluster": {}}, {"dispatch": {}}]
     assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
 
 

@@ -71,6 +71,15 @@ def _flow_run_status(flow_run: FlowRun) -> str:
     return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
 
 
+def _flow_run_config(flow_run: FlowRun) -> dict:
+    # TODO(post-MVP): a shortcut for the MVP — the config a run was started with is
+    # read back from the parameters Prefect stored on its flow run, since Manta
+    # doesn't persist it itself. It belongs to the run, not to a playbook, so when
+    # the playbook entity is defined (see the TODOs on Run.playbook and
+    # CreateRunRequest.config), store it on Run itself and read it from there.
+    return flow_run.parameters["config"]
+
+
 def _normalize_status_filters(status_filters: list[str] | None) -> set[str] | None:
     if status_filters is None:
         return None
@@ -217,6 +226,7 @@ class RunService:
                 uuid=run.uuid,
                 project_uuid=project_uuid,
                 playbook=run.playbook,
+                config=_flow_run_config(flow_runs[run.prefect_flow_run_id]),
                 status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
                 created_at=run.created_at,
             )
@@ -240,6 +250,7 @@ class RunService:
             uuid=run.uuid,
             project_uuid=project.uuid,
             playbook=run.playbook,
+            config=_flow_run_config(flow_run),
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )

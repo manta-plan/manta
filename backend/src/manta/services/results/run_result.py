@@ -15,6 +15,11 @@ class GetRunResult(BaseModel):
     uuid: UUID
     project_uuid: UUID
     playbook: str
+    config: dict
+    """The config this run was started with, exactly as dispatched: the caller's own,
+    or the playbook's default_config when none was given (see GET /v1/playbooks/{name}
+    for those defaults)."""
+
     status: str
     created_at: datetime
 
