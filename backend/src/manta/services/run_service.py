@@ -1,17 +1,25 @@
-import asyncio
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
+
+# TODO(post-MVP): a direct dependency on one concrete block library here is an
+# MVP corner-cut, not the intended shape — see the TODO on these two
+# dependencies in backend/pyproject.toml.
+from playbook_library import library_catalogue
+from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.entities import Project, Run
+from manta.config.s3_config import s3_bucket_name
+from manta.entities import Project, Run, User
+from manta.services.errors import AuthorizationError
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -22,26 +30,38 @@ from manta.services.results.run_result import (
 
 logger = logging.getLogger(__name__)
 
-PI_DIGIT_STATS_DEPLOYMENT = "pi-digit-stats/pi-digit-stats"
+
+class PrefectUnavailableError(Exception):
+    pass
 
 
-async def _read_flow_run(flow_run_id: UUID) -> FlowRun:
-    async with get_client() as client:
-        return await client.read_flow_run(flow_run_id)
+def ensure_prefect_ready() -> None:
+    """Called once at app startup (see main.create_app()) — confirms the
+    configured Prefect API (PREFECT_API_URL) is actually reachable, the same
+    way S3FileStorageService.ensure_bucket_exists() confirms S3 is."""
+    with get_client(sync_client=True) as client:
+        error = client.api_healthcheck()
+    if error is not None:
+        raise PrefectUnavailableError(f"Prefect API is not reachable: {error}") from error
 
 
-async def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
-    async with get_client() as client:
+def _read_flow_run(flow_run_id: UUID) -> FlowRun:
+    with get_client(sync_client=True) as client:
+        return client.read_flow_run(flow_run_id)
+
+
+def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
+    with get_client(sync_client=True) as client:
         flow_runs = {}
         for flow_run_id in flow_run_ids:
-            flow_runs[flow_run_id] = await client.read_flow_run(flow_run_id)
+            flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
         return flow_runs
 
 
-async def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
-    async with get_client() as client:
-        flow_run = await client.read_flow_run(flow_run_id)
-        logs = await client.read_logs(
+def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
+    with get_client(sync_client=True) as client:
+        flow_run = client.read_flow_run(flow_run_id)
+        logs = client.read_logs(
             log_filter=LogFilter(flow_run_id=LogFilterFlowRunId(any_=[flow_run_id]))
         )
         return flow_run, [log.message for log in logs]
@@ -73,22 +93,40 @@ class RunService:
     def __init__(self, db: Session = Depends(get_db_session)) -> None:
         self.db = db
 
-    def create_run(self, project_uuid: UUID, num_pi_digits: int) -> CreateRunResult:
+    def create_run(
+        self,
+        project_uuid: UUID,
+        playbook: str,
+        config: dict | None,
+        data_record_url: str,
+        user: User,
+    ) -> CreateRunResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
-        # `run_deployment` is `@async_dispatch`-decorated: called from a sync
-        # context (as here — this method runs in FastAPI's threadpool, with no
-        # running event loop) it executes synchronously and returns a `FlowRun`
-        # directly, not a coroutine — so it must NOT be wrapped in `asyncio.run()`
-        # (unlike `_read_flow_run`/`_read_flow_run_logs` below, which are real
-        # `async def` coroutine functions and do need it).
+        library_playbook = library_playbooks().get(playbook)
+        if library_playbook is None:
+            raise HTTPException(status_code=404, detail=f"Playbook {playbook!r} not found")
+
+        run_uuid = uuid4()
+        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/runs/{run_uuid}/output"
+
         flow_run = run_deployment(
-            PI_DIGIT_STATS_DEPLOYMENT, parameters={"num_digits": num_pi_digits}, timeout=0
+            PLAYBOOK_DEPLOYMENT,
+            parameters={
+                "playbook": library_playbook.doc.model_dump(mode="json"),
+                "config": config if config is not None else library_playbook.default_config,
+                "record": {"url": data_record_url},
+                "output_prefix": output_prefix,
+                "catalogue": catalogue_parameter(library_catalogue()),
+            },
+            timeout=0,
         )
 
-        run = Run(project_id=project.id, prefect_flow_run_id=flow_run.id)
+        run = Run(uuid=run_uuid, project_id=project.id, prefect_flow_run_id=flow_run.id)
         self.db.add(run)
         try:
             self.db.commit()
@@ -106,11 +144,18 @@ class RunService:
         return CreateRunResult(uuid=run.uuid, project_uuid=project.uuid, created_at=run.created_at)
 
     def list_runs(
-        self, project_uuid: UUID, limit: int, offset: int, status_filters: list[str] | None
+        self,
+        project_uuid: UUID,
+        limit: int,
+        offset: int,
+        status_filters: list[str] | None,
+        user: User,
     ) -> ListRunsResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -132,10 +177,12 @@ class RunService:
             summary=_build_run_summary(run_results),
         )
 
-    def get_run_summary(self, project_uuid: UUID) -> GetRunSummaryResult:
+    def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -150,7 +197,7 @@ class RunService:
         )
 
     def _read_project_flow_runs(self, runs: list[Run]) -> dict[UUID, FlowRun]:
-        return asyncio.run(_read_flow_runs([run.prefect_flow_run_id for run in runs]))
+        return _read_flow_runs([run.prefect_flow_run_id for run in runs])
 
     def _build_run_results(
         self, project_uuid: UUID, runs: list[Run], flow_runs: dict[UUID, FlowRun]
@@ -165,32 +212,37 @@ class RunService:
             for run in runs
         ]
 
-    def get_run(self, run_uuid: UUID) -> GetRunResult:
+    def get_run(self, run_uuid: UUID, user: User) -> GetRunResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        project_uuid = None
-        if run.project_id is not None:
-            project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
-            if project is None:
-                raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-            project_uuid = project.uuid
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
 
-        flow_run = asyncio.run(_read_flow_run(run.prefect_flow_run_id))
+        flow_run = _read_flow_run(run.prefect_flow_run_id)
 
         return GetRunResult(
             uuid=run.uuid,
-            project_uuid=project_uuid,
+            project_uuid=project.uuid,
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )
 
-    def get_run_logs(self, run_uuid: UUID) -> GetRunLogsResult:
+    def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
 
-        flow_run, logs = asyncio.run(_read_flow_run_logs(run.prefect_flow_run_id))
+        project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
+        if project.owner_id != user.id:
+            raise AuthorizationError(detail="not the project owner")
+
+        flow_run, logs = _read_flow_run_logs(run.prefect_flow_run_id)
 
         return GetRunLogsResult(uuid=run.uuid, logs=logs, run_status=_flow_run_status(flow_run))

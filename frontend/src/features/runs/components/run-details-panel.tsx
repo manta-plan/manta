@@ -49,7 +49,7 @@ export function RunDetailsPanel({ state, onRefresh }: RunDetailsPanelProps) {
         </div>
         <div>
           <dt className="text-text-secondary">Project UUID</dt>
-          <dd className="mt-1 font-medium break-all">{detail.project_uuid ?? "-"}</dd>
+          <dd className="mt-1 font-medium break-all">{detail.project_uuid}</dd>
         </div>
         <div>
           <dt className="text-text-secondary">Backend status</dt>

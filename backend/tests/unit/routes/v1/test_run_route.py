@@ -3,7 +3,9 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from manta.entities import User
 from manta.routes.v1.run_route import router
+from manta.services.auth_service import authenticated_user
 from manta.services.results.run_result import GetRunSummaryResult, ListRunsResult
 from manta.services.run_service import RunService
 
@@ -26,9 +28,12 @@ class _StubRunService:
 def test_list_runs_binds_query_params_to_request_model() -> None:
     # Given
     project_uuid = uuid4()
+    user = User(username="alice", idp_subject="sub", idp_source="iss")
+    user.id = 1
     service = _StubRunService()
     app = FastAPI()
     app.dependency_overrides[RunService] = lambda: service
+    app.dependency_overrides[authenticated_user] = lambda: user
     app.include_router(router)
     client = TestClient(app)
 
@@ -51,4 +56,5 @@ def test_list_runs_binds_query_params_to_request_model() -> None:
         "limit": 25,
         "offset": 50,
         "status_filters": ["RUNNING", "COMPLETED"],
+        "user": user,
     }

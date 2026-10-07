@@ -8,11 +8,12 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./conf/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 20
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.05
@@ -41,18 +42,214 @@ services:
     image: prefecthq/prefect:3.8.3-python3.12
     command: prefect server start --host 0.0.0.0
     env_file: ../backend/.env
+    environment:
+      # Prefect keeps its state in its own database on the shared Postgres
+      # instance (created by conf/postgres-init/create-prefect-db.sh on the
+      # volume's first boot) instead of the SQLite file it defaults to.
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${PREFECT_DB_USER}:${PREFECT_DB_PASSWORD}@postgres:5432/${PREFECT_DB_NAME}
     ports:
       - "${PREFECT_PORT}:4200"
-    volumes:
-      - prefect-data:/root/.prefect
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       # `curl` isn't installed in this image — so using `python` instead
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # Everything below runs playbooks: one one-shot build step per block
+  # environment, the one-shot provisioner, and the two long-lived workers.
+  # Part of the default stack, not optional — running Manta without the
+  # ability to actually execute a playbook isn't a meaningful dev setup.
+  #
+  # Adding a block environment means copying the block-image-builder service
+  # below for it, and adding it to MANTA_ENV_IMAGES so steps declaring it are
+  # dispatched to its image.
+
+  # One-shot: builds the image a block's flow run actually executes in
+  # (docker/block-image.Dockerfile's `block-prefect-runtime` stage —
+  # playbook-library, that environment's own dependencies, Prefect, and
+  # runner) and exits; it never stays running. That image is what block-worker
+  # below starts a fresh, throwaway container from for every block step of
+  # every playbook run.
+  block-image-builder-pypsa:
+    build:
+      context: ..
+      dockerfile: docker/block-image.Dockerfile
+      target: block-prefect-runtime
+      args:
+        LIBRARY_EXTRAS: pypsa
+        ENV_NAME: pypsa
+    image: ${MANTA_BLOCK_PREFECT_RUNTIME_IMAGE_PYPSA}
+    command: python -c "import playbook_library, runner; print('pypsa block image ready')"
+
+  # One-shot: creates both work pools, registers the two deployments, and points
+  # Prefect's result storage at the object store, then exits. Idempotent — pools
+  # and deployments are created or updated, never duplicated, which is also how
+  # an image or wiring change rolls out. The backend only ever starts runs on
+  # the deployment this container has registered.
+  playbooks-provision:
+    build:
+      context: ..
+      dockerfile: docker/runner-image.Dockerfile
+    image: ${MANTA_RUNNER_IMAGE}
+    command: python -m runner.deploy
+    restart: "no"
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      MANTA_BLOCKS_POOL: ${MANTA_BLOCKS_POOL}
+      MANTA_PLAYBOOKS_POOL: ${MANTA_PLAYBOOKS_POOL}
+      # Everything below ends up in the blocks pool's job template, i.e. in
+      # every block container: what to run, which network to join, and how to
+      # reach the object store. Compose-internal names throughout.
+      MANTA_ENV_IMAGES: ${MANTA_ENV_IMAGES}
+      MANTA_DOCKER_NETWORK: ${MANTA_DOCKER_NETWORK}
+      MANTA_JOB_S3_ENDPOINT: ${MANTA_JOB_S3_ENDPOINT}
+      MANTA_BLOCK_SOURCES: ${MANTA_BLOCK_SOURCES}
+      MANTA_BLOCK_LOGGERS: ${MANTA_BLOCK_LOGGERS}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      block-image-builder-pypsa:
+        condition: service_completed_successfully
+
+  # A dispatcher, not an execution environment: it drains the blocks pool and
+  # asks the Docker daemon to run each step in a fresh container from the
+  # execution image. It never imports a block and holds no block dependencies.
+  block-worker:
+    image: ${MANTA_RUNNER_IMAGE}
+    command: prefect worker start --pool ${MANTA_BLOCKS_POOL} --type docker
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_WORKER_QUERY_SECONDS: ${PREFECT_WORKER_QUERY_SECONDS:-10}
+    volumes:
+      # Block containers are *siblings* on the host's daemon, not nested ones.
+      # Socket access is root-equivalent control of the host's docker; acceptable
+      # for this dev stack only.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      playbooks-provision:
+        condition: service_completed_successfully
+
+  # Runs `run-playbook` itself, on a process pool. A playbook run waits out
+  # every one of its steps, so a container per run would idle for hours and take
+  # the run down with it if it were evicted; a long-lived worker costs almost
+  # nothing because it calls out and waits.
+  #
+  # This is also what makes a playbook run survive a backend restart: the app
+  # dispatches by deployment name and is not in the execution path at all.
+  #
+  # It needs no Docker socket and no S3 credentials: it only dispatches each
+  # step at the run-block deployment and reads the record that step returns
+  # back through Prefect's result storage. It only ever moves pointers.
+  playbook-worker:
+    image: ${MANTA_RUNNER_IMAGE}
+    command: prefect worker start --pool ${MANTA_PLAYBOOKS_POOL} --type process
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      # How often this worker looks for work, and how fast a running flow ships
+      # its logs. Defaults (10s / 2s) are production-tuned.
+      PREFECT_WORKER_QUERY_SECONDS: ${PREFECT_WORKER_QUERY_SECONDS:-10}
+      PREFECT_LOGGING_TO_API_BATCH_INTERVAL: ${PREFECT_LOGGING_TO_API_BATCH_INTERVAL:-2}
+      # Each step is dispatched to the image its own block environment names.
+      MANTA_ENV_IMAGES: ${MANTA_ENV_IMAGES}
+    depends_on:
+      playbooks-provision:
+        condition: service_completed_successfully
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    command:
+      - start-dev
+      # This option causes startup to attempt to import a realm from the
+      # /opt/keycloak/data/import directory in the container. If the realm
+      # already exists, it skips it, preserving state
+      #
+      # We can use kcadm on a live instance of keycloak to re-export the realm
+      # if we wish to update base state.
+      # see: https://www.keycloak.org/server/importExport
+      - --import-realm
+    env_file: ../backend/.env
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB_URL_PORT: 5432
+      KC_HOSTNAME: localhost
+    ports:
+      - "${KEYCLOAK_PORT}:8080"
+    volumes:
+      - ./conf/user_profile.json:/tmp/user_profile.json:ro
+      - ./conf/manta-realm.json:/opt/keycloak/data/import/manta-realm.json:ro
+    healthcheck:
+      # No curl/wget/nc in this image — /dev/tcp is the only thing available.
+      # the default management interface for Keycloak is port 9000
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/localhost/9000 &&
+          echo -e "GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n" >&3 &&
+          cat <&3 | grep -q "200 OK"
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    post_start:
+      # Wait for keycloak initialization to finish
+      - command:
+          [
+            "bash",
+            "-c",
+            "until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user admin --password admin; do\n echo Waiting for Keycloak to start...\n sleep 2\n done",
+          ]
+      # Set user profile to require user name and email only (idempotently)
+      - command:
+          [
+            "/opt/keycloak/bin/kcadm.sh",
+            "update",
+            "users/profile",
+            "-r",
+            "${KEYCLOAK_REALM}",
+            "-f",
+            "/tmp/user_profile.json",
+          ]
+      # create an admin user (used for the dev server to programmatically register new user accounts)
+      - command:
+          [
+            "bash",
+            "-c",
+            "/opt/keycloak/bin/kcadm.sh create users -r master -s username=${KEYCLOAK_ADMIN_USERNAME} -s email=super-admin@example.com -s emailVerified=true -s enabled=true || true",
+          ]
+      # add password for admin user
+      - command:
+          - /opt/keycloak/bin/kcadm.sh
+          - set-password
+          - "-r"
+          - master
+          - "--username"
+          - "${KEYCLOAK_ADMIN_USERNAME}"
+          - "--new-password"
+          - "${KEYCLOAK_ADMIN_PASSWORD}"
+      # make admin an admin
+      - command:
+          [
+            "bash",
+            "-c",
+            "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
+          ]
+
 volumes:
   postgres-data:
   seaweedfs-data:
-  prefect-data:

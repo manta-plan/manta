@@ -5,6 +5,7 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import boto3
 import httpx2
@@ -12,6 +13,8 @@ import psycopg
 import pytest
 from botocore.config import Config
 from dotenv import dotenv_values
+from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
+from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
 from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
@@ -66,6 +69,21 @@ def prefect_service(docker_services: DockerCompose) -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
+def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
+    host, port = docker_services.get_service_host_and_port("keycloak", 8080)
+    env = dotenv_values(BACKEND_ENV_FILE)
+    return {
+        "host": host,
+        "port": str(port),
+        "realm": env["KEYCLOAK_REALM"],
+        "client_id": env["IDP_CLIENT_ID"],
+        "client_secret": env["IDP_CLIENT_SECRET"],
+        "admin_username": env["KEYCLOAK_ADMIN_USERNAME"],
+        "admin_password": env["KEYCLOAK_ADMIN_PASSWORD"],
+    }
+
+
+@pytest.fixture(scope="session")
 def frontend_files() -> Path:
     pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
     _ = pkg.build(wait=True)
@@ -89,9 +107,46 @@ def db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connecti
 
 
 @pytest.fixture(scope="session")
+def prefect_db_connection(postgres_service: dict[str, str]) -> Iterator[psycopg.Connection]:
+    """A direct connection to Prefect's own Postgres database (see
+    docker/conf/postgres-init/create-prefect-db.sh), for asserting Prefect is
+    actually persisting state there rather than falling back to SQLite."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    with psycopg.connect(
+        host=postgres_service["host"],
+        port=postgres_service["port"],
+        user=env["PREFECT_DB_USER"],
+        password=env["PREFECT_DB_PASSWORD"],
+        dbname=env["PREFECT_DB_NAME"],
+        autocommit=True,
+    ) as conn:
+        yield conn
+
+
+@pytest.fixture(scope="session")
+def prefect_role_app_db_connection(
+    postgres_service: dict[str, str],
+) -> Iterator[psycopg.Connection]:
+    """A connection to the *app's* database, authenticated as Prefect's own
+    Postgres role — for asserting that role is confined to its own database
+    (see docker/conf/postgres-init/create-prefect-db.sh) and can't read the
+    app's tables."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    with psycopg.connect(
+        host=postgres_service["host"],
+        port=postgres_service["port"],
+        user=env["PREFECT_DB_USER"],
+        password=env["PREFECT_DB_PASSWORD"],
+        dbname=env["POSTGRES_DB"],
+        autocommit=True,
+    ) as conn:
+        yield conn
+
+
+@pytest.fixture(scope="session")
 def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
     env = dotenv_values(BACKEND_ENV_FILE)
-    return boto3.client(
+    return boto3.client(  # pyright: ignore[reportUnknownMemberType]
         "s3",
         endpoint_url=f"http://{seaweedfs_service['host']}:{seaweedfs_service['port']}",
         aws_access_key_id=env["S3_ACCESS_KEY"],
@@ -99,6 +154,74 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
         region_name="eu-central-1",
         config=Config(s3={"addressing_style": "path"}),
     )
+
+
+@pytest.fixture(scope="session")
+def data_record_url(s3_client: S3Client, app_server: str) -> str:
+    """Uploads the committed example network once per session and returns its
+    `s3://` URL — a real starting record for tests that run a playbook to
+    completion. `app_server` is an ordering dependency, not a used value: the
+    bucket only exists once the app has started (see create_app())."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    bucket = env["S3_BUCKET"]
+    key = "integration-tests/example_network.nc"
+    fixture_path = Path(__file__).parent / "fixtures" / "example_network.nc"
+    s3_client.upload_file(str(fixture_path), bucket, key)
+    return f"s3://{bucket}/{key}"
+
+
+@pytest.fixture(scope="session")
+def kc_oidc_client(keycloak_service: dict[str, str]) -> KeycloakOpenID:
+    return KeycloakOpenID(
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
+        client_id=keycloak_service["client_id"],
+        client_secret_key=keycloak_service["client_secret"],
+    )
+
+
+@pytest.fixture(scope="session")
+def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
+    kc_adm_connection = KeycloakOpenIDConnection(
+        server_url=f"http://{keycloak_service['host']}:{keycloak_service['port']}",
+        realm_name=keycloak_service["realm"],
+        user_realm_name="master",  # kcadmin only exists in master; target ops at manta
+        username=keycloak_service["admin_username"],
+        password=keycloak_service["admin_password"],
+    )
+    return KeycloakAdmin(connection=kc_adm_connection)
+
+
+@pytest.fixture(scope="session")
+def second_user_headers(
+    app_server: str, kc_oidc_client: KeycloakOpenID, kc_admin_client: KeycloakAdmin
+) -> dict[str, str]:
+    """A second, distinct registered identity — for asserting that one user
+    can't act on another user's resources (e.g. project ownership checks).
+    Session-scoped: created once via the Keycloak admin API and reused by
+    every test that needs a non-owner, rather than provisioning a fresh
+    Keycloak user per test."""
+    username = f"mallory-{uuid4()}"
+    password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
+    kc_admin_client.create_user(
+        {
+            "username": username,
+            "enabled": True,
+            "emailVerified": True,
+            "email": f"{username}@example.com",
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
+        }
+    )
+
+    token = kc_oidc_client.token(username, password)
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
+    response = httpx2.post(
+        f"{app_server}/v1/auth/register",
+        json={"username": username, "idp_subject": claims["sub"], "idp_source": claims["iss"]},
+    )
+    assert response.status_code == 201
+    return headers
 
 
 def _free_port() -> int:
@@ -125,6 +248,7 @@ def app_server(
     postgres_service: dict[str, str],
     seaweedfs_service: dict[str, str],
     prefect_service: dict[str, str],
+    keycloak_service: dict[str, str],
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -137,11 +261,8 @@ def app_server(
         "S3_HOST": seaweedfs_service["host"],
         "S3_PORT": seaweedfs_service["port"],
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
-        # Speed up the flow-serving subprocess's runner (default 10s) and log
-        # shipping (default 2s) so integration tests don't pay for Prefect's
-        # production-tuned polling intervals.
-        "PREFECT_RUNNER_POLL_FREQUENCY": "1",
-        "PREFECT_LOGGING_TO_API_BATCH_INTERVAL": "0.5",
+        "KEYCLOAK_HOST": keycloak_service["host"],
+        "KEYCLOAK_PORT": keycloak_service["port"],
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input

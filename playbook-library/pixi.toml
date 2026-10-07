@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+# The environments this library's blocks run in. Environment *names* are the contract:
+# a block's `ENV = "pypsa"` names an environment here, and whatever runs that block
+# later - a container image, a worker - is built from it.
+#
+# pixi rather than uv, because the solver stack (pypsa, highspy, netcdf4) installs far
+# more reliably from conda-forge than from PyPI, and because a block library needs
+# several environments side by side rather than one.
+
+[workspace]
+authors = [
+    "Bryn Pickering <bryn.pickering@openenergytransition.org>",
+    "Jonas Hörsch <jonas.hoersch@openenergytransition.org>"
+]
+channels = ["conda-forge"]
+name = "playbook-library"
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.12,<3.15"
+
+[pypi-dependencies]
+# The framework this library is written against, from the folder next door. Once it
+# is published, this becomes an ordinary version requirement and nothing else changes.
+playbook = { path = "../playbook", editable = true, extras = ["s3"] }
+playbook-library = { path = ".", editable = true }
+
+[feature.pypsa.dependencies]
+# The solver stack, from conda-forge.
+pypsa = ">=1.2,<2"
+highspy = "*"
+netcdf4 = "*"
+
+[feature.dev.dependencies]
+pytest = ">=8"
+
+[feature.dev.pypi-dependencies]
+ruff = ">=0.16.0"
+
+[feature.dev.tasks]
+test = "pytest"
+lint = "ruff check src && ruff format --check src"
+
+[tasks]
+# Regenerate the committed catalogue after adding or changing a block. Must run in an
+# environment that can import every block:
+#   pixi run -e pypsa catalogue
+catalogue = "python -m playbook.blocks playbook_library > src/playbook_library/catalogue.json"
+
+[environments]
+# The default environment has no PyPSA on purpose: that this package still imports,
+# registers its blocks and serves its catalogue there is the proof that a block's
+# dependencies stay its own. It is what a process driving playbooks looks like.
+default = []
+# `pypsa` is what this library's blocks declare as their ENV.
+pypsa = ["pypsa"]
+# `dev` tests the packaging and the catalogue without PyPSA; `full` is the only
+# environment that can run the blocks themselves.
+dev = ["dev"]
+full = ["dev", "pypsa"]
