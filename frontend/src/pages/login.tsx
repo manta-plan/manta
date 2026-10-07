@@ -1,16 +1,34 @@
 import { Button } from "@base-ui/react/button";
 import type { SubmitEvent } from "react";
 import { useState } from "react";
-import { FiArrowRight, FiLock, FiUser } from "react-icons/fi";
-import { useLocation } from "wouter";
+import { FiAlertCircle, FiArrowRight, FiLock, FiRefreshCw, FiUser } from "react-icons/fi";
+import { ApiError } from "../api/manta";
+import { login } from "../features/auth/api";
 
 export function LoginPage() {
   const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
-  const [, navigate] = useLocation();
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
-  function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    navigate("/");
+    const formData = new FormData(event.currentTarget);
+
+    setIsSigningIn(true);
+    setSignInError(null);
+
+    try {
+      // A successful login updates the session, and the router then moves on
+      // to the home page.
+      await login({
+        username: String(formData.get("username") ?? "").trim(),
+        password: String(formData.get("password") ?? ""),
+        remember: formData.get("remember") === "on",
+      });
+    } catch (error) {
+      setSignInError(getSignInErrorMessage(error));
+      setIsSigningIn(false);
+    }
   }
 
   return (
@@ -58,6 +76,7 @@ export function LoginPage() {
                 name="username"
                 type="text"
                 autoComplete="username"
+                required
                 placeholder="Enter username"
               />
             </span>
@@ -73,6 +92,7 @@ export function LoginPage() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
+                required
                 placeholder="Enter password"
               />
             </span>
@@ -90,15 +110,38 @@ export function LoginPage() {
             </label>
           </div>
 
+          {signInError !== null ? (
+            <p
+              className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700"
+              role="alert"
+            >
+              <FiAlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              {signInError}
+            </p>
+          ) : null}
+
           <Button
-            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/25 inline-flex items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/25 inline-flex items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+            disabled={isSigningIn}
             type="submit"
           >
-            Sign in
-            <FiArrowRight className="size-4" aria-hidden="true" />
+            {isSigningIn ? "Signing in..." : "Sign in"}
+            {isSigningIn ? (
+              <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FiArrowRight className="size-4" aria-hidden="true" />
+            )}
           </Button>
         </form>
       </section>
     </main>
   );
+}
+
+function getSignInErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Invalid username or password.";
+  }
+
+  return "Unable to sign in right now. Please try again.";
 }
