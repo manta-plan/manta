@@ -131,33 +131,64 @@ uv run pytest tests/integration -s
 This section exists only until the frontend can create a run with real data
 on its own, and will be removed once that lands.
 
-1. In one terminal, bring up the stack (from `docker/`) and leave it running
-   so you can see the container logs:
+You need three terminals: one for the Docker stack, one for the backend, and
+one for the requests.
+
+1. In the first terminal, bring up the stack (from `docker/`) and leave it
+   running so you can see the container logs:
 
    ```bash
    docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
    ```
 
-   Wait until the logs settle, then do the rest of the steps in a second
-   terminal.
+   Wait until the logs settle before going on.
 
-2. Start the backend (from `backend/`):
+2. In the second terminal, start the backend (from `backend/`) and leave it
+   running:
 
    ```bash
    uv run manta
    ```
 
-3. Create a project:
+3. In the third terminal, log in as the dev user and keep the token (from
+   `backend/`). This also registers the user with Manta, which every other
+   request needs:
+
+   ```bash
+   export TOKEN=$(uv run python -c "
+   import base64, json, urllib.request
+
+   def post(path, body):
+       request = urllib.request.Request(
+           f'http://localhost:8000{path}',
+           data=json.dumps(body).encode(),
+           headers={'Content-Type': 'application/json'},
+       )
+       return json.load(urllib.request.urlopen(request))
+
+   token = post('/v1/auth/login', {'username': 'manta-admin', 'password': 'manta-admin'})['access_token']
+   payload = token.split('.')[1]
+   claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+   post('/v1/auth/register', {'username': 'manta-admin', 'idp_subject': claims['sub'], 'idp_source': claims['iss']})
+   print(token)
+   ")
+   ```
+
+   The token expires after 5 minutes. Repeat this step when a request returns
+   `401`.
+
+4. Create a project:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/projects \
+     -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"name": "Manual test", "description": "Manual test project"}'
    ```
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-4. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
+5. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
    works (from `backend/`):
 
    ```bash
@@ -175,29 +206,52 @@ on its own, and will be removed once that lands.
    "
    ```
 
-5. Create a run:
+6. List the playbooks you can run, then look at one in detail. The detail
+   shows each step's block, its settings schema, and the playbook's
+   `default_config`:
+
+   ```bash
+   curl -s http://localhost:8000/v1/playbooks -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
+   ```
+
+7. Create a run. Leaving out `config` runs the playbook with its
+   `default_config`:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
+     -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/input.nc"}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
 
-6. Poll status and logs:
+8. Follow the run. The first request returns the run's overall `status` and the
+   `config` it was started with. The second returns each step's `status`:
+   `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
+   begins, and Prefect's own state from then on. The third returns the run's
+   logs:
 
    ```bash
-   curl -s http://localhost:8000/v1/runs/RUN_UUID
-   curl -s http://localhost:8000/v1/runs/RUN_UUID/logs
+   curl -s http://localhost:8000/v1/runs/RUN_UUID -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/runs/RUN_UUID/steps -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/runs/RUN_UUID/logs -H "Authorization: Bearer $TOKEN"
    ```
 
-   A completed run writes its outputs to
-   `s3://manta/PROJECT_UUID/runs/RUN_UUID/output/`.
+   Repeat them until the run's `status` is `COMPLETED`.
 
-7. Tear down (from `docker/`, in the second terminal — this also stops the
-   first terminal's `up`):
+9. List the run's output files, one per step that ran, then download one:
 
    ```bash
-   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+   curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
+   curl -s -o dispatch.nc http://localhost:8000/v1/runs/RUN_UUID/outputs/dispatch.nc -H "Authorization: Bearer $TOKEN"
    ```
+
+10. Tear down (from `docker/`, in the third terminal). This also stops the
+    stack in the first terminal. Stop the backend in the second terminal with
+    `Ctrl+C`:
+
+    ```bash
+    docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+    ```
