@@ -9,8 +9,11 @@ from manta.services.results.playbook_result import (
 )
 
 # Static catalog, no database required — mirrors the playbook options the
-# frontend currently hardcodes in create-run-dialog.tsx. Once more playbooks
-# are actually implemented this should move to a proper data source.
+# frontend currently hardcodes in create-run-dialog.tsx. Disconnected from the
+# real playbook/runner library (playbook_library.playbooks.library_playbooks()):
+# a run created against "pi-digit-statistics" 404s at RunService.create_run,
+# since no library playbook has that name. Needs wiring to real data before
+# this is actually functional end-to-end.
 _PLAYBOOKS: dict[str, PlaybookDetailResult] = {
     playbook.id: playbook
     for playbook in [
@@ -26,9 +29,11 @@ _PLAYBOOKS: dict[str, PlaybookDetailResult] = {
                     label="pi digit statistic",
                     config=[
                         PlaybookNodeConfigField(
-                            # `key` matches the pi-digit-stats flow's own parameter name
-                            # (see workflows/pi_digit_stats.py) — RunService forwards
-                            # `config` straight through to `run_deployment`.
+                            # `key` matches the old pi-digit-stats demo flow's own
+                            # parameter name. That flow no longer exists (removed
+                            # upstream in favor of the real playbook/runner library),
+                            # so this entry is display-only — see the comment above
+                            # `_PLAYBOOKS`.
                             key="num_digits",
                             label="num_digits",
                             type="integer",

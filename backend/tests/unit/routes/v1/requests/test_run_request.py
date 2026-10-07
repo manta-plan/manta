@@ -6,50 +6,72 @@ from pydantic import ValidationError
 from manta.routes.v1.requests.run_request import CreateRunRequest
 
 
-def test_create_run_request_requires_a_project_uuid_name_and_playbook_id() -> None:
+def test_create_run_request_requires_a_project_uuid() -> None:
     # When/Then
     with pytest.raises(ValidationError):
-        CreateRunRequest()
+        CreateRunRequest(playbook="cluster-expand-dispatch", data_record_url="s3://bucket/in.nc")
 
 
 def test_create_run_request_rejects_an_invalid_project_uuid() -> None:
     # When/Then
     with pytest.raises(ValidationError):
         CreateRunRequest(
-            project_uuid="not-a-uuid", name="My First Run", playbook_id="pi-digit-statistics"
+            project_uuid="not-a-uuid",
+            playbook="cluster-expand-dispatch",
+            data_record_url="s3://bucket/in.nc",
         )
 
 
-def test_create_run_request_rejects_an_empty_name() -> None:
+def test_create_run_request_requires_a_playbook() -> None:
     # When/Then
     with pytest.raises(ValidationError):
-        CreateRunRequest(project_uuid=uuid4(), name="", playbook_id="pi-digit-statistics")
+        CreateRunRequest(project_uuid=uuid4(), data_record_url="s3://bucket/in.nc")
 
 
-def test_create_run_request_defaults_playbook_config_to_empty() -> None:
-    # When
-    request = CreateRunRequest(
-        project_uuid=uuid4(), name="My First Run", playbook_id="pi-digit-statistics"
-    )
-
-    # Then
-    assert request.playbook_config == []
+def test_create_run_request_requires_a_data_record_url() -> None:
+    # When/Then
+    with pytest.raises(ValidationError):
+        CreateRunRequest(project_uuid=uuid4(), playbook="cluster-expand-dispatch")
 
 
-def test_create_run_request_accepts_a_name_playbook_id_and_playbook_config() -> None:
+def test_create_run_request_accepts_the_required_fields() -> None:
     # Given
     project_uuid = uuid4()
 
     # When
     request = CreateRunRequest(
         project_uuid=project_uuid,
-        name="My First Run",
-        playbook_id="pi-digit-statistics",
-        playbook_config=[{"num_digits": 500}],
+        playbook="cluster-expand-dispatch",
+        data_record_url="s3://bucket/in.nc",
     )
 
     # Then
     assert request.project_uuid == project_uuid
-    assert request.name == "My First Run"
-    assert request.playbook_id == "pi-digit-statistics"
-    assert request.playbook_config == [{"num_digits": 500}]
+    assert request.playbook == "cluster-expand-dispatch"
+    assert request.data_record_url == "s3://bucket/in.nc"
+
+
+def test_create_run_request_defaults_config_to_none() -> None:
+    # When
+    request = CreateRunRequest(
+        project_uuid=uuid4(),
+        playbook="cluster-expand-dispatch",
+        data_record_url="s3://bucket/in.nc",
+    )
+
+    # Then: None, not {} — RunService tells apart "nothing supplied" (use the
+    # library's own default_config) from "explicitly no overrides".
+    assert request.config is None
+
+
+def test_create_run_request_accepts_an_explicit_config() -> None:
+    # When
+    request = CreateRunRequest(
+        project_uuid=uuid4(),
+        playbook="cluster-expand-dispatch",
+        data_record_url="s3://bucket/in.nc",
+        config={"globals": {"expansion_mode": "overnight"}},
+    )
+
+    # Then
+    assert request.config == {"globals": {"expansion_mode": "overnight"}}

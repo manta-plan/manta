@@ -1,0 +1,38 @@
+name: Playbook test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  framework:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: playbook
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest
+
+  library:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: playbook-library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          manifest-path: playbook-library/pixi.toml
+          environments: dev full
+          cache: true
+      # Without PyPSA first: that this passes is what proves a block's own
+      # dependencies stay its own, and it fails fast if they have not.
+      - run: pixi run -e dev test
+      # Then the blocks themselves, including the end-to-end playbook run and the
+      # check that the committed catalogue still matches them.
+      - run: pixi run -e full test

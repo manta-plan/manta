@@ -1,14 +1,23 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class CreateRunRequest(BaseModel):
     project_uuid: UUID
-    # Accepted but not persisted yet — there's no `name` column on `runs`.
-    # Dropped at the service layer until named runs are actually supported.
-    name: str = Field(min_length=1)
-    playbook_id: str
-    # One entry per playbook node, in the same order as the playbook's own
-    # `nodes` list (see GET /v1/playbooks/:id) — not keyed by node id.
-    playbook_config: list[dict[str, int]] = Field(default_factory=list)
+    playbook: str
+    """A library playbook's own name (playbook_library.playbooks.library_playbooks()
+    keys by this), not a file path or deployment name."""
+
+    config: dict | None = None
+    """The playbook's settings (globals + per-step), filed exactly as
+    playbook.playbooks.execution expects them. Omitted means the library's own
+    default_config is used.
+
+    TODO: accepted fresh on every request for now. Once playbooks/configs are
+    persisted in the database, a run should reference a stored, versioned
+    config instead of the caller resupplying one inline each time.
+    """
+
+    data_record_url: str
+    """Where the starting DataRecord's data lives, e.g. an s3://bucket/key URL."""
