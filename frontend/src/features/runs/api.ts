@@ -15,14 +15,11 @@ const defaultProjectPayload = {
   description: "Default project for guest user, first time visit.",
 };
 
-const defaultRunPayload = {
-  playbook: "cluster-expand-dispatch",
-  // TODO: there is no data-record creation in the frontend yet (file upload,
-  // or any other way to point a run at real data). This placeholder satisfies
-  // the API shape but doesn't resolve to anything real, so a run created this
-  // way won't complete — replace once that functionality exists.
-  data_record_url: "s3://manta/placeholder/input.nc",
-};
+// TODO: there is no data-record creation in the frontend yet (file upload,
+// or any other way to point a run at real data). This placeholder satisfies
+// the API shape but doesn't resolve to anything real, so a run created this
+// way won't complete — replace once that functionality exists.
+const placeholderDataRecordUrl = "s3://manta/placeholder/input.nc";
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
 
@@ -49,12 +46,25 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject) {
+export async function createRun(
+  project: DefaultProject,
+  _name: string,
+  playbookId: string,
+  playbookConfig: Record<string, number>[],
+) {
+  // `_name` isn't part of the API contract yet (no `name` column on `runs`) —
+  // kept as a dialog-local label only. `playbookConfig` is one entry per
+  // playbook node (only the configured node is ever non-empty, see
+  // create-run-dialog.tsx), merged here into the flat config dict the
+  // backend expects.
+  const config = Object.assign({}, ...playbookConfig);
+
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      playbook: defaultRunPayload.playbook,
-      data_record_url: defaultRunPayload.data_record_url,
+      playbook: playbookId,
+      config,
+      data_record_url: placeholderDataRecordUrl,
     });
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {
