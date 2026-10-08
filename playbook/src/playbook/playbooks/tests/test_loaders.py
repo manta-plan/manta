@@ -46,6 +46,7 @@ def test_a_nested_playbook_can_come_from_somewhere_other_than_a_file():
     assert len(pb.steps) == 1
     assert pb.steps[0].playbook.name == "child"
     assert pb.steps[0].playbook.steps[0].block.name == "fake_passthrough"
+    pb.raise_for_issues(config={"regional": {"inner": {}}})
 
 
 def test_a_missing_nested_playbook_is_reported_clearly():

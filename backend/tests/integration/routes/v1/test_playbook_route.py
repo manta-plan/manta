@@ -84,11 +84,79 @@ def test_get_playbook_with_unknown_name_returns_404(
     assert response.status_code == 404
 
 
+def test_validate_playbook_config_without_a_config_checks_the_default(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given
+    headers = _auth_headers(app_server, kc_oidc_client)
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/playbooks/{_LIBRARY_PLAYBOOK}/validate", json={}, headers=headers
+    )
+
+    # Then the playbook's own default_config can run as it is
+    assert response.status_code == 200
+    assert response.json() == {"valid": True, "issues": []}
+
+
+def test_validate_playbook_config_lists_every_issue_with_a_200(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given the default config switched to its myopic branch, which needs a dimension
+    # the playbook's data does not have, and with a misspelt setting
+    headers = _auth_headers(app_server, kc_oidc_client)
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    config = {
+        **default_config,
+        "globals": {"expansion_mode": "myopic"},
+        "cluster": {"n_hours": 3, "n_hour": 6},
+    }
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/playbooks/{_LIBRARY_PLAYBOOK}/validate",
+        json={"config": config},
+        headers=headers,
+    )
+
+    # Then both are reported as data, each pointing at its step, and the setting
+    # where there is one
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert [
+        (issue["kind"], issue["step_path"], issue["config_path"]) for issue in body["issues"]
+    ] == [
+        ("dims", ["expansion_myopic"], None),
+        ("config", ["cluster"], ["cluster", "n_hour"]),
+    ]
+
+
+def test_validate_playbook_config_with_unknown_name_returns_404(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given
+    headers = _auth_headers(app_server, kc_oidc_client)
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/playbooks/does-not-exist/validate", json={}, headers=headers
+    )
+
+    # Then
+    assert response.status_code == 404
+
+
 def test_playbooks_require_authentication(app_server: str) -> None:
     # When
     list_response = httpx2.get(f"{app_server}/v1/playbooks")
     get_response = httpx2.get(f"{app_server}/v1/playbooks/{_LIBRARY_PLAYBOOK}")
+    validate_response = httpx2.post(
+        f"{app_server}/v1/playbooks/{_LIBRARY_PLAYBOOK}/validate", json={}
+    )
 
     # Then
     assert list_response.status_code == 401
     assert get_response.status_code == 401
+    assert validate_response.status_code == 401

@@ -7,6 +7,7 @@ from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
 from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import SyncPrefectClient
+from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterId
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
 
@@ -79,6 +80,16 @@ def _wait_for_deployment_registered(
             except ObjectNotFound:
                 time.sleep(0.25)
     raise TimeoutError(f"Deployment {PLAYBOOK_DEPLOYMENT} was not registered within {timeout}s")
+
+
+def _count_playbook_flow_runs(prefect_service: dict[str, str]) -> int:
+    """How many playbook runs have ever been dispatched to Prefect."""
+    api_url = f"http://{prefect_service['host']}:{prefect_service['port']}/api"
+    with SyncPrefectClient(api=api_url) as client:
+        deployment = client.read_deployment_by_name(PLAYBOOK_DEPLOYMENT)
+        return client.count_flow_runs(
+            deployment_filter=DeploymentFilter(id=DeploymentFilterId(any_=[deployment.id]))
+        )
 
 
 def _create_run(
@@ -305,6 +316,49 @@ def test_create_run_with_unknown_playbook_returns_404(
 
     # Then the API reports that the playbook does not exist, and nothing is dispatched
     assert response.status_code == 404
+
+
+def test_create_run_refuses_a_config_with_issues_with_a_422(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    data_record_url: str,
+) -> None:
+    # Given a project, and the library's config switched to its myopic branch, whose
+    # expansion needs an investment_period dimension the playbook's data does not have
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    _wait_for_deployment_registered(prefect_service)
+    flow_runs_before = _count_playbook_flow_runs(prefect_service)
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    myopic_config = {**default_config, "globals": {"expansion_mode": "myopic"}}
+
+    # When a run is requested with it
+    response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": project_uuid,
+            "playbook": _LIBRARY_PLAYBOOK,
+            "config": myopic_config,
+            "data_record_url": data_record_url,
+        },
+        headers=headers,
+    )
+
+    # Then it is refused, with the issue pointing at the step it is about...
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["message"] == f"Playbook {_LIBRARY_PLAYBOOK!r} cannot run with this config"
+    assert [
+        (issue["kind"], issue["step_path"], issue["config_path"]) for issue in detail["issues"]
+    ] == [("dims", ["expansion_myopic"], None)]
+    # ...and nothing was dispatched to Prefect, nor recorded as a run.
+    assert _count_playbook_flow_runs(prefect_service) == flow_runs_before
+    runs_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+    assert runs_response.status_code == 200
+    assert runs_response.json()["total"] == 0
 
 
 def test_get_run_returns_the_config_it_was_started_with(
