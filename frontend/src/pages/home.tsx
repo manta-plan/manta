@@ -1,7 +1,16 @@
 import { Button } from "@base-ui/react/button";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
+import {
+  FiChevronLeft,
+  FiChevronRight,
+  FiLogOut,
+  FiPlay,
+  FiRefreshCw,
+  FiSearch,
+  FiX,
+} from "react-icons/fi";
+import { clearSession, useSessionUser } from "../features/auth/session";
 import {
   createRun,
   getCachedDefaultProject,
@@ -31,6 +40,8 @@ const emptyRunSummary: GetRunSummaryResponse = {
 };
 
 export function HomePage() {
+  // The router only renders this page for signed-in users.
+  const owner = useSessionUser()?.username ?? "";
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [runsTotal, setRunsTotal] = useState(0);
   const [runsOffset, setRunsOffset] = useState(0);
@@ -66,7 +77,7 @@ export function HomePage() {
         });
 
         if (isActive) {
-          setRuns(fetchedRuns.items.map(toRunListItem));
+          setRuns(fetchedRuns.items.map((run) => toRunListItem(run, owner)));
           setRunsTotal(fetchedRuns.total);
           setRunsOffset(fetchedRuns.offset);
           setRunSummary(fetchedRuns.summary);
@@ -87,7 +98,7 @@ export function HomePage() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [owner]);
 
   const hasRuns = runs.length > 0;
   const hasProjectRuns = runSummary.total > 0;
@@ -160,7 +171,7 @@ export function HomePage() {
 
     try {
       const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset, statuses });
-      setRuns(fetchedRuns.items.map(toRunListItem));
+      setRuns(fetchedRuns.items.map((run) => toRunListItem(run, owner)));
       setRunsTotal(fetchedRuns.total);
       setRunsOffset(fetchedRuns.offset);
       setRunSummary(fetchedRuns.summary);
@@ -257,7 +268,7 @@ export function HomePage() {
         getProjectRun(project, runId),
         getRunSummary(project),
       ]);
-      setRuns(run === null ? [] : [toRunListItem(run)]);
+      setRuns(run === null ? [] : [toRunListItem(run, owner)]);
       setRunsTotal(run === null ? 0 : 1);
       setRunsOffset(0);
       setRunSummary(latestRunSummary);
@@ -381,6 +392,19 @@ export function HomePage() {
               )}
               {isLoadingRuns ? "Starting..." : "New run"}
             </Button>
+            <div className="border-border flex items-center gap-3 border-l pl-3">
+              <span className="text-text-secondary max-w-40 truncate text-sm" title={owner}>
+                {owner}
+              </span>
+              <Button
+                aria-label="Sign out"
+                className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2"
+                onClick={clearSession}
+              >
+                <FiLogOut className="size-4" aria-hidden="true" />
+                Sign out
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -530,7 +554,7 @@ export function HomePage() {
   );
 }
 
-function toRunListItem(run: GetRunResponse): RunListItem {
+function toRunListItem(run: GetRunResponse, owner: string): RunListItem {
   return {
     id: run.uuid,
     name: "Cluster expand dispatch",
@@ -539,6 +563,6 @@ function toRunListItem(run: GetRunResponse): RunListItem {
     startedAt: run.created_at,
     durationSeconds: null,
     trigger: "Manual",
-    owner: "Guest",
+    owner,
   };
 }

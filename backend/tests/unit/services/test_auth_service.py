@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from keycloak.exceptions import KeycloakError
+from keycloak.exceptions import KeycloakError, KeycloakPostError
 
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
@@ -71,6 +71,32 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
     # When / Then
     with pytest.raises(BackendError):
         _authenticate(mock_db, mock_kc_client, "some-token")
+
+
+def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a wrong username or password
+    mock_kc_client.token.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid user credentials"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "wrong")
+
+
+def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:
+    # Given - e.g. a misconfigured client secret
+    mock_kc_client.token.side_effect = KeycloakPostError(
+        error_message="unauthorized_client",
+        response_code=401,
+        response_body=b'{"error":"unauthorized_client"}',
+    )
+
+    # When / Then
+    with pytest.raises(BackendError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "manta-admin")
 
 
 def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
