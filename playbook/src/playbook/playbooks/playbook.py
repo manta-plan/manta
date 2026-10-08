@@ -12,7 +12,7 @@ Steps can be switched on and off by a condition, and a playbook can be used as a
 single step inside a longer one.
 
 This module holds only the description. Reading and writing it lives in `yaml_io`,
-and running it in `execution`.
+checking it in `validation`, and running it in `execution`.
 """
 
 import re
@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from playbook.blocks import (
+    BlockDims,
     BlockSpec,
     DataRecord,
     MantaBlock,
@@ -32,6 +33,7 @@ from playbook.blocks import (
 if TYPE_CHECKING:
     from playbook.blocks import Catalogue
     from playbook.playbooks.execution import BlockRunner
+    from playbook.playbooks.validation import PlaybookIssue
 
 _REF_RE = re.compile(r"^\$\{steps\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$")
 
@@ -113,6 +115,13 @@ class BlockStep(BaseModel):
     def declared_inputs(self) -> frozenset[str]:
         return self.block.inputs
 
+    def declared_outputs(self) -> frozenset[str]:
+        return self.block.outputs
+
+    def dims_effect(self, config: dict) -> BlockDims:
+        """What this step does to the data's dimensions: its block's, whatever the settings."""
+        return self.block.dims
+
 
 class NestedPlaybookStep(BaseModel):
     """A whole playbook used as a single step in a longer one.
@@ -133,8 +142,33 @@ class NestedPlaybookStep(BaseModel):
     def declared_inputs(self) -> frozenset[str]:
         return self.playbook.unbound_inputs()
 
+    def declared_outputs(self) -> frozenset[str]:
+        # What the inner playbook's last step produced, as a block offers its result.
+        return frozenset({"output"})
+
+    def dims_effect(self, config: dict) -> BlockDims:
+        """The net effect of everything the inner playbook does, as one step's worth.
+
+        Unlike a block's, this depends on the settings, because which inner steps run
+        does. `config` is the outer playbook's settings.
+        """
+        inner_config = child_config(config, self.name)
+        initial = self.playbook.initial_dims
+        final = dims_after_steps(self.playbook.active(inner_config).steps, initial, inner_config)
+        return BlockDims(requires=initial, adds=final - initial, removes=initial - final)
+
 
 Step = BlockStep | NestedPlaybookStep
+
+
+def dims_after_steps(
+    steps: list[Step], initial_dims: frozenset[str], config: dict
+) -> frozenset[str]:
+    """The dimensions the data has once every one of `steps` has run on it in turn."""
+    dims = initial_dims
+    for step in steps:
+        dims = step.dims_effect(config).apply(dims)
+    return dims
 
 
 class StepHandle:
@@ -236,6 +270,18 @@ class Playbook(BaseModel):
 
         return load_playbook(path, catalogue=catalogue)
 
+    def find_issues(self, config: dict | None = None) -> "list[PlaybookIssue]":
+        """Everything wrong with this playbook, as a list (see `validation`)."""
+        from playbook.playbooks.validation import find_playbook_issues
+
+        return find_playbook_issues(self, config)
+
+    def raise_for_issues(self, config: dict | None = None) -> None:
+        """Raise `PlaybookHasIssuesError` if anything is wrong with this playbook."""
+        from playbook.playbooks.validation import raise_for_playbook_issues
+
+        raise_for_playbook_issues(self, config)
+
     def to_doc(self):
         """This playbook as a document, ready to save as YAML or send to a browser."""
         from playbook.playbooks.yaml_io import playbook_to_doc
@@ -249,7 +295,7 @@ class Playbook(BaseModel):
         output_prefix: str,
         runner: "BlockRunner | None" = None,
     ) -> DataRecord:
-        """Run this playbook.
+        """Check this playbook against `config`, then run it.
 
         Step outputs land under `output_prefix` (see `execution.execute_playbook`).
         Without a `runner`, every block runs in this process.

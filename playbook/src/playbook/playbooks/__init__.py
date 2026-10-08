@@ -13,6 +13,13 @@ from playbook.playbooks.playbook import (
     StepHandle,
     When,
 )
+from playbook.playbooks.validation import (
+    PlaybookHasIssuesError,
+    PlaybookIssue,
+    PlaybookIssueKind,
+    find_playbook_issues,
+    raise_for_playbook_issues,
+)
 from playbook.playbooks.yaml_io import (
     FilePlaybookLoader,
     PlaybookDoc,
@@ -36,6 +43,9 @@ __all__ = [
     "OutputRef",
     "Playbook",
     "PlaybookDoc",
+    "PlaybookHasIssuesError",
+    "PlaybookIssue",
+    "PlaybookIssueKind",
     "PlaybookLoadError",
     "PlaybookLoader",
     "StepDoc",
@@ -43,9 +53,11 @@ __all__ = [
     "When",
     "WhenDoc",
     "execute_playbook",
+    "find_playbook_issues",
     "load_config",
     "load_playbook",
     "parse_doc",
     "playbook_from_doc",
     "playbook_to_doc",
+    "raise_for_playbook_issues",
 ]
