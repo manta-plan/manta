@@ -5,7 +5,10 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import LibraryPlaybook, library_playbooks
 
 from manta.services.playbook_service import PlaybookService
-from manta.services.results.playbook_result import PlaybookIssueResult
+from manta.services.results.playbook_result import (
+    PlaybookIssueResult,
+    ValidatePlaybookConfigResult,
+)
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 
@@ -208,3 +211,42 @@ def test_raise_for_config_issues_refuses_with_422_listing_every_issue() -> None:
             }
         ],
     }
+
+
+def test_validate_playbook_config_without_a_config_checks_the_playbooks_default() -> None:
+    # Given
+    service = _library_service()
+
+    # When
+    result = service.validate_playbook_config(_LIBRARY_PLAYBOOK, config=None)
+
+    # Then
+    assert result == ValidatePlaybookConfigResult(valid=True, issues=[])
+
+
+def test_validate_playbook_config_answers_with_every_issue_instead_of_refusing() -> None:
+    # Given the default config switched to its myopic branch, which needs an
+    # investment_period dimension the playbook's data does not have
+    service = _library_service()
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    config = {**default_config, "globals": {"expansion_mode": "myopic"}}
+
+    # When
+    result = service.validate_playbook_config(_LIBRARY_PLAYBOOK, config=config)
+
+    # Then the issues are the same ones a run with this config is refused with
+    assert result.valid is False
+    assert result.issues == service.find_config_issues(_LIBRARY_PLAYBOOK, config)
+    assert [(issue.kind, issue.step_path) for issue in result.issues] == [
+        ("dims", ["expansion_myopic"])
+    ]
+
+
+def test_validate_playbook_config_with_unknown_playbook_raises_404() -> None:
+    # Given
+    service = _library_service()
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.validate_playbook_config("does-not-exist", config=None)
+    assert exc_info.value.status_code == 404

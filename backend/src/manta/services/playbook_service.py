@@ -17,6 +17,7 @@ from manta.services.results.playbook_result import (
     PlaybookStepResult,
     PlaybookStepSummaryResult,
     PlaybookSummaryResult,
+    ValidatePlaybookConfigResult,
 )
 
 
@@ -84,6 +85,20 @@ class PlaybookService:
                     "issues": [issue.model_dump(mode="json") for issue in issues],
                 },
             )
+
+    def validate_playbook_config(
+        self, playbook_name: str, config: dict | None
+    ) -> ValidatePlaybookConfigResult:
+        """Whether `playbook_name` can run with `config`, and every reason it cannot.
+
+        The same check a run is refused by (see RunService.create_run), answered as
+        data rather than an error, so an editor can show problems next to the form as
+        the user edits. A missing config means the playbook's default, as for a run.
+        """
+        library_playbook = self._get_library_playbook(playbook_name)
+        run_config = config if config is not None else library_playbook.default_config
+        issues = self.find_config_issues(playbook_name, run_config)
+        return ValidatePlaybookConfigResult(valid=not issues, issues=issues)
 
     def _get_library_playbook(self, playbook_name: str) -> LibraryPlaybook:
         library_playbook = self.playbooks.get(playbook_name)

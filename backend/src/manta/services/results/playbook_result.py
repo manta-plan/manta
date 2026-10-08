@@ -92,3 +92,12 @@ class PlaybookIssueResult(BaseModel):
     input: str | None
     """The wired-in setting this is about (a key of the step's `inputs`), for a
     problem with how a step is fed."""
+
+
+class ValidatePlaybookConfigResult(BaseModel):
+    valid: bool
+    """Whether a run of this playbook with this config would be accepted by
+    POST /v1/runs."""
+
+    issues: list[PlaybookIssueResult]
+    """Every reason it would be refused; empty when `valid`."""
