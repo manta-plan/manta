@@ -5,6 +5,7 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import LibraryPlaybook, library_playbooks
 
 from manta.services.playbook_service import PlaybookService
+from manta.services.results.playbook_result import PlaybookIssueResult
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 
@@ -128,3 +129,82 @@ def test_get_playbook_with_unknown_name_raises_404() -> None:
     with pytest.raises(HTTPException) as exc_info:
         service.get_playbook("does-not-exist")
     assert exc_info.value.status_code == 404
+
+
+def test_find_config_issues_finds_none_in_a_playbooks_own_default_config() -> None:
+    # Given
+    service = _library_service()
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+
+    # When
+    issues = service.find_config_issues(_LIBRARY_PLAYBOOK, default_config)
+
+    # Then
+    assert issues == []
+
+
+def test_find_config_issues_points_each_issue_at_the_exact_setting() -> None:
+    # Given the default config with a setting of the wrong type, and a misspelt one
+    service = _library_service()
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    config = {
+        **default_config,
+        "cluster": {"n_hours": 3, "n_hour": 6},
+        "dispatch": {"optimize_config": {"horizon": "long"}},
+    }
+
+    # When
+    issues = service.find_config_issues(_LIBRARY_PLAYBOOK, config)
+
+    # Then each is reported on its own, with the path to that setting from the top of
+    # the config, so a form can mark that one field
+    assert issues == [
+        PlaybookIssueResult(
+            kind="config",
+            message="there is no setting called 'n_hour'",
+            step_path=["cluster"],
+            config_path=["cluster", "n_hour"],
+            input=None,
+        ),
+        PlaybookIssueResult(
+            kind="config",
+            message="'long' is not of type 'integer'",
+            step_path=["dispatch"],
+            config_path=["dispatch", "optimize_config", "horizon"],
+            input=None,
+        ),
+    ]
+
+
+def test_find_config_issues_with_unknown_playbook_raises_404() -> None:
+    # Given
+    service = _library_service()
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.find_config_issues("does-not-exist", {})
+    assert exc_info.value.status_code == 404
+
+
+def test_raise_for_config_issues_refuses_with_422_listing_every_issue() -> None:
+    # Given a config for a step the playbook does not have
+    service = _library_service()
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    config = {**default_config, "not_a_step": {}}
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.raise_for_config_issues(_LIBRARY_PLAYBOOK, config)
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == {
+        "message": f"Playbook {_LIBRARY_PLAYBOOK!r} cannot run with this config",
+        "issues": [
+            {
+                "kind": "config",
+                "message": "there is no step called 'not_a_step', and it is not 'globals'",
+                "step_path": [],
+                "config_path": ["not_a_step"],
+                "input": None,
+            }
+        ],
+    }

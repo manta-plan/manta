@@ -1,5 +1,6 @@
 from typing import Any
 
+from playbook.playbooks import PlaybookIssueKind
 from pydantic import BaseModel
 
 
@@ -64,3 +65,30 @@ class GetPlaybookResult(BaseModel):
     name, plus a `globals` section every step can see."""
 
     steps: list[PlaybookStepResult]
+
+
+class PlaybookIssueResult(BaseModel):
+    """One reason a playbook cannot run with a particular config (see
+    playbook.playbooks.PlaybookIssue)."""
+
+    kind: PlaybookIssueKind
+    """What sort of problem it is: `structure`, `wiring` (how a step is fed), `dims`
+    (a dimension a step needs is missing), `config`, `when` (a condition on a setting
+    nobody set) or `environment`."""
+
+    message: str
+
+    step_path: list[str]
+    """The step this is about, as step names from the outermost playbook inwards:
+    `["dispatch"]` is the step `dispatch` (see PlaybookStepResult.name). Empty for a
+    problem with the playbook as a whole, such as config for a step that does not
+    exist."""
+
+    config_path: list[str | int] | None
+    """Where in the config the problem is, as keys (and list indexes) from its top,
+    e.g. `["dispatch", "optimize_config", "horizon"]`. None for a problem that is not
+    about one setting, such as a missing dimension."""
+
+    input: str | None
+    """The wired-in setting this is about (a key of the step's `inputs`), for a
+    problem with how a step is fed."""
