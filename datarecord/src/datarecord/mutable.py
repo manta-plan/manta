@@ -1027,7 +1027,7 @@ class WorkingRecord(Record):
             labels = list(given) if _is_labels(given) else [given]
             selected = selected.filter(nw.col(group).struct.field(field).is_in(labels))
         rel = cast("DuckDBPyRelation", selected.select(group).to_native())
-        if coords and rel.limit(1).fetchone() is None:
+        if coords and not rel.limit(1).fetchall():
             scope = ", ".join(f"{c}={v!r}" for c, v in coords.items())
             msg = f"`{call}` selects no tuple of {group!r} at {scope}"
             raise KeyError(msg)
@@ -1857,7 +1857,7 @@ class WorkingRecord(Record):
             d
             for d in self.schema.dims
             if d in staged
-            and self.con.table(self._table(f"{_AXIS_PREFIX}{d}")).limit(1).fetchone()
+            and self.con.table(self._table(f"{_AXIS_PREFIX}{d}")).limit(1).fetchall()
         )
 
     def _axis_layer(self, dim: str) -> DuckDBPyRelation:

@@ -177,6 +177,31 @@ def distinct_values(
     return tuple(r[0] for r in projected.fetchall())
 
 
+def one_row(con: DuckDBPyConnection, *columns: Expression) -> DuckDBPyRelation:
+    """One row of `columns`, each named by its alias.
+
+    Projected over a one-row relation rather than built by `con.values`, which
+    from DuckDB 2.0 names its columns `col0, col1, ...` and drops the aliases.
+    """
+    return con.values([1]).project(*columns)
+
+
+def project_ordered(
+    rel: DuckDBPyRelation, order: Expression, *columns: Expression
+) -> DuckDBPyRelation:
+    """`columns` of `rel`, its rows ordered by `order`.
+
+    Projected before ordering rather than after: from DuckDB 2.0 an ordered
+    relation no longer binds the aliases of the relations joined into it, so a
+    qualified `col(alias, name)` fails against it.
+    """
+    return (
+        rel.project(*columns, order.alias("_order"))
+        .order("_order")
+        .project(star(exclude=["_order"]))
+    )
+
+
 def as_relation(frame: nw.LazyFrame, con: DuckDBPyConnection) -> DuckDBPyRelation:
     """One narwhals frame as a DuckDB relation, without collecting where possible.
 
@@ -317,14 +342,11 @@ class DuckTypes:
         shape from the relation, so a shape is built as expressions rather
         than assembled as DDL text. One row of typed NULLs, kept for its
         types and dropped for its rows.
-
-        A tuple rather than a list is what routes `values` to its expression
-        overload; the stub types only the scalar one.
         """
         assert self.con is not None
-        return self.con.values(
-            tuple(self.null(t).alias(n) for n, t in columns.items())
-        ).limit(0)  # type: ignore[arg-type]
+        return one_row(
+            self.con, *(self.null(t).alias(n) for n, t in columns.items())
+        ).limit(0)
 
 
 def fold_axis(

@@ -1025,7 +1025,7 @@ def _to_parquet_unless_empty(
     rel.create(table)
     try:
         rows = con.table(table)
-        if rows.limit(1).fetchone() is not None:
+        if rows.limit(1).fetchall():
             _to_parquet(rows, uri)
     finally:
         con.execute(f"DROP TABLE {table}")

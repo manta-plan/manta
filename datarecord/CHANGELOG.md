@@ -136,6 +136,10 @@ All notable changes to datarecord are documented here. The format follows
 
 ### Fixed
 
+- Works with DuckDB 2.0 as well as 1.5. Under 2.0, editing a record, reading
+  one with categorized dims and building a PyPSA network all failed to bind
+  their columns, and several reads called a `fetchone()` that relations no
+  longer have.
 - Removing an entity drops the values of every group row naming it, not only
   where it is the group's first entity coordinate: a `contract` over
   `(from, to)` loses its values when either party is removed, and

@@ -305,13 +305,12 @@ def _require_living_tuples(
         if d in drawn
         and (rel := layer.axis(d)) is not None
         and "deleted" in rel.columns
-        and (tomb := rel.filter(col("deleted"))).limit(1).fetchone() is not None
+        and (tomb := rel.filter(col("deleted"))).limit(1).fetchall()
     }
     added_by_group = {
         g: rel
         for g in schema.group_columns
-        if (rel := _living(layer.group(g))) is not None
-        and rel.limit(1).fetchone() is not None
+        if (rel := _living(layer.group(g))) is not None and rel.limit(1).fetchall()
     }
     if not killed and not added_by_group:
         return

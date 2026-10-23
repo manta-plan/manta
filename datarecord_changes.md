@@ -28,7 +28,11 @@ diff -r /tmp/dr datarecord
 
 ## Current divergence
 
-None. `datarecord/` is identical to the baseline.
+- **DuckDB 2.0 compatibility** (2026-10-23). Fixes all four causes listed under "Incompatible
+  with DuckDB 2.0" below, and DuckDB 1.5 keeps working. Adds `duck.one_row` and
+  `duck.project_ordered`. `tools.pypsa.Index.left_join` now takes the columns to select.
+  Adds an entry under `[Unreleased]` / `Fixed` in `CHANGELOG.md`. Dependency specs are
+  unchanged. Written to upstream's `AGENTS.md` conventions, so it can go upstream as is.
 
 ## Known issues at baseline
 
@@ -36,6 +40,8 @@ These are upstream problems, not divergence. They're recorded here because fixin
 them in the fork creates divergence that's worth sending upstream.
 
 ### Incompatible with DuckDB 2.0
+
+Fixed in the fork. See "Current divergence".
 
 `pyproject.toml` declares `duckdb>=1.5.4` with no upper bound, so a fresh install resolves
 DuckDB 2.0.0. Under 2.0.0 the suite has 84 failures and 111 errors. With every other
@@ -71,3 +77,32 @@ hide the third: with only those two fixed, the suite still has 19 failures and 7
 ### 2026-10-23: vendored upstream at `521fef2`
 
 Copied upstream at the baseline commit into `datarecord/`. No changes.
+
+### 2026-10-23: DuckDB 2.0 compatibility
+
+Fixes the four causes under "Incompatible with DuckDB 2.0", one change each:
+
+1. `values` dropping aliases: new `duck.one_row(con, *columns)` projects aliased expressions
+   over `con.values([1])`, a one-row relation. `DuckTypes.empty_relation` and
+   `categories._per_combination` use it.
+2. `fetchone()` removed: each of the 7 relation call sites uses `.limit(1).fetchall()`
+   (in `src`) or `.fetchall() == [(...)]` (in tests) instead.
+3. Ordered relations dropping join aliases: new `duck.project_ordered(rel, order, *columns)`
+   projects the qualified columns and the ordering key, orders, then drops the key.
+   `pypsa._left_join_values` uses it, and so does `pypsa.Index.left_join`, which now takes
+   the columns to select (its one caller, `_series_frame`, passes them).
+4. `EXPLAIN` spelling: the hash-join test uppercases the plan and replaces spaces with
+   underscores, so `HASH_JOIN`, `NL_JOIN` and `NESTED_LOOP` match both spellings.
+
+Verified with the suite under `uv` (pixi isn't installed here), all other dependencies at
+the `pixi.lock` versions:
+
+| DuckDB | Default suite | `slow` |
+|---|---|---|
+| 1.5.5 | 447 passed, 9 skipped | 1 passed |
+| 2.0.0 | 447 passed, 9 skipped | 1 passed |
+
+With every dependency unpinned (DuckDB 2.0.0, narwhals 2.27.1, pypsa 1.4.0, pandas 3.1.0,
+polars 2.0.0): 448 passed, 9 skipped, including `slow`. `ruff check` and `ruff format --check`
+are clean. `mypy` reports no new errors against the baseline on either version, and 5 fewer
+on 2.0.0. The errors that remain are upstream's.

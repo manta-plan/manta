@@ -40,7 +40,7 @@ from duckdb import (
 )
 from duckdb import StarExpression as star
 
-from datarecord.duck import DuckTypes, ex_all, fn, struct_of
+from datarecord.duck import DuckTypes, ex_all, fn, project_ordered, struct_of
 from datarecord.layered.categories import (
     carried_properties,
     matching,
@@ -260,13 +260,19 @@ class Index:
             coalesce(col(rel.alias, column), col("_ax", column)).alias(column),
         )
 
-    def left_join(self, other: DuckDBPyRelation, on: Sequence[str]) -> DuckDBPyRelation:
-        """LEFT JOIN `other` onto this index, restored to `index`'s row order."""
-        return self.rel.join(
-            other,
-            ex_all(col(self.rel.alias, f) == col(other.alias, f) for f in on),
-            how="left",
-        ).order(f"{self.rel.alias}._pos")
+    def left_join(
+        self, other: DuckDBPyRelation, on: Sequence[str], *columns: Expression
+    ) -> DuckDBPyRelation:
+        """`columns` of `other` LEFT JOINed onto this index, in `index`'s row order."""
+        return project_ordered(
+            self.rel.join(
+                other,
+                ex_all(col(self.rel.alias, f) == col(other.alias, f) for f in on),
+                how="left",
+            ),
+            col(self.rel.alias, "_pos"),
+            *columns,
+        )
 
 
 def _assign_static(
@@ -383,18 +389,12 @@ def _left_join_values(
             exprs[name] = (
                 coalesce(value, col("s", name)) if name in static.columns else value
             ).alias(name)
-        return (
-            joined.order("s._pos")
-            .project(
-                *(
-                    col("s", c)
-                    for c in static.columns
-                    if c not in exprs and c != "_pos"
-                ),
-                *exprs.values(),
-            )
-            .df()
-        )
+        return project_ordered(
+            joined,
+            col("s", "_pos"),
+            *(col("s", c) for c in static.columns if c not in exprs and c != "_pos"),
+            *exprs.values(),
+        ).df()
     finally:
         for table in tables:
             con.execute(f"DROP TABLE IF EXISTS {table}")
@@ -450,11 +450,9 @@ def _series_frame(
     if not present:
         return pd.DataFrame(index=snapshots.index, columns=static_index[:0])
 
-    wide = (
-        snapshots.left_join(piv.set_alias("piv"), group_by)
-        .project(*(col("piv", str(p)) for p in present))
-        .df()
-    )
+    wide = snapshots.left_join(
+        piv.set_alias("piv"), group_by, *(col("piv", str(p)) for p in present)
+    ).df()
     wide.index = snapshots.index
     wide.columns = static_index[[p - 1 for p in present]]
     return wide

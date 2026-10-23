@@ -278,7 +278,7 @@ def test_a_component_tombstone_reaches_its_connections_through_theirs(store):
     )
     frame = both.resolver.group_frame("connection")
     assert frame is not None, "the group was written, so it is present"
-    assert frame.count("*").fetchone() == (0,), "every connection row is tombstoned"
+    assert frame.count("*").fetchall() == [(0,)], "every connection row is tombstoned"
     assert _efficiencies(both) == {}, "and their values go with them"
 
 
