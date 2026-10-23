@@ -1,0 +1,31 @@
+{
+  "projectName": "datarecord",
+  "projectOwner": "energy-models",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitConvention": "none",
+  "contributors": [
+    {
+      "login": coroa,
+      "name": Jonas Hörsch,
+      "avatar_url": "https://github.com/coroa.png?v=4",
+      "profile": "https://github.com/coroa",
+      "contributions": [
+        "code",
+        "doc",
+        "ideas",
+        "projectManagement",
+        "maintenance"
+      ],
+      "firstContribution": "2026-09-07"
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": false,
+  "contributorsSortAlphabetically": false
+}
