@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: datarecord Contributors
+#
+# SPDX-License-Identifier: MIT
+
+[workspace]
+name = "datarecord"
+channels = ["conda-forge"]
+exclude-newer = "7d"
+platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
+preview = ["pixi-build"]
+
+[package]
+name = "datarecord"
+[package.build.backend]
+name = "pixi-build-python"
+version = "*"
+[package.host-dependencies]
+python = ">=3.12"
+hatchling = "*"
+uv = "*"
+
+[dependencies]
+datarecord = { path = "." }
+duckdb = ">=1.5.4,<2"
+narwhals = ">=2,<3,!=2.21.0"
+pydantic = ">=2"
+
+[feature.test.dependencies]
+pytest = "*"
+pytest-cov = "*"
+mypy = "*"
+pandas = "*"
+pyarrow = "*"
+pypsa = "*"
+boto3 = ">=1.35.69"
+[feature.test.tasks]
+test = "pytest"
+test-coverage = "pytest --cov=datarecord --cov-report=xml --cov-report=term-missing"
+
+# `datarecord.tools.pypsa` is an optional extra (no tool import may leak into
+# core datarecord); kept as its own feature/environment too, as a model
+# for integrating further tools, even though `test` now pulls it in directly.
+[feature.pypsa.dependencies]
+pypsa = "*"
+
+# The published site. Its own feature, not `test`: nothing in the suite imports
+# any of it, and a contributor running `pixi run test` should not pay for a docs
+# toolchain. mkdocstrings imports `datarecord` to read its docstrings, so the
+# environment carries the package itself.
+#
+# Pinned below 2.0 deliberately. MkDocs 2.0 drops the plugin system, rewrites
+# theming and switches config to TOML with no migration path - it would take
+# mkdocstrings, and so the whole API Reference, with it. Material's own advice
+# is to pin `<2`; the successor they point at, Zensical, still calls its
+# mkdocstrings integration preliminary, so this stays here until that settles.
+[feature.docs.dependencies]
+mkdocs = ">=1.6,<2"
+mkdocs-material = ">=9.5,<10"
+mkdocstrings-python = ">=1.10"
+# mkdocstrings formats signatures with one of these; without it every signature
+# renders on a single unwrapped line.
+ruff = "*"
+[feature.docs.tasks]
+docs = "mkdocs serve"
+docs-build = "mkdocs build --strict"
+
+# Material prints a red MkDocs 2.0 advisory on every build. It is editorial, not
+# a deprecation of anything used here, and in a CI log it reads as a failure -
+# which matters because `--strict` means a real problem is also red.
+[feature.docs.activation.env]
+NO_MKDOCS_2_WARNING = "1"
+
+[feature.build.dependencies]
+python = "*"
+hatchling = "*"
+python-build = "*"
+twine = ">=6"
+[feature.build.tasks]
+build-wheel = "python -m build --no-isolation ."
+check-wheel = "twine check dist/*"
+
+[feature.lint.dependencies]
+lefthook = "*"
+ruff = "*"
+prettier = "*"
+taplo = "*"
+pre-commit-hooks = "*"
+typos = "*"
+zizmor = "*"
+reuse = "*"
+[feature.lint.tasks]
+pre-commit-install = "lefthook install"
+lint = "lefthook run pre-commit --all-files"
+
+[feature.py312.dependencies]
+python = "3.12.*"
+[feature.py313.dependencies]
+python = "3.13.*"
+[feature.py314.dependencies]
+python = "3.14.*"
+
+[environments]
+default = ["test", "build", "lint"]
+docs = ["docs"]
+py312 = ["py312", "test"]
+py313 = ["py313", "test"]
+py314 = ["py314", "test"]
+pypsa = ["test", "pypsa"]

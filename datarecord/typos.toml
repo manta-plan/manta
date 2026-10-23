@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Contributors to datarecord <https://github.com/energy-models/datarecord>
+#
+# SPDX-License-Identifier: MIT
+
+[default.extend-words]
+# PyPSA's own attribute name: fixed operation & maintenance cost.
+fom = "fom"

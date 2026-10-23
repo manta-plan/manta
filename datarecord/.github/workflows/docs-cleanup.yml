@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: Contributors to datarecord <https://github.com/energy-models/datarecord>
+#
+# SPDX-License-Identifier: MIT
+
+# Removes the per-pull-request doc previews that `docs.yml` publishes into
+# `gh-pages`. Two triggers, because neither alone is enough: closing a pull
+# request removes its own preview immediately, and a weekly sweep catches the
+# ones that closing missed - a run that failed, a preview pushed as the pull
+# request closed, or anything left by an earlier version of this workflow.
+name: Docs cleanup
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    # Mondays, 04:17 UTC. Off the hour because scheduled workflows queue on
+    # popular minutes, which delays them.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  # Shares `docs.yml`'s group only insofar as both push to `gh-pages`; a
+  # cleanup must not run while a publish for the same ref is in flight.
+  group: docs-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Remove stale previews
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: pages
+
+      # One closed pull request: its preview goes now, whatever its age.
+      - name: Remove this pull request's preview
+        if: github.event_name == 'pull_request'
+        working-directory: pages
+        run: rm -rf "pr-${PR}"
+        env:
+          PR: ${{ github.event.number }}
+
+      # The sweep. A preview is removed when its pull request is closed, or
+      # when it has not been touched for a week - the second condition is what
+      # bounds an abandoned but still-open pull request, and what the age limit
+      # in the preview comment refers to.
+      - name: Sweep previews
+        if: github.event_name != 'pull_request'
+        working-directory: pages
+        run: |
+          cutoff=$(date -d '7 days ago' +%s)
+          for dir in pr-*/; do
+            [ -d "$dir" ] || continue
+            pr="${dir#pr-}"; pr="${pr%/}"
+            state=$(gh pr view "$pr" --json state --jq .state 2>/dev/null || echo UNKNOWN)
+            # `git log` on the directory: when this preview was last published.
+            touched=$(git log -1 --format=%ct -- "$dir")
+            if [ "$state" != "OPEN" ]; then
+              echo "removing $dir (pull request $state)"
+              rm -rf "$dir"
+            elif [ "${touched:-0}" -lt "$cutoff" ]; then
+              echo "removing $dir (open, but untouched since $(date -d "@$touched" -I))"
+              rm -rf "$dir"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Push
+        working-directory: pages
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --staged --quiet && echo "nothing to remove" && exit 0
+          git commit -m "docs: remove stale previews"
+          git push

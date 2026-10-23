@@ -1,0 +1,164 @@
+# SPDX-FileCopyrightText: Contributors to datarecord <https://github.com/energy-models/datarecord>
+#
+# SPDX-License-Identifier: MIT
+
+site_name: datarecord
+site_description: Dimensioned attribute data with a declared schema
+site_url: https://energy-models.github.io/datarecord/
+repo_url: https://github.com/energy-models/datarecord
+repo_name: energy-models/datarecord
+edit_uri: edit/main/docs/
+strict: true
+
+validation:
+  # Under `strict: true` a warning fails the build, which is the point: a page
+  # added without a nav entry, or a cross-reference that stopped resolving after
+  # a section was renamed, fails CI rather than shipping as a dead link.
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Usage:
+      - usage/index.md
+      - Reading a record: usage/reading.md
+      - The schema: usage/schema.md
+      - Layers: usage/layers.md
+      - Editing: usage/editing.md
+      - Writing: usage/writing.md
+      - Tools: usage/tools.md
+  - Design:
+      - design/index.md
+      - The Record protocol: design/record.md
+      - The record format: design/format.md
+      - The schema: design/schema.md
+      - Layered resolution: design/layers.md
+      - The DuckDB read path: design/read-path.md
+      - Writing a record: design/writing.md
+      - WorkingRecord: design/working-record.md
+      - Consuming a record: design/tools.md
+      - Module layout: design/module-layout.md
+      - Open questions: design/open-questions.md
+      - Enhancement proposals:
+          - Template: design/proposals/dep-NNNN-template.md
+          - "DEP 1: Dims, mappings, groups and traits": design/proposals/dep-0001-dims-groups-traits.md
+          - "DEP 2: Groups": design/proposals/dep-0002-groups.md
+          - "DEP 3: Trait switches": design/proposals/dep-0003-trait-switches.md
+          - "DEP 4: Staging as a layer": design/proposals/dep-0004-staging-as-a-layer.md
+          - "DEP 5: One Record over a NodeCache": design/proposals/dep-0005-one-record-over-a-node-cache.md
+          - "DEP 6: A member file holds values": design/proposals/dep-0006-a-member-file-holds-values.md
+          - "DEP 7: Staging without _seq": design/proposals/dep-0007-staging-without-seq.md
+          - "DEP 8: One interface, source and fold": design/proposals/dep-0008-one-interface-source-and-fold.md
+          - "DEP 9: A Workspace and a Store": design/proposals/dep-0009-store.md
+          - "DEP 10: A group is one struct column": design/proposals/dep-0010-a-group-is-a-struct-column.md
+          - "DEP 11: Deletion cascades through tombstones": design/proposals/dep-0011-deletion-cascades-through-tombstones.md
+          - "DEP 12: Properties": design/proposals/dep-0012-properties.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+  - API Reference:
+      - api/index.md
+      - Record: api/record.md
+      - Schema: api/schema.md
+      - Layered: api/layered.md
+      - WorkingRecord: api/mutable.md
+      - Tools: api/tools.md
+
+theme:
+  name: material
+  language: en
+
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  icon:
+    repo: fontawesome/brands/github
+
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.prune
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            # numpydoc throughout: `Parameters`/`Notes` with underlines, never
+            # `Args:`. Docstrings cite the Design pages from `Notes`, which
+            # griffe renders as an admonition of plain Markdown.
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/energy-models/datarecord
+      name: datarecord on GitHub
+    - icon: simple/pypi
+      link: https://pypi.org/project/datarecord/
+      name: datarecord on PyPI
+
+extra_css:
+  - static/extras.css
+
+watch:
+  - src/datarecord
+  - README.md
+  - CHANGELOG.md
+  - CONTRIBUTING.md
