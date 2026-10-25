@@ -1,9 +1,10 @@
 import io
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from boto3.exceptions import S3TransferFailedError, S3UploadFailedError
+from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
 from manta.services.results.s3_file_result import GetS3FileResult
@@ -23,8 +24,8 @@ def _client_error(status_code: int) -> ClientError:
 UPLOAD_FAILURES = [_client_error(500), BotoCoreError(), S3UploadFailedError("boom")]
 UPLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_upload_failed_error"]
 
-DOWNLOAD_FAILURES = [_client_error(500), BotoCoreError(), S3TransferFailedError("boom")]
-DOWNLOAD_FAILURE_IDS = ["client_error", "botocore_error", "s3_transfer_failed_error"]
+GET_FAILURES = [_client_error(500), BotoCoreError()]
+GET_FAILURE_IDS = ["client_error", "botocore_error"]
 
 DELETE_FAILURES = [_client_error(500), BotoCoreError()]
 DELETE_FAILURE_IDS = ["client_error", "botocore_error"]
@@ -72,49 +73,90 @@ def test_upload_file_wraps_head_object_failures(mock_s3_client, error) -> None:
         service.upload_file(uuid4(), "network.nc", io.BytesIO(b"data"))
 
 
-def test_get_file_returns_key_size_and_last_modified(mock_s3_client) -> None:
+def _fake_body(chunks: list[bytes] | Exception) -> MagicMock:
+    """Stands in for the StreamingBody `get_object` returns."""
+    body = MagicMock()
+    if isinstance(chunks, Exception):
+        body.iter_chunks.side_effect = chunks
+    else:
+        body.iter_chunks.return_value = iter(chunks)
+    return body
+
+
+def test_get_file_streams_the_content_only_once_it_is_iterated(mock_s3_client) -> None:
     # Given
     last_modified = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
-    mock_s3_client.head_object.return_value = {
-        "ContentLength": 42,
+    body = _fake_body([b"pypsa ", b"network"])
+    mock_s3_client.get_object.return_value = {
+        "ContentLength": 13,
         "LastModified": last_modified,
+        "ContentType": "application/x-netcdf",
+        "Body": body,
     }
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
     project_uuid = uuid4()
-    destination = io.BytesIO()
 
     # When
-    result = service.get_file(project_uuid, "network.nc", destination)
+    result = service.get_file(project_uuid, "network.nc")
+
+    # Then the file is opened and described, but nothing is read from it yet...
+    expected_key = f"{project_uuid}/network.nc"
+    mock_s3_client.get_object.assert_called_once_with(Bucket="manta", Key=expected_key)
+    assert result.key == expected_key
+    assert result.size == 13
+    assert result.last_modified == last_modified
+    assert result.content_type == "application/x-netcdf"
+    body.iter_chunks.assert_not_called()
+
+    # ...until the content is iterated, chunk by chunk, after which the
+    # connection is handed back
+    assert list(result.content) == [b"pypsa ", b"network"]
+    body.close.assert_called_once()
+
+
+def test_get_file_defaults_the_content_type_when_s3_has_none(mock_s3_client) -> None:
+    # Given
+    mock_s3_client.get_object.return_value = {
+        "ContentLength": 0,
+        "LastModified": datetime(2026, 8, 19, 12, 0, tzinfo=UTC),
+        "Body": _fake_body([]),
+    }
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    result = service.get_file(uuid4(), "network.nc")
 
     # Then
-    expected_key = f"{project_uuid}/network.nc"
-    assert result.key == expected_key
-    assert result.size == 42
-    assert result.last_modified == last_modified
-    mock_s3_client.download_fileobj.assert_called_once_with("manta", expected_key, destination)
-    mock_s3_client.head_object.assert_called_once_with(Bucket="manta", Key=expected_key)
+    assert result.content_type == "application/octet-stream"
 
 
-@pytest.mark.parametrize("error", DOWNLOAD_FAILURES, ids=DOWNLOAD_FAILURE_IDS)
-def test_get_file_wraps_download_fileobj_failures(mock_s3_client, error) -> None:
+@pytest.mark.parametrize("error", GET_FAILURES, ids=GET_FAILURE_IDS)
+def test_get_file_wraps_get_object_failures(mock_s3_client, error) -> None:
     # Given
-    mock_s3_client.download_fileobj.side_effect = error
+    mock_s3_client.get_object.side_effect = error
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
 
     # When / Then
     with pytest.raises(S3StorageError):
-        service.get_file(uuid4(), "network.nc", io.BytesIO())
+        service.get_file(uuid4(), "network.nc")
 
 
-@pytest.mark.parametrize("error", DOWNLOAD_FAILURES, ids=DOWNLOAD_FAILURE_IDS)
-def test_get_file_wraps_head_object_failures(mock_s3_client, error) -> None:
-    # Given
-    mock_s3_client.head_object.side_effect = error
+@pytest.mark.parametrize("error", GET_FAILURES, ids=GET_FAILURE_IDS)
+def test_get_file_wraps_failures_while_streaming(mock_s3_client, error) -> None:
+    # Given a file that opens fine, but fails part-way through reading
+    body = _fake_body(error)
+    mock_s3_client.get_object.return_value = {
+        "ContentLength": 13,
+        "LastModified": datetime(2026, 8, 19, 12, 0, tzinfo=UTC),
+        "Body": body,
+    }
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    result = service.get_file(uuid4(), "network.nc")
 
     # When / Then
     with pytest.raises(S3StorageError):
-        service.get_file(uuid4(), "network.nc", io.BytesIO())
+        list(result.content)
+    body.close.assert_called_once()
 
 
 def test_delete_file_deletes_the_object(mock_s3_client) -> None:
@@ -172,6 +214,20 @@ def test_list_files_returns_all_files_across_pages(mock_s3_client) -> None:
     mock_s3_client.get_paginator.assert_called_once_with("list_objects_v2")
     mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
         Bucket="manta", Prefix=f"{project_uuid}/"
+    )
+
+
+def test_list_files_narrows_the_listing_to_a_prefix_within_the_project(mock_s3_client) -> None:
+    # Given
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+
+    # When
+    service.list_files(project_uuid, prefix="runs/abc/output/")
+
+    # Then the prefix is applied inside the project's own, never instead of it
+    mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="manta", Prefix=f"{project_uuid}/runs/abc/output/"
     )
 
 
