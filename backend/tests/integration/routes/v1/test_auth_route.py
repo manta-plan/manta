@@ -58,3 +58,28 @@ def test_register_with_missing_fields_is_rejected(app_server: str) -> None:
 
     # Then
     assert response.status_code == 422
+
+
+def test_login_with_valid_credentials_returns_token(app_server: str) -> None:
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "manta-admin"},
+    )
+
+    # Then
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"]
+    assert body["token_type"] == "bearer"  # noqa: S105 It's not a password
+
+
+def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "wrong-password"},
+    )
+
+    # Then
+    assert response.status_code == 401
