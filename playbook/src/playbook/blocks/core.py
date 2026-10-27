@@ -41,10 +41,11 @@ class DataRecord:
     """
 
     url: str
+    uuid: str
 
     def to_dict(self) -> dict:
         """Turn this record into plain data, for sending to another process."""
-        return {"url": self.url}
+        return {"url": self.url, "uuid": self.uuid}
 
     @classmethod
     def from_dict(cls, data: dict) -> "DataRecord":
