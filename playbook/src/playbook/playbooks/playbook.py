@@ -154,14 +154,14 @@ class NestedPlaybookStep(BaseModel):
         """
         inner_config = child_config(config, self.name)
         initial = self.playbook.initial_dims
-        final = dims_after_steps(self.playbook.active(inner_config).steps, initial, inner_config)
+        final = _dims_after_steps(self.playbook.active(inner_config).steps, initial, inner_config)
         return BlockDims(requires=initial, adds=final - initial, removes=initial - final)
 
 
 Step = BlockStep | NestedPlaybookStep
 
 
-def dims_after_steps(
+def _dims_after_steps(
     steps: list[Step], initial_dims: frozenset[str], config: dict
 ) -> frozenset[str]:
     """The dimensions the data has once every one of `steps` has run on it in turn."""
