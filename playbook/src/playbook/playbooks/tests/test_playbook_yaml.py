@@ -46,6 +46,11 @@ def test_the_settings_alongside_a_playbook_are_read_as_a_mapping_per_step():
     assert config["cluster"] == {"label": "clustering"}
 
 
+def test_a_playbook_read_from_file_has_no_issues_with_its_settings():
+    pb = load_playbook(FIXTURES / "fake_playbook.yaml")
+    pb.raise_for_issues(load_config(FIXTURES / "fake_config.yaml"))
+
+
 def test_from_yaml_matches_load_playbook():
     assert Playbook.from_yaml(FIXTURES / "fake_playbook.yaml").name == "fake-playbook"
 

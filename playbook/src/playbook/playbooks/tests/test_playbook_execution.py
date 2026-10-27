@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError, computed_field
 
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import ConfigSchema, DataRecord, MantaBlock
 from playbook.blocks.tests.fakes import FakeNeedsUpstream, FakePassthrough, FakeWritesOutput
 from playbook.playbooks.playbook import Playbook, When
 
@@ -83,6 +83,29 @@ def test_a_wired_input_is_checked_against_the_setting_it_goes_into():
 def test_a_wired_input_reaches_the_setting_it_is_meant_for():
     config = FakeNeedsUpstream.merge_config({}, {"source": DataRecord(url="upstream")})
     assert config.source.url == "upstream"
+
+
+class _DerivedSettingConfig(ConfigSchema):
+    size: int = 1
+
+    @computed_field
+    def doubled(self) -> int:
+        return self.size * 2
+
+
+class _DerivedSettingBlock(MantaBlock[_DerivedSettingConfig]):
+    ENV = "default"
+    CONFIG = _DerivedSettingConfig
+
+    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+        return record
+
+
+def test_settings_given_as_an_object_can_be_merged_again():
+    # A computed value is part of the settings object, but is not a setting: merging
+    # must not hand it back in, where it would be refused as unknown.
+    config = _DerivedSettingBlock.merge_config(_DerivedSettingConfig(size=3), {})
+    assert config.size == 3
 
 
 def test_settings_reach_the_block_that_needs_them(initial_record):

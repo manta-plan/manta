@@ -71,9 +71,14 @@ class ConfigSchema(BaseModel):
 
     Settings can always be given by field name, even where a field also has a
     friendlier display name for the user interface to show.
+
+    A setting the block does not have is refused rather than ignored, so a misspelt
+    name is reported instead of silently leaving the default in place. The block's
+    JSON schema says the same (`additionalProperties: false`), so this is caught even
+    where the block cannot be imported.
     """
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 def _accepts_record(annotation: object) -> bool:
@@ -182,7 +187,10 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
         The result is checked in full, so a record wired to the wrong kind of setting
         is reported here rather than surfacing much later inside the block.
         """
-        base = config.model_dump() if isinstance(config, BaseModel) else dict(config)
+        # `round_trip` leaves out computed fields: they are worked out from the
+        # settings rather than being settings, so validating them back in would be
+        # refused as unknown.
+        base = config.model_dump(round_trip=True) if isinstance(config, BaseModel) else dict(config)
         return cls.CONFIG.model_validate({**base, **inputs})
 
     @abstractmethod

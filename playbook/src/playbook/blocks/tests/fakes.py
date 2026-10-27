@@ -79,6 +79,21 @@ class FakeStrictConfig(FakeBlock):
         return DataRecord(url=f"{record.url}+strict({self.config.required_field})")
 
 
+class OptionalGroupConfig(ConfigSchema):
+    size: int = 1
+
+
+class NestedSettingsConfig(ConfigSchema):
+    group: OptionalGroupConfig | None = None
+
+
+@register("fake_nested_settings")
+class FakeNestedSettings(FakeBlock):
+    """Has an optional group of settings, shaped like a real block's solver options."""
+
+    CONFIG = NestedSettingsConfig
+
+
 @register("fake_writes_output")
 class FakeWritesOutput(FakeBlock):
     """Points its result at the place it was asked to write, like a real block."""

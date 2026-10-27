@@ -12,7 +12,9 @@ class CreateRunRequest(BaseModel):
     config: dict | None = None
     """The playbook's settings (globals + per-step), filed exactly as
     playbook.playbooks.execution expects them. Omitted means the library's own
-    default_config is used.
+    default_config is used. Either way it is checked before anything is dispatched,
+    and a config the playbook cannot run with is refused with a 422 listing every
+    issue (see PlaybookIssueResult).
 
     TODO: accepted fresh on every request for now. Once playbooks/configs are
     persisted in the database, a run should reference a stored, versioned

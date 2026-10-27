@@ -110,9 +110,12 @@ catalogue must all keep working in an environment that has never heard of PyPSA.
 2. Give it default settings under `playbooks/configs/`, in a file of the same name,
    with an entry for every step. A user should start from a complete document rather
    than a blank page.
-3. Add a case to `tests/test_playbooks.py`. Those tests only *read* documents, so
-   they run without PyPSA — which is the point: anything offering playbooks to a user
-   does so from an environment that cannot import the blocks they name.
+3. Run the tests. `tests/test_playbooks.py` checks every playbook in `playbooks/`
+   against its default settings, so a default that cannot run fails there. Add a case
+   for anything else the playbook has to get right. Most of those tests run without
+   PyPSA and check against the catalogue. That is the point: anything offering
+   playbooks to a user does so from an environment that cannot import the blocks they
+   name.
 
 Playbooks are found by the name written inside the document, not by filename, so
 renaming a file changes nothing and two playbooks claiming one name is an error.
@@ -121,7 +124,7 @@ renaming a file changes nothing and two playbooks claiming one name is an error.
 
 `catalogue.json` describes every block — settings as JSON schema, dimensions,
 environments — so that processes which cannot import PyPSA can still list these blocks
-and check how a playbook wires them up. It is committed; regenerate it after adding or
+and check a playbook and its settings against them. It is committed; regenerate it after adding or
 changing a block:
 
 ```bash
@@ -148,7 +151,7 @@ What the suite covers, and where to add to it:
 | --- | --- |
 | `tests/test_catalogue.py` | the committed catalogue matches the blocks and works without PyPSA |
 | `tests/test_library.py` | each block, run on a tiny network: a usable network comes out where it was asked for |
-| `tests/test_playbooks.py` | the shipped playbooks parse, and come with settings for every step |
+| `tests/test_playbooks.py` | the shipped playbooks parse, come with settings for every step, and have no issues with those settings, checked against the catalogue and, with PyPSA, against the blocks |
 | `tests/test_pypsa_end_to_end.py` | the whole playbook, one network in and one out |
 
 Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry

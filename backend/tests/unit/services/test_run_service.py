@@ -13,6 +13,7 @@ from runner.flows import catalogue_parameter
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
+from manta.services.playbook_service import PlaybookService
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
 
@@ -46,6 +47,10 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={"config": config if config is not None else {}},
     )
+
+
+def _library_playbook_service() -> PlaybookService:
+    return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
 
 
 def _existing_user(user_id: int = 1, username: str = "alice") -> User:
@@ -90,7 +95,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     # `AsyncMock`, mirrors that real call shape.
     dispatch = MagicMock(return_value=SimpleNamespace(id=flow_run_id))
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db)
+    service = RunService(db=db, playbook_service=_library_playbook_service())
 
     # When
     result = service.create_run(
@@ -140,8 +145,9 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
     db = mock_db_class(query_results={Project: project})
     dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db)
-    custom_config = {"globals": {"expansion_mode": "myopic"}}
+    service = RunService(db=db, playbook_service=_library_playbook_service())
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    custom_config = {**default_config, "cluster": {"n_hours": 6}}
 
     # When
     service.create_run(
@@ -170,7 +176,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
         "run_deployment",
         MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
     )
-    service = RunService(db=db)
+    service = RunService(db=db, playbook_service=_library_playbook_service())
 
     # When/Then
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
@@ -227,6 +233,47 @@ def test_create_run_with_unknown_playbook_raises_404(
     assert exc_info.value.status_code == 404
     # And no run was ever dispatched for a playbook that doesn't exist.
     dispatch.assert_not_called()
+
+
+def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a_run(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given the library's config switched to its myopic branch, whose expansion needs
+    # an investment_period dimension the playbook's data does not have
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    dispatch = MagicMock()
+    mint_run_uuid = MagicMock(side_effect=uuid4)
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    monkeypatch.setattr(run_service_module, "uuid4", mint_run_uuid)
+    service = RunService(db=db, playbook_service=_library_playbook_service())
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    myopic_config = {**default_config, "globals": {"expansion_mode": "myopic"}}
+
+    # When
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=myopic_config,
+            data_record_url=_RECORD_URL,
+            user=_existing_user(),
+        )
+
+    # Then it is refused with every issue, each pointing at the step it is about...
+    assert exc_info.value.status_code == 422
+    detail = exc_info.value.detail
+    assert detail["message"] == f"Playbook {_LIBRARY_PLAYBOOK!r} cannot run with this config"
+    [issue] = detail["issues"]
+    assert issue["kind"] == "dims"
+    assert issue["step_path"] == ["expansion_myopic"]
+    assert issue["config_path"] is None
+    assert "'investment_period'" in issue["message"]
+    # ...and no run was minted, dispatched or persisted.
+    mint_run_uuid.assert_not_called()
+    dispatch.assert_not_called()
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
 
 
 def test_get_run_returns_dto_for_a_known_run(
