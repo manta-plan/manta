@@ -84,9 +84,14 @@ class AuthService:
             token = self.kc_client.token(username, password)
         except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
             raise AuthenticationError from request_error
+        except KeycloakPostError as post_error:
+            # Keycloak rejects wrong credentials with `400 invalid_grant`, which
+            # python-keycloak raises as a generic KeycloakPostError.
+            if _is_invalid_grant(post_error):
+                raise AuthenticationError from post_error
+            raise BackendError from post_error
         except (
-            KeycloakConnectionError,
-            KeycloakPostError,
+            KeycloakConnectionError
         ) as transient_error:  # Transient or configuration-based connection error
             raise BackendError from transient_error
         except (TypeError, AttributeError) as config_error:  # configuration-based connection error
@@ -113,3 +118,7 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
+
+
+def _is_invalid_grant(error: KeycloakPostError) -> bool:
+    return error.response_code == 400 and b'"invalid_grant"' in (error.response_body or b"")
