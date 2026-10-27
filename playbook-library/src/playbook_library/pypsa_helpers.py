@@ -12,9 +12,12 @@ Both are confined to this module, so richer record storage only ever changes it.
 """
 
 from collections.abc import Iterator
+from typing import Any
+from uuid import UUID
 
 import pypsa
-from playbook.blocks import storage
+from datarecord import Workspace
+from datarecord.tools.pypsa import PyPSA
 from playbook.blocks.core import DataRecord
 
 CAPACITY_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store"]
@@ -41,20 +44,29 @@ def to_network(record: DataRecord) -> pypsa.Network:
     has to copy one. That is worth knowing: copying a network with several investment
     periods is not currently safe in PyPSA.
     """
-    with storage.local_copy(record) as path:
-        return pypsa.Network(str(path))
+    ws = Workspace()
+    store = ws.store(record.url)
+    rev = store.revision(UUID(record.uuid))
+    missing = PyPSA.verify(rev.record)
+    if missing:
+        raise RuntimeError(missing.describe())
+    n = PyPSA.build(rev.record)
+    return n
 
 
-def write_network(n: pypsa.Network, output_base: str) -> DataRecord:
-    """Write `n` where the caller asked, and point a new record at it.
+def write_network(n: pypsa.Network, record: DataRecord, results_only: bool = False) -> DataRecord:
+    """Write `n` where the caller asked, and point a new record at it."""
 
-    `output_base` comes from whatever runs the block (see `MantaBlock.run`); this
-    library's blocks produce netCDF, so that is the suffix appended here.
-    """
-    url = f"{output_base}{NETWORK_SUFFIX}"
-    with storage.local_target(url) as path:
-        n.export_to_netcdf(str(path))
-    return DataRecord(url=url)
+    ws = Workspace()
+    store = ws.store(record.url)
+    rev = store.revision(UUID(record.uuid))
+
+    kwargs: dict[str, Any] = {"results_only": results_only}
+    if results_only:
+        kwargs["base"] = rev.record
+    ws = Workspace()
+    solved = rev.child(PyPSA.to_datarecord(n, ws.con, **kwargs))
+    return DataRecord(url=record.url, uuid=str(solved.id))
 
 
 def optimize_network(n: pypsa.Network, config, **overrides: object) -> pypsa.Network:
