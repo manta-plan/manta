@@ -227,11 +227,9 @@ Run against the shipped `cluster-expand-dispatch` playbook with
 [config] step 'cluster', setting 'cluster.n_hour': there is no setting called 'n_hour'
 ```
 
-`find_playbook_issues` returns a list, empty when nothing is wrong.
+`find_playbook_issues` returns a `list[PlaybookIssue]`, empty when nothing is wrong.
 `raise_for_playbook_issues` raises `PlaybookHasIssuesError` instead, carrying the same
 list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as methods.
-
-Each issue is a `PlaybookIssue`:
 
 | Field | What it holds | Example |
 | --- | --- | --- |
