@@ -47,7 +47,7 @@ ConfigPath = tuple[str | int, ...]
 
 
 class PlaybookIssue(BaseModel):
-    """One problem with a playbook, or with running it with particular settings."""
+    """One problem with a playbook's configuration."""
 
     model_config = ConfigDict(frozen=True)
 
