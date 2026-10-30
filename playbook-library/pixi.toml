@@ -6,7 +6,7 @@
 # a block's `ENV = "pypsa"` names an environment here, and whatever runs that block
 # later - a container image, a worker - is built from it.
 #
-# pixi rather than uv, because the solver stack (pypsa, highspy, netcdf4) installs far
+# pixi rather than uv, because the solver stack (pypsa, highspy) installs far
 # more reliably from conda-forge than from PyPI, and because a block library needs
 # several environments side by side rather than one.
 
@@ -15,7 +15,7 @@ authors = [
     "Bryn Pickering <bryn.pickering@openenergytransition.org>",
     "Jonas Hörsch <jonas.hoersch@openenergytransition.org>"
 ]
-channels = ["conda-forge"]
+channels = ["conda-forge", { channel = "conda-forge/label/dev", priority = -1 }]
 name = "playbook-library"
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
@@ -31,12 +31,11 @@ playbook-library = { path = ".", editable = true }
 
 [feature.pypsa.dependencies]
 # The solver stack, from conda-forge.
-pypsa = ">=1.2,<2"
-highspy = "*"
-netcdf4 = "*"
+pypsa = ">=1.4,<2"
+highspy = { version = ">=1.13.2.dev0,<1.13.3", channel = "conda-forge/label/dev" }
 
 [feature.pypsa.pypi-dependencies]
-datarecord = { git = "https://github.com/energy-models/datarecord", rev = "1781cfbabb8e86da57704d9b46e859919db736b5", extras = ["remote", "pypsa"] }
+datarecord = { git = "https://github.com/energy-models/datarecord", rev = "dbdbe94312d90c6a31809572aa9f01e9234ca0ff", extras = ["remote", "pypsa"] }
 mathspec = { git = "https://github.com/energy-models/mathspec", rev = "8982c556114992d149a83b3c6f3604c72e569829" }
 
 [feature.dev.dependencies]

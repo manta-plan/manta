@@ -188,11 +188,13 @@ one for the requests.
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-5. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
-   works (from `backend/`):
+5. Upload a starting datarecord store to S3 — `tests/integration/fixtures/example_store`
+   works (from `backend/`); its root revision is
+   `3de02051-8918-45ab-a61b-980b3da170c4`:
 
    ```bash
    uv run python -c "
+   from pathlib import Path
    import boto3
    from botocore.config import Config
    client = boto3.client(
@@ -202,7 +204,10 @@ one for the requests.
        aws_secret_access_key='dev',
        config=Config(s3={'addressing_style': 'path'}),
    )
-   client.upload_file('tests/integration/fixtures/example_network.nc', 'manta', 'manual-test/input.nc')
+   store = Path('tests/integration/fixtures/example_store')
+   for path in store.rglob('*'):
+       if path.is_file():
+           client.upload_file(str(path), 'manta', f'manual-test/store/{path.relative_to(store).as_posix()}')
    "
    ```
 
@@ -215,14 +220,15 @@ one for the requests.
    curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
    ```
 
-7. Create a run. Leaving out `config` runs the playbook with its
-   `default_config`:
+7. Create a run from a revision of the uploaded store. Each step writes its
+   output as a new revision into that same store. Leaving out `config` runs the
+   playbook with its `default_config`:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/input.nc"}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "3de02051-8918-45ab-a61b-980b3da170c4"}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -241,11 +247,13 @@ one for the requests.
 
    Repeat them until the run's `status` is `COMPLETED`.
 
-9. List the run's output files, one per step that ran, then download one:
+9. List the run's outputs, one per step that ran, by its step path (`dispatch`,
+   or `stage_2030/dispatch` inside a nested playbook). Each names the store `url`
+   and the `revision_uuid` the step wrote; open that revision with datarecord to
+   look at its data:
 
    ```bash
    curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
-   curl -s -o dispatch.nc http://localhost:8000/v1/runs/RUN_UUID/outputs/dispatch.nc -H "Authorization: Bearer $TOKEN"
    ```
 
 10. Tear down (from `docker/`, in the third terminal). This also stops the

@@ -80,7 +80,7 @@ class Shrink(MantaBlock[ShrinkConfig]):
     CONFIG = ShrinkConfig
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord: ...
+    def run(self, record: DataRecord) -> DataRecord: ...
 ```
 
 What a block declares:
@@ -94,11 +94,10 @@ What a block declares:
 | `INPUTS` | settings that another block fills in, rather than the user |
 | `OUTPUTS` | the results it offers to later blocks |
 
-`run` receives the record to work on and `output_base`: where the caller wants the
-result produced, as a URL without an extension. The block writes its output there,
-appending whatever suffix fits its format, and returns a record pointing at the exact
-URL written. Records can point at local files or `s3://` URLs; `playbook.blocks.storage`
-handles both, configured purely through the standard `AWS_*` environment variables.
+`run` receives the record to work on, writes its result as a new revision in that
+record's own store, and returns a record pointing at that revision. A record's URL
+names a datarecord store, either a local directory or an `s3://` URL, and its uuid
+names one revision in that store.
 
 A block class is checked as soon as it is written: every name in `INPUTS` has to be a
 setting that can hold a `DataRecord` and has a default, so a block is always usable
@@ -209,20 +208,18 @@ process runs out of stack.
 ## Running a playbook
 
 ```python
-result = playbook.run(record, config, output_prefix="s3://bucket/some/run")
+result = playbook.run(record, config)
 ```
 
-Each step runs in turn. Step `cluster` writes its output to
-`<output_prefix>/cluster.<suffix>`; a step inside a nested playbook writes under its
-nesting step's name. A finished run is therefore a browsable folder of every step's
-output.
+Each step runs in turn on the record the previous step returned, so a finished run is
+a chain of revisions in the input record's store.
 
 By default every block runs in the current process, which is what tests and local use
 want. To run blocks anywhere else, pass a `BlockRunner`:
 
 ```python
 class BlockRunner(Protocol):
-    def run_block(self, block, *, step_name, config, record, inputs, output_base): ...
+    def run_block(self, block, *, step_name, config, record, inputs): ...
 ```
 
 `execute_playbook` walks the playbook, decides which steps run, wires inputs, and
@@ -234,7 +231,7 @@ learns how.
 
 ```bash
 python -m playbook.blocks.run_one <block> --source <your library> \
-    --record '{"url": "in.nc"}' --output-base out/cluster \
+    --record '{"url": "<store>", "uuid": "<revision>"}' \
     [--config '<json>'] [--inputs '<json>']
 ```
 

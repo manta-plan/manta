@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import json
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,7 @@ def test_reading_a_playbook_gets_its_structure_and_wiring():
     pb = load_playbook(FIXTURES / "fake_playbook.yaml")
 
     assert pb.name == "fake-playbook"
-    assert pb.initial_dims == frozenset({"investment_period"})
+    assert pb.initial_dims == frozenset({"period"})
     assert [step.name for step in pb.steps] == ["cluster", "expand", "dispatch"]
 
     cluster, expand, dispatch = pb.steps
@@ -174,3 +175,8 @@ def test_an_editor_can_be_told_what_a_valid_document_looks_like():
         "when",
         "inputs",
     }
+
+
+def test_committed_schema_matches_playbook_doc():
+    schema = Path(__file__).parents[1] / "playbook.schema.json"
+    assert json.loads(schema.read_text()) == PlaybookDoc.model_json_schema()

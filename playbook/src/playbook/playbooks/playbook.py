@@ -17,7 +17,7 @@ and running it in `execution`.
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +37,9 @@ _REF_RE = re.compile(r"^\$\{steps\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$")
 
 REF_TEMPLATE = "${{steps.{step}.{output}}}"
 """How a reference to another step's result is written down."""
+
+StepName = Annotated[str, Field(pattern=r"^[^/]+$")]
+"""A step's name. `/` is reserved for joining nested step names into a qualified path."""
 
 
 class OutputRef(BaseModel):
@@ -99,7 +102,7 @@ class BlockStep(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    name: str
+    name: StepName
     """This step's name: where its settings live, and where its output is written."""
 
     block: BlockSpec
@@ -124,7 +127,7 @@ class NestedPlaybookStep(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    name: str
+    name: StepName
     playbook: "Playbook"
 
     inputs: dict[str, OutputRef] = Field(default_factory=dict)
@@ -246,17 +249,15 @@ class Playbook(BaseModel):
         self,
         record: DataRecord,
         config: dict,
-        output_prefix: str,
         runner: "BlockRunner | None" = None,
     ) -> DataRecord:
         """Run this playbook.
 
-        Step outputs land under `output_prefix` (see `execution.execute_playbook`).
         Without a `runner`, every block runs in this process.
         """
         from playbook.playbooks.execution import execute_playbook
 
-        return execute_playbook(self, record, config, output_prefix=output_prefix, runner=runner)
+        return execute_playbook(self, record, config, runner=runner)
 
 
 def as_block_spec(

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+# yaml-language-server: $schema=../../../../playbook/src/playbook/playbooks/playbook.schema.json
+
+name: expand
+
+initial_data:
+  dims: [snapshot]
+
+steps:
+  - name: expansion_overnight
+    block: overnight_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: overnight
+
+  - name: expansion_myopic
+    block: myopic_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: myopic
+
+  - name: expansion_perfect
+    block: perfect_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: perfect

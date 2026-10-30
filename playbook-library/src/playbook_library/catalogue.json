@@ -33,6 +33,7 @@
       },
       "dims": {
         "adds": [],
+        "forbids": [],
         "removes": [],
         "requires": [
           "snapshot"
@@ -121,7 +122,7 @@
                 "title": "Committable Big M"
               },
               "include_objective_constant": {
-                "default": false,
+                "default": true,
                 "title": "Include Objective Constant",
                 "type": "boolean"
               },
@@ -237,9 +238,10 @@
       },
       "dims": {
         "adds": [],
+        "forbids": [],
         "removes": [],
         "requires": [
-          "investment_period",
+          "period",
           "snapshot"
         ]
       },
@@ -326,7 +328,224 @@
                 "title": "Committable Big M"
               },
               "include_objective_constant": {
+                "default": true,
+                "title": "Include Objective Constant",
+                "type": "boolean"
+              },
+              "linearized_unit_commitment": {
                 "default": false,
+                "title": "Linearized Unit Commitment",
+                "type": "boolean"
+              },
+              "meshed_thresholds": {
+                "items": {
+                  "type": "integer"
+                },
+                "title": "Meshed Thresholds",
+                "type": "array"
+              },
+              "model_kwargs": {
+                "$ref": "#/$defs/LinopyModelSchema"
+              },
+              "multi_investment_periods": {
+                "default": false,
+                "title": "Multi Investment Periods",
+                "type": "boolean"
+              },
+              "piecewise_options": {
+                "items": {},
+                "title": "Piecewise Options",
+                "type": "array"
+              },
+              "snapshots": {
+                "anyOf": [
+                  {
+                    "items": {},
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshots"
+              },
+              "solver_name": {
+                "const": "highs",
+                "default": "highs",
+                "title": "Solver Name",
+                "type": "string"
+              },
+              "transmission_losses": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_PyPSAOptimizeTransmissionLossesSchema"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "PyPSAOptimizeSchema",
+            "type": "object"
+          },
+          "_PyPSAOptimizeTransmissionLossesSchema": {
+            "properties": {
+              "atol": {
+                "default": 1.0,
+                "title": "Atol",
+                "type": "number"
+              },
+              "max_segments": {
+                "default": 20,
+                "title": "Max Segments",
+                "type": "integer"
+              },
+              "mode": {
+                "default": "secant",
+                "enum": [
+                  "secant",
+                  "tangent"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "rtol": {
+                "default": 0.1,
+                "title": "Rtol",
+                "type": "number"
+              },
+              "segments": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Segments"
+              }
+            },
+            "title": "_PyPSAOptimizeTransmissionLossesSchema",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "optimize_config": {
+            "$ref": "#/$defs/PyPSAOptimizeSchema"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Period"
+          }
+        },
+        "title": "OvernightCapacityExpansionConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "forbids": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Decide what to build, treating the whole model as one moment in time.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.overnight_capacity_expansion:OvernightCapacityExpansion",
+      "name": "overnight_capacity_expansion",
+      "outputs": [
+        "output"
+      ]
+    },
+    "perfect_capacity_expansion": {
+      "config_schema": {
+        "$defs": {
+          "LinopyModelSchema": {
+            "properties": {
+              "auto_mask": {
+                "default": false,
+                "title": "Auto Mask",
+                "type": "boolean"
+              },
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chunk"
+              },
+              "force_dim_names": {
+                "default": false,
+                "title": "Force Dim Names",
+                "type": "boolean"
+              },
+              "freeze_constraints": {
+                "default": false,
+                "title": "Freeze Constraints",
+                "type": "boolean"
+              },
+              "set_names_in_solver_io": {
+                "default": true,
+                "title": "Set Names In Solver Io",
+                "type": "boolean"
+              },
+              "solver_dir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Dir"
+              }
+            },
+            "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "PyPSAOptimizeSchema": {
+            "properties": {
+              "assign_all_duals": {
+                "default": false,
+                "title": "Assign All Duals",
+                "type": "boolean"
+              },
+              "committable_big_m": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Committable Big M"
+              },
+              "include_objective_constant": {
+                "default": true,
                 "title": "Include Objective Constant",
                 "type": "boolean"
               },
@@ -437,22 +656,24 @@
             "$ref": "#/$defs/PyPSAOptimizeSchema"
           }
         },
-        "title": "OvernightCapacityExpansionConfig",
+        "title": "PerfectCapacityExpansionConfig",
         "type": "object"
       },
       "dims": {
         "adds": [],
+        "forbids": [],
         "removes": [],
         "requires": [
+          "period",
           "snapshot"
         ]
       },
-      "doc": "Decide what to build, treating the whole model as one moment in time.",
+      "doc": "Decide what to build in every investment period at once, with perfect foresight.",
       "env": "pypsa",
       "inputs": [],
       "manifest": null,
-      "module": "playbook_library.overnight_capacity_expansion:OvernightCapacityExpansion",
-      "name": "overnight_capacity_expansion",
+      "module": "playbook_library.perfect_capacity_expansion:PerfectCapacityExpansion",
+      "name": "perfect_capacity_expansion",
       "outputs": [
         "output"
       ]
@@ -461,15 +682,21 @@
       "config_schema": {
         "$defs": {
           "DataRecord": {
-            "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL is either\na local path or an `s3://bucket/key` address; `playbook.blocks.storage` turns both into\nbytes.",
+            "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL names a\ndatarecord store, either a local directory or an `s3://` address, and the uuid\nnames one revision in that store.",
             "properties": {
               "url": {
                 "title": "Url",
                 "type": "string"
+              },
+              "uuid": {
+                "format": "uuid",
+                "title": "Uuid",
+                "type": "string"
               }
             },
             "required": [
-              "url"
+              "url",
+              "uuid"
             ],
             "title": "DataRecord",
             "type": "object"
@@ -549,7 +776,7 @@
                 "type": "integer"
               },
               "include_objective_constant": {
-                "default": false,
+                "default": true,
                 "title": "Include Objective Constant",
                 "type": "boolean"
               },
@@ -683,6 +910,7 @@
       },
       "dims": {
         "adds": [],
+        "forbids": [],
         "removes": [],
         "requires": [
           "snapshot"

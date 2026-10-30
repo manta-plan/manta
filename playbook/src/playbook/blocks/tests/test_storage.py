@@ -12,6 +12,7 @@ import pytest
 
 from playbook.blocks import storage
 from playbook.blocks.core import DataRecord
+from playbook.blocks.tests.fakes import RECORD_UUID
 
 
 def test_an_s3_url_splits_into_bucket_and_key():
@@ -33,7 +34,7 @@ def test_a_local_record_is_handed_through_without_copying(tmp_path):
     source = tmp_path / "data.nc"
     source.write_bytes(b"bytes")
 
-    with storage.local_copy(DataRecord(url=str(source))) as path:
+    with storage.local_copy(DataRecord(url=str(source), uuid=RECORD_UUID)) as path:
         assert path == source
 
 

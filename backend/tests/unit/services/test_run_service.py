@@ -1,23 +1,23 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
-from runner.flows import catalogue_parameter
+from runner.flows import DATA_RECORD_ARTIFACT, catalogue_parameter
 
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
 from manta.services.run_service import RunService
-from manta.services.s3_file_storage_service import S3FileStorageService
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
-_RECORD_URL = "s3://bucket/in.nc"
+_RECORD_URL = "s3://bucket/store"
+_REVISION_UUID = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
 
 
 class _FakeClientContext:
@@ -98,6 +98,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
         playbook=_LIBRARY_PLAYBOOK,
         config=None,
         data_record_url=_RECORD_URL,
+        revision_uuid=_REVISION_UUID,
         user=user,
     )
 
@@ -116,18 +117,14 @@ def test_create_run_persists_a_run_and_returns_its_dto(
 
     # ...and what actually reaches Prefect is the playbook resolved by name, the
     # library's own default_config (none was supplied), the record as plain
-    # data, an output prefix scoped to this project, and the catalogue encoded
+    # data, and the catalogue encoded
     # as a JSON string (never a dict — see runner.flows.catalogue_parameter).
     library_playbook = library_playbooks()[_LIBRARY_PLAYBOOK]
     assert dispatch.call_args.args[0] == run_service_module.PLAYBOOK_DEPLOYMENT
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
     assert parameters["config"] == library_playbook.default_config
-    assert parameters["record"] == {"url": _RECORD_URL}
-    output_prefix = parameters["output_prefix"]
-    assert output_prefix.startswith("s3://")
-    assert output_prefix.endswith("/output")
-    assert str(project.uuid) in output_prefix
+    assert parameters["record"] == {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
 
@@ -149,6 +146,7 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
         playbook=_LIBRARY_PLAYBOOK,
         config=custom_config,
         data_record_url=_RECORD_URL,
+        revision_uuid=_REVISION_UUID,
         user=_existing_user(),
     )
 
@@ -179,6 +177,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
             data_record_url=_RECORD_URL,
+            revision_uuid=_REVISION_UUID,
             user=user,
         )
     assert str(flow_run_id) in caplog.text
@@ -200,6 +199,7 @@ def test_create_run_with_unknown_project_raises_404(
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
             data_record_url=_RECORD_URL,
+            revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
     assert exc_info.value.status_code == 404
@@ -222,6 +222,7 @@ def test_create_run_with_unknown_playbook_raises_404(
             playbook="does-not-exist",
             config=None,
             data_record_url=_RECORD_URL,
+            revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
     assert exc_info.value.status_code == 404
@@ -471,6 +472,7 @@ def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | 
 
 def _fake_block_run(step_name: str, block: str, state_type: str, created: datetime):
     return SimpleNamespace(
+        id=uuid4(),
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={"step_name": step_name, "block": block},
         created=created,
@@ -645,47 +647,53 @@ def test_get_run_steps_rejects_non_owner(mock_db_class) -> None:
         service.get_run_steps(run_uuid=run.uuid, user=other_user)
 
 
-def _service_with_output_files(
-    mock_db_class, mock_s3_client, project: Project, run: Run, names: list[str]
-) -> RunService:
-    """A RunService whose S3 holds `names` in `run`'s output folder."""
-    last_modified = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
-    output_folder = f"{project.uuid}/runs/{run.uuid}/output/"
-    mock_s3_client.get_paginator.return_value.paginate.return_value = [
-        {
-            "Contents": [
-                {"Key": f"{output_folder}{name}", "Size": 42, "LastModified": last_modified}
-                for name in names
-            ]
-        }
-    ]
-    return RunService(
-        db=mock_db_class(query_results={Run: run, Project: project}),
-        storage=S3FileStorageService(client=mock_s3_client, bucket="manta"),
+def _fake_artifact(flow_run_id: UUID, output: dict, description: str = DATA_RECORD_ARTIFACT):
+    return SimpleNamespace(
+        flow_run_id=flow_run_id, data=json.dumps([output]), description=description
     )
 
 
-def test_list_run_outputs_lists_the_runs_files_by_name(mock_db_class, mock_s3_client) -> None:
-    # Given
+def test_list_run_outputs_lists_the_latest_output_revision_of_each_completed_step(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose cluster step ran twice, a nested step completed, and dispatch
+    # still running
     project = _existing_project()
     run = _existing_run(project)
-    service = _service_with_output_files(
-        mock_db_class, mock_s3_client, project, run, ["cluster.nc", "dispatch.nc"]
+    db = mock_db_class(query_results={Run: run, Project: project})
+    started = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    first_cluster = _fake_block_run("cluster", "time_cluster", "COMPLETED", started)
+    latest_cluster = _fake_block_run(
+        "cluster", "time_cluster", "COMPLETED", started + timedelta(hours=1)
     )
+    nested_expand = _fake_block_run(
+        "stage_2030/expand",
+        "overnight_capacity_expansion",
+        "COMPLETED",
+        started + timedelta(hours=2),
+    )
+    dispatch = _fake_block_run("dispatch", "rolling_horizon_dispatch", "RUNNING", started)
+    completed = [first_cluster, latest_cluster, nested_expand]
+    revisions = {block_run.id: uuid4() for block_run in completed}
+    fake_client = _patch_flow_runs(
+        monkeypatch,
+        _fake_playbook_flow_run("RUNNING", {}),
+        [latest_cluster, nested_expand, first_cluster, dispatch],
+    )
+    fake_client.read_artifacts.return_value = [
+        _fake_artifact(block_run.id, {"url": _RECORD_URL, "uuid": str(revisions[block_run.id])})
+        for block_run in completed
+    ] + [_fake_artifact(dispatch.id, {"unrelated": True}, description="other")]
 
     # When
-    result = service.list_run_outputs(run_uuid=run.uuid, user=_existing_user())
+    result = RunService(db=db).list_run_outputs(run_uuid=run.uuid, user=_existing_user())
 
-    # Then only the run's own output folder is listed...
-    mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
-        Bucket="manta", Prefix=f"{project.uuid}/runs/{run.uuid}/output/"
-    )
-    # ...and each file is named by its path within it, never by its S3 key
+    # Then
     assert result.uuid == run.uuid
     assert result.total == 2
-    assert [(item.name, item.size) for item in result.items] == [
-        ("cluster.nc", 42),
-        ("dispatch.nc", 42),
+    assert [(item.step, item.url, item.revision_uuid) for item in result.items] == [
+        ("cluster", _RECORD_URL, revisions[latest_cluster.id]),
+        ("stage_2030/expand", _RECORD_URL, revisions[nested_expand.id]),
     ]
 
 
@@ -699,80 +707,16 @@ def test_list_run_outputs_with_unknown_run_raises_404(mock_db_class) -> None:
     assert exc_info.value.status_code == 404
 
 
-def test_get_run_output_streams_a_listed_file(mock_db_class, mock_s3_client) -> None:
-    # Given
-    project = _existing_project()
-    run = _existing_run(project)
-    service = _service_with_output_files(
-        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
-    )
-    mock_s3_client.get_object.return_value = {
-        "ContentLength": 7,
-        "LastModified": datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
-        "Body": MagicMock(iter_chunks=MagicMock(return_value=iter([b"network"]))),
-    }
-
-    # When
-    result = service.get_run_output(run_uuid=run.uuid, name="dispatch.nc", user=_existing_user())
-
-    # Then
-    mock_s3_client.get_object.assert_called_once_with(
-        Bucket="manta", Key=f"{project.uuid}/runs/{run.uuid}/output/dispatch.nc"
-    )
-    assert list(result.content) == [b"network"]
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["missing.nc", "../../../other-project/secret.nc", "../input.nc"],
-    ids=["not_written", "outside_the_bucket_layout", "outside_the_output_folder"],
-)
-def test_get_run_output_refuses_a_name_the_run_did_not_output(
-    mock_db_class, mock_s3_client, name: str
-) -> None:
-    # Given
-    project = _existing_project()
-    run = _existing_run(project)
-    service = _service_with_output_files(
-        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
-    )
-
-    # When/Then
-    with pytest.raises(HTTPException) as exc_info:
-        service.get_run_output(run_uuid=run.uuid, name=name, user=_existing_user())
-    assert exc_info.value.status_code == 404
-    # And S3 was never even asked for it
-    mock_s3_client.get_object.assert_not_called()
-
-
-def test_list_run_outputs_rejects_non_owner(mock_db_class, mock_s3_client) -> None:
+def test_list_run_outputs_rejects_non_owner(mock_db_class) -> None:
     # Given a run whose project is owned by someone other than the requesting user
     project = _existing_project(owner_id=1)
     run = _existing_run(project)
     other_user = _existing_user(user_id=2, username="mallory")
-    service = _service_with_output_files(
-        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
-    )
+    service = RunService(db=mock_db_class(query_results={Run: run, Project: project}))
 
     # When/Then
     with pytest.raises(AuthorizationError):
         service.list_run_outputs(run_uuid=run.uuid, user=other_user)
-
-
-def test_get_run_output_rejects_non_owner(mock_db_class, mock_s3_client) -> None:
-    # Given a run whose project is owned by someone other than the requesting user
-    project = _existing_project(owner_id=1)
-    run = _existing_run(project)
-    other_user = _existing_user(user_id=2, username="mallory")
-    service = _service_with_output_files(
-        mock_db_class, mock_s3_client, project, run, ["dispatch.nc"]
-    )
-
-    # When/Then
-    with pytest.raises(AuthorizationError):
-        service.get_run_output(run_uuid=run.uuid, name="dispatch.nc", user=other_user)
-    # And S3 was never even asked for the file
-    mock_s3_client.get_object.assert_not_called()
 
 
 def test_get_run_logs_returns_logs_and_status_for_a_known_run(
@@ -828,6 +772,7 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
             data_record_url=_RECORD_URL,
+            revision_uuid=_REVISION_UUID,
             user=other_user,
         )
 

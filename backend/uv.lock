@@ -1170,10 +1170,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "datarecord", extras = ["remote", "pypsa"], marker = "extra == 'pypsa'" },
     { name = "highspy", marker = "extra == 'pypsa'" },
-    { name = "netcdf4", marker = "extra == 'pypsa'" },
+    { name = "mathspec", marker = "extra == 'pypsa'" },
     { name = "playbook", extras = ["s3"] },
-    { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.2,<2" },
+    { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.4,<2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
 provides-extras = ["pypsa"]

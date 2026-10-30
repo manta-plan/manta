@@ -94,6 +94,7 @@ class BlockDescription(BaseModel):
         # Sorted, so that two runs of the same environment produce the same file.
         return {
             "requires": sorted(dims.requires),
+            "forbids": sorted(dims.forbids),
             "adds": sorted(dims.adds),
             "removes": sorted(dims.removes),
         }

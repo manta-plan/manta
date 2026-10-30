@@ -5,9 +5,8 @@
 """Running a playbook.
 
 Each step gets the record the previous step produced, plus anything wired to it from
-further back, and is told where to put its output: every step's result lands under
-one `output_prefix`, named after the step, so a finished run reads as a folder of
-outputs a user can browse.
+further back. Each block writes its result into the input record's own store, so
+the engine never decides where outputs go.
 
 How a single block actually runs is behind `BlockRunner`. The default runner executes
 blocks in this process, which is what tests and plain local use want. An orchestrator
@@ -31,8 +30,10 @@ class BlockRunner(Protocol):
 
     `execute_playbook` does all the walking and wiring, so a runner never sees a
     playbook or a step: it is handed one block at a time with everything already
-    spelled out. `step_name` comes along only as a label, for naming the work in
-    whatever system the runner drives.
+    spelled out. `step_name` is the step's qualified path from the outermost
+    playbook, its enclosing nested-playbook steps joined by `/` (e.g.
+    `stage_2030/cluster`), so it is unique within one run. It comes along only as a
+    label, for naming and finding the work in whatever system the runner drives.
     """
 
     def run_block(
@@ -43,7 +44,6 @@ class BlockRunner(Protocol):
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         """Run `block` on `record` and return the record it produced."""
         ...
@@ -60,11 +60,10 @@ class LocalBlockRunner:
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         block_cls = block.block_class()
         # A fresh instance per step: a block never carries state between runs.
-        return block_cls(block_cls.merge_config(config, inputs)).run(record, output_base)
+        return block_cls(block_cls.merge_config(config, inputs)).run(record)
 
 
 def execute_playbook(
@@ -72,53 +71,46 @@ def execute_playbook(
     record: DataRecord,
     config: dict,
     *,
-    output_prefix: str,
     runner: BlockRunner | None = None,
 ) -> DataRecord:
     """Run `playbook`, returning the final step's record.
-
-    `output_prefix` is the URL under which every step's output is produced:
-    step `cluster` writes to `<output_prefix>/cluster.<suffix>`, and a step of a
-    nested playbook to `<output_prefix>/<nesting step>/<step>.<suffix>`.
 
     A playbook is taken as given here. Checking one up front - that its steps are
     wired to results that exist, and that each block finds the data it needs - is a
     separate concern, and not yet part of this package.
     """
-    return _execute(playbook, record, config, output_prefix, runner or LocalBlockRunner(), {})
+    return _execute(playbook, record, config, runner or LocalBlockRunner(), {}, "")
 
 
 def _execute(
     playbook: Playbook,
     record: DataRecord,
     config: dict,
-    output_prefix: str,
     runner: BlockRunner,
     external_inputs: dict[str, DataRecord],
+    prefix: str,
 ) -> DataRecord:
     results: dict[str, dict[str, DataRecord]] = {}
 
     for step in playbook.active(config).steps:
         wired = _wire_up(step, results, external_inputs)
-        output_base = f"{output_prefix}/{step.name}"
 
         if isinstance(step, BlockStep):
             record = runner.run_block(
                 step.block,
-                step_name=step.name,
+                step_name=f"{prefix}{step.name}",
                 config=config.get(step.name, {}),
                 record=record,
                 inputs=wired,
-                output_base=output_base,
             )
         else:
             record = _execute(
                 step.playbook,
                 record,
                 child_config(config, step.name),
-                output_base,
                 runner,
                 wired,
+                f"{prefix}{step.name}/",
             )
 
         results[step.name] = {"output": record}
