@@ -1,0 +1,121 @@
+{
+  "$defs": {
+    "InitialDataDoc": {
+      "description": "What the data already looks like before the playbook starts.",
+      "properties": {
+        "dims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dims",
+          "type": "array"
+        }
+      },
+      "title": "InitialDataDoc",
+      "type": "object"
+    },
+    "PlaybookDoc": {
+      "description": "A whole playbook, as written down.",
+      "properties": {
+        "initial_data": {
+          "$ref": "#/$defs/InitialDataDoc"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepDoc"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PlaybookDoc",
+      "type": "object"
+    },
+    "StepDoc": {
+      "description": "One step, as written down.\n\nA step is either a block, named so it can be looked up, or another playbook. That\nplaybook can be given as a locator to fetch, or written out in place - which is\nwhat a browser sends, having nowhere to put a file.",
+      "properties": {
+        "block": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Block"
+        },
+        "inputs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "name": {
+          "pattern": "^[^/]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "playbook": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/PlaybookDoc"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playbook"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhenDoc"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "StepDoc",
+      "type": "object"
+    },
+    "WhenDoc": {
+      "description": "A written-down condition on a step.",
+      "properties": {
+        "config": {
+          "title": "Config",
+          "type": "string"
+        },
+        "equals": {
+          "title": "Equals"
+        }
+      },
+      "required": [
+        "config",
+        "equals"
+      ],
+      "title": "WhenDoc",
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/PlaybookDoc"
+}

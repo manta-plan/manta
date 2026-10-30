@@ -69,14 +69,12 @@ def mock_db_class():
 class _MockS3Client:
     def __init__(self) -> None:
         self.upload_fileobj = MagicMock()
-        self.get_object = MagicMock()
         self.head_object = MagicMock(
             return_value={"ContentLength": 0, "LastModified": datetime.now(UTC)}
         )
         self.head_bucket = MagicMock()
         self.create_bucket = MagicMock()
         self.delete_object = MagicMock()
-        self.get_paginator = MagicMock(return_value=MagicMock(paginate=MagicMock(return_value=[])))
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@
 
 name: fake-playbook
 initial_data:
-  dims: [investment_period]
+  dims: [period]
 steps:
   - name: cluster
     block: fake_adds_clustered

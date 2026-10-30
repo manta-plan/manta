@@ -1,5 +1,4 @@
 import io
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -28,25 +27,6 @@ def test_upload_file(app_server: str, s3_client: S3Client) -> None:
     assert stored == content
 
 
-def test_get_file(app_server: str, s3_client: S3Client) -> None:
-    # Given
-    bucket = s3_bucket_name()
-    project_uuid = uuid4()
-    key = f"{project_uuid}/network.nc"
-    content = b"pypsa network data"
-    s3_client.put_object(Bucket=bucket, Key=key, Body=content)
-    service = S3FileStorageService(client=s3_client, bucket=bucket)
-
-    # When
-    result = service.get_file(project_uuid, "network.nc")
-
-    # Then
-    assert result.key == key
-    assert result.size == len(content)
-    assert b"".join(result.content) == content
-    assert (datetime.now(UTC) - result.last_modified).total_seconds() < 60
-
-
 def test_delete_file(app_server: str, s3_client: S3Client) -> None:
     # Given
     bucket = s3_bucket_name()
@@ -62,42 +42,3 @@ def test_delete_file(app_server: str, s3_client: S3Client) -> None:
     assert result is None
     with pytest.raises(ClientError):
         s3_client.get_object(Bucket=bucket, Key=key)
-
-
-def test_list_files(app_server: str, s3_client: S3Client) -> None:
-    # Given
-    bucket = s3_bucket_name()
-    project_uuid = uuid4()
-    other_project_uuid = uuid4()
-    s3_client.put_object(Bucket=bucket, Key=f"{project_uuid}/network.nc", Body=b"aaa")
-    s3_client.put_object(Bucket=bucket, Key=f"{project_uuid}/results.csv", Body=b"bbbbb")
-    s3_client.put_object(Bucket=bucket, Key=f"{other_project_uuid}/other.txt", Body=b"c")
-    service = S3FileStorageService(client=s3_client, bucket=bucket)
-
-    # When
-    results = service.list_files(project_uuid)
-
-    # Then
-    assert {r.key for r in results} == {
-        f"{project_uuid}/network.nc",
-        f"{project_uuid}/results.csv",
-    }
-    sizes_by_key = {r.key: r.size for r in results}
-    assert sizes_by_key[f"{project_uuid}/network.nc"] == 3
-    assert sizes_by_key[f"{project_uuid}/results.csv"] == 5
-
-
-def test_list_files_within_a_prefix(app_server: str, s3_client: S3Client) -> None:
-    # Given one run's outputs, next to another run's and the project's own files
-    bucket = s3_bucket_name()
-    project_uuid = uuid4()
-    s3_client.put_object(Bucket=bucket, Key=f"{project_uuid}/runs/a/output/x.nc", Body=b"a")
-    s3_client.put_object(Bucket=bucket, Key=f"{project_uuid}/runs/b/output/y.nc", Body=b"b")
-    s3_client.put_object(Bucket=bucket, Key=f"{project_uuid}/network.nc", Body=b"c")
-    service = S3FileStorageService(client=s3_client, bucket=bucket)
-
-    # When
-    results = service.list_files(project_uuid, prefix="runs/a/output/")
-
-    # Then
-    assert [r.key for r in results] == [f"{project_uuid}/runs/a/output/x.nc"]

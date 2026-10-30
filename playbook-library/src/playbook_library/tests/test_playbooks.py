@@ -101,7 +101,7 @@ def test_the_myopic_branch_is_reported_as_missing_the_investment_period(config):
     # before it adds one. Run anyway, the branch would quietly do nothing.
     issues = as_the_backend_sees_it("cluster-expand-dispatch").find_issues(config)
     assert [(i.kind, i.step_path) for i in issues] == [("dims", ("expansion_myopic",))]
-    assert "needs the 'investment_period' dimension" in issues[0].message
+    assert "needs the 'period' dimension" in issues[0].message
 
 
 @pytest.mark.pypsa

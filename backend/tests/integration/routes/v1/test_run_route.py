@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import httpx2
@@ -95,14 +96,14 @@ def _count_playbook_flow_runs(prefect_service: dict[str, str]) -> int:
 def _create_run(
     app_server: str,
     project_uuid: str,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
     headers: dict[str, str],
     config: dict | None = None,
 ) -> dict:
     payload = {
         "project_uuid": project_uuid,
         "playbook": _LIBRARY_PLAYBOOK,
-        "data_record_url": data_record_url,
+        **example_store(project_uuid),
     }
     if config is not None:
         payload["config"] = config
@@ -164,7 +165,7 @@ def _create_completed_runs(
     app_server: str,
     prefect_service: dict[str, str],
     project_uuid: str,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
     count: int,
     headers: dict[str, str],
 ) -> list[str]:
@@ -172,7 +173,7 @@ def _create_completed_runs(
     run_uuids = []
 
     for _ in range(count):
-        run_uuid = _create_run(app_server, project_uuid, data_record_url, headers)["uuid"]
+        run_uuid = _create_run(app_server, project_uuid, example_store, headers)["uuid"]
         assert _wait_for_terminal_status(app_server, run_uuid, headers) == "COMPLETED"
         run_uuids.append(run_uuid)
 
@@ -185,7 +186,7 @@ def test_create_and_run_a_playbook(
     kc_oidc_client: KeycloakOpenID,
     prefect_db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
     s3_client: S3Client,
 ) -> None:
     # Given a project, and the provisioner's deployment registered with the
@@ -195,7 +196,7 @@ def test_create_and_run_a_playbook(
     _wait_for_deployment_registered(prefect_service)
 
     # When a run is created against it
-    body = _create_run(app_server, project_uuid, data_record_url, headers)
+    body = _create_run(app_server, project_uuid, example_store, headers)
 
     # Then it's accepted and returns a run uuid linked to the project and playbook
     run_uuid = body["uuid"]
@@ -238,31 +239,23 @@ def test_create_and_run_a_playbook(
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
 
-    # And its output files are listed by name — one per step that ran — without
-    # the caller needing to know where in S3 they live
+    # And each step that ran lists the new revision it output into the run's input
+    # store, and each of those revisions really is in the store
     outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs", headers=headers)
     assert outputs_response.status_code == 200
-    outputs = {item["name"]: item for item in outputs_response.json()["items"]}
-    assert set(outputs) == {"cluster.nc", "expansion_overnight.nc", "dispatch.nc"}
-
-    # And each can be downloaded through the backend, byte for byte what is in S3
-    download = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc", headers=headers)
-    assert download.status_code == 200
-    stored = s3_client.get_object(
-        Bucket=s3_bucket_name(), Key=f"{project_uuid}/runs/{run_uuid}/output/dispatch.nc"
-    )["Body"].read()
-    assert download.content == stored
-    assert int(download.headers["content-length"]) == outputs["dispatch.nc"]["size"]
-    assert download.headers["content-disposition"] == "attachment; filename*=utf-8''dispatch.nc"
-
-    # And nothing the run didn't output can be downloaded: neither a missing
-    # file, nor the run's own input, which really exists in the bucket, reached
-    # by climbing out of the output folder (`../` percent-encoded, so the HTTP
-    # client sends it as-is instead of resolving it itself first)
-    climbing_to_the_input = "%2E%2E%2F" * 4 + "integration-tests%2Fexample_network.nc"
-    for name in ("missing.nc", climbing_to_the_input):
-        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/{name}", headers=headers)
-        assert response.status_code == 404, name
+    outputs = {item["step"]: item for item in outputs_response.json()["items"]}
+    assert set(outputs) == {"cluster", "expansion_overnight", "dispatch"}
+    input_record = example_store(project_uuid)
+    revisions = {output["revision_uuid"] for output in outputs.values()}
+    assert len(revisions) == 3
+    assert input_record["revision_uuid"] not in revisions
+    bucket = s3_bucket_name()
+    store_key = input_record["data_record_url"].removeprefix(f"s3://{bucket}/")
+    for output in outputs.values():
+        assert output["url"] == input_record["data_record_url"]
+        s3_client.head_object(
+            Bucket=bucket, Key=f"{store_key}/revisions/{output['revision_uuid']}.json"
+        )
 
     # And the run reports which playbook it ran, and the config it was started
     # with — the library's own default_config, since none was supplied
@@ -297,7 +290,9 @@ def test_create_and_run_a_playbook(
 
 
 def test_create_run_with_unknown_playbook_returns_404(
-    app_server: str, kc_oidc_client: KeycloakOpenID, data_record_url: str
+    app_server: str,
+    kc_oidc_client: KeycloakOpenID,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -309,7 +304,7 @@ def test_create_run_with_unknown_playbook_returns_404(
         json={
             "project_uuid": project_uuid,
             "playbook": "does-not-exist",
-            "data_record_url": data_record_url,
+            **example_store(project_uuid),
         },
         headers=headers,
     )
@@ -325,7 +320,7 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
     data_record_url: str,
 ) -> None:
     # Given a project, and the library's config switched to its myopic branch, whose
-    # expansion needs an investment_period dimension the playbook's data does not have
+    # expansion needs a period dimension the playbook's data does not have
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
@@ -365,7 +360,7 @@ def test_get_run_returns_the_config_it_was_started_with(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a run started with a config changed from the library's defaults
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -373,9 +368,9 @@ def test_get_run_returns_the_config_it_was_started_with(
     _wait_for_deployment_registered(prefect_service)
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
     changed_config = {**default_config, "cluster": {"n_hours": 6}}
-    run_uuid = _create_run(
-        app_server, project_uuid, data_record_url, headers, config=changed_config
-    )["uuid"]
+    run_uuid = _create_run(app_server, project_uuid, example_store, headers, config=changed_config)[
+        "uuid"
+    ]
 
     # When it is fetched, alone and as part of its project's runs
     run_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
@@ -395,13 +390,13 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
     db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project with a run against it
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
-    body = _create_run(app_server, project_uuid, data_record_url, headers)
+    body = _create_run(app_server, project_uuid, example_store, headers)
     run_uuid = body["uuid"]
 
     # When the project is deleted
@@ -425,13 +420,13 @@ def test_list_runs_returns_project_runs_with_pagination_and_summary(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project with multiple completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
     run_uuids = _create_completed_runs(
-        app_server, prefect_service, project_uuid, data_record_url, count=3, headers=headers
+        app_server, prefect_service, project_uuid, example_store, count=3, headers=headers
     )
 
     # When fetching the first page
@@ -475,13 +470,13 @@ def test_list_runs_filters_project_runs_by_status(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project with completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
     run_uuids = _create_completed_runs(
-        app_server, prefect_service, project_uuid, data_record_url, count=2, headers=headers
+        app_server, prefect_service, project_uuid, example_store, count=2, headers=headers
     )
 
     # When filtering by completed status
@@ -527,13 +522,13 @@ def test_get_run_summary_returns_project_counts(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project with completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
     _create_completed_runs(
-        app_server, prefect_service, project_uuid, data_record_url, count=2, headers=headers
+        app_server, prefect_service, project_uuid, example_store, count=2, headers=headers
     )
 
     # When fetching its summary
@@ -604,6 +599,7 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
             "project_uuid": project_uuid,
             "playbook": _LIBRARY_PLAYBOOK,
             "data_record_url": "s3://unused/record",
+            "revision_uuid": str(uuid4()),
         },
     )
     assert create_response.status_code == 401
@@ -628,9 +624,6 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
     assert outputs_response.status_code == 401
 
-    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
-    assert output_response.status_code == 401
-
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -645,6 +638,7 @@ def test_run_endpoints_reject_malformed_uuid(
             "project_uuid": "not-a-uuid",
             "playbook": _LIBRARY_PLAYBOOK,
             "data_record_url": "s3://unused/record",
+            "revision_uuid": str(uuid4()),
         },
         headers=headers,
     )
@@ -671,11 +665,6 @@ def test_run_endpoints_reject_malformed_uuid(
 
     outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
     assert outputs_response.status_code == 422
-
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 422
 
 
 def test_list_runs_rejects_invalid_pagination_params(
@@ -717,7 +706,6 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/{run_uuid}/logs
     #   GET    /runs/{run_uuid}/steps
     #   GET    /runs/{run_uuid}/outputs
-    #   GET    /runs/{run_uuid}/outputs/{name}
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -728,6 +716,7 @@ def test_run_endpoints_return_404_for_unknown_ids(
             "project_uuid": unknown_uuid,
             "playbook": _LIBRARY_PLAYBOOK,
             "data_record_url": "s3://unused/record",
+            "revision_uuid": str(uuid4()),
         },
         headers=headers,
     )
@@ -750,17 +739,12 @@ def test_run_endpoints_return_404_for_unknown_ids(
     outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
     assert outputs_response.status_code == 404
 
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 404
-
 
 def test_get_run_rejects_non_owner(
     app_server: str,
     kc_oidc_client: KeycloakOpenID,
     second_user_headers: dict[str, str],
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Ownership-denial logic itself is exhaustively unit-tested in
     # test_run_service.py; this single endpoint proves the real wiring —
@@ -770,7 +754,7 @@ def test_get_run_rejects_non_owner(
     # Given a run owned by one user
     headers = _auth_headers(app_server, kc_oidc_client)
     project_uuid = _create_project(app_server, headers)
-    body = _create_run(app_server, project_uuid, data_record_url, headers)
+    body = _create_run(app_server, project_uuid, example_store, headers)
     run_uuid = body["uuid"]
 
     # When a different, authenticated-but-unrelated user requests it
@@ -785,7 +769,7 @@ def test_list_runs_does_not_leak_other_users_runs(
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
     second_user_headers: dict[str, str],
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
     # and the unit-level *_rejects_non_owner tests) — it's testing that the
@@ -798,7 +782,7 @@ def test_list_runs_does_not_leak_other_users_runs(
     headers_a = _auth_headers(app_server, kc_oidc_client)
     project_a = _create_project(app_server, headers_a)
     _create_completed_runs(
-        app_server, prefect_service, project_a, data_record_url, count=1, headers=headers_a
+        app_server, prefect_service, project_a, example_store, count=1, headers=headers_a
     )
 
     project_b = _create_project(app_server, second_user_headers)
@@ -806,7 +790,7 @@ def test_list_runs_does_not_leak_other_users_runs(
         app_server,
         prefect_service,
         project_b,
-        data_record_url,
+        example_store,
         count=1,
         headers=second_user_headers,
     )

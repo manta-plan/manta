@@ -13,8 +13,9 @@ Both flows are deployed once, statically (see `deploy.py`). Playbooks are data
 passed in as parameters, so nothing is ever deployed per playbook or per block.
 
 Everything passed in has crossed a process boundary, so records arrive as plain
-`{"url": ...}` data. A loaded model could never travel this way, which is exactly
-why blocks pass pointers to data rather than the data itself.
+`{"url": ..., "uuid": ...}` data: a store and one of its revisions. A loaded
+model could never travel this way, which is exactly why blocks pass pointers to
+data rather than the data itself.
 """
 
 import logging
@@ -23,6 +24,7 @@ from playbook.blocks import BlockSpec, Catalogue, DataRecord
 from playbook.blocks.registry import get_block, load_block_sources
 from playbook.playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
+from prefect.artifacts import create_table_artifact
 from prefect.deployments import run_deployment
 
 from runner.config import exec_image
@@ -31,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 BLOCK_FLOW_NAME = "run-block"
 PLAYBOOK_FLOW_NAME = "run-playbook"
+
+DATA_RECORD_ARTIFACT = "manta:datarecord"
+"""The description marking the table artifact in which `run-block` publishes its output record."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -87,18 +92,21 @@ def run_block(
     config: dict,
     record: dict,
     inputs: dict[str, dict] | None,
-    output_base: str,
 ) -> dict:
     """Run one block by name, in this container, and report where its result went.
 
     There is one deployment of this flow, shared by every block: the block to run
-    arrives as a parameter, and `step_name` — the name of the step using this
-    block within its own playbook, distinct from the block itself since the same
-    block can be used by more than one step — only names the flow run above; it
+    arrives as a parameter, and `step_name` — the qualified path of the step using
+    this block (e.g. `stage_2030/cluster`), distinct from the block itself since the
+    same block can be used by more than one step — only names the flow run above; it
     plays no part in running the block.
 
     This is the only code in this runtime that runs inside a block's own
     environment, and it does not import a block until asked for one by name.
+
+    The output record is also published as a one-row table artifact described as
+    `DATA_RECORD_ARTIFACT`, so it can be read back through the Prefect API without
+    access to the result store.
     """
     # Nothing has imported this container's block library yet until this call
     # does: MANTA_BLOCK_SOURCES (see config.block_sources) names it, but only
@@ -107,10 +115,10 @@ def run_block(
     load_block_sources()
     block_cls = get_block(block)
     wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
-    result = block_cls(block_cls.merge_config(config, wired)).run(
-        DataRecord.from_dict(record), output_base
-    )
-    return result.to_dict()
+    result = block_cls(block_cls.merge_config(config, wired)).run(DataRecord.from_dict(record))
+    output = result.to_dict()
+    create_table_artifact(key=None, table=[output], description=DATA_RECORD_ARTIFACT)
+    return output
 
 
 class PrefectBlockRunner:
@@ -135,7 +143,6 @@ class PrefectBlockRunner:
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         # Dispatching from inside a flow makes the block run a child of the
         # playbook run, which is what groups a run's steps under it in Prefect.
@@ -150,7 +157,6 @@ class PrefectBlockRunner:
                 "config": config,
                 "record": record.to_dict(),
                 "inputs": {name: value.to_dict() for name, value in inputs.items()},
-                "output_base": output_base,
             },
         )
         state = flow_run.state
@@ -164,9 +170,7 @@ class PrefectBlockRunner:
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)
-def run_playbook(
-    playbook: dict, config: dict, record: dict, output_prefix: str, catalogue: str
-) -> dict:
+def run_playbook(playbook: dict, config: dict, record: dict, catalogue: str) -> dict:
     """Run a whole playbook, given its document rather than the playbook itself.
 
     `catalogue` is what `playbook`'s blocks are resolved against — this process
@@ -180,7 +184,6 @@ def run_playbook(
         built,
         DataRecord.from_dict(record),
         config,
-        output_prefix=output_prefix,
         runner=PrefectBlockRunner(),
     )
     return result.to_dict()

@@ -7,8 +7,9 @@
 import pytest
 
 from playbook.blocks.core import DataRecord
+from playbook.blocks.tests.fakes import RECORD_UUID
 
 
 @pytest.fixture
 def initial_record() -> DataRecord:
-    return DataRecord(url="root")
+    return DataRecord(url="root", uuid=RECORD_UUID)
