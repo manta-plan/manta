@@ -19,6 +19,7 @@ The blocks — single units of work on a model:
 | `cluster_time` | Shorten a model's time series, so later blocks have less to solve |
 | `overnight_capacity_expansion` | Decide what to build, treating the whole model as one moment in time |
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
+| `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
 
 The playbooks — those blocks chained into something worth running, each with default
@@ -27,6 +28,7 @@ settings a user can start from:
 | Playbook | What it does |
 | --- | --- |
 | `cluster-expand-dispatch` | Shorten the time series, decide what to build, then decide how to run it |
+| `expand` | Decide what to build: overnight, myopic or with perfect foresight |
 
 > This directory is developed inside the `manta` monorepo for now, but is written as a
 > standalone package: it is also the reference for anyone writing their own library of
