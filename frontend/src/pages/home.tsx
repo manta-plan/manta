@@ -2,6 +2,7 @@ import { Button } from "@base-ui/react/button";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import {
+  FiBookOpen,
   FiChevronLeft,
   FiChevronRight,
   FiLogOut,
@@ -369,6 +370,16 @@ export function HomePage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <a
+              className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2"
+              href="https://manta-plan.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open Documentation"
+            >
+              <FiBookOpen className="size-4" aria-hidden="true" />
+              Docs
+            </a>
             <Button
               className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-primary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={isRefreshingRuns}
