@@ -1,4 +1,6 @@
+import json
 import logging
+from operator import attrgetter
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
@@ -11,6 +13,9 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import (
+    ArtifactFilter,
+    ArtifactFilterFlowRunId,
+    ArtifactFilterType,
     FlowRunFilter,
     FlowRunFilterParentFlowRunId,
     LogFilter,
@@ -18,12 +23,16 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
-from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter, parse_catalogue_parameter
+from runner.flows import (
+    DATA_RECORD_ARTIFACT,
+    PLAYBOOK_DEPLOYMENT,
+    catalogue_parameter,
+    parse_catalogue_parameter,
+)
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.config.s3_config import s3_bucket_name
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
@@ -35,11 +44,9 @@ from manta.services.results.run_result import (
     GetRunSummaryResult,
     ListRunOutputsResult,
     ListRunsResult,
-    RunOutputFileResult,
+    RunOutputResult,
     RunStepResult,
 )
-from manta.services.results.s3_file_result import GetS3FileContentResult, GetS3FileResult
-from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +63,6 @@ def ensure_prefect_ready() -> None:
         error = client.api_healthcheck()
     if error is not None:
         raise PrefectUnavailableError(f"Prefect API is not reachable: {error}") from error
-
-
-def _run_output_folder(run_uuid: UUID) -> str:
-    """Where a run's outputs are written, relative to its project's own prefix in the
-    bucket. Every step writes `<step name>.<suffix>` in here (see
-    playbook.playbooks.execute_playbook)."""
-    return f"runs/{run_uuid}/output"
 
 
 def _read_flow_run(flow_run_id: UUID) -> FlowRun:
@@ -102,6 +102,33 @@ def _read_flow_run_with_block_runs(flow_run_id: UUID) -> tuple[FlowRun, list[Flo
             )
         )
         return flow_run, block_runs
+
+
+def _read_step_outputs(flow_run_id: UUID) -> dict[str, dict]:
+    # TODO: temporary, until the concept of a data record is properly introduced in
+    # Manta. For now a run's outputs are found only through the datarecord artifacts
+    # its block runs publish to Prefect. Data records (a run's outputs as well as its
+    # inputs) should be tracked through Manta's own database instead, and served by
+    # record: GET /v1/runs/{uuid}/outputs then lists the run's records, and a record's
+    # content is served from its own data_record_route.py.
+    _, block_runs = _read_flow_run_with_block_runs(flow_run_id)
+    completed = sorted(
+        (block_run for block_run in block_runs if _flow_run_status(block_run) == "COMPLETED"),
+        key=attrgetter("created"),
+    )
+    with get_client(sync_client=True) as client:
+        artifacts = client.read_artifacts(
+            artifact_filter=ArtifactFilter(
+                flow_run_id=ArtifactFilterFlowRunId(any_=[block_run.id for block_run in completed]),
+                type=ArtifactFilterType(any_=["table"]),
+            )
+        )
+    outputs = {
+        artifact.flow_run_id: json.loads(artifact.data)[0]
+        for artifact in artifacts
+        if artifact.description == DATA_RECORD_ARTIFACT
+    }
+    return {block_run.parameters["step_name"]: outputs[block_run.id] for block_run in completed}
 
 
 def _flow_run_status(flow_run: FlowRun) -> str:
@@ -180,11 +207,9 @@ class RunService:
     def __init__(
         self,
         db: Session = Depends(get_db_session),
-        storage: S3FileStorageService = Depends(),
         playbook_service: PlaybookService = Depends(),
     ) -> None:
         self.db = db
-        self.storage = storage
         self.playbook_service = playbook_service
 
     def create_run(
@@ -193,6 +218,7 @@ class RunService:
         playbook: str,
         config: dict | None,
         data_record_url: str,
+        revision_uuid: UUID,
         user: User,
     ) -> CreateRunResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
@@ -212,15 +238,13 @@ class RunService:
         self.playbook_service.raise_for_config_issues(playbook, run_config)
 
         run_uuid = uuid4()
-        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/{_run_output_folder(run_uuid)}"
 
         flow_run = run_deployment(
             PLAYBOOK_DEPLOYMENT,
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
                 "config": run_config,
-                "record": {"url": data_record_url},
-                "output_prefix": output_prefix,
+                "record": {"url": data_record_url, "uuid": str(revision_uuid)},
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
             timeout=0,
@@ -374,40 +398,12 @@ class RunService:
         )
 
     def list_run_outputs(self, run_uuid: UUID, user: User) -> ListRunOutputsResult:
-        run, project = self._get_run_with_project(run_uuid, user)
+        run, _ = self._get_run_with_project(run_uuid, user)
         items = [
-            RunOutputFileResult(name=name, size=file.size, last_modified=file.last_modified)
-            for name, file in self._list_run_output_files(project.uuid, run.uuid).items()
+            RunOutputResult(step=step, url=output["url"], revision_uuid=output["uuid"])
+            for step, output in _read_step_outputs(run.prefect_flow_run_id).items()
         ]
         return ListRunOutputsResult(uuid=run.uuid, items=items, total=len(items))
-
-    def get_run_output(self, run_uuid: UUID, name: str, user: User) -> GetS3FileContentResult:
-        run, project = self._get_run_with_project(run_uuid, user)
-        # Only a name the run's own listing returns is ever served, so nothing
-        # outside its output folder can be reached, however `name` is spelled.
-        if name not in self._list_run_output_files(project.uuid, run.uuid):
-            raise HTTPException(
-                status_code=404, detail=f"Output {name!r} not found for run {run_uuid}"
-            )
-        return self.storage.get_file(project.uuid, f"{_run_output_folder(run.uuid)}/{name}")
-
-    def _list_run_output_files(
-        self, project_uuid: UUID, run_uuid: UUID
-    ) -> dict[str, GetS3FileResult]:
-        """A run's output files, by their path within its output folder."""
-        # TODO: temporary, until the concept of a data record is properly
-        # introduced in Manta. For now a run's outputs are found only by listing its
-        # output folder in S3 — by naming convention — and downloaded by file name.
-        # Data records (a run's outputs as well as its inputs) should be tracked
-        # through Manta's own database instead, and served by record: the download
-        # then moves to its own data_record_route.py as
-        # GET /v1/data-records/{uuid}/content, and GET /v1/runs/{uuid}/outputs lists
-        # the run's records.
-        folder = f"{_run_output_folder(run_uuid)}/"
-        return {
-            file.key.removeprefix(f"{project_uuid}/{folder}"): file
-            for file in self.storage.list_files(project_uuid, prefix=folder)
-        }
 
     def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:
         run, _ = self._get_run_with_project(run_uuid, user)

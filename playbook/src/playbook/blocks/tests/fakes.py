@@ -5,16 +5,23 @@
 """Stand-in blocks for testing, which need nothing installed.
 
 Each one just adds its name to the record's url, so a finished run reads as a record
-of which blocks ran and in what order. None of them writes a file, so `output_base`
-goes unused - which is allowed: where a block puts its output is the block's call.
+of which blocks ran and in what order. None of them writes a file.
 
 They are registered here, once, and shared by the tests for both packages: a block
 name can only be claimed once per process, so registering them in two places would
 clash.
 """
 
+from uuid import UUID, uuid5
+
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
-from playbook.blocks.registry import register
+from playbook.blocks.registry import BlockSpec, register
+
+RECORD_UUID = UUID(int=0)
+
+
+def revision_of(record: DataRecord) -> DataRecord:
+    return DataRecord(url=record.url, uuid=uuid5(record.uuid, "revision"))
 
 
 class FakeConfig(ConfigSchema):
@@ -30,9 +37,9 @@ class FakeBlock(MantaBlock[FakeConfig]):
     DIMS = BlockDims()
     INPUTS = frozenset()
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+    def run(self, record: DataRecord) -> DataRecord:
         suffix = self.config.label or type(self).__name__
-        return DataRecord(url=f"{record.url}+{suffix}")
+        return DataRecord(url=f"{record.url}+{suffix}", uuid=record.uuid)
 
 
 @register("fake_passthrough")
@@ -45,16 +52,16 @@ class FakeAddsClustered(FakeBlock):
     DIMS = BlockDims(adds=frozenset({"clustered"}))
 
 
-@register("fake_requires_investment_period")
-class FakeRequiresInvestmentPeriod(FakeBlock):
-    DIMS = BlockDims(requires=frozenset({"investment_period"}))
+@register("fake_requires_period")
+class FakeRequiresPeriod(FakeBlock):
+    DIMS = BlockDims(requires=frozenset({"period"}))
 
 
-@register("fake_removes_investment_period")
-class FakeRemovesInvestmentPeriod(FakeBlock):
+@register("fake_removes_period")
+class FakeRemovesPeriod(FakeBlock):
     DIMS = BlockDims(
-        requires=frozenset({"investment_period"}),
-        removes=frozenset({"investment_period"}),
+        requires=frozenset({"period"}),
+        removes=frozenset({"period"}),
     )
 
 
@@ -62,9 +69,9 @@ class FakeRemovesInvestmentPeriod(FakeBlock):
 class FakeNeedsUpstream(FakeBlock):
     INPUTS = frozenset({"source"})
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+    def run(self, record: DataRecord) -> DataRecord:
         source_url = self.config.source.url if self.config.source else "none"
-        return DataRecord(url=f"{record.url}+needs({source_url})")
+        return DataRecord(url=f"{record.url}+needs({source_url})", uuid=record.uuid)
 
 
 class StrictConfig(ConfigSchema):
@@ -75,8 +82,10 @@ class StrictConfig(ConfigSchema):
 class FakeStrictConfig(FakeBlock):
     CONFIG = StrictConfig
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
-        return DataRecord(url=f"{record.url}+strict({self.config.required_field})")
+    def run(self, record: DataRecord) -> DataRecord:
+        return DataRecord(
+            url=f"{record.url}+strict({self.config.required_field})", uuid=record.uuid
+        )
 
 
 class OptionalGroupConfig(ConfigSchema):
@@ -96,10 +105,10 @@ class FakeNestedSettings(FakeBlock):
 
 @register("fake_writes_output")
 class FakeWritesOutput(FakeBlock):
-    """Points its result at the place it was asked to write, like a real block."""
+    """Writes its result as a new revision in the input record's store, like a real block."""
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
-        return DataRecord(url=f"{output_base}.txt")
+    def run(self, record: DataRecord) -> DataRecord:
+        return revision_of(record)
 
 
 @register("fake_other_env")
@@ -113,5 +122,32 @@ class FakeOtherEnv(FakeBlock):
 class FakeExplodes(FakeBlock):
     """Fails if it is ever run, to prove that something never runs it."""
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+    def run(self, record: DataRecord) -> DataRecord:
         raise AssertionError("this block should never have been run")
+
+
+class RecordingRunner:
+    """Hands back made-up records, and keeps every call for the test to inspect."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def run_block(
+        self,
+        block: BlockSpec,
+        *,
+        step_name: str,
+        config: dict,
+        record: DataRecord,
+        inputs: dict[str, DataRecord],
+    ) -> DataRecord:
+        self.calls.append(
+            {
+                "block": block.name,
+                "step_name": step_name,
+                "config": config,
+                "record": record,
+                "inputs": inputs,
+            }
+        )
+        return DataRecord(url=f"{record.url}/{step_name}", uuid=record.uuid)

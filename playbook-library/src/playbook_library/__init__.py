@@ -35,6 +35,10 @@ register_lazy(
     "playbook_library.myopic_capacity_expansion:MyopicCapacityExpansion",
 )
 register_lazy(
+    "perfect_capacity_expansion",
+    "playbook_library.perfect_capacity_expansion:PerfectCapacityExpansion",
+)
+register_lazy(
     "rolling_horizon_dispatch",
     "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
 )

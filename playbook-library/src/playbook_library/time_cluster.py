@@ -39,6 +39,6 @@ class ClusterTime(MantaBlock[ClusterTimeConfig]):
             return n.cluster.temporal.segment(self.config.segments)
         return n.cluster.temporal.resample(f"{self.config.n_hours}h")
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+    def run(self, record: DataRecord) -> DataRecord:
         n_new = self.cluster(to_network(record))
-        return write_network(n_new, output_base)
+        return write_network(n_new, record)

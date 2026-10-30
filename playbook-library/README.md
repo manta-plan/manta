@@ -19,6 +19,7 @@ The blocks — single units of work on a model:
 | `cluster_time` | Shorten a model's time series, so later blocks have less to solve |
 | `overnight_capacity_expansion` | Decide what to build, treating the whole model as one moment in time |
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
+| `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
 
 The playbooks — those blocks chained into something worth running, each with default
@@ -27,6 +28,7 @@ settings a user can start from:
 | Playbook | What it does |
 | --- | --- |
 | `cluster-expand-dispatch` | Shorten the time series, decide what to build, then decide how to run it |
+| `expand` | Decide what to build: overnight, myopic or with perfect foresight |
 
 > This directory is developed inside the `manta` monorepo for now, but is written as a
 > standalone package: it is also the reference for anyone writing their own library of
@@ -40,7 +42,7 @@ src/playbook_library/
   __init__.py                   Registers the blocks by name, without importing them
   catalogue.json                Generated description of every block (see below)
   time_cluster.py               ... one module per block ...
-  pypsa_helpers.py              Where blocks meet their data (records in, records out)
+  pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   examples.py                   A tiny network, and the shipped playbook run on it
   playbooks/                    The playbooks this library ships, with default settings
@@ -60,15 +62,16 @@ pixi run -e full python -m playbook_library.examples
 ```
 
 That seeds a tiny network — one bus, one generator that can be built, a day of demand
-— runs the shipped playbook on it, and prints where each step's output landed. Pass a
-directory or an `s3://` URL to choose where.
+— as the root revision of a datarecord store, runs the shipped playbook on it, and
+prints the final record. Pass a directory or an `s3://` URL to choose where the store
+is created.
 
 To run a single block instead, without a playbook around it:
 
 ```bash
 pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
     --source playbook_library --config '{"n_hours": 6}' \
-    --record '{"url": "network.nc"}' --output-base clustered
+    --record '{"url": "<store>", "uuid": "<revision>"}'
 ```
 
 ## Environments
@@ -95,8 +98,10 @@ dependencies stay its own.
    "playbook_library.your_module:YourBlock")`. Registering the location rather than
    importing the class is what keeps this package importable without PyPSA.
 3. Read and write data through `pypsa_helpers`: `to_network(record)` in,
-   `write_network(n, output_base)` out. Blocks never open files themselves, which is
+   `write_network(n, record)` out, as a new revision in the input record's store. Blocks never open files themselves, which is
    what lets the same block run against a local file or object storage unchanged.
+   A helper only one block needs is a method on that block's class; `pypsa_helpers`
+   holds only what blocks share.
 4. Regenerate the catalogue (below) and add tests (below).
 
 Keep PyPSA imports inside the block modules. `__init__.py`, `playbooks/` and the
@@ -150,19 +155,18 @@ What the suite covers, and where to add to it:
 | File | What it checks |
 | --- | --- |
 | `tests/test_catalogue.py` | the committed catalogue matches the blocks and works without PyPSA |
-| `tests/test_library.py` | each block, run on a tiny network: a usable network comes out where it was asked for |
+| `tests/test_library.py` | each block, run on a tiny network: a usable network comes out as a new revision of the one it read |
 | `tests/test_playbooks.py` | the shipped playbooks parse, come with settings for every step, and have no issues with those settings, checked against the catalogue and, with PyPSA, against the blocks |
 | `tests/test_pypsa_end_to_end.py` | the whole playbook, one network in and one out |
 
 Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry
 `pytestmark = pytest.mark.pypsa`, so they skip rather than fail in `dev`. A new block
-needs at least a case in `test_library.py` showing it produces a usable network at the
-place it was told to write — keep the networks tiny, so the suite stays quick.
+needs at least a case in `test_library.py` showing it produces a usable network as a
+new revision in the store it read from — keep the networks tiny, so the suite stays quick.
 
 ## Current limitations
 
-- Records point at PyPSA netCDF files, and a block writes a whole new file rather than
-  only what it changed, because PyPSA cannot yet compare two networks or store a
-  difference. Both are confined to `pypsa_helpers.py`.
+- Records point at revisions in a datarecord store, and reading and writing them is
+  confined to `pypsa_helpers.py`.
 - The settings models in `pypsa_configs.py` mirror PyPSA's `optimize` options by hand,
   and have to be updated when those change.

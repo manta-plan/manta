@@ -10,17 +10,21 @@ inputs.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from playbook.blocks.tests.fakes import (
     FakeAddsClustered,
     FakeNeedsUpstream,
     FakePassthrough,
-    FakeRemovesInvestmentPeriod,
-    FakeRequiresInvestmentPeriod,
+    FakeRemovesPeriod,
+    FakeRequiresPeriod,
     FakeStrictConfig,
+    RecordingRunner,
 )
+from playbook.playbooks.execution import execute_playbook
 from playbook.playbooks.playbook import Playbook, When
 from playbook.playbooks.validation import PlaybookHasIssuesError
+from playbook.playbooks.yaml_io import StepDoc
 
 
 def test_nested_playbook_unbound_inputs_are_namespaced():
@@ -90,12 +94,12 @@ def test_a_nested_steps_settings_are_addressed_from_the_top_of_the_settings():
 
 
 def test_nested_dims_fold_into_a_single_net_effect():
-    child = Playbook(name="child", initial_dims=frozenset({"investment_period"}))
-    child.add("collapse", FakeRemovesInvestmentPeriod)
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
+    child.add("collapse", FakeRemovesPeriod)
 
-    outer = Playbook(name="outer", initial_dims=frozenset({"investment_period"}))
+    outer = Playbook(name="outer", initial_dims=frozenset({"period"}))
     outer.add_playbook("regional", child)
-    outer.add("needs_it", FakeRequiresInvestmentPeriod)
+    outer.add("needs_it", FakeRequiresPeriod)
 
     with pytest.raises(PlaybookHasIssuesError) as exc:
         outer.raise_for_issues(config={"regional": {}, "needs_it": {}})
@@ -106,11 +110,11 @@ def test_nested_dims_fold_into_a_single_net_effect():
 
 
 def test_a_nested_playbooks_own_requirement_is_reported_at_its_step():
-    # The child says it needs `investment_period` before it starts. If the outer
+    # The child says it needs `period` before it starts. If the outer
     # playbook has not got it, that belongs to the step that nests the child, not to
     # something deep inside it.
-    child = Playbook(name="child", initial_dims=frozenset({"investment_period"}))
-    child.add("needs_it", FakeRequiresInvestmentPeriod)
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
+    child.add("needs_it", FakeRequiresPeriod)
 
     outer = Playbook(name="outer")  # nothing to start from
     outer.add_playbook("regional", child)
@@ -148,7 +152,7 @@ def test_a_nested_playbook_executes_within_the_outer_run(initial_record):
         "nested": {"inner": {"label": "inner"}},
         "after": {"label": "after"},
     }
-    result = outer.run(initial_record, config, output_prefix="out")
+    result = outer.run(initial_record, config)
     assert result.url == "root+before+inner+after"
 
 
@@ -162,10 +166,10 @@ def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
     outer.add_playbook("nested", child)
 
     on = {"globals": {"mode": "on"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, on, output_prefix="out").url == "root+inner"
+    assert outer.run(initial_record, on).url == "root+inner"
 
     off = {"globals": {"mode": "off"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, off, output_prefix="out").url == "root"
+    assert outer.run(initial_record, off).url == "root"
 
 
 def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
@@ -179,4 +183,38 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
         "globals": {"mode": "off"},
         "nested": {"globals": {"mode": "on"}, "inner": {"label": "inner"}},
     }
-    assert outer.run(initial_record, config, output_prefix="out").url == "root+inner"
+    assert outer.run(initial_record, config).url == "root+inner"
+
+
+def test_nested_steps_reach_the_runner_by_their_qualified_path(initial_record):
+    inner = Playbook(name="inner")
+    inner.add("leaf", FakePassthrough)
+    middle = Playbook(name="middle")
+    middle.add_playbook("region", inner)
+    middle.add("cluster", FakePassthrough)
+    outer = Playbook(name="outer")
+    outer.add("before", FakePassthrough)
+    outer.add_playbook("stage_2030", middle)
+
+    runner = RecordingRunner()
+    execute_playbook(outer, initial_record, {}, runner=runner)
+
+    assert [call["step_name"] for call in runner.calls] == [
+        "before",
+        "stage_2030/region/leaf",
+        "stage_2030/cluster",
+    ]
+
+
+@pytest.mark.parametrize(
+    "add",
+    [
+        lambda: Playbook(name="p").add("a/b", FakePassthrough),
+        lambda: Playbook(name="p").add_playbook("a/b", Playbook(name="child")),
+        lambda: StepDoc(name="a/b", block="fake_passthrough"),
+    ],
+    ids=["block", "nested", "doc"],
+)
+def test_a_step_name_with_a_slash_is_rejected(add):
+    with pytest.raises(ValidationError, match="name"):
+        add()

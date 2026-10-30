@@ -226,7 +226,7 @@ def test_validate_playbook_config_without_a_config_checks_the_playbooks_default(
 
 def test_validate_playbook_config_answers_with_every_issue_instead_of_refusing() -> None:
     # Given the default config switched to its myopic branch, which needs an
-    # investment_period dimension the playbook's data does not have
+    # period dimension the playbook's data does not have
     service = _library_service()
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
     config = {**default_config, "globals": {"expansion_mode": "myopic"}}

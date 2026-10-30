@@ -18,8 +18,8 @@ from playbook.blocks.tests.fakes import (
     FakeNestedSettings,
     FakeOtherEnv,
     FakePassthrough,
-    FakeRemovesInvestmentPeriod,
-    FakeRequiresInvestmentPeriod,
+    FakeRemovesPeriod,
+    FakeRequiresPeriod,
     FakeStrictConfig,
 )
 from playbook.playbooks.playbook import Playbook, When
@@ -129,9 +129,9 @@ def test_an_issue_says_which_input_it_is_about():
 
 
 def test_a_missing_dim_reports_which_step_removed_it():
-    pb = Playbook(name="p", initial_dims=frozenset({"investment_period"}))
-    pb.add("collapse", FakeRemovesInvestmentPeriod)
-    pb.add("needs_it", FakeRequiresInvestmentPeriod)
+    pb = Playbook(name="p", initial_dims=frozenset({"period"}))
+    pb.add("collapse", FakeRemovesPeriod)
+    pb.add("needs_it", FakeRequiresPeriod)
     with pytest.raises(PlaybookHasIssuesError) as exc:
         pb.raise_for_issues(config={})
     dims_issues = [i for i in exc.value.issues if i.kind == "dims"]
@@ -222,7 +222,7 @@ def test_a_conditional_branch_can_have_different_dims_validity():
     pb = Playbook(name="p")
     pb.add(
         "needs_period",
-        FakeRequiresInvestmentPeriod,
+        FakeRequiresPeriod,
         when=When(config="globals.mode", equals="a"),
     )
     pb.add("no_requirement", FakePassthrough, when=When(config="globals.mode", equals="b"))

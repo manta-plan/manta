@@ -27,7 +27,7 @@ dependencies = [
 # importable - for names, schemas, and the catalogue - in environments that cannot
 # install a solver stack. Only the environment a block actually runs in needs it.
 [project.optional-dependencies]
-pypsa = ["pypsa>=1.2,<2", "highspy", "netcdf4"]
+pypsa = ["pypsa>=1.4,<2", "highspy", "datarecord[remote,pypsa]", "mathspec"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/playbook_library"]
@@ -36,7 +36,8 @@ exclude = ["**/tests"]
 [tool.pytest.ini_options]
 testpaths = ["src"]
 markers = [
-    "pypsa: needs PyPSA installed (run in the `full` environment)"
+    "pypsa: needs PyPSA installed (run in the `full` environment)",
+    "slow: takes minutes, solving a real network (deselect with `-m 'not slow'`)",
 ]
 
 # Same rules as the framework next door and the backend; see CONTRIBUTING.md.

@@ -3,7 +3,8 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from functools import cache
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,6 +26,7 @@ BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_FILES = FRONTEND_DIR / "dist"
+EXAMPLE_STORE_ROOT_UUID = "3de02051-8918-45ab-a61b-980b3da170c4"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -157,17 +159,29 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
-def data_record_url(s3_client: S3Client, app_server: str) -> str:
-    """Uploads the committed example network once per session and returns its
-    `s3://` URL — a real starting record for tests that run a playbook to
-    completion. `app_server` is an ordering dependency, not a used value: the
-    bucket only exists once the app has started (see create_app())."""
-    env = dotenv_values(BACKEND_ENV_FILE)
-    bucket = env["S3_BUCKET"]
-    key = "integration-tests/example_network.nc"
-    fixture_path = Path(__file__).parent / "fixtures" / "example_network.nc"
-    s3_client.upload_file(str(fixture_path), bucket, key)
-    return f"s3://{bucket}/{key}"
+def example_store(s3_client: S3Client, app_server: str) -> Callable[[str], dict[str, str]]:
+    """Returns a function that uploads the committed example datarecord store under a
+    project's own prefix (once per project) and returns the run payload fields for its
+    root revision — a real starting record for tests that run a playbook to completion.
+    `app_server` is an ordering dependency, not a used value: the bucket only exists once
+    the app has started (see create_app())."""
+    bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+    store_path = Path(__file__).parent / "fixtures" / "example_store"
+
+    @cache
+    def upload(project_uuid: str) -> dict[str, str]:
+        prefix = f"{project_uuid}/example_store"
+        for path in store_path.rglob("*"):
+            if path.is_file():
+                s3_client.upload_file(
+                    str(path), bucket, f"{prefix}/{path.relative_to(store_path).as_posix()}"
+                )
+        return {
+            "data_record_url": f"s3://{bucket}/{prefix}",
+            "revision_uuid": EXAMPLE_STORE_ROOT_UUID,
+        }
+
+    return upload
 
 
 @pytest.fixture(scope="session")

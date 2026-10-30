@@ -53,6 +53,9 @@ one thing tying every container to a single machine. Only the small record
 pointers go that way; model data never passes through Prefect or the
 orchestrator at all.
 
+`run-block` also publishes its output record as a table artifact, readable through
+the Prefect API.
+
 ### The catalogue crosses as a JSON string, never a dict
 
 `run-playbook` never imports a block library, so it cannot resolve a block by
