@@ -10,13 +10,17 @@ drive the executor with a recording runner, exactly the way Manta's own runner i
 driven, so the contract an orchestrator relies on is pinned down here.
 """
 
+import pytest
+
 from playbook.blocks.tests.fakes import (
     FakeNeedsUpstream,
     FakePassthrough,
+    FakeStrictConfig,
     RecordingRunner,
 )
 from playbook.playbooks.execution import execute_playbook
 from playbook.playbooks.playbook import Playbook
+from playbook.playbooks.validation import PlaybookHasIssuesError
 
 
 def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_record):
@@ -80,3 +84,21 @@ def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_re
     )
 
     assert runner.calls[1]["inputs"]["source"].url == "root/upstream"
+
+
+def test_a_playbook_with_issues_never_reaches_the_runner(initial_record):
+    # The second step's settings are wrong, so not even the first step runs: a run
+    # that cannot finish is refused whole, rather than failing partway through.
+    pb = Playbook(name="p")
+    pb.add("first", FakePassthrough)
+    pb.add("second", FakeStrictConfig)
+
+    runner = RecordingRunner()
+    with pytest.raises(PlaybookHasIssuesError, match="required_field"):
+        execute_playbook(
+            pb,
+            initial_record,
+            {"first": {}, "second": {}},
+            runner=runner,
+        )
+    assert runner.calls == []

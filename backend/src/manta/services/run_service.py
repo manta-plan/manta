@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from manta.config.database_config import get_db_session
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
+from manta.services.playbook_service import PlaybookService
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -203,8 +204,13 @@ def _build_run_summary(run_results: list[GetRunResult]) -> GetRunSummaryResult:
 
 
 class RunService:
-    def __init__(self, db: Session = Depends(get_db_session)) -> None:
+    def __init__(
+        self,
+        db: Session = Depends(get_db_session),
+        playbook_service: PlaybookService = Depends(),
+    ) -> None:
         self.db = db
+        self.playbook_service = playbook_service
 
     def create_run(
         self,
@@ -224,6 +230,12 @@ class RunService:
         library_playbook = library_playbooks().get(playbook)
         if library_playbook is None:
             raise HTTPException(status_code=404, detail=f"Playbook {playbook!r} not found")
+        run_config = config if config is not None else library_playbook.default_config
+
+        # Before a run is minted or anything is dispatched, so a config that cannot
+        # work is refused here with every reason, rather than failing minutes later
+        # inside a block's container.
+        self.playbook_service.raise_for_config_issues(playbook, run_config)
 
         run_uuid = uuid4()
 
@@ -231,7 +243,7 @@ class RunService:
             PLAYBOOK_DEPLOYMENT,
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
-                "config": config if config is not None else library_playbook.default_config,
+                "config": run_config,
                 "record": {"url": data_record_url, "uuid": str(revision_uuid)},
                 "catalogue": catalogue_parameter(library_catalogue()),
             },

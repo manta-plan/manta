@@ -38,6 +38,10 @@ container per run would idle for hours and take the run down with it if it were
 evicted. It is also why a playbook run survives a restart of whatever dispatched
 it.
 
+Before its first step, `run-playbook` checks the playbook against its config
+(`execute_playbook` does this), using the catalogue it was handed. A run that Manta's
+backend would refuse therefore also fails here, before any block container starts.
+
 Each step is dispatched at the `run-block` deployment on a **docker** work pool
 (`manta-blocks`), so the worker starts a fresh container for it. Steps come back
 as child flow runs of the playbook's flow run, named `<step>[<block>]`, which is

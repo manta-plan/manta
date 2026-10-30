@@ -220,9 +220,25 @@ one for the requests.
    curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
    ```
 
-7. Create a run from a revision of the uploaded store. Each step writes its
+7. Check a config before running it. The answer lists every issue, each naming
+   its step and, where there is one, the setting at fault. This config switches
+   the playbook to its myopic branch, which needs a `period` dimension the
+   playbook's data does not have. The answer has `"valid": false` and one `dims`
+   issue on `expansion_myopic`:
+
+   ```bash
+   curl -s -X POST http://localhost:8000/v1/playbooks/cluster-expand-dispatch/validate \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"config": {"globals": {"expansion_mode": "myopic"}}}'
+   ```
+
+   Sending `{}` instead checks the `default_config`, which has no issues.
+
+8. Create a run from a revision of the uploaded store. Each step writes its
    output as a new revision into that same store. Leaving out `config` runs the
-   playbook with its `default_config`:
+   playbook with its `default_config`. A config with issues is refused with a
+   `422` listing the same issues the check above returns:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
@@ -233,7 +249,7 @@ one for the requests.
 
    Copy the returned `uuid` as `RUN_UUID`.
 
-8. Follow the run. The first request returns the run's overall `status` and the
+9. Follow the run. The first request returns the run's overall `status` and the
    `config` it was started with. The second returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
    begins, and Prefect's own state from then on. The third returns the run's
@@ -247,16 +263,16 @@ one for the requests.
 
    Repeat them until the run's `status` is `COMPLETED`.
 
-9. List the run's outputs, one per step that ran, by its step path (`dispatch`,
-   or `stage_2030/dispatch` inside a nested playbook). Each names the store `url`
-   and the `revision_uuid` the step wrote; open that revision with datarecord to
-   look at its data:
+10. List the run's outputs, one per step that ran, by its step path (`dispatch`,
+    or `stage_2030/dispatch` inside a nested playbook). Each names the store `url`
+    and the `revision_uuid` the step wrote; open that revision with datarecord to
+    look at its data:
 
-   ```bash
-   curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
-   ```
+    ```bash
+    curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
+    ```
 
-10. Tear down (from `docker/`, in the third terminal). This also stops the
+11. Tear down (from `docker/`, in the third terminal). This also stops the
     stack in the first terminal. Stop the backend in the second terminal with
     `Ctrl+C`:
 

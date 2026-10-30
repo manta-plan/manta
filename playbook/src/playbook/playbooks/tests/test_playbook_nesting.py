@@ -16,10 +16,14 @@ from playbook.blocks.tests.fakes import (
     FakeAddsClustered,
     FakeNeedsUpstream,
     FakePassthrough,
+    FakeRemovesPeriod,
+    FakeRequiresPeriod,
+    FakeStrictConfig,
     RecordingRunner,
 )
 from playbook.playbooks.execution import execute_playbook
 from playbook.playbooks.playbook import Playbook, When
+from playbook.playbooks.validation import PlaybookHasIssuesError
 from playbook.playbooks.yaml_io import StepDoc
 
 
@@ -35,6 +39,103 @@ def test_an_input_the_inner_playbook_wires_itself_is_not_asked_of_the_outer_one(
     upstream = child.add("inner_cluster", FakePassthrough)
     child.add("inner_dispatch", FakeNeedsUpstream, inputs={"source": upstream.output})
     assert child.unbound_inputs() == frozenset()
+
+
+def test_wiring_a_declared_unbound_input_has_no_issues():
+    child = Playbook(name="child")
+    child.add("inner_dispatch", FakeNeedsUpstream)
+
+    outer = Playbook(name="outer")
+    a = outer.add("upstream", FakePassthrough)
+    outer.add_playbook("regional", child, inputs={"inner_dispatch.source": a.output})
+    outer.raise_for_issues(config={"upstream": {}, "regional": {"inner_dispatch": {}}})
+
+
+def test_wiring_an_undeclared_nested_input_is_reported():
+    child = Playbook(name="child")
+    child.add("inner_dispatch", FakeNeedsUpstream)
+
+    outer = Playbook(name="outer")
+    a = outer.add("upstream", FakePassthrough)
+    outer.add_playbook("regional", child, inputs={"not_a_real_input": a.output})
+
+    with pytest.raises(PlaybookHasIssuesError) as exc:
+        outer.raise_for_issues()
+    assert any(i.kind == "wiring" and "no input called" in i.message for i in exc.value.issues)
+
+
+def test_a_nested_issue_names_the_step_it_came_from():
+    child = Playbook(name="child")
+    child.add("dup", FakePassthrough)
+    child.add("dup", FakePassthrough)  # duplicate step name
+
+    outer = Playbook(name="outer")
+    outer.add_playbook("regional", child)
+
+    # Found without any settings, since it does not depend on them - and only once
+    # when there are some.
+    for config in (None, {"regional": {}}):
+        issues = outer.find_issues(config)
+        assert [(i.kind, i.step_path) for i in issues] == [("structure", ("regional", "dup"))]
+
+
+def test_a_nested_steps_settings_are_addressed_from_the_top_of_the_settings():
+    child = Playbook(name="child")
+    child.add("strict", FakeStrictConfig)
+
+    outer = Playbook(name="outer")
+    outer.add_playbook("regional", child)
+
+    issues = outer.find_issues(config={"regional": {"strict": {}, "not_a_step": {}}})
+    assert [(i.step_path, i.config_path) for i in issues] == [
+        (("regional",), ("regional", "not_a_step")),
+        (("regional", "strict"), ("regional", "strict", "required_field")),
+    ]
+
+
+def test_nested_dims_fold_into_a_single_net_effect():
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
+    child.add("collapse", FakeRemovesPeriod)
+
+    outer = Playbook(name="outer", initial_dims=frozenset({"period"}))
+    outer.add_playbook("regional", child)
+    outer.add("needs_it", FakeRequiresPeriod)
+
+    with pytest.raises(PlaybookHasIssuesError) as exc:
+        outer.raise_for_issues(config={"regional": {}, "needs_it": {}})
+    dims_issues = [i for i in exc.value.issues if i.kind == "dims"]
+    assert len(dims_issues) == 1
+    assert dims_issues[0].step_path == ("needs_it",)
+    assert "step 'regional' removed it" in dims_issues[0].message
+
+
+def test_a_nested_playbooks_own_requirement_is_reported_at_its_step():
+    # The child says it needs `period` before it starts. If the outer
+    # playbook has not got it, that belongs to the step that nests the child, not to
+    # something deep inside it.
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
+    child.add("needs_it", FakeRequiresPeriod)
+
+    outer = Playbook(name="outer")  # nothing to start from
+    outer.add_playbook("regional", child)
+
+    with pytest.raises(PlaybookHasIssuesError) as exc:
+        outer.raise_for_issues(config={"regional": {"needs_it": {}}})
+    dims_issues = [i for i in exc.value.issues if i.kind == "dims"]
+    assert [i.step_path for i in dims_issues] == [("regional",)]
+
+
+def test_a_playbook_that_contains_itself_is_reported_not_hung():
+    a = Playbook(name="a")
+    a.add_playbook("loop", a)
+
+    # With settings too: those checks walk into nested playbooks, and must not
+    # follow this one round forever.
+    for config in (None, {"loop": {}}):
+        issues = a.find_issues(config)
+        assert len(issues) == 1
+        assert issues[0].kind == "structure"
+        assert "never finish" in issues[0].message
 
 
 def test_a_nested_playbook_executes_within_the_outer_run(initial_record):

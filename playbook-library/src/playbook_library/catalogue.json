@@ -2,6 +2,7 @@
   "blocks": {
     "cluster_time": {
       "config_schema": {
+        "additionalProperties": false,
         "properties": {
           "n_hours": {
             "anyOf": [
@@ -53,6 +54,7 @@
       "config_schema": {
         "$defs": {
           "LinopyModelSchema": {
+            "additionalProperties": false,
             "properties": {
               "auto_mask": {
                 "default": false,
@@ -103,6 +105,7 @@
             "type": "object"
           },
           "PyPSAOptimizeSchema": {
+            "additionalProperties": false,
             "properties": {
               "assign_all_duals": {
                 "default": false,
@@ -186,6 +189,7 @@
             "type": "object"
           },
           "_PyPSAOptimizeTransmissionLossesSchema": {
+            "additionalProperties": false,
             "properties": {
               "atol": {
                 "default": 1.0,
@@ -228,6 +232,7 @@
             "type": "object"
           }
         },
+        "additionalProperties": false,
         "properties": {
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
@@ -259,6 +264,7 @@
       "config_schema": {
         "$defs": {
           "LinopyModelSchema": {
+            "additionalProperties": false,
             "properties": {
               "auto_mask": {
                 "default": false,
@@ -309,6 +315,7 @@
             "type": "object"
           },
           "PyPSAOptimizeSchema": {
+            "additionalProperties": false,
             "properties": {
               "assign_all_duals": {
                 "default": false,
@@ -609,6 +616,7 @@
             "type": "object"
           },
           "_PyPSAOptimizeTransmissionLossesSchema": {
+            "additionalProperties": false,
             "properties": {
               "atol": {
                 "default": 1.0,
@@ -651,6 +659,7 @@
             "type": "object"
           }
         },
+        "additionalProperties": false,
         "properties": {
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
@@ -702,6 +711,7 @@
             "type": "object"
           },
           "LinopyModelSchema": {
+            "additionalProperties": false,
             "properties": {
               "auto_mask": {
                 "default": false,
@@ -752,6 +762,7 @@
             "type": "object"
           },
           "PyPSAOptimizeRollingHorizonConfig": {
+            "additionalProperties": false,
             "properties": {
               "assign_all_duals": {
                 "default": false,
@@ -845,6 +856,7 @@
             "type": "object"
           },
           "_PyPSAOptimizeTransmissionLossesSchema": {
+            "additionalProperties": false,
             "properties": {
               "atol": {
                 "default": 1.0,
@@ -887,6 +899,7 @@
             "type": "object"
           }
         },
+        "additionalProperties": false,
         "properties": {
           "capacity_source": {
             "anyOf": [

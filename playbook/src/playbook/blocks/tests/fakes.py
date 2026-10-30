@@ -53,12 +53,12 @@ class FakeAddsClustered(FakeBlock):
 
 
 @register("fake_requires_period")
-class FakeRequiresInvestmentPeriod(FakeBlock):
+class FakeRequiresPeriod(FakeBlock):
     DIMS = BlockDims(requires=frozenset({"period"}))
 
 
 @register("fake_removes_period")
-class FakeRemovesInvestmentPeriod(FakeBlock):
+class FakeRemovesPeriod(FakeBlock):
     DIMS = BlockDims(
         requires=frozenset({"period"}),
         removes=frozenset({"period"}),
@@ -86,6 +86,21 @@ class FakeStrictConfig(FakeBlock):
         return DataRecord(
             url=f"{record.url}+strict({self.config.required_field})", uuid=record.uuid
         )
+
+
+class OptionalGroupConfig(ConfigSchema):
+    size: int = 1
+
+
+class NestedSettingsConfig(ConfigSchema):
+    group: OptionalGroupConfig | None = None
+
+
+@register("fake_nested_settings")
+class FakeNestedSettings(FakeBlock):
+    """Has an optional group of settings, shaped like a real block's solver options."""
+
+    CONFIG = NestedSettingsConfig
 
 
 @register("fake_writes_output")
