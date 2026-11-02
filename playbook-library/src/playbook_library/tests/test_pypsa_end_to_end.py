@@ -10,8 +10,11 @@ playbook is the one this library ships, and the network is the one `examples.py`
 seeds, so what a contributor runs by hand is what is tested here.
 """
 
+import json
 import shutil
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import urlopen, urlretrieve
 from uuid import UUID
 
 import pytest
@@ -71,15 +74,28 @@ def test_the_network_the_playbook_started_from_is_left_alone(network_record):
     assert n.generators.p_nom_extendable["gen"]
 
 
-BEL_STORE = Path(__file__).parent / "data" / "BEL-pre-aggregated"
-BEL_ROOT = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
+BEL_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
+BEL_PREFIX = "BEL-pre-aggregated/"
+
+
+@pytest.fixture(scope="session")
+def bel_store(tmp_path_factory) -> Path:
+    store_dir = tmp_path_factory.mktemp("bel-download")
+    with urlopen(f"{BEL_OBJECTS}?{urlencode({'prefix': BEL_PREFIX})}") as response:
+        listing = json.load(response)
+    for item in listing["items"]:
+        target = store_dir / item["name"].removeprefix(BEL_PREFIX)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        urlretrieve(item["mediaLink"], target)
+    return store_dir
 
 
 @pytest.fixture
-def bel_record(tmp_path) -> DataRecord:
+def bel_record(tmp_path, bel_store) -> DataRecord:
     store_dir = tmp_path / "BEL"
-    shutil.copytree(BEL_STORE, store_dir)
-    return DataRecord(url=str(store_dir), uuid=BEL_ROOT)
+    shutil.copytree(bel_store, store_dir)
+    revisions = json.loads((store_dir / "revisions.json").read_text())
+    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
 
 
 BUILT_CARRIERS = [
@@ -183,7 +199,7 @@ def test_expansion_of_a_real_network_matches_the_pypsa_eur_reference(
     root, *revisions = ancestry(result)
 
     assert result.url == bel_record.url
-    assert root == BEL_ROOT
+    assert root == bel_record.uuid
     assert revisions[-1] == result.uuid
     expected = [PYPSA_EUR_OBJECTIVE[mode, period] for period in periods]
     assert objectives == pytest.approx(expected, rel=1e-5)
