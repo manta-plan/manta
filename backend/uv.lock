@@ -1172,9 +1172,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "datarecord", extras = ["remote", "pypsa"], marker = "extra == 'pypsa'" },
+    { name = "datarecord", extras = ["remote", "pypsa"], marker = "extra == 'pypsa'", git = "https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff" },
     { name = "highspy", marker = "extra == 'pypsa'" },
-    { name = "mathspec", marker = "extra == 'pypsa'" },
     { name = "playbook", extras = ["s3"] },
     { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.4,<2" },
     { name = "pyyaml", specifier = ">=6" },

@@ -317,7 +317,7 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    data_record_url: str,
+    example_store: Callable[[str], dict[str, str]],
 ) -> None:
     # Given a project, and the library's config switched to its myopic branch, whose
     # expansion needs a period dimension the playbook's data does not have
@@ -335,7 +335,7 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
             "project_uuid": project_uuid,
             "playbook": _LIBRARY_PLAYBOOK,
             "config": myopic_config,
-            "data_record_url": data_record_url,
+            **example_store(project_uuid),
         },
         headers=headers,
     )

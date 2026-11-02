@@ -55,7 +55,10 @@ COPY playbook-library ./playbook-library
 # playbook-library depends on playbook by a local path (see its pyproject.toml),
 # which means nothing to plain pip — installing it first is what makes pip
 # resolve that dependency against what's already on disk instead of an index.
-RUN pip install --no-cache-dir "./playbook[s3]" \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir "./playbook[s3]" \
     && pip install --no-cache-dir "./playbook-library[${LIBRARY_EXTRAS}]"
 
 # Used by the block catalogue and error messages, not for dependency resolution.
