@@ -58,6 +58,8 @@ COPY playbook-library ./playbook-library
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /root/.aws \
+    && printf '[default]\n' > /root/.aws/config \
     && pip install --no-cache-dir "./playbook[s3]" \
     && pip install --no-cache-dir "./playbook-library[${LIBRARY_EXTRAS}]"
 

@@ -47,21 +47,24 @@ def with_its_blocks_imported(name: str) -> Playbook:
     return playbook
 
 
-def test_the_library_ships_the_cluster_expand_dispatch_playbook():
+@pytest.mark.parametrize(
+    ("name", "steps"),
+    [
+        ("expand", ["expansion_overnight", "expansion_myopic", "expansion_perfect"]),
+        (
+            "cluster-expand-dispatch",
+            ["cluster", "expansion_overnight", "expansion_myopic", "dispatch"],
+        ),
+    ],
+)
+def test_the_library_ships_the_playbook(name, steps):
     playbooks = library_playbooks()
-    assert "cluster-expand-dispatch" in playbooks
-
-    doc = playbooks["cluster-expand-dispatch"].doc
-    assert [step.name for step in doc.steps] == [
-        "cluster",
-        "expansion_overnight",
-        "expansion_myopic",
-        "dispatch",
-    ]
+    assert name in playbooks
+    assert [step.name for step in playbooks[name].doc.steps] == steps
 
 
 def test_a_library_playbook_comes_with_sensible_default_settings():
-    entry = library_playbooks()["cluster-expand-dispatch"]
+    entry = library_playbooks()["expand"]
     assert entry.default_config["globals"]["expansion_mode"] == "overnight"
     # Every step has somewhere for its settings, so a user starts from a complete
     # document rather than a blank page.
@@ -84,22 +87,19 @@ def test_a_shipped_playbook_has_no_issues_with_its_default_settings_where_its_bl
     assert with_its_blocks_imported(name).find_issues(default_config) == []
 
 
+@pytest.mark.parametrize("name", ["expand", "cluster-expand-dispatch"])
 @pytest.mark.parametrize(
-    "config",
-    [
-        {"globals": {"expansion_mode": "myopic"}},
-        {
-            **library_playbooks()["cluster-expand-dispatch"].default_config,
-            "globals": {"expansion_mode": "myopic"},
-        },
-    ],
+    "with_defaults",
+    [False, True],
     ids=["only-the-expansion-mode", "the-defaults-switched-to-myopic"],
 )
-def test_the_myopic_branch_is_reported_as_missing_the_period(config):
+def test_the_myopic_branch_is_reported_as_missing_the_period(name, with_defaults):
     # Myopic expansion works one investment period at a time, so it needs that
     # dimension, but this playbook's data starts with `snapshot` alone and no step
     # before it adds one. Run anyway, the branch would quietly do nothing.
-    issues = as_the_backend_sees_it("cluster-expand-dispatch").find_issues(config)
+    defaults = library_playbooks()[name].default_config if with_defaults else {}
+    config = {**defaults, "globals": {"expansion_mode": "myopic"}}
+    issues = as_the_backend_sees_it(name).find_issues(config)
     assert [(i.kind, i.step_path) for i in issues] == [("dims", ("expansion_myopic",))]
     assert "needs the 'period' dimension" in issues[0].message
 

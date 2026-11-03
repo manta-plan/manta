@@ -44,7 +44,7 @@ src/playbook_library/
   time_cluster.py               ... one module per block ...
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
-  examples.py                   A tiny network, and the shipped playbook run on it
+  examples.py                   A tiny network, and the example playbook run on it
   playbooks/                    The playbooks this library ships, with default settings
 ```
 
@@ -62,7 +62,7 @@ pixi run -e full python -m playbook_library.examples
 ```
 
 That seeds a tiny network — one bus, one generator that can be built, a day of demand
-— as the root revision of a datarecord store, runs the shipped playbook on it, and
+— as the root revision of a datarecord store, runs the `expand` playbook on it, and
 prints the final record. Pass a directory or an `s3://` URL to choose where the store
 is created.
 
@@ -111,7 +111,7 @@ catalogue must all keep working in an environment that has never heard of PyPSA.
 
 1. Write it as a YAML document in `playbooks/` — see
    [the framework's README](../playbook/README.md#writing-a-playbook) for the format,
-   and `cluster_expand_dispatch.yaml` for a real one.
+   and `expand.yaml` for a real one.
 2. Give it default settings under `playbooks/configs/`, in a file of the same name,
    with an entry for every step. A user should start from a complete document rather
    than a blank page.

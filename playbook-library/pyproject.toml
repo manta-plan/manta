@@ -59,6 +59,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
 # S101: bare `assert` is how pytest expresses assertions.
 # E402: these tests skip themselves when PyPSA is missing, which means checking for
 # it before importing anything that needs it.
-"**/tests/**" = ["S101", "E402"]
+# S310: tests download fixtures from fixed public https URLs.
+"**/tests/**" = ["S101", "E402", "S310"]
 # F401/E402: registering this library's blocks is an import side effect.
 "__init__.py" = ["F401", "E402"]

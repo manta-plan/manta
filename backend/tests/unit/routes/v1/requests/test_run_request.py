@@ -14,7 +14,7 @@ _RECORD = {
 def test_create_run_request_requires_a_project_uuid() -> None:
     # When/Then
     with pytest.raises(ValidationError):
-        CreateRunRequest(playbook="cluster-expand-dispatch", **_RECORD)
+        CreateRunRequest(playbook="expand", **_RECORD)
 
 
 def test_create_run_request_rejects_an_invalid_project_uuid() -> None:
@@ -22,7 +22,7 @@ def test_create_run_request_rejects_an_invalid_project_uuid() -> None:
     with pytest.raises(ValidationError):
         CreateRunRequest(
             project_uuid="not-a-uuid",
-            playbook="cluster-expand-dispatch",
+            playbook="expand",
             **_RECORD,
         )
 
@@ -45,7 +45,7 @@ def test_create_run_request_requires_a_playbook() -> None:
 def test_create_run_request_requires_a_valid_record(record: dict) -> None:
     # When/Then
     with pytest.raises(ValidationError):
-        CreateRunRequest(project_uuid=uuid4(), playbook="cluster-expand-dispatch", **record)
+        CreateRunRequest(project_uuid=uuid4(), playbook="expand", **record)
 
 
 def test_create_run_request_accepts_the_required_fields() -> None:
@@ -55,13 +55,13 @@ def test_create_run_request_accepts_the_required_fields() -> None:
     # When
     request = CreateRunRequest(
         project_uuid=project_uuid,
-        playbook="cluster-expand-dispatch",
+        playbook="expand",
         **_RECORD,
     )
 
     # Then
     assert request.project_uuid == project_uuid
-    assert request.playbook == "cluster-expand-dispatch"
+    assert request.playbook == "expand"
     assert request.data_record_url == _RECORD["data_record_url"]
     assert request.revision_uuid == _RECORD["revision_uuid"]
 
@@ -70,7 +70,7 @@ def test_create_run_request_defaults_config_to_none() -> None:
     # When
     request = CreateRunRequest(
         project_uuid=uuid4(),
-        playbook="cluster-expand-dispatch",
+        playbook="expand",
         **_RECORD,
     )
 
@@ -83,7 +83,7 @@ def test_create_run_request_accepts_an_explicit_config() -> None:
     # When
     request = CreateRunRequest(
         project_uuid=uuid4(),
-        playbook="cluster-expand-dispatch",
+        playbook="expand",
         **_RECORD,
         config={"globals": {"expansion_mode": "overnight"}},
     )

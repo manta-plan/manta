@@ -218,7 +218,7 @@ one for the requests.
 
    ```bash
    curl -s http://localhost:8000/v1/playbooks -H "Authorization: Bearer $TOKEN"
-   curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/playbooks/expand -H "Authorization: Bearer $TOKEN"
    ```
 
 7. Check a config before running it. The answer lists every issue, each naming
@@ -228,7 +228,7 @@ one for the requests.
    and one `dims` issue on `expansion_myopic`:
 
    ```bash
-   curl -s -X POST http://localhost:8000/v1/playbooks/cluster-expand-dispatch/validate \
+   curl -s -X POST http://localhost:8000/v1/playbooks/expand/validate \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"config": {"globals": {"expansion_mode": "myopic"}}}'
@@ -245,7 +245,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "c7525fa8-e4da-4569-bbf3-b76669d1a2df"}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": "expand", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "c7525fa8-e4da-4569-bbf3-b76669d1a2df"}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.

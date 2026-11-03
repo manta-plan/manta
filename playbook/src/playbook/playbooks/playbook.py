@@ -40,6 +40,7 @@ _REF_RE = re.compile(r"^\$\{steps\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$")
 REF_TEMPLATE = "${{steps.{step}.{output}}}"
 """How a reference to another step's result is written down."""
 
+
 class OutputRef(BaseModel):
     """A reference to a named result of an earlier step: `${steps.<step>.<output>}`."""
 

@@ -180,4 +180,3 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
         "nested": {"globals": {"mode": "on"}, "inner": {"label": "inner"}},
     }
     assert outer.run(initial_record, config).url == "root+inner"
-

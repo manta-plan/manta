@@ -16,7 +16,7 @@ const defaultProjectPayload = {
 };
 
 const defaultRunPayload = {
-  playbook: "cluster-expand-dispatch",
+  playbook: "expand",
   // TODO: there is no data-record creation in the frontend yet (store upload,
   // or any other way to point a run at real data). These placeholders satisfy
   // the API shape but don't resolve to anything real, so a run created this

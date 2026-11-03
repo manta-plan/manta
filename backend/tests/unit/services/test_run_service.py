@@ -17,7 +17,7 @@ from manta.services.playbook_service import PlaybookService
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
 
-_LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
+_LIBRARY_PLAYBOOK = "expand"
 _RECORD_URL = "s3://bucket/store"
 _REVISION_UUID = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
 
@@ -145,7 +145,7 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
     service = RunService(db=db, playbook_service=_library_playbook_service())
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
-    custom_config = {**default_config, "cluster": {"n_hours": 6}}
+    custom_config = {**default_config, "expansion_overnight": {"period": 2050}}
 
     # When
     service.create_run(
@@ -287,7 +287,10 @@ def test_get_run_returns_dto_for_a_known_run(
     user = _existing_user()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
-    started_with_config = {"globals": {"expansion_mode": "overnight"}, "cluster": {"n_hours": 6}}
+    started_with_config = {
+        "globals": {"expansion_mode": "overnight"},
+        "expansion_overnight": {"period": 2050},
+    }
     fake_client = MagicMock(
         read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED", started_with_config))
     )
@@ -542,7 +545,7 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
     monkeypatch: pytest.MonkeyPatch, mock_db_class
 ) -> None:
     # Given a run of the library playbook under its default config (overnight
-    # expansion), part-way through: cluster done, overnight expansion running
+    # expansion), part-way through: overnight expansion running
     project = _existing_project()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
@@ -551,7 +554,6 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
         monkeypatch,
         _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
         [
-            _fake_block_run("cluster", "cluster_time", "COMPLETED", started),
             _fake_block_run(
                 "expansion_overnight", "overnight_capacity_expansion", "RUNNING", started
             ),
@@ -566,17 +568,15 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
     assert result.uuid == run.uuid
     assert result.run_status == "RUNNING"
     assert [(step.name, step.block, step.status) for step in result.steps] == [
-        ("cluster", "cluster_time", "COMPLETED"),
         ("expansion_overnight", "overnight_capacity_expansion", "RUNNING"),
-        # Its `when` is false for this run's config, so it never runs.
+        # Their `when` is false for this run's config, so they never run.
         ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
-        # It will run, but hasn't been dispatched yet.
-        ("dispatch", "rolling_horizon_dispatch", "NOT_STARTED"),
+        ("expansion_perfect", "perfect_capacity_expansion", "SKIPPED"),
     ]
     assert result.steps[0].start_time == started
-    assert result.steps[0].end_time == started
-    assert result.steps[3].start_time is None
-    assert result.steps[3].end_time is None
+    assert result.steps[0].end_time is None
+    assert result.steps[1].start_time is None
+    assert result.steps[1].end_time is None
 
     # And the block runs were looked up as children of the playbook's flow run
     flow_run_filter = fake_client.read_flow_runs.call_args.kwargs["flow_run_filter"]
@@ -602,10 +602,9 @@ def test_get_run_steps_decides_skipped_steps_from_the_runs_own_config(
 
     # Then the overnight branch is the one skipped this time
     assert {step.name: step.status for step in result.steps} == {
-        "cluster": "NOT_STARTED",
         "expansion_overnight": "SKIPPED",
         "expansion_myopic": "NOT_STARTED",
-        "dispatch": "SKIPPED",
+        "expansion_perfect": "SKIPPED",
     }
 
 
@@ -623,8 +622,10 @@ def test_get_run_steps_reports_the_latest_block_run_of_a_step_run_twice(
         _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
         # Deliberately newest first, so list order can't be what decides it.
         [
-            _fake_block_run("cluster", "cluster_time", "COMPLETED", second),
-            _fake_block_run("cluster", "cluster_time", "FAILED", first),
+            _fake_block_run(
+                "expansion_overnight", "overnight_capacity_expansion", "COMPLETED", second
+            ),
+            _fake_block_run("expansion_overnight", "overnight_capacity_expansion", "FAILED", first),
         ],
     )
     service = RunService(db=db)

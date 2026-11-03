@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A tiny example network, and the shipped playbook run against it.
+"""A tiny example network, and the example playbook run against it.
 
     pixi run -e full python -m playbook_library.examples [store url]
 
 The network is one bus, one generator that can be built, and a day of demand - small
-enough that the whole playbook solves in seconds, but real enough that every block has
-something to do. The network is stored as the root revision of a datarecord store at
+enough that the whole playbook solves in seconds, but real enough that there is
+something to decide. The network is stored as the root revision of a datarecord store at
 the given URL, a local directory or an `s3://` URL; every step adds its result as a
 new revision to that store, so a finished run reads as a lineage of revisions.
 
@@ -27,7 +27,7 @@ from playbook.playbooks.yaml_io import playbook_from_doc
 from playbook_library.playbooks import library_playbooks
 from playbook_library.pypsa_helpers import store_network
 
-EXAMPLE_PLAYBOOK = "cluster-expand-dispatch"
+EXAMPLE_PLAYBOOK = "expand"
 
 
 def build_example_network() -> pypsa.Network:

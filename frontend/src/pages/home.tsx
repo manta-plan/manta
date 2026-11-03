@@ -557,8 +557,8 @@ export function HomePage() {
 function toRunListItem(run: GetRunResponse, owner: string): RunListItem {
   return {
     id: run.uuid,
-    name: "Cluster expand dispatch",
-    playbook: "cluster-expand-dispatch",
+    name: "Expand",
+    playbook: "expand",
     status: normalizeRunStatus(run.status),
     startedAt: run.created_at,
     durationSeconds: null,

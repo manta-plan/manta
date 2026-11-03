@@ -11,22 +11,22 @@ from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterId
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
 
-_LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
-"""Runs cluster → expansion_overnight → dispatch under the library's own
-default config (globals.expansion_mode: overnight) — three real blocks, a
-real PyPSA/HiGHS solve each, dispatched through the actual docker work pool."""
-_STEP_NAMES = ["cluster", "expansion_overnight", "expansion_myopic", "dispatch"]
+_LIBRARY_PLAYBOOK = "expand"
+"""Runs expansion_overnight under the library's own default config
+(globals.expansion_mode: overnight) — one real block, a real PyPSA/HiGHS
+solve, dispatched through the actual docker work pool."""
+_STEP_NAMES = ["expansion_overnight", "expansion_myopic", "expansion_perfect"]
 """Every step of _LIBRARY_PLAYBOOK, in playbook order — including the myopic
-branch, which its default config skips."""
+and perfect branches, which its default config skips."""
 
 # The provisioner registers this deployment as part of bringing the stack up
 # (see docker_services in conftest.py, which waits on it via `--wait`), so this
 # is normally instant — a defensive check with a clear failure message rather
 # than a hard requirement.
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 30.0
-# A real playbook run: three blocks, each its own throwaway container (image
-# pull is a no-op — already built locally — but container start/stop and a
-# real, if tiny, PyPSA/HiGHS solve all add up across three sequential steps.
+# A real playbook run: one block in its own throwaway container (image pull is
+# a no-op — already built locally — but container start/stop and a real
+# PyPSA/HiGHS solve of the example store's last investment period add up).
 _RUN_COMPLETION_TIMEOUT = 240.0
 # Prefect ships flow-run logs to the API asynchronously in batches
 # (`PREFECT_LOGGING_TO_API_BATCH_INTERVAL`, 2s by default on the playbook
@@ -57,7 +57,7 @@ def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, 
 def _create_project(app_server: str, headers: dict[str, str]) -> str:
     response = httpx2.post(
         f"{app_server}/v1/projects",
-        json={"name": "Cluster Expand Dispatch Project", "description": "Integration test project"},
+        json={"name": "Expand Project", "description": "Integration test project"},
         headers=headers,
     )
     assert response.status_code == 201
@@ -201,16 +201,15 @@ def test_create_and_run_a_playbook(
     assert body["playbook"] == _LIBRARY_PLAYBOOK
 
     # And its steps are reported straight away, before any has finished: every
-    # step of the playbook in order, with the myopic branch skipped under the
-    # default config (globals.expansion_mode: overnight)
+    # step of the playbook in order, with the myopic and perfect branches skipped
+    # under the default config (globals.expansion_mode: overnight)
     early_steps = _get_steps(app_server, run_uuid, headers)
     assert [step["name"] for step in early_steps] == _STEP_NAMES
-    assert early_steps[2]["status"] == "SKIPPED"
+    assert [step["status"] for step in early_steps[1:]] == ["SKIPPED", "SKIPPED"]
 
     # And it eventually completes: dispatched through a real Prefect server,
-    # the playbook worker walking the playbook, and three real block
-    # containers — cluster_time, overnight_capacity_expansion,
-    # rolling_horizon_dispatch — each solving the tiny example network for real.
+    # the playbook worker walking the playbook, and a real
+    # overnight_capacity_expansion block container solving the example network.
     status = _wait_for_terminal_status(app_server, run_uuid, headers)
     assert status == "COMPLETED"
 
@@ -225,10 +224,9 @@ def test_create_and_run_a_playbook(
     # And each step reports its own block run's outcome, not just the playbook's
     steps = _get_steps(app_server, run_uuid, headers)
     assert [(step["name"], step["block"], step["status"]) for step in steps] == [
-        ("cluster", "cluster_time", "COMPLETED"),
         ("expansion_overnight", "overnight_capacity_expansion", "COMPLETED"),
         ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
-        ("dispatch", "rolling_horizon_dispatch", "COMPLETED"),
+        ("expansion_perfect", "perfect_capacity_expansion", "SKIPPED"),
     ]
     for step in steps:
         ran = step["status"] == "COMPLETED"
@@ -345,7 +343,7 @@ def test_get_run_returns_the_config_it_was_started_with(
     project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
-    changed_config = {**default_config, "cluster": {"n_hours": 6}}
+    changed_config = {**default_config, "expansion_overnight": {"period": 2050}}
     run_uuid = _create_run(app_server, project_uuid, example_store, headers, config=changed_config)[
         "uuid"
     ]

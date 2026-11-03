@@ -6,8 +6,8 @@
 
 This is the end-to-end check: a network revision goes in, each block writes a new
 revision into the same store, and the last record points at the finished result. The
-playbook is the one this library ships, and the network is the one `examples.py`
-seeds, so what a contributor runs by hand is what is tested here.
+playbooks are the ones this library ships, and the network and example playbook are the
+ones `examples.py` runs, so what a contributor runs by hand is what is tested here.
 """
 
 import json
@@ -22,9 +22,10 @@ import pytest
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
 from playbook.blocks.core import DataRecord
+from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
-from playbook_library.examples import build_example_network
+from playbook_library.examples import EXAMPLE_PLAYBOOK, build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
@@ -34,8 +35,8 @@ from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_ne
 pytestmark = pytest.mark.pypsa
 
 
-def build_playbook():
-    return playbook_from_doc(library_playbooks()["cluster-expand-dispatch"].doc)
+def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
+    return playbook_from_doc(library_playbooks()[name].doc)
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def network_record(store_record) -> DataRecord:
     return store_record(build_example_network(), "start")
 
 
-CONFIG = {
+CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "globals": {"expansion_mode": "overnight"},
     "cluster": {"n_hours": 3},
     "expansion_overnight": {},
@@ -52,8 +53,22 @@ CONFIG = {
 }
 
 
-def test_a_playbook_of_real_blocks_runs_from_one_network_to_another(network_record, ancestry):
-    result = build_playbook().run(network_record, CONFIG)
+def test_the_example_playbook_runs_from_one_network_to_another(network_record, ancestry):
+    result = build_playbook().run(
+        network_record, library_playbooks()[EXAMPLE_PLAYBOOK].default_config
+    )
+
+    assert result.url == network_record.url
+    assert ancestry(result) == [network_record.uuid, result.uuid]
+    n = to_network(result)
+    assert len(n.snapshots) == 24
+    assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
+
+
+def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network_record, ancestry):
+    result = build_playbook("cluster-expand-dispatch").run(
+        network_record, CLUSTER_EXPAND_DISPATCH_CONFIG
+    )
 
     assert result.url == network_record.url
     lineage = ancestry(result)
@@ -68,7 +83,7 @@ def test_a_playbook_of_real_blocks_runs_from_one_network_to_another(network_reco
 
 
 def test_the_network_the_playbook_started_from_is_left_alone(network_record):
-    build_playbook().run(network_record, CONFIG)
+    build_playbook("cluster-expand-dispatch").run(network_record, CLUSTER_EXPAND_DISPATCH_CONFIG)
     n = to_network(network_record)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
