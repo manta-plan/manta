@@ -10,7 +10,6 @@ inputs.
 """
 
 import pytest
-from pydantic import ValidationError
 
 from playbook.blocks.tests.fakes import (
     FakeAddsClustered,
@@ -19,12 +18,9 @@ from playbook.blocks.tests.fakes import (
     FakeRemovesInvestmentPeriod,
     FakeRequiresInvestmentPeriod,
     FakeStrictConfig,
-    RecordingRunner,
 )
-from playbook.playbooks.execution import execute_playbook
 from playbook.playbooks.playbook import Playbook, When
 from playbook.playbooks.validation import PlaybookHasIssuesError
-from playbook.playbooks.yaml_io import StepDoc
 
 
 def test_nested_playbook_unbound_inputs_are_namespaced():
@@ -185,36 +181,3 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
     }
     assert outer.run(initial_record, config).url == "root+inner"
 
-
-def test_nested_steps_reach_the_runner_by_their_qualified_path(initial_record):
-    inner = Playbook(name="inner")
-    inner.add("leaf", FakePassthrough)
-    middle = Playbook(name="middle")
-    middle.add_playbook("region", inner)
-    middle.add("cluster", FakePassthrough)
-    outer = Playbook(name="outer")
-    outer.add("before", FakePassthrough)
-    outer.add_playbook("stage_2030", middle)
-
-    runner = RecordingRunner()
-    execute_playbook(outer, initial_record, {}, runner=runner)
-
-    assert [call["step_name"] for call in runner.calls] == [
-        "before",
-        "stage_2030/region/leaf",
-        "stage_2030/cluster",
-    ]
-
-
-@pytest.mark.parametrize(
-    "add",
-    [
-        lambda: Playbook(name="p").add("a/b", FakePassthrough),
-        lambda: Playbook(name="p").add_playbook("a/b", Playbook(name="child")),
-        lambda: StepDoc(name="a/b", block="fake_passthrough"),
-    ],
-    ids=["block", "nested", "doc"],
-)
-def test_a_step_name_with_a_slash_is_rejected(add):
-    with pytest.raises(ValidationError, match="name"):
-        add()

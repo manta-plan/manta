@@ -27,7 +27,6 @@ from playbook.playbooks.playbook import (
     OutputRef,
     Playbook,
     Step,
-    StepName,
     When,
     as_block_spec,
 )
@@ -52,7 +51,7 @@ class StepDoc(BaseModel):
     what a browser sends, having nowhere to put a file.
     """
 
-    name: StepName
+    name: str
     block: str | None = None
     playbook: "str | PlaybookDoc | None" = None
     when: WhenDoc | None = None

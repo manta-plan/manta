@@ -1,3 +1,4 @@
+import json
 import os
 import socket
 import subprocess
@@ -26,7 +27,8 @@ BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_FILES = FRONTEND_DIR / "dist"
-EXAMPLE_STORE_ROOT_UUID = "3de02051-8918-45ab-a61b-980b3da170c4"
+PUBLIC_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
+EXAMPLE_STORE = "BEL-pre-aggregated"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -159,26 +161,42 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
-def example_store(s3_client: S3Client, app_server: str) -> Callable[[str], dict[str, str]]:
-    """Returns a function that uploads the committed example datarecord store under a
-    project's own prefix (once per project) and returns the run payload fields for its
-    root revision — a real starting record for tests that run a playbook to completion.
+def example_store_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Downloads the example datarecord store from the public test data bucket, once a
+    session (the same store the playbook library's own tests run on)."""
+    store_path = tmp_path_factory.mktemp(EXAMPLE_STORE)
+    prefix = f"{EXAMPLE_STORE}/"
+    listing = httpx2.get(PUBLIC_OBJECTS, params={"prefix": prefix}).raise_for_status().json()
+    for item in listing["items"]:
+        target = store_path / item["name"].removeprefix(prefix)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(httpx2.get(item["mediaLink"]).raise_for_status().content)
+    return store_path
+
+
+@pytest.fixture(scope="session")
+def example_store(
+    s3_client: S3Client, app_server: str, example_store_path: Path
+) -> Callable[[str], dict[str, str]]:
+    """Returns a function that uploads the example datarecord store under a project's own
+    prefix (once per project) and returns the run payload fields for its `inputs`
+    revision — a real starting record for tests that run a playbook to completion.
     `app_server` is an ordering dependency, not a used value: the bucket only exists once
     the app has started (see create_app())."""
     bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
-    store_path = Path(__file__).parent / "fixtures" / "example_store"
+    revisions = json.loads((example_store_path / "revisions.json").read_text())
 
     @cache
     def upload(project_uuid: str) -> dict[str, str]:
         prefix = f"{project_uuid}/example_store"
-        for path in store_path.rglob("*"):
+        for path in example_store_path.rglob("*"):
             if path.is_file():
                 s3_client.upload_file(
-                    str(path), bucket, f"{prefix}/{path.relative_to(store_path).as_posix()}"
+                    str(path), bucket, f"{prefix}/{path.relative_to(example_store_path).as_posix()}"
                 )
         return {
             "data_record_url": f"s3://{bucket}/{prefix}",
-            "revision_uuid": EXAMPLE_STORE_ROOT_UUID,
+            "revision_uuid": revisions["inputs"],
         }
 
     return upload

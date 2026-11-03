@@ -61,7 +61,6 @@
           "type": "object"
         },
         "name": {
-          "pattern": "^[^/]+$",
           "title": "Name",
           "type": "string"
         },

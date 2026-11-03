@@ -35,10 +35,8 @@ class BlockRunner(Protocol):
 
     `execute_playbook` does all the walking and wiring, so a runner never sees a
     playbook or a step: it is handed one block at a time with everything already
-    spelled out. `step_name` is the step's qualified path from the outermost
-    playbook, its enclosing nested-playbook steps joined by `/` (e.g.
-    `stage_2030/cluster`), so it is unique within one run. It comes along only as a
-    label, for naming and finding the work in whatever system the runner drives.
+    spelled out. `step_name` comes along only as a label, for naming the work in
+    whatever system the runner drives.
     """
 
     def run_block(
@@ -85,7 +83,7 @@ def execute_playbook(
     surfacing at a time, steps into the run.
     """
     raise_for_playbook_issues(playbook, config)
-    return _execute(playbook, record, config, runner or LocalBlockRunner(), {}, "")
+    return _execute(playbook, record, config, runner or LocalBlockRunner(), {})
 
 
 def _execute(
@@ -94,7 +92,6 @@ def _execute(
     config: dict,
     runner: BlockRunner,
     external_inputs: dict[str, DataRecord],
-    prefix: str,
 ) -> DataRecord:
     results: dict[str, dict[str, DataRecord]] = {}
 
@@ -104,7 +101,7 @@ def _execute(
         if isinstance(step, BlockStep):
             record = runner.run_block(
                 step.block,
-                step_name=f"{prefix}{step.name}",
+                step_name=step.name,
                 config=config.get(step.name, {}),
                 record=record,
                 inputs=wired,
@@ -116,7 +113,6 @@ def _execute(
                 child_config(config, step.name),
                 runner,
                 wired,
-                f"{prefix}{step.name}/",
             )
 
         results[step.name] = {"output": record}

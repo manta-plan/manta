@@ -5,14 +5,11 @@ from uuid import UUID, uuid4
 import httpx2
 import psycopg
 from keycloak.openid_connection import KeycloakOpenID
-from mypy_boto3_s3.client import S3Client
 from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import SyncPrefectClient
 from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterId
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
-
-from manta.config.s3_config import s3_bucket_name
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 """Runs cluster → expansion_overnight → dispatch under the library's own
@@ -187,7 +184,6 @@ def test_create_and_run_a_playbook(
     prefect_db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
     example_store: Callable[[str], dict[str, str]],
-    s3_client: S3Client,
 ) -> None:
     # Given a project, and the provisioner's deployment registered with the
     # Prefect server
@@ -238,24 +234,6 @@ def test_create_and_run_a_playbook(
         ran = step["status"] == "COMPLETED"
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
-
-    # And each step that ran lists the new revision it output into the run's input
-    # store, and each of those revisions really is in the store
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs", headers=headers)
-    assert outputs_response.status_code == 200
-    outputs = {item["step"]: item for item in outputs_response.json()["items"]}
-    assert set(outputs) == {"cluster", "expansion_overnight", "dispatch"}
-    input_record = example_store(project_uuid)
-    revisions = {output["revision_uuid"] for output in outputs.values()}
-    assert len(revisions) == 3
-    assert input_record["revision_uuid"] not in revisions
-    bucket = s3_bucket_name()
-    store_key = input_record["data_record_url"].removeprefix(f"s3://{bucket}/")
-    for output in outputs.values():
-        assert output["url"] == input_record["data_record_url"]
-        s3_client.head_object(
-            Bucket=bucket, Key=f"{store_key}/revisions/{output['revision_uuid']}.json"
-        )
 
     # And the run reports which playbook it ran, and the config it was started
     # with — the library's own default_config, since none was supplied
@@ -624,6 +602,9 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
     assert outputs_response.status_code == 401
 
+    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
+    assert output_response.status_code == 401
+
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -666,6 +647,11 @@ def test_run_endpoints_reject_malformed_uuid(
     outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
     assert outputs_response.status_code == 422
 
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 422
+
 
 def test_list_runs_rejects_invalid_pagination_params(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -706,6 +692,7 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/{run_uuid}/logs
     #   GET    /runs/{run_uuid}/steps
     #   GET    /runs/{run_uuid}/outputs
+    #   GET    /runs/{run_uuid}/outputs/{name}
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -738,6 +725,11 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
     assert outputs_response.status_code == 404
+
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 404
 
 
 def test_get_run_rejects_non_owner(

@@ -17,7 +17,7 @@ checking it in `validation`, and running it in `execution`.
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,10 +39,6 @@ _REF_RE = re.compile(r"^\$\{steps\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$")
 
 REF_TEMPLATE = "${{steps.{step}.{output}}}"
 """How a reference to another step's result is written down."""
-
-StepName = Annotated[str, Field(pattern=r"^[^/]+$")]
-"""A step's name. `/` is reserved for joining nested step names into a qualified path."""
-
 
 class OutputRef(BaseModel):
     """A reference to a named result of an earlier step: `${steps.<step>.<output>}`."""
@@ -104,7 +100,7 @@ class BlockStep(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    name: StepName
+    name: str
     """This step's name: where its settings live, and where its output is written."""
 
     block: BlockSpec
@@ -136,7 +132,7 @@ class NestedPlaybookStep(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    name: StepName
+    name: str
     playbook: "Playbook"
 
     inputs: dict[str, OutputRef] = Field(default_factory=dict)

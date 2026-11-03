@@ -22,7 +22,6 @@ from runner import flows
 from runner.config import UnknownEnvironmentError
 from runner.flows import (
     BLOCK_DEPLOYMENT,
-    DATA_RECORD_ARTIFACT,
     BlockRunFailedError,
     PrefectBlockRunner,
     catalogue_parameter,
@@ -65,14 +64,6 @@ def _env_images(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
-def published(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """The Prefect artifact API, which `run-block` publishes its output record to."""
-    create = MagicMock()
-    monkeypatch.setattr(flows, "create_table_artifact", create)
-    return create
-
-
 def _completed(result: dict):
     state = SimpleNamespace(
         is_completed=lambda: True, result=lambda: result, type=SimpleNamespace(value="COMPLETED")
@@ -80,9 +71,7 @@ def _completed(result: dict):
     return SimpleNamespace(id="flow-run-id", state=state)
 
 
-def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs(
-    published: MagicMock,
-) -> None:
+def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs() -> None:
     # When: the flow's own body, as it runs inside the block's container
     result = flows.run_block.fn(
         block="runtime_fake",
@@ -98,7 +87,6 @@ def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs(
         "url": "s3://bucket/in.nc|tidy|s3://bucket/earlier.nc",
         "uuid": RECORD_ID,
     }
-    published.assert_called_once_with(key=None, table=[result], description=DATA_RECORD_ARTIFACT)
 
 
 def test_the_block_flow_accepts_a_step_with_nothing_wired_into_it() -> None:

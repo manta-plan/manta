@@ -68,18 +68,19 @@ class GetRunStepsResult(BaseModel):
     run_status: str
 
 
-class RunOutputResult(BaseModel):
-    step: str
-    """The qualified path of the step that produced this output, e.g. `dispatch`, or
-    `stage_2030/cluster` for a step of a nested playbook."""
+class RunOutputFileResult(BaseModel):
+    name: str
+    """The file's path within the run's outputs, e.g. `dispatch.nc` — what it is
+    downloaded by (GET /v1/runs/{uuid}/outputs/{name}). Each step writes
+    `<step name>.<suffix>`."""
 
-    url: str
-    revision_uuid: UUID
+    size: int
+    last_modified: datetime
 
 
 class ListRunOutputsResult(BaseModel):
     uuid: UUID
-    items: list[RunOutputResult]
+    items: list[RunOutputFileResult]
     total: int
 
 

@@ -188,14 +188,14 @@ one for the requests.
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-5. Upload a starting datarecord store to S3 — `tests/integration/fixtures/example_store`
-   works (from `backend/`); its root revision is
-   `3de02051-8918-45ab-a61b-980b3da170c4`:
+5. Copy a starting datarecord store to S3. The `BEL-pre-aggregated` store of the
+   public `manta-public-test-data` bucket works; its `revisions.json` names the
+   revision to start from (`inputs`, `c7525fa8-e4da-4569-bbf3-b76669d1a2df`):
 
    ```bash
    uv run python -c "
-   from pathlib import Path
    import boto3
+   import httpx2
    from botocore.config import Config
    client = boto3.client(
        's3',
@@ -204,10 +204,11 @@ one for the requests.
        aws_secret_access_key='dev',
        config=Config(s3={'addressing_style': 'path'}),
    )
-   store = Path('tests/integration/fixtures/example_store')
-   for path in store.rglob('*'):
-       if path.is_file():
-           client.upload_file(str(path), 'manta', f'manual-test/store/{path.relative_to(store).as_posix()}')
+   prefix = 'BEL-pre-aggregated/'
+   listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
+   for item in listing['items']:
+       key = item['name'].removeprefix(prefix)
+       client.put_object(Bucket='manta', Key=f'manual-test/store/{key}', Body=httpx2.get(item['mediaLink']).content)
    "
    ```
 
@@ -244,7 +245,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "3de02051-8918-45ab-a61b-980b3da170c4"}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "c7525fa8-e4da-4569-bbf3-b76669d1a2df"}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -263,14 +264,9 @@ one for the requests.
 
    Repeat them until the run's `status` is `COMPLETED`.
 
-10. List the run's outputs, one per step that ran, by its step path (`dispatch`,
-    or `stage_2030/dispatch` inside a nested playbook). Each names the store `url`
-    and the `revision_uuid` the step wrote; open that revision with datarecord to
-    look at its data:
-
-    ```bash
-    curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
-    ```
+10. Each step that ran wrote a new revision into the uploaded store, under
+    `manual-test/store/revisions/`. `GET /v1/runs/RUN_UUID/outputs` does not list
+    them yet: it still lists the run's old output folder, which stays empty.
 
 11. Tear down (from `docker/`, in the third terminal). This also stops the
     stack in the first terminal. Stop the backend in the second terminal with

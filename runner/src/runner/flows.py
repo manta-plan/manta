@@ -24,7 +24,6 @@ from playbook.blocks import BlockSpec, Catalogue, DataRecord
 from playbook.blocks.registry import get_block, load_block_sources
 from playbook.playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
-from prefect.artifacts import create_table_artifact
 from prefect.deployments import run_deployment
 
 from runner.config import exec_image
@@ -33,9 +32,6 @@ logger = logging.getLogger(__name__)
 
 BLOCK_FLOW_NAME = "run-block"
 PLAYBOOK_FLOW_NAME = "run-playbook"
-
-DATA_RECORD_ARTIFACT = "manta:datarecord"
-"""The description marking the table artifact in which `run-block` publishes its output record."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -96,17 +92,13 @@ def run_block(
     """Run one block by name, in this container, and report where its result went.
 
     There is one deployment of this flow, shared by every block: the block to run
-    arrives as a parameter, and `step_name` — the qualified path of the step using
-    this block (e.g. `stage_2030/cluster`), distinct from the block itself since the
-    same block can be used by more than one step — only names the flow run above; it
+    arrives as a parameter, and `step_name` — the name of the step using this
+    block within its own playbook, distinct from the block itself since the same
+    block can be used by more than one step — only names the flow run above; it
     plays no part in running the block.
 
     This is the only code in this runtime that runs inside a block's own
     environment, and it does not import a block until asked for one by name.
-
-    The output record is also published as a one-row table artifact described as
-    `DATA_RECORD_ARTIFACT`, so it can be read back through the Prefect API without
-    access to the result store.
     """
     # Nothing has imported this container's block library yet until this call
     # does: MANTA_BLOCK_SOURCES (see config.block_sources) names it, but only
@@ -116,9 +108,7 @@ def run_block(
     block_cls = get_block(block)
     wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
     result = block_cls(block_cls.merge_config(config, wired)).run(DataRecord.from_dict(record))
-    output = result.to_dict()
-    create_table_artifact(key=None, table=[output], description=DATA_RECORD_ARTIFACT)
-    return output
+    return result.to_dict()
 
 
 class PrefectBlockRunner:
