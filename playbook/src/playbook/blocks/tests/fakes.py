@@ -17,6 +17,7 @@ from uuid import UUID, uuid5
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from playbook.blocks.registry import BlockSpec, register
 
+STORE = "s3://bucket/store"
 RECORD_UUID = UUID(int=0)
 
 

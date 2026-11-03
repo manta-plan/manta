@@ -29,7 +29,10 @@ from runner.flows import (
     run_playbook,
 )
 
+STORE = "s3://bucket/store"
 RECORD_ID = "00000000-0000-0000-0000-000000000000"
+EARLIER_ID = "00000000-0000-0000-0000-000000000001"
+OUTPUT_ID = "00000000-0000-0000-0000-000000000002"
 
 
 class _FakeConfig(ConfigSchema):
@@ -47,7 +50,7 @@ class _RuntimeFake(MantaBlock[_FakeConfig]):
     INPUTS = frozenset({"source"})
 
     def run(self, record: DataRecord) -> DataRecord:
-        wired = self.config.source.url if self.config.source else "-"
+        wired = str(self.config.source.uuid) if self.config.source else "-"
         return DataRecord(url=f"{record.url}|{self.config.label}|{wired}", uuid=record.uuid)
 
 
@@ -77,14 +80,14 @@ def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs() -> Non
         block="runtime_fake",
         step_name="cluster",
         config={"label": "tidy"},
-        record={"url": "s3://bucket/in.nc", "uuid": RECORD_ID},
-        inputs={"source": {"url": "s3://bucket/earlier.nc", "uuid": RECORD_ID}},
+        record={"url": STORE, "uuid": RECORD_ID},
+        inputs={"source": {"url": STORE, "uuid": EARLIER_ID}},
     )
 
     # Then: the record, the settings and the wired input all arrived, and the
     # result comes back as plain data, ready to cross a process boundary.
     assert result == {
-        "url": "s3://bucket/in.nc|tidy|s3://bucket/earlier.nc",
+        "url": f"{STORE}|tidy|{EARLIER_ID}",
         "uuid": RECORD_ID,
     }
 
@@ -95,12 +98,12 @@ def test_the_block_flow_accepts_a_step_with_nothing_wired_into_it() -> None:
         block="runtime_fake",
         step_name="cluster",
         config={},
-        record={"url": "in.nc", "uuid": RECORD_ID},
+        record={"url": STORE, "uuid": RECORD_ID},
         inputs=None,
     )
 
     # Then
-    assert result == {"url": "in.nc||-", "uuid": RECORD_ID}
+    assert result == {"url": f"{STORE}||-", "uuid": RECORD_ID}
 
 
 def test_the_block_flow_imports_the_job_containers_block_library_before_looking_anything_up(
@@ -117,7 +120,7 @@ def test_the_block_flow_imports_the_job_containers_block_library_before_looking_
         block="runtime_fake",
         step_name="cluster",
         config={},
-        record={"url": "in.nc", "uuid": RECORD_ID},
+        record={"url": STORE, "uuid": RECORD_ID},
         inputs=None,
     )
 
@@ -128,9 +131,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    dispatch = MagicMock(
-        return_value=_completed({"url": "s3://bucket/steps/cluster.nc", "uuid": RECORD_ID})
-    )
+    dispatch = MagicMock(return_value=_completed({"url": STORE, "uuid": OUTPUT_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
 
     # When
@@ -138,8 +139,8 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         _spec(),
         step_name="cluster",
         config={"label": "tidy"},
-        record=DataRecord(url="s3://bucket/in.nc", uuid=RECORD_ID),
-        inputs={"source": DataRecord(url="s3://bucket/earlier.nc", uuid=RECORD_ID)},
+        record=DataRecord(url=STORE, uuid=RECORD_ID),
+        inputs={"source": DataRecord(url=STORE, uuid=EARLIER_ID)},
     )
 
     # Then: one deployment for every block, with the block named as a parameter,
@@ -150,10 +151,10 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         "block": "runtime_fake",
         "step_name": "cluster",
         "config": {"label": "tidy"},
-        "record": {"url": "s3://bucket/in.nc", "uuid": RECORD_ID},
-        "inputs": {"source": {"url": "s3://bucket/earlier.nc", "uuid": RECORD_ID}},
+        "record": {"url": STORE, "uuid": RECORD_ID},
+        "inputs": {"source": {"url": STORE, "uuid": EARLIER_ID}},
     }
-    assert result == DataRecord(url="s3://bucket/steps/cluster.nc", uuid=RECORD_ID)
+    assert result == DataRecord(url=STORE, uuid=OUTPUT_ID)
 
 
 def test_a_step_that_did_not_complete_fails_the_playbook(
@@ -172,7 +173,7 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
             _spec(),
             step_name="cluster",
             config={},
-            record=DataRecord(url="in.nc", uuid=RECORD_ID),
+            record=DataRecord(url=STORE, uuid=RECORD_ID),
             inputs={},
         )
     message = str(exc_info.value)
@@ -195,14 +196,14 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
             _spec(),
             step_name="cluster",
             config={},
-            record=DataRecord(url="in.nc", uuid=RECORD_ID),
+            record=DataRecord(url=STORE, uuid=RECORD_ID),
             inputs={},
         )
 
 
 def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given two steps whose blocks declare different environments
-    dispatch = MagicMock(return_value=_completed({"url": "out.nc", "uuid": RECORD_ID}))
+    dispatch = MagicMock(return_value=_completed({"url": STORE, "uuid": OUTPUT_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
     runner = PrefectBlockRunner()
 
@@ -212,7 +213,7 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
             _spec(env=env),
             step_name="step",
             config={},
-            record=DataRecord(url="in.nc", uuid=RECORD_ID),
+            record=DataRecord(url=STORE, uuid=RECORD_ID),
             inputs={},
         )
 
@@ -237,7 +238,7 @@ def test_a_step_needing_an_unconfigured_environment_says_so(
             _spec(env="julia"),
             step_name="step",
             config={},
-            record=DataRecord(url="in.nc", uuid=RECORD_ID),
+            record=DataRecord(url=STORE, uuid=RECORD_ID),
             inputs={},
         )
     assert "julia" in str(exc_info.value)
@@ -275,7 +276,7 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     # at all — the real situation for an orchestrator container, which never
     # installs a block library and knows blocks only through the catalogue it was
     # handed. Dispatch is stubbed so the block "runs" without a docker work pool.
-    dispatch = MagicMock(return_value=_completed({"url": "root|tidy|-", "uuid": RECORD_ID}))
+    dispatch = MagicMock(return_value=_completed({"url": f"{STORE}|tidy|-", "uuid": RECORD_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
 
     catalogue = Catalogue(
@@ -293,10 +294,10 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     result = run_playbook.fn(
         playbook=doc.model_dump(mode="json"),
         config={"cluster": {"label": "tidy"}},
-        record={"url": "root", "uuid": RECORD_ID},
+        record={"url": STORE, "uuid": RECORD_ID},
         catalogue=catalogue_parameter(catalogue),
     )
 
     # Then: the block ran through the docker-pool transport, not in this process.
-    assert result == {"url": "root|tidy|-", "uuid": RECORD_ID}
+    assert result == {"url": f"{STORE}|tidy|-", "uuid": RECORD_ID}
     assert dispatch.call_args.kwargs["parameters"]["block"] == "catalogue_only_fake"

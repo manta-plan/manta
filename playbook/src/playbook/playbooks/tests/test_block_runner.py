@@ -13,6 +13,7 @@ driven, so the contract an orchestrator relies on is pinned down here.
 import pytest
 
 from playbook.blocks.tests.fakes import (
+    STORE,
     FakeNeedsUpstream,
     FakePassthrough,
     FakeStrictConfig,
@@ -44,9 +45,9 @@ def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_recor
 
     # The next step receives the record the runner returned for the previous one,
     # and the wired input points at that same result.
-    assert second["record"].url == "root/cluster"
+    assert second["record"].url == f"{STORE}/cluster"
     assert second["inputs"] == {"source": second["record"]}
-    assert result.url == "root/cluster/dispatch"
+    assert result.url == f"{STORE}/cluster/dispatch"
 
 
 def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_record):
@@ -83,7 +84,7 @@ def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_re
         runner=runner,
     )
 
-    assert runner.calls[1]["inputs"]["source"].url == "root/upstream"
+    assert runner.calls[1]["inputs"]["source"].url == f"{STORE}/upstream"
 
 
 def test_a_playbook_with_issues_never_reaches_the_runner(initial_record):

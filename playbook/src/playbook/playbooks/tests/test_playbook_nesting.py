@@ -12,6 +12,7 @@ inputs.
 import pytest
 
 from playbook.blocks.tests.fakes import (
+    STORE,
     FakeAddsClustered,
     FakeNeedsUpstream,
     FakePassthrough,
@@ -149,7 +150,7 @@ def test_a_nested_playbook_executes_within_the_outer_run(initial_record):
         "after": {"label": "after"},
     }
     result = outer.run(initial_record, config)
-    assert result.url == "root+before+inner+after"
+    assert result.url == f"{STORE}+before+inner+after"
 
 
 def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
@@ -162,10 +163,10 @@ def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
     outer.add_playbook("nested", child)
 
     on = {"globals": {"mode": "on"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, on).url == "root+inner"
+    assert outer.run(initial_record, on).url == f"{STORE}+inner"
 
     off = {"globals": {"mode": "off"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, off).url == "root"
+    assert outer.run(initial_record, off).url == STORE
 
 
 def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
@@ -179,4 +180,4 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
         "globals": {"mode": "off"},
         "nested": {"globals": {"mode": "on"}, "inner": {"label": "inner"}},
     }
-    assert outer.run(initial_record, config).url == "root+inner"
+    assert outer.run(initial_record, config).url == f"{STORE}+inner"

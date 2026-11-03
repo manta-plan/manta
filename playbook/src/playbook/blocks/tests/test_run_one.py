@@ -16,9 +16,10 @@ import pytest
 from playbook.blocks.core import DataRecord
 from playbook.blocks.registry import BlockNotRegisteredError
 from playbook.blocks.run_one import RESULT_MARKER, main, parse_result_line, result_line
-from playbook.blocks.tests.fakes import RECORD_UUID, revision_of
+from playbook.blocks.tests.fakes import RECORD_UUID, STORE, revision_of
 
-ROOT = DataRecord(url="root", uuid=RECORD_UUID)
+ROOT = DataRecord(url=STORE, uuid=RECORD_UUID)
+UPSTREAM = DataRecord(url="s3://bucket/upstream", uuid=RECORD_UUID)
 
 
 def _result_from(capsys) -> DataRecord:
@@ -50,11 +51,11 @@ def test_config_and_wired_inputs_reach_the_block(capsys):
             "--config",
             json.dumps({"label": "ignored-by-this-fake"}),
             "--inputs",
-            json.dumps({"source": DataRecord(url="upstream", uuid=RECORD_UUID).to_dict()}),
+            json.dumps({"source": UPSTREAM.to_dict()}),
         ]
     )
 
-    assert _result_from(capsys).url == "root+needs(upstream)"
+    assert _result_from(capsys).url == f"{STORE}+needs({UPSTREAM.url})"
 
 
 def test_an_unknown_block_fails_rather_than_guessing():
@@ -72,7 +73,7 @@ def test_a_wrongly_wired_input_is_refused_before_the_block_runs():
                 "--record",
                 json.dumps(ROOT.to_dict()),
                 "--inputs",
-                json.dumps({"label": DataRecord(url="not-allowed", uuid=RECORD_UUID).to_dict()}),
+                json.dumps({"label": DataRecord(url=STORE, uuid=RECORD_UUID).to_dict()}),
             ]
         )
 
@@ -107,7 +108,7 @@ def test_an_unknown_block_library_is_reported_rather_than_ignored():
 
 
 def test_the_result_line_round_trips_through_its_parser():
-    record = DataRecord(url="s3://bucket/run/step.nc", uuid=RECORD_UUID)
+    record = DataRecord(url=STORE, uuid=RECORD_UUID)
     assert parse_result_line(result_line(record)) == record
 
 
