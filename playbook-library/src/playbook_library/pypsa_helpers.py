@@ -17,7 +17,7 @@ import numpy as np
 import pypsa
 from datarecord import Revision, Workspace
 from datarecord.tools.pypsa import PyPSA
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import DataRecord, DataRecordError, SolveError
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 
@@ -52,7 +52,7 @@ def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pyps
     _, rev = _revision(record)
     missing = PyPSA.verify(rev.record, select=select)
     if missing:
-        raise RuntimeError(missing.describe())
+        raise DataRecordError(missing.describe())
     return PyPSA.build(rev.record, select=select)
 
 
@@ -108,5 +108,5 @@ def optimize_network(
     """
     status, condition = n.optimize(**{**config.model_dump(), **overrides})
     if condition != "optimal":
-        raise RuntimeError(f"PyPSA could not solve the network: {status} ({condition})")
+        raise SolveError(f"PyPSA could not solve the network: {status} ({condition})")
     return n

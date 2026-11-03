@@ -7,9 +7,12 @@
 from playbook.blocks.core import (
     BlockDefinitionError,
     BlockDims,
+    BlockRunError,
     ConfigSchema,
     DataRecord,
+    DataRecordError,
     MantaBlock,
+    SolveError,
 )
 from playbook.blocks.environments import EnvironmentConflictError, EnvironmentSpec, current_env
 from playbook.blocks.registry import (
@@ -36,14 +39,17 @@ __all__ = [
     "BlockDims",
     "BlockNotRegisteredError",
     "BlockRegistrationError",
+    "BlockRunError",
     "BlockSpec",
     "BlockUnavailableError",
     "Catalogue",
     "ConfigSchema",
     "DataRecord",
+    "DataRecordError",
     "EnvironmentConflictError",
     "EnvironmentSpec",
     "MantaBlock",
+    "SolveError",
     "available_blocks",
     "catalogue",
     "current_env",

@@ -15,7 +15,7 @@ import pytest
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
 import pandas as pd
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import DataRecord, SolveError
 
 from playbook_library.examples import build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
@@ -144,6 +144,13 @@ def test_overnight_expansion_builds_one_period_from_what_exists(
 def test_overnight_expansion_needs_the_period_it_is_given(multi_period_record):
     with pytest.raises(ValueError, match="no investment period 2045"):
         _run(OvernightCapacityExpansion, {"period": 2045}, multi_period_record)
+
+
+def test_a_failed_solve_raises_a_solve_error(store_record):
+    n = build_example_network()
+    n.generators.p_nom_max = 0.0
+    with pytest.raises(SolveError, match="infeasible"):
+        _run(OvernightCapacityExpansion, {}, store_record(n, "infeasible"))
 
 
 def _assets(period: int, lifetime: float, component: str = "Generator") -> pypsa.Network:
