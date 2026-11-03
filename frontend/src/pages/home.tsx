@@ -23,7 +23,9 @@ import {
 } from "../features/runs/api";
 import { RunsTable } from "../features/runs/components/runs-table";
 import { StatusFilter } from "../features/runs/components/status-filter";
+import { RunPlaybookDialog } from "../features/runs/components/run-playbook-dialog";
 import { normalizeRunStatus } from "../features/runs/status";
+import type { PlaybookConfig } from "../utils/playbookTypes";
 import type {
   DefaultProject,
   ExpandedRunState,
@@ -54,6 +56,7 @@ export function HomePage() {
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const [searchRunId, setSearchRunId] = useState("");
   const [activeSearchRunId, setActiveSearchRunId] = useState("");
+  const [playbookDialog, setPlaybookDialog] = useState(false);
 
   useEffect(() => {
     const cachedProject = getCachedDefaultProject();
@@ -137,13 +140,18 @@ export function HomePage() {
     },
   ];
 
-  async function handleNewRun() {
+  async function handleDialogPlaybook() {
+    setPlaybookDialog(true);
+  }
+
+  async function handleNewRun(_name: string, playbook: string, config: PlaybookConfig) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project);
+      await createRun(project, { playbook, config });
+      setPlaybookDialog(false);
 
       setSearchRunId("");
       setActiveSearchRunId("");
@@ -383,7 +391,7 @@ export function HomePage() {
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={isLoadingRuns}
-              onClick={handleNewRun}
+              onClick={handleDialogPlaybook}
             >
               {isLoadingRuns ? (
                 <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
@@ -408,6 +416,14 @@ export function HomePage() {
           </div>
         </div>
       </header>
+
+      <RunPlaybookDialog
+        error={runCreationError}
+        isSubmitting={isLoadingRuns}
+        onOpenChange={setPlaybookDialog}
+        onSubmit={handleNewRun}
+        open={playbookDialog}
+      />
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6">
         {runCreationError ? (
