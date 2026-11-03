@@ -34,7 +34,6 @@
       },
       "dims": {
         "adds": [],
-        "forbids": [],
         "removes": [],
         "requires": [
           "snapshot"
@@ -243,7 +242,6 @@
       },
       "dims": {
         "adds": [],
-        "forbids": [],
         "removes": [],
         "requires": [
           "period",
@@ -465,7 +463,6 @@
       },
       "dims": {
         "adds": [],
-        "forbids": [],
         "removes": [],
         "requires": [
           "snapshot"
@@ -674,7 +671,6 @@
       },
       "dims": {
         "adds": [],
-        "forbids": [],
         "removes": [],
         "requires": [
           "period",
@@ -927,7 +923,6 @@
       },
       "dims": {
         "adds": [],
-        "forbids": [],
         "removes": [],
         "requires": [
           "snapshot"

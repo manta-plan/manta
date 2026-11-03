@@ -55,12 +55,11 @@ class DataRecord:
 
 
 class BlockDims(BaseModel):
-    """Dimensions a block requires on, forbids on, adds to, and removes from the model data."""
+    """Dimensions a block requires on, adds to, and removes from the model data."""
 
     model_config = ConfigDict(frozen=True)
 
     requires: frozenset[str] = frozenset()
-    forbids: frozenset[str] = frozenset()
     adds: frozenset[str] = frozenset()
     removes: frozenset[str] = frozenset()
 
