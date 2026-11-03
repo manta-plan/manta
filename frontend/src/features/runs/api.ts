@@ -1,4 +1,5 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
+import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
   CreateProjectResponse,
   CreateRunResponse,
@@ -49,11 +50,17 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject) {
+type CreateRunOptions = {
+  playbook: string;
+  config: PlaybookConfig;
+};
+
+export async function createRun(project: DefaultProject, options?: CreateRunOptions) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      playbook: defaultRunPayload.playbook,
+      playbook: options?.playbook ?? defaultRunPayload.playbook,
+      ...(options === undefined ? {} : { config: options.config }),
       data_record_url: defaultRunPayload.data_record_url,
     });
   } catch (error) {
