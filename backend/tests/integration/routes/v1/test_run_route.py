@@ -26,7 +26,7 @@ and perfect branches, which its default config skips."""
 _DEPLOYMENT_REGISTRATION_TIMEOUT = 30.0
 # A real playbook run: one block in its own throwaway container (image pull is
 # a no-op — already built locally — but container start/stop and a real
-# PyPSA/HiGHS solve of the example store's last investment period add up).
+# PyPSA/HiGHS solve of the example store add up).
 _RUN_COMPLETION_TIMEOUT = 240.0
 # Prefect ships flow-run logs to the API asynchronously in batches
 # (`PREFECT_LOGGING_TO_API_BATCH_INTERVAL`, 2s by default on the playbook

@@ -28,7 +28,7 @@ DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_FILES = FRONTEND_DIR / "dist"
 PUBLIC_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
-EXAMPLE_STORE = "BEL-pre-aggregated"
+EXAMPLE_STORE = "ac-dc-meshed"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:

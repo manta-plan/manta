@@ -188,9 +188,9 @@ one for the requests.
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-5. Copy a starting datarecord store to S3. The `BEL-pre-aggregated` store of the
+5. Copy a starting datarecord store to S3. The `ac-dc-meshed` store of the
    public `manta-public-test-data` bucket works; its `revisions.json` names the
-   revision to start from (`inputs`, `c7525fa8-e4da-4569-bbf3-b76669d1a2df`):
+   revision to start from (`inputs`, `e5f2eacd-ba5c-463c-a663-3017ef904d1d`):
 
    ```bash
    uv run python -c "
@@ -204,7 +204,7 @@ one for the requests.
        aws_secret_access_key='dev',
        config=Config(s3={'addressing_style': 'path'}),
    )
-   prefix = 'BEL-pre-aggregated/'
+   prefix = 'ac-dc-meshed/'
    listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
    for item in listing['items']:
        key = item['name'].removeprefix(prefix)
