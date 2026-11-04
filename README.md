@@ -71,9 +71,6 @@ On startup the backend applies database migrations, creates the storage
 bucket and checks that Prefect is reachable, then serves both the API and the
 frontend you just built. 
 
-The Prefect work pools and deployments that run
-playbooks are set up by the `playbooks-provision` container in the Docker
-stack, not by the backend.
 
 ### 5. Open Manta
 
