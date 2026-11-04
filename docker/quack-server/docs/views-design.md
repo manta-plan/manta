@@ -41,13 +41,13 @@ the obvious match. Separate schemas also keep same-named relations apart:
 
 ## The datarecord schemas
 
-For the 28 October sample (`BEL-pre-aggregated-perfect`, revision `inputs`):
+For `BEL-pre-aggregated-perfect` (the 30 October records), revision `inputs`:
 
 | Schema | Views | Example | Columns |
 |---|---|---|---|
-| `dims` | 10 | `dims.bus` | `bus` |
+| `dims` | 11 | `dims.bus` | `bus` |
 | | | `dims.connection` | `connection` (STRUCT{entity, bus}) |
-| `properties` | 6 | `properties.bus` | `bus, carrier, type, x, y, unit, location, country` |
+| `properties` | 7 | `properties.bus` | `bus, carrier, type, x, y, unit, location, shape_onshore, shape_offshore, country` |
 | | | `properties.entity` | `entity, ctype, carrier, sign, type` |
 | | | `properties.connection` | `connection, role` |
 | `attributes` | 63 | `attributes.capital_cost` | `entity, attribute, breakpoint, value` |

@@ -2,6 +2,39 @@
 
 > **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, default 8000; token `QUACK_TOKEN`, default `devtoken`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
 
+## Running in the dev stack
+
+1. **Records.** They are git-ignored and not in the image: put datarecord stores in `docker/quack-server/data/records` (a store is its folder plus `<store>.json`, optionally `<store>.labels.json`). For the current sample records:
+
+   ```sh
+   mkdir -p docker/quack-server/data/records
+   cp -R <baby-manta>/server/data/records/. docker/quack-server/data/records/
+   ```
+
+2. **Browser extensions (only for browser access).** `static/ext` is git-ignored too. Build it (see "The browser (DuckDB-Wasm)" below) or copy `<baby-manta>/server/static/ext` into `docker/quack-server/static/`. Without it, only `/api/*` works.
+
+3. **Start it** from `docker/`:
+
+   ```sh
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml up --build quack-server
+   ```
+
+   Rebuild with `--build` after changing `static/ext` or the app.
+
+4. **Check it.** The explorer is at <http://localhost:8000/?token=devtoken>, and:
+
+   ```sh
+   curl -H 'Authorization: Bearer devtoken' localhost:8000/api/records
+   ```
+
+| Compose env | Default |
+|---|---|
+| `QUACK_SERVER_PORT` | `8000` (host port) |
+| `QUACK_TOKEN` | `devtoken` |
+| `QUACK_CORS_ORIGINS` | `http://localhost:5173` |
+
+To run without Docker, see "Run" below.
+
 Serves [datarecord](https://github.com/energy-models/datarecord) stores to DuckDB-Wasm in the browser over DuckDB's Quack protocol: every store under one root (a local folder, or a bucket through datarecord's `s3://` remote stores).
 
 ```text
@@ -64,15 +97,17 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 | (file) `<store>.labels.json` | optional, beside the store: per revision name a `name` and `description` to show, and `kind` (`scenario` or `result`) where the guess is wrong; under `_store`, the record's own `name` and `description` |
 | `RECORD_TEST_ROOT` | tests only: also run the remote test against this `s3://` root |
 
-Local records live in `data/` (git-ignored, never in the image). The sample record is the 28 October one (the repo's `.idea/28th-oct-data`, see its README): the `perfect` store, whose `inputs` revision is the base case (`results` is it solved). The tests use it, from `data/records-28oct`. The bucket (`gs://manta-records`) and `data/records` hold the modeller's 30 October records instead (the repo's `.idea/30-october-records`, see its README): perfect foresight, myopic, overnight 2050, all three combined, and the plain input record, with our `.labels.json` beside each. Our copy leaves out the plain record's leftovers from the older layout (`groups/`, `dims/ctype.parquet`, and the undeclared attributes `country` and `obj`). As shared, every copy holds three files from the older layout (`groups/connection.parquet`, `dims/ctype.parquet`, `dims/role.parquet`) that datarecord `1781cfb` refuses, so the server reads a copy without them:
+Local records live in `data/records` (git-ignored, never in the image): the modeller's 30 October records (the repo's `.idea/30-october-records`, see its README), as in the bucket (`gs://manta-records`). They are perfect foresight, myopic, overnight 2050, all three combined, and the plain input record, with our `.labels.json` beside each. The tests use `BEL-pre-aggregated-perfect`: its `inputs` revision is the base case (`results` is it solved), and `patch` a stress test. As shared, the stores hold files from the older layout that datarecord `1781cfb` refuses (`groups/`, `dims/ctype.parquet`, `dims/role.parquet`), and the plain record also holds undeclared attributes (`country`, `obj`), so the server reads a copy without them:
 
 ```sh
 mkdir -p data/records
-cp -R ../.idea/28th-oct-data/BEL-pre-aggregated-perfect{,.json} data/records/
-find data/records \( -path '*/groups' -o -path '*/dims/ctype.parquet' -o -path '*/dims/role.parquet' \) -prune -exec rm -rf {} +
+cp -R ../.idea/30-october-records/BEL-pre-aggregated* data/records/
+find data/records \( -path '*/groups' -o -path '*/dims/ctype.parquet' -o -path '*/dims/role.parquet' \
+  -o -path 'data/records/BEL-pre-aggregated/attributes/country.parquet' -o -path 'data/records/BEL-pre-aggregated/attributes/obj.parquet' \) \
+  -prune -exec rm -rf {} +
 ```
 
-The Scenarios panel's names come from `BEL-pre-aggregated-perfect.labels.json` beside it, which isn't part of the sample:
+The Scenarios panel's names come from each store's `.labels.json` beside it, which isn't part of the shared records. `BEL-pre-aggregated-perfect.labels.json` holds, among others:
 
 ```json
 {
