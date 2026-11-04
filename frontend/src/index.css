@@ -56,6 +56,130 @@
   }
 }
 
+/* Home palette: an ocean-navy dark theme (the default) that the home pages
+   use through the surface-*, accent-*, secondary-*, ok, warn and danger
+   utilities. */
+@theme {
+  --color-surface-950: #05090f;
+  --color-surface-900: #0a121d;
+  --color-surface-800: #0f1a29;
+  --color-surface-700: #16253a;
+  --color-surface-600: #1f3350;
+  --color-surface-500: #2c4763;
+  --color-surface-400: #4d6a89;
+  --color-surface-300: #7391ab;
+  --color-surface-200: #a0b6ca;
+  --color-surface-100: #cddce8;
+  --color-surface-50: #eef4f9;
+
+  /* Brand primary, anchored on the logo mark's #2c73ff. 600 steps darker so
+     white 13px text on button fills clears WCAG AA. */
+  --color-accent-700: #1846ab;
+  --color-accent-600: #225dd9;
+  --color-accent-500: #2c73ff;
+  --color-accent-400: #5699ff;
+  --color-accent-300: #8ec1ff;
+
+  /* Brand secondary, muted from #00a896 toward the navy surfaces. */
+  --color-secondary-700: #0f5850;
+  --color-secondary-600: #146b63;
+  --color-secondary-500: #1c8078;
+  --color-secondary-400: #3a9c92;
+  --color-secondary-300: #6ebcb2;
+
+  --color-ok-500: #61c568;
+  --color-warn-500: #d9a521;
+  --color-danger-400: #e86a6a;
+  --color-danger-500: #dc4545;
+}
+
+/* Redefining the custom properties re-themes every component with no class
+   changes. Written unlayered so they win over Tailwind's theme layer. */
+:root[data-theme="dark"] {
+  --color-surface-950: #05090f;
+  --color-surface-900: #0a121d;
+  --color-surface-800: #0f1a29;
+  --color-surface-700: #16253a;
+  --color-surface-600: #1f3350;
+  --color-surface-500: #2c4763;
+  --color-surface-400: #4d6a89;
+  --color-surface-300: #7391ab;
+  --color-surface-200: #a0b6ca;
+  --color-surface-100: #cddce8;
+  --color-surface-50: #eef4f9;
+}
+
+:root[data-theme="light"] {
+  --color-surface-950: #ffffff;
+  --color-surface-900: #f8fafc;
+  --color-surface-800: #ffffff;
+  --color-surface-700: #f1f5f9;
+  --color-surface-600: #cbd5e1;
+  --color-surface-500: #b0bccb;
+  --color-surface-400: #94a3b8;
+  --color-surface-300: #64748b;
+  --color-surface-200: #475569;
+  --color-surface-100: #1e293b;
+  --color-surface-50: #0f172a;
+}
+
+/* The Manta wordmark ships as dark-on-transparent; flip it for dark surfaces. */
+:root[data-theme="dark"] .manta-wordmark {
+  filter: invert(1);
+}
+
+.manta-driver-popover.driver-popover {
+  border: 1px solid var(--color-surface-600);
+  border-radius: 6px;
+  background: var(--color-surface-900);
+  color: var(--color-surface-100);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 35%);
+}
+
+.manta-driver-popover .driver-popover-title {
+  color: var(--color-surface-50);
+  font-size: 13px;
+}
+
+.manta-driver-popover .driver-popover-description,
+.manta-driver-popover .driver-popover-progress-text {
+  color: var(--color-surface-400);
+  font-size: 12px;
+}
+
+.manta-driver-popover .driver-popover-prev-btn,
+.manta-driver-popover .driver-popover-next-btn {
+  border: 1px solid var(--color-surface-600);
+  border-radius: 4px;
+  background: var(--color-surface-800);
+  color: var(--color-surface-100);
+  text-shadow: none;
+}
+
+.manta-driver-popover .driver-popover-next-btn {
+  border-color: var(--color-accent-600);
+  background: var(--color-accent-600);
+  color: white;
+}
+
+.manta-driver-popover .driver-popover-prev-btn:hover,
+.manta-driver-popover .driver-popover-prev-btn:focus {
+  border-color: var(--color-surface-500);
+  background: var(--color-surface-700);
+  color: var(--color-surface-50);
+}
+
+.manta-driver-popover .driver-popover-next-btn:hover,
+.manta-driver-popover .driver-popover-next-btn:focus {
+  border-color: var(--color-accent-500);
+  background: var(--color-accent-500);
+  color: white;
+}
+
+.manta-driver-popover .driver-popover-close-btn {
+  color: var(--color-surface-400);
+}
+
 body {
   background: var(--color-background);
   color: var(--color-text);
