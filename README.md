@@ -8,7 +8,7 @@ For more details on the vision and roadmap, see our website: https://manta-plan.
 > [!NOTE]
 > This repository and the instructions below are for **developers**. If you
 > want to use Manta or join as a beta tester, please wait for the MVP, which
-> will be available at a public URL at the end of this year.
+> will be available at a public URL in the near future.
 
 ## Running Manta locally
 
@@ -67,9 +67,13 @@ uv sync
 uv run manta
 ```
 
-The backend applies database migrations, creates the storage bucket and
-registers with Prefect on startup, then serves both the API and the frontend
-you just built.
+On startup the backend applies database migrations, creates the storage
+bucket and checks that Prefect is reachable, then serves both the API and the
+frontend you just built. 
+
+The Prefect work pools and deployments that run
+playbooks are set up by the `playbooks-provision` container in the Docker
+stack, not by the backend.
 
 ### 5. Open Manta
 
@@ -88,8 +92,18 @@ happening under the hood:
 
 ### Stopping
 
-To stop Docker containers and also delete all local
-data (database, stored files, Keycloak state), run from the repo root:
+To stop Docker containers, press
+`Ctrl+C` in their terminal, or run from the repo root:
+
+```bash
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down
+```
+
+This will not delete your local data (database, stored files, Keycloak state) so the next
+`up` command picks up where you left off.
+
+To wipe everything and start from scratch next time, add `-v` to also delete
+the data volumes:
 
 ```bash
 docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down -v
