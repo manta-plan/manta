@@ -11981,7 +11981,7 @@ packages:
 - pypi: ./
   name: playbook-library
   requires_dist:
-  - playbook[s3]
+  - playbook
   - pyyaml>=6
   - pypsa>=1.4,<2 ; extra == 'pypsa'
   - highspy ; extra == 'pypsa'

@@ -18,8 +18,7 @@ authors = [
     { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
 ]
 dependencies = [
-    # Records live in object storage when run under Manta, hence the s3 extra.
-    "playbook[s3]",
+    "playbook",
     "pyyaml>=6",
 ]
 
