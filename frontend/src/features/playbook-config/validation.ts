@@ -1,5 +1,6 @@
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import type { BlockConfigSchema, PlaybookStep } from "../../utils/playbookTypes";
+import { exactlyOneErrors, exactlyOneOf } from "./exclusiveSettings";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
 ajv.addKeyword("x-manta-input");
@@ -50,6 +51,12 @@ export function validateStep(step: PlaybookStep, value: unknown): FieldError[] {
   }
 
   const validate = validatorFor(step.block_config_schema);
+  const schemaErrors = validate(value) ? [] : (validate.errors ?? []).map(toFieldError);
+  const groups = step.block === null ? undefined : exactlyOneOf[step.block];
 
-  return validate(value) ? [] : (validate.errors ?? []).map(toFieldError);
+  if (groups === undefined || typeof value !== "object" || value === null) {
+    return schemaErrors;
+  }
+
+  return [...schemaErrors, ...exactlyOneErrors(groups, value as Record<string, unknown>)];
 }

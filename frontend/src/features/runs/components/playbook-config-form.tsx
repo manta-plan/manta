@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getIn } from "../../playbook-config/conditions";
+import { blockedSettings } from "../../playbook-config/exclusiveSettings";
 import { isObject, setIn, withKey } from "../../../utils/jsonObject";
 import {
   collectGroups,
@@ -38,8 +39,16 @@ export function PlaybookConfigForm({
   inputs = {},
   defaults = {},
   errors = [],
+  exclusive = [],
 }: PlaybookConfigFormProps) {
-  const context: FormContext = { defs: schema.$defs ?? {}, idPrefix, inputs, defaults, errors };
+  const context: FormContext = {
+    defs: schema.$defs ?? {},
+    idPrefix,
+    inputs,
+    defaults,
+    errors,
+    exclusive,
+  };
   const groups = collectGroups(schema.properties ?? {}, context.defs);
   const properties = schema.properties ?? {};
 
@@ -96,6 +105,9 @@ function ObjectFields({
     );
   }
 
+  // Only the step's own top-level settings can exclude each other.
+  const blocked = path.length === 0 ? blockedSettings(context.exclusive, value) : new Set<string>();
+
   return (
     <div className="grid gap-4">
       {entries.map(([key, property]) => {
@@ -118,6 +130,7 @@ function ObjectFields({
           <Field
             context={context}
             id={id}
+            isBlocked={blocked.has(key)}
             isRequired={required.includes(key)}
             key={key}
             name={key}
@@ -158,7 +171,17 @@ function ReadOnlyField({ id, name, property, source }: ReadOnlyFieldProps) {
   );
 }
 
-function Field({ context, id, name, path, isRequired, resolved, value, onChange }: FieldProps) {
+function Field({
+  context,
+  id,
+  name,
+  path,
+  isRequired,
+  isBlocked = false,
+  resolved,
+  value,
+  onChange,
+}: FieldProps) {
   const { kind, schema, nullable, label, description } = resolved;
   const placeholder =
     resolved.hasDefault && resolved.defaultValue !== null ? String(resolved.defaultValue) : "";
@@ -210,6 +233,11 @@ function Field({ context, id, name, path, isRequired, resolved, value, onChange 
   const footer = (
     <>
       {description === null ? null : <p className="text-text-secondary text-xs">{description}</p>}
+      {isBlocked ? (
+        <p className="text-text-secondary text-xs">
+          Unavailable while the other option is set. Reset it first.
+        </p>
+      ) : null}
       {error === null ? null : <p className="text-xs text-red-700">{error}</p>}
     </>
   );
@@ -222,7 +250,7 @@ function Field({ context, id, name, path, isRequired, resolved, value, onChange 
           aria-label={label}
           checked={typeof value === "boolean" ? value : resolved.defaultValue === true}
           className="accent-primary size-4"
-          disabled={isNull}
+          disabled={isNull || isBlocked}
           id={id}
           onChange={(event) => onChange(event.target.checked)}
           type="checkbox"
@@ -238,7 +266,7 @@ function Field({ context, id, name, path, isRequired, resolved, value, onChange 
         {heading}
         <select
           className={inputClassName}
-          disabled={isNull}
+          disabled={isNull || isBlocked}
           id={id}
           onChange={(event) => onChange(event.target.value === "" ? cleared : event.target.value)}
           value={typeof value === "string" ? value : ""}
@@ -261,7 +289,7 @@ function Field({ context, id, name, path, isRequired, resolved, value, onChange 
         {heading}
         <input
           className={inputClassName}
-          disabled={isNull}
+          disabled={isNull || isBlocked}
           id={id}
           max={schema.maximum}
           min={schema.minimum}
@@ -284,7 +312,7 @@ function Field({ context, id, name, path, isRequired, resolved, value, onChange 
         {heading}
         <input
           className={inputClassName}
-          disabled={isNull}
+          disabled={isNull || isBlocked}
           id={id}
           onChange={(event) => onChange(event.target.value === "" ? cleared : event.target.value)}
           placeholder={placeholder}

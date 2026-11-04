@@ -30,6 +30,7 @@ import {
   isStepActive,
   setAtPath,
 } from "../../playbook-config/conditions";
+import { exactlyOneOf } from "../../playbook-config/exclusiveSettings";
 import { validateStep } from "../../playbook-config/validation";
 import { humanize } from "../../../utils/jsonSchema";
 import { PlaybookConfigForm } from "./playbook-config-form";
@@ -487,6 +488,9 @@ export function RunPlaybookDialog({
                     }
                     defaults={playbookDetail?.default_config[selectedStep.name]}
                     errors={stepErrors.get(selectedStep.name)}
+                    exclusive={
+                      selectedStep.block === null ? undefined : exactlyOneOf[selectedStep.block]
+                    }
                     inputs={selectedStep.inputs}
                     schema={selectedStep.block_config_schema}
                     value={configValues[selectedStep.name] ?? {}}

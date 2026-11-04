@@ -13,6 +13,8 @@ export type FormContext = {
   /** The step's settings in the playbook's default config, to spot edits. */
   defaults: JsonObject;
   errors: FieldError[];
+  /** Groups of top-level settings of which exactly one may be set. */
+  exclusive: string[][];
 };
 
 export type PlaybookConfigFormProps = {
@@ -24,6 +26,7 @@ export type PlaybookConfigFormProps = {
   inputs?: Record<string, string>;
   defaults?: JsonObject;
   errors?: FieldError[];
+  exclusive?: string[][];
 };
 
 export type ObjectFieldsProps = {
@@ -52,6 +55,8 @@ export type FieldProps = {
   isRequired: boolean;
   resolved: ResolvedSchema;
   value: unknown;
+  /** Another setting it excludes is set: reset that one first. */
+  isBlocked?: boolean;
   /** undefined removes the setting, so the block's own default applies. */
   onChange: (value: unknown) => void;
 };
