@@ -16,9 +16,8 @@ from typing import Any
 import numpy as np
 import pypsa
 from datarecord import Revision, Workspace
-from datarecord.tools.base import UnsupportedRecordError
 from datarecord.tools.pypsa import PyPSA
-from playbook.blocks.core import DataRecord, DataRecordError
+from playbook.blocks.core import DataRecord
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 
@@ -33,10 +32,7 @@ def nominal_attr(component_name: str) -> str:
 
 def _revision(record: DataRecord) -> tuple[Workspace, Revision]:
     ws = Workspace()
-    try:
-        return ws, ws.store(record.url).revision(record.uuid)
-    except KeyError as exc:
-        raise DataRecordError(exc.args[0]) from exc
+    return ws, ws.store(record.url).revision(record.uuid)
 
 
 def store_network(n: pypsa.Network, url: str) -> DataRecord:
@@ -54,10 +50,10 @@ def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pyps
     single investment period.
     """
     _, rev = _revision(record)
-    try:
-        return PyPSA.build(rev.record, select=select)
-    except UnsupportedRecordError as exc:
-        raise DataRecordError(str(exc)) from exc
+    missing = PyPSA.verify(rev.record, select=select)
+    if missing:
+        raise RuntimeError(missing.describe())
+    return PyPSA.build(rev.record, select=select)
 
 
 def investment_periods(record: DataRecord) -> list[int]:
