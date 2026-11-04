@@ -21,7 +21,7 @@ import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import DataRecord, DataRecordError
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
@@ -87,6 +87,20 @@ def test_the_network_the_playbook_started_from_is_left_alone(network_record):
     n = to_network(network_record)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
+
+
+@pytest.mark.parametrize(
+    ("url", "uuid"),
+    [("missing-store", None), (None, UUID(int=0))],
+    ids=["missing-store", "missing-revision"],
+)
+def test_a_record_pointing_at_nothing_raises_a_datarecord_error(network_record, url, uuid):
+    record = DataRecord(
+        url=network_record.url + url if url else network_record.url,
+        uuid=uuid or network_record.uuid,
+    )
+    with pytest.raises(DataRecordError, match="No revision"):
+        to_network(record)
 
 
 BEL_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
