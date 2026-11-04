@@ -19,10 +19,11 @@ const defaultProjectPayload = {
 const defaultRunPayload = {
   playbook: "cluster-expand-dispatch",
   // TODO: there is no data-record creation in the frontend yet (file upload,
-  // or any other way to point a run at real data). This placeholder satisfies
-  // the API shape but doesn't resolve to anything real, so a run created this
-  // way won't complete — replace once that functionality exists.
-  data_record_url: "s3://manta/placeholder/input.nc",
+  // or any other way to point a run at real data). For now this points at the
+  // example network uploaded by step 5 of backend/README.md ("manual-test"), so
+  // that file must exist in the dev object store or the run fails at its first
+  // block. Replace once that functionality exists.
+  data_record_url: "s3://manta/manual-test/input.nc",
 };
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
