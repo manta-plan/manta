@@ -1,9 +1,15 @@
-import { Button } from "@base-ui/react/button";
 import type { SubmitEvent } from "react";
 import { useState } from "react";
-import { FiAlertCircle, FiArrowRight, FiLock, FiRefreshCw, FiUser } from "react-icons/fi";
+import { FiAlertCircle } from "react-icons/fi";
 import { ApiError } from "../api/manta";
 import { login } from "../features/auth/api";
+import { AuthButton } from "../features/auth/components/auth-button";
+import { AuthTextField } from "../features/auth/components/auth-text-field";
+import { MantaLogo } from "../features/auth/components/manta-logo";
+
+// The photo's average color, so the page never flashes from the app
+// background to the photo once it loads on a slow network.
+const authBackgroundColor = "#42645e";
 
 export function LoginPage() {
   const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
@@ -33,105 +39,65 @@ export function LoginPage() {
 
   return (
     <main
-      className="bg-primary text-text relative flex min-h-svh items-center justify-center overflow-hidden bg-cover bg-center px-6 py-10"
-      style={{ backgroundImage: "url('/auth-background-placeholder.jpg')" }}
+      className="relative flex min-h-svh w-full items-center justify-center overflow-hidden px-6 py-10"
+      style={{ backgroundColor: authBackgroundColor }}
     >
       <img
         src="/auth-background.jpg"
         alt=""
-        className={`absolute inset-0 size-full object-cover transition-[filter,opacity,transform] duration-700 ease-out ${
-          isBackgroundLoaded ? "blur-0 scale-100 opacity-100" : "scale-105 opacity-0 blur-md"
-        }`}
         aria-hidden="true"
+        fetchPriority="high"
         onLoad={() => setIsBackgroundLoaded(true)}
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
+          isBackgroundLoaded ? "opacity-100" : "opacity-0"
+        }`}
       />
-      <div
-        className="absolute inset-0 bg-[linear-gradient(135deg,rgba(0,58,104,0.78),rgba(0,168,150,0.42),rgba(15,23,42,0.66))]"
-        aria-hidden="true"
-      />
+      <div className="absolute inset-0 bg-slate-900/25" aria-hidden="true" />
 
-      <section className="bg-surface/95 shadow-primary/35 relative w-full max-w-md rounded-lg border border-white/30 p-6 shadow-2xl backdrop-blur motion-safe:animate-[auth-card-enter_480ms_ease-out] sm:p-8">
-        <div className="mb-8">
-          <img
-            src="/auth-logo.png"
-            alt="MANTA Energy"
-            className="mx-auto mb-6 h-24 w-auto object-contain"
-          />
-          <h1 className="text-text text-center text-3xl font-semibold tracking-normal">
-            Sign in to your account
-          </h1>
-          <p className="text-text-secondary mt-3 text-center text-sm leading-6">
-            Model smarter energy systems with MANTA
-          </p>
+      {/* A fixed light card: the wordmark's dark text needs a guaranteed light backdrop. */}
+      <section className="auth-card-enter relative w-full max-w-sm rounded-lg bg-white/95 p-6 shadow-2xl backdrop-blur-sm">
+        <div className="auth-logo-enter mb-6 flex justify-center">
+          <MantaLogo markHeight={28} />
         </div>
 
-        <form className="grid gap-5" onSubmit={handleSubmit}>
-          <label className="text-text grid gap-2 text-sm font-medium" htmlFor="username">
-            Username
-            <span className="focus-within:border-secondary focus-within:ring-secondary/20 border-border bg-surface flex items-center gap-3 rounded-md border px-3 py-2.5 ring-0 transition focus-within:ring-4">
-              <FiUser className="text-muted size-4" aria-hidden="true" />
-              <input
-                className="text-text placeholder:text-muted min-w-0 flex-1 bg-transparent text-base outline-none"
-                id="username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                required
-                placeholder="Enter username"
-              />
-            </span>
-          </label>
+        <h1 className="mb-4 text-center text-[13px] font-medium text-slate-500">
+          Log in to your account
+        </h1>
 
-          <label className="text-text grid gap-2 text-sm font-medium" htmlFor="password">
-            Password
-            <span className="focus-within:border-secondary focus-within:ring-secondary/20 border-border bg-surface flex items-center gap-3 rounded-md border px-3 py-2.5 ring-0 transition focus-within:ring-4">
-              <FiLock className="text-muted size-4" aria-hidden="true" />
-              <input
-                className="text-text placeholder:text-muted min-w-0 flex-1 bg-transparent text-base outline-none"
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                placeholder="Enter password"
-              />
-            </span>
-          </label>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <AuthTextField
+            label="Username"
+            name="username"
+            type="text"
+            autoComplete="username"
+            placeholder="Enter username"
+          />
+          <AuthTextField
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+          />
 
-          <div className="flex items-center text-sm">
-            <label className="text-text-secondary flex items-center gap-2" htmlFor="remember">
-              <input
-                className="accent-secondary border-border size-4 rounded"
-                id="remember"
-                name="remember"
-                type="checkbox"
-              />
-              Remember me
-            </label>
-          </div>
+          <label className="flex items-center gap-2 text-[12px] text-slate-500">
+            <input className="accent-secondary size-3.5 rounded" name="remember" type="checkbox" />
+            Remember me
+          </label>
 
           {signInError !== null ? (
             <p
-              className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700"
+              className="flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700"
               role="alert"
             >
-              <FiAlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <FiAlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
               {signInError}
             </p>
           ) : null}
 
-          <Button
-            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/25 inline-flex items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-            disabled={isSigningIn}
-            type="submit"
-          >
-            {isSigningIn ? "Signing in..." : "Sign in"}
-            {isSigningIn ? (
-              <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FiArrowRight className="size-4" aria-hidden="true" />
-            )}
-          </Button>
+          <AuthButton type="submit" variant="primary" disabled={isSigningIn} className="mt-2">
+            {isSigningIn ? "Signing in..." : "Log In"}
+          </AuthButton>
         </form>
       </section>
     </main>
