@@ -263,7 +263,7 @@ services:
       CORS_ORIGINS: ${QUACK_CORS_ORIGINS:-http://localhost:5173}
       RECORDS_ROOT: /srv/data/records
     ports:
-      - "${QUACK_SERVER_PORT:-8000}:8080"
+      - "${QUACK_SERVER_PORT:-8010}:8080"
     volumes:
       - ./quack-server/data/records:/srv/data/records:ro
     healthcheck:

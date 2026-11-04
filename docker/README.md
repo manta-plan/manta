@@ -39,7 +39,7 @@ truth instead of two.
   browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
   Inspect / Report tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
-  Listens on `localhost:${QUACK_SERVER_PORT:-8000}`, token `${QUACK_TOKEN:-devtoken}`.
+  Listens on `localhost:${QUACK_SERVER_PORT:-8010}`, token `${QUACK_TOKEN:-devtoken}`.
   It reads records from `docker/quack-server/data/records` (git-ignored): put
   datarecord stores there before starting, otherwise it serves nothing.
 

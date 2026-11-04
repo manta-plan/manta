@@ -1,6 +1,6 @@
 # Record server (temporary)
 
-> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, default 8000; token `QUACK_TOKEN`, default `devtoken`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
+> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, default 8010; token `QUACK_TOKEN`, default `devtoken`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
 
 ## Running in the dev stack
 
@@ -21,15 +21,15 @@
 
    Rebuild with `--build` after changing `static/ext` or the app.
 
-4. **Check it.** The explorer is at <http://localhost:8000/?token=devtoken>, and:
+4. **Check it.** The explorer is at <http://localhost:8010/?token=devtoken>, and:
 
    ```sh
-   curl -H 'Authorization: Bearer devtoken' localhost:8000/api/records
+   curl -H 'Authorization: Bearer devtoken' localhost:8010/api/records
    ```
 
 | Compose env | Default |
 |---|---|
-| `QUACK_SERVER_PORT` | `8000` (host port) |
+| `QUACK_SERVER_PORT` | `8010` (host port; not 8000, which the backend uses) |
 | `QUACK_TOKEN` | `devtoken` |
 | `QUACK_CORS_ORIGINS` | `http://localhost:5173` |
 
@@ -38,7 +38,7 @@ To run without Docker, see "Run" below.
 Serves [datarecord](https://github.com/energy-models/datarecord) stores to DuckDB-Wasm in the browser over DuckDB's Quack protocol: every store under one root (a local folder, or a bucket through datarecord's `s3://` remote stores).
 
 ```text
-browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8000 ──POST /quack relay──▶ Quack :9494 (localhost only)
+browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ──POST /quack relay──▶ Quack :9494 (localhost only)
                                                         │                                     │
                                                         └── /api/*                            └── in-process DuckDB: one view per record relation
 ```
@@ -69,12 +69,12 @@ Needs `uv`; datarecord comes from GitHub (see Findings).
 ```sh
 cd server
 uv sync
-QUACK_TOKEN=devtoken uv run uvicorn app.main:app --port 8000
+QUACK_TOKEN=devtoken uv run uvicorn app.main:app --port 8010
 ```
 
-Then open <http://localhost:8000/?token=devtoken>. Without `QUACK_TOKEN`, a random token is generated and the log prints the explorer's URL. Quack wants a token of at least 4 characters.
+Then open <http://localhost:8010/?token=devtoken>. Without `QUACK_TOKEN`, a random token is generated and the log prints the explorer's URL. Quack wants a token of at least 4 characters.
 
-`uv run --env-file .env uvicorn app.main:app --port 8000 --reload --reload-dir app` reads `QUACK_TOKEN` (the app's `VITE_RECORD_TOKEN`) and the bucket key from `server/.env`. The records stay local (`data/records`) unless `RECORDS_ROOT=s3://manta-records` is set too; far from the bucket's region, opening from it takes minutes.
+`uv run --env-file .env uvicorn app.main:app --port 8010 --reload --reload-dir app` reads `QUACK_TOKEN` (the app's `VITE_RECORD_TOKEN`) and the bucket key from `server/.env`. The records stay local (`data/records`) unless `RECORDS_ROOT=s3://manta-records` is set too; far from the bucket's region, opening from it takes minutes.
 
 The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks a record in its header (`?record=` keeps it) and has two tabs:
 
@@ -127,7 +127,7 @@ From Python:
 import duckdb
 con = duckdb.connect()
 con.sql("LOAD quack")
-con.sql("ATTACH 'quack:localhost:8000' AS r (TOKEN 'devtoken')")
+con.sql("ATTACH 'quack:localhost:8010' AS r (TOKEN 'devtoken')")
 con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 ```
 
