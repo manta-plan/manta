@@ -76,6 +76,14 @@ describe("validation", () => {
     expect(errors.map((e) => e.path)).toContain("nope");
   });
 
+  it("rejects both n_hours and segments set, or neither", () => {
+    const both = validateStep(step("cluster"), { n_hours: 3, segments: 15 });
+    const neither = validateStep(step("cluster"), {});
+    expect(both.map((e) => e.message)).toContain("Set exactly one of segments or n_hours");
+    expect(neither.map((e) => e.message)).toContain("Set exactly one of segments or n_hours");
+    expect(validateStep(step("cluster"), { segments: 15 })).toEqual([]);
+  });
+
   it("does not require a linked input", () => {
     expect(validateStep(step("dispatch"), {})).toEqual([]);
   });
