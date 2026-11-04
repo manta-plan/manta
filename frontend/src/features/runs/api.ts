@@ -1,4 +1,5 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
+import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
   CreateProjectResponse,
   CreateRunResponse,
@@ -18,10 +19,11 @@ const defaultProjectPayload = {
 const defaultRunPayload = {
   playbook: "cluster-expand-dispatch",
   // TODO: there is no data-record creation in the frontend yet (file upload,
-  // or any other way to point a run at real data). This placeholder satisfies
-  // the API shape but doesn't resolve to anything real, so a run created this
-  // way won't complete — replace once that functionality exists.
-  data_record_url: "s3://manta/placeholder/input.nc",
+  // or any other way to point a run at real data). For now this points at the
+  // example network uploaded by step 5 of backend/README.md ("manual-test"), so
+  // that file must exist in the dev object store or the run fails at its first
+  // block. Replace once that functionality exists.
+  data_record_url: "s3://manta/manual-test/input.nc",
 };
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
@@ -49,11 +51,17 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject) {
+type CreateRunOptions = {
+  playbook: string;
+  config: PlaybookConfig;
+};
+
+export async function createRun(project: DefaultProject, options?: CreateRunOptions) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      playbook: defaultRunPayload.playbook,
+      playbook: options?.playbook ?? defaultRunPayload.playbook,
+      ...(options === undefined ? {} : { config: options.config }),
       data_record_url: defaultRunPayload.data_record_url,
     });
   } catch (error) {
