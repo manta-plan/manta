@@ -255,7 +255,11 @@ services:
   # integrated into the backend (issue #223). Reads every store under
   # ./quack-server/data/records (git-ignored; see quack-server/README.md).
   # Remove once the backend serves Quack itself.
+  #
+  # Opt-in: a plain `up` (and the integration test stack) skips it. Start it
+  # with `--profile temporary-quack-setup`, or by naming the service.
   quack-server:
+    profiles: [temporary-quack-setup]
     build:
       context: ./quack-server
     environment:

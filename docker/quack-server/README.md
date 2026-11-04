@@ -16,8 +16,10 @@
 3. **Start it** from `docker/`:
 
    ```sh
-   docker compose --env-file ../backend/.env -f compose-dev-services.yaml up --build quack-server
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile temporary-quack-setup up --build quack-server
    ```
+
+   The service is in the opt-in compose profile `temporary-quack-setup`, so a plain `up` (and the integration tests) don't build or start it. To run the whole stack with it, drop the service name: `… --profile temporary-quack-setup up --build`.
 
    Rebuild with `--build` after changing `static/ext` or the app.
 

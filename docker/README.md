@@ -35,7 +35,9 @@ truth instead of two.
   database (not SQLite). UI at [localhost:4200](http://localhost:4200).
 - **keycloak** - identity provider, you can access it with bootstrap credentials
   via [localhost:8080](http://localhost:8080)
-- **quack-server** — *temporary* record server that exposes a datarecord to the
+- **quack-server** — *temporary*, **opt-in** (compose profile
+  `temporary-quack-setup`: add `--profile temporary-quack-setup` to the `up`
+  command above, or name the service) record server that exposes a datarecord to the
   browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
   Inspect / Report tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
