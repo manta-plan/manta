@@ -1161,17 +1161,15 @@ name = "playbook-library"
 version = "0.1.0"
 source = { editable = "../playbook-library" }
 dependencies = [
+    { name = "playbook" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "datarecord", extras = ["remote", "pypsa"], marker = "extra == 'pypsa'", git = "https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff" },
-    { name = "highspy", marker = "extra == 'pypsa'" },
-    { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.4,<2" },
+    { name = "playbook" },
     { name = "pyyaml", specifier = ">=6" },
 ]
-provides-extras = ["pypsa"]
 
 [[package]]
 name = "pluggy"
