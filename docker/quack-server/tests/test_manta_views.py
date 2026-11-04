@@ -1,8 +1,7 @@
-"""The record catalogue and the `manta` views against the 28 October sample:
-BEL-pre-aggregated, perfect foresight, kept in `data/records-28oct` as a fixed
-sample (`data/records`, the server's local root, holds newer records). The store opens
-as the server opens it: on demand, after the lockdown. Counts as in the
-sample's README.
+"""The record catalogue and the `manta` views against the 30 October
+BEL-pre-aggregated, perfect foresight, in `data/records` (the server's local
+root; see the README). The store opens as the server opens it: on demand,
+after the lockdown. Counts and changes as the modeller describes them.
 
 `RECORD_TEST_ROOT=s3://…` also runs the remote test against that root, with
 the AWS_* environment (server/.env)."""
@@ -20,7 +19,7 @@ from app import stores
 from app.quack import DISABLED_FILESYSTEMS
 from app.stores import Catalogue, configure
 
-ROOT = Path(__file__).resolve().parents[1] / "data/records-28oct"
+ROOT = Path(__file__).resolve().parents[1] / "data/records"
 # A plain record (no revisions) of the 30 October records, if present.
 PLAIN = Path(__file__).resolve().parents[1] / "data/records/BEL-pre-aggregated"
 STORE = "BEL-pre-aggregated-perfect"
@@ -74,11 +73,11 @@ def test_listing(tmp_path):
 
 def test_summary(opened):
     _, catalogue = opened
-    assert list(catalogue.stores()) == [STORE]
+    assert STORE in catalogue.stores()
     listed = catalogue.get(STORE).as_json()
-    assert listed["label"] == STORE
+    assert listed["label"] == "Belgium, 5 regions: perfect foresight"
     assert listed["revisions"] == ["inputs", "results", "patch", "patch_results"]
-    assert listed["files"] == 370 and listed["size"] > 20_000_000
+    assert listed["files"] == 752 and listed["size"] > 30_000_000
 
 
 def test_open(opened):
