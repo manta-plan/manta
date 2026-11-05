@@ -36,7 +36,6 @@ src/playbook/
     core.py        DataRecord, BlockDims, ConfigSchema, MantaBlock
     registry.py    Which blocks exist, and the catalogue that describes them
     environments.py  The environments blocks run in
-    storage.py     Where a record's bytes live (local files or S3)
     run_one.py     Running a single block from the command line
   playbooks/       Blocks chained together
     playbook.py    What a playbook is: steps, wiring, conditions
