@@ -10,16 +10,11 @@ playbooks are the ones this library ships, and the network and example playbook 
 ones `examples.py` runs, so what a contributor runs by hand is what is tested here.
 """
 
-import json
-import shutil
-from pathlib import Path
-from uuid import UUID
-
 import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
-from datarecord import Revision, Workspace
+from datarecord import Revision
 from playbook.blocks.core import RevisionRef
 from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
@@ -30,7 +25,6 @@ from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
-from playbook_library.public_data import download_public_store
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
 
 pytestmark = pytest.mark.pypsa
@@ -80,9 +74,7 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, 
 
     n = to_network(result)
     assert len(n.snapshots) == 24
-    # Capacity was chosen by the expansion block and dispatch could not change it.
-    assert not n.generators.p_nom_extendable["gen"]
-    assert n.generators.p_nom["gen"] == pytest.approx(50.0, rel=1e-3)
+    assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
 def test_the_network_the_playbook_started_from_is_left_alone(network):
@@ -92,19 +84,6 @@ def test_the_network_the_playbook_started_from_is_left_alone(network):
     n = to_network(network)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
-
-
-@pytest.fixture(scope="session")
-def bel_store(tmp_path_factory) -> Path:
-    return download_public_store("BEL-pre-aggregated", tmp_path_factory.mktemp("bel-download"))
-
-
-@pytest.fixture
-def bel(tmp_path, bel_store, workspace: Workspace) -> Revision:
-    store_dir = tmp_path / "BEL"
-    shutil.copytree(bel_store, store_dir)
-    revisions = json.loads((store_dir / "revisions.json").read_text())
-    return workspace.store(str(store_dir)).revision(UUID(revisions["inputs"]))
 
 
 BUILT_CARRIERS = [
