@@ -1,0 +1,203 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+"""Time aggregations of a datarecord, and the rules that expand series over them.
+
+A time aggregation maps each snapshot to a representative snapshot, so a model solves fewer
+snapshots. The snapshots that share a representative form a cluster. A cluster is a
+contiguous stretch within one investment period, one of the years a model builds capacity
+in. Its first snapshot is its representative. A record keeps each time aggregation as a
+`snapshot.<name>` property. The functions here expand series over the representative
+snapshots back to every snapshot of their clusters.
+"""
+
+from collections.abc import Sequence
+
+import numpy as np
+import pandas as pd
+from datarecord import Flags, PropertySpec, RecordLike, Relations, Schema
+from duckdb import DuckDBPyConnection, DuckDBPyRelation
+
+
+def snapshot_relation(record: RecordLike) -> DuckDBPyRelation:
+    """Return the `snapshot` axis of `record`, with its properties where it has any."""
+    relations = record.properties if "snapshot" in record.properties else record.dims
+    return relations["snapshot"]
+
+
+def snapshot_frame(record: RecordLike) -> pd.DataFrame:
+    """Return every snapshot label of `record` with its properties, in axis order.
+
+    Without investment periods, every snapshot has `period` 0.
+    """
+    frame = snapshot_relation(record).df()
+    return frame if "period" in frame else frame.assign(period=0)
+
+
+def widened(schema: Schema, properties: dict[str, PropertySpec]) -> Schema:
+    """Return a copy of `schema` that also declares `properties` of `snapshot`."""
+    snapshot = {**schema.properties.get("snapshot", {}), **properties}
+    widened = {**schema.properties, "snapshot": snapshot}
+    return schema.model_validate({**schema.model_dump(), "properties": widened})
+
+
+class Overlay:
+    """A record-like view of `source`, with its schema, properties or attributes replaced.
+
+    Each part left as None is that of `source`, and nothing is copied.
+    """
+
+    def __init__(
+        self,
+        source: RecordLike,
+        schema: Schema | None = None,
+        properties: Relations | None = None,
+        attributes: Relations | None = None,
+    ) -> None:
+        self.source = source
+        self.dims = source.dims
+        self.schema = source.schema if schema is None else schema
+        self.properties = source.properties if properties is None else properties
+        self.attributes = source.attributes if attributes is None else attributes
+
+    def flags(self, **categories: str | Sequence[str]) -> dict[str, Flags]:
+        return self.source.flags(**categories)
+
+
+def carry_snapshot_properties(
+    source: RecordLike, base: RecordLike, con: DuckDBPyConnection
+) -> RecordLike:
+    """Add to `source` the snapshot properties that only `base` declares, at their values in `base`.
+
+    A snapshot property that `source` declares keeps its value in `source`. Without any to
+    add, `source` is returned as it is.
+    """
+    own = source.schema.properties.get("snapshot", {})
+    declared = base.schema.properties.get("snapshot", {})
+    carried = {name: spec for name, spec in declared.items() if name not in own}
+    if not carried:
+        return source
+    kept = snapshot_relation(base).df()[["snapshot", *carried]]
+    frame = snapshot_relation(source).df().merge(kept, on="snapshot", how="left")
+    properties = {**source.properties, "snapshot": con.from_df(frame)}
+    return Overlay(source, widened(source.schema, carried), properties=properties)
+
+
+def cluster_starts(frame: pd.DataFrame, name: str) -> np.ndarray:
+    """Mark each row of `frame` that starts a run of equal values in column `name`.
+
+    The first row always starts one. Over a time aggregation the runs are its clusters, and
+    over `period` they are the investment periods.
+    """
+    representatives = frame[name].to_numpy()
+    return np.r_[True, representatives[1:] != representatives[:-1]]
+
+
+def checked_clusters(frame: pd.DataFrame, name: str) -> pd.Series:
+    """Return the time aggregation `snapshot.<name>` of `frame`, after checking its clusters.
+
+    Raises `ValueError` if `frame` has no such column, or a snapshot without a
+    representative. It also raises if a cluster crosses an investment period, is split
+    into separate runs, or does not start at its representative.
+    """
+    if name not in frame or frame[name].isna().any():
+        raise ValueError(
+            f"The record has no time aggregation snapshot.{name}: add one with a cluster_time "
+            f"step named {name!r} before this one"
+        )
+    representatives = frame[name].to_numpy()
+    starts = cluster_starts(frame, name)
+    opens = cluster_starts(frame, "period")
+    led = (representatives[starts] == frame["snapshot"].to_numpy()[starts]).all()
+    if not (led and starts[opens].all() and pd.Series(representatives[starts]).is_unique):
+        raise ValueError(
+            f"snapshot.{name} is not contiguous clusters within a period, each led by its "
+            "representative"
+        )
+    return frame[name]
+
+
+def cluster_members(base: RecordLike, name: str, weight: str, progress: str) -> pd.DataFrame:
+    """Return each snapshot with its representative `rep` under `snapshot.<name>`.
+
+    Each row also has the snapshot's `weight` and `progress`. The arguments `weight` and
+    `progress` name snapshot weightings of `base`. A snapshot's `progress` is the share of
+    its cluster's total `progress` weighting reached by the end of that snapshot.
+    """
+    frame = snapshot_frame(base)[["snapshot", name]].set_axis(["snapshot", "rep"], axis=1)
+    for column, attribute in {"weight": weight, "progress": progress}.items():
+        weightings = base.attributes[attribute].df().set_index("snapshot")["value"]
+        frame[column] = frame["snapshot"].map(weightings)
+    clusters = frame.groupby("rep")["progress"]
+    return frame.assign(progress=clusters.cumsum() / clusters.transform("sum"))
+
+
+def _restated(expanded: DuckDBPyRelation, rel: DuckDBPyRelation) -> DuckDBPyRelation:
+    """Return `expanded` in the columns of `rel`, with `snapshot` and `value` cast to its types."""
+    types = dict(zip(rel.columns, rel.types, strict=True))
+    casts = {c: f'CAST("{c}" AS {types[c]}) AS "{c}"' for c in ("snapshot", "value")}
+    return expanded.project(", ".join(casts.get(c, f'"{c}"') for c in rel.columns))
+
+
+def _paired(rel: DuckDBPyRelation, members: DuckDBPyRelation) -> DuckDBPyRelation:
+    """Join each row `r` of `rel` at a representative to each member `m` of its cluster."""
+    return rel.set_alias("r").join(members.set_alias("m"), "m.rep = r.snapshot")
+
+
+def held(rel: DuckDBPyRelation, members: DuckDBPyRelation) -> DuckDBPyRelation:
+    """Repeat each row of `rel` at a representative at every snapshot of its cluster."""
+    return _restated(_paired(rel, members).project("r.* REPLACE (m.snapshot AS snapshot)"), rel)
+
+
+def interpolated(
+    rel: DuckDBPyRelation, members: DuckDBPyRelation, starts: DuckDBPyRelation
+) -> DuckDBPyRelation:
+    """Spread each state of `rel` at a representative over its cluster.
+
+    A state is a value at the end of a snapshot, such as a state of charge. `starts` has
+    the `previous` state of each `entity` at each representative `snapshot`. Over the
+    cluster, the state runs from that previous state to the value in `rel`, in step with
+    each member's `progress`. So the last member of the cluster has the value in `rel`.
+    """
+    on = "s.entity = r.entity AND s.snapshot = r.snapshot"
+    paired = _paired(rel, members).join(starts.set_alias("s"), on)
+    value = "s.previous + (r.value - s.previous) * m.progress"
+    return _restated(paired.project(f"r.* REPLACE (m.snapshot AS snapshot, {value} AS value)"), rel)
+
+
+SHAPED = """
+CASE
+    WHEN demand IS NOT NULL THEN demand
+    WHEN coalesce(mean, 0) = 0 THEN value
+    ELSE least(value * profile / mean, capacity * profile)
+END
+"""
+
+
+def shaped(
+    rel: DuckDBPyRelation,
+    members: DuckDBPyRelation,
+    demand: DuckDBPyRelation,
+    profile: DuckDBPyRelation,
+    capacity: DuckDBPyRelation,
+) -> DuckDBPyRelation:
+    """Spread each flow of `rel` at a representative over its cluster, by the inputs given.
+
+    A series of an entity with a `demand` takes that demand at each member. A series of an
+    entity with a `profile` follows it. Its value is scaled by the profile over the
+    profile's mean across the cluster, weighted by each member's `weight`. It is capped at
+    `capacity * profile`, and held where that mean is 0. Any other series is held.
+    """
+    keyed = rel.project("*, connection.entity AS entity, row_number() OVER () AS series")
+    spread = _paired(keyed, members).join(capacity.set_alias("c"), "c.entity = r.entity", "left")
+    for alias, series in {"d": demand, "p": profile}.items():
+        on = f"{alias}.entity = r.entity AND {alias}.snapshot = m.snapshot"
+        scenario = f"{alias}.scenario IS NOT DISTINCT FROM r.scenario"
+        spread = spread.join(series.set_alias(alias), f"{on} AND {scenario}", "left")
+    inputs = "d.value AS demand, p.value AS profile, c.value AS capacity"
+    spread = spread.project(f"r.*, m.snapshot AS member, m.weight, {inputs}")
+    window = "OVER (PARTITION BY series)"
+    mean = f"sum(weight * profile) {window} / sum(weight) {window} AS mean"
+    averaged = spread.project(f"*, {mean}")
+    return _restated(averaged.project(f"* REPLACE (member AS snapshot, {SHAPED} AS value)"), rel)
