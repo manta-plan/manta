@@ -45,9 +45,9 @@ def network_record(store_record) -> DataRecord:
 
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "globals": {"expansion_mode": "overnight"},
-    "cluster": {"n_hours": 3},
-    "expansion_overnight": {},
-    "expansion_myopic": {},
+    "cluster": {"name": "agg_3h", "n_hours": 3},
+    "expansion_overnight": {"time_aggregation": "agg_3h"},
+    "expansion_myopic": {"time_aggregation": "agg_3h"},
     "dispatch": {"optimize_config": {"horizon": 4}},
 }
 
@@ -75,7 +75,7 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network_r
     assert lineage[0] == network_record.uuid
 
     n = to_network(result)
-    assert len(n.snapshots) == 8  # clustered down from 24
+    assert len(n.snapshots) == 24
     # Capacity was chosen by the expansion block and dispatch could not change it.
     assert not n.generators.p_nom_extendable["gen"]
     assert n.generators.p_nom["gen"] == pytest.approx(50.0, rel=1e-3)
