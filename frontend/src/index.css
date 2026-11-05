@@ -213,3 +213,102 @@ body {
   margin: 0;
   min-width: 320px;
 }
+
+/* Project workspace */
+
+/* Seamless horizontal loop for MapLoadingOverlay's wave bands — each band
+ * renders its wave tile twice back to back, and shifting left by exactly
+ * one tile width (50% of the doubled-up wrapper) loops without a seam. */
+@keyframes wave-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Indeterminate progress sweep, used when a download has no known size. */
+@keyframes indeterminate-bar {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+/* Rai's Lottie paints in the current text color, like the static SVG. Paths
+   inside <mask> keep lottie-web's black fill so the face stays cut out. */
+.rai-lottie path:not(mask path) {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+/* The loading animation's bar track: a faint tint of the same color. */
+.rai-lottie .rai-track path {
+  opacity: 0.25;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 10px !important;
+  background: color-mix(in srgb, var(--color-surface-950) 70%, transparent) !important;
+  color: var(--color-surface-300) !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--color-surface-200) !important;
+}
+
+.maplibregl-ctrl-scale {
+  background-color: color-mix(in srgb, var(--color-surface-950) 70%, transparent) !important;
+  border-color: var(--color-surface-300) !important;
+  color: var(--color-surface-100) !important;
+}
+
+.maplibregl-popup-content {
+  background-color: var(--color-surface-800) !important;
+  border: 1px solid var(--color-surface-600) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  padding: 8px 10px !important;
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--color-surface-800) !important;
+}
+
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: var(--color-surface-800) !important;
+}
+
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--color-surface-800) !important;
+}
+
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--color-surface-800) !important;
+}
+
+.maplibregl-popup-close-button {
+  color: var(--color-surface-400) !important;
+  font-size: 16px !important;
+  padding: 2px 6px !important;
+}
+
+.maplibregl-popup-close-button:hover {
+  background: transparent !important;
+  color: var(--color-surface-100) !important;
+}
+
+/*
+ * Base UI's Drawer drives dragging by mutating these CSS custom properties
+ * directly on the popup element (bypassing React for 60fps updates), and
+ * clears any inline `transform` it finds mid-swipe. The transform/height
+ * must therefore live in a real stylesheet rule, not a React `style` prop —
+ * an inline style would get stripped on the first drag and never reapplied.
+ */
+.drawer-popup {
+  height: var(--drawer-height, auto);
+  transform: translateY(calc(var(--drawer-snap-point-offset) + var(--drawer-swipe-movement-y)));
+}
