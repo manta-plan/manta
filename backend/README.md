@@ -194,9 +194,11 @@ one for the requests.
 
    ```bash
    uv run python -c "
+   import tempfile
+   from pathlib import Path
    import boto3
-   import httpx2
    from botocore.config import Config
+   from playbook_library.public_data import download_public_store
    client = boto3.client(
        's3',
        endpoint_url='http://localhost:8333',
@@ -204,11 +206,10 @@ one for the requests.
        aws_secret_access_key='dev',
        config=Config(s3={'addressing_style': 'path'}),
    )
-   prefix = 'ac-dc-meshed/'
-   listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
-   for item in listing['items']:
-       key = item['name'].removeprefix(prefix)
-       client.put_object(Bucket='manta', Key=f'manual-test/store/{key}', Body=httpx2.get(item['mediaLink']).content)
+   store = download_public_store('ac-dc-meshed', Path(tempfile.mkdtemp()))
+   for path in store.rglob('*'):
+       if path.is_file():
+           client.upload_file(str(path), 'manta', f'manual-test/store/{path.relative_to(store).as_posix()}')
    "
    ```
 

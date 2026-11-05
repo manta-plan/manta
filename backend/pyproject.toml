@@ -46,6 +46,7 @@ dev = [
     "boto3-stubs[s3]>=1.43.73",
     "diff-cover>=10.5.0",
     "httpx2>=2.9.1",
+    "playbook-library[public-data]",
     "pytest>=9.1.1",
     "pytest-cov>=7.0.0",
     "ruff>=0.16.0",
