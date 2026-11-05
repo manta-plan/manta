@@ -44,7 +44,8 @@ src/playbook_library/
   time_cluster.py               ... one module per block ...
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
-  examples.py                   A tiny network, and the example playbook run on it
+  datarecord_helpers.py         Opening the datarecord revision a record points at
+  examples.py                   The example run: the `expand` playbook on the Belgian test model
   playbooks/                    The playbooks this library ships, with default settings
 ```
 
@@ -55,16 +56,19 @@ pixi run -e dev test     # packaging, registration and the catalogue, without Py
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 
-Then see a real run, start to finish:
+To see a whole playbook run, run the `expand` playbook on the Belgian test model from the
+public `manta-public-test-data` bucket:
 
 ```bash
-pixi run -e full python -m playbook_library.examples
+pixi run -e full python -m playbook_library.examples [directory]
 ```
 
-That seeds a tiny network — one bus, one generator that can be built, a day of demand
-— as the root revision of a datarecord store, runs the `expand` playbook on it, and
-prints the final record. Pass a directory or an `s3://` URL to choose where the store
-is created.
+Each block writes its result as a new revision into the store it reads, and the bucket
+is read-only. So the script first copies the datarecord store into
+`<directory>/BEL-pre-aggregated/`, or into a new temporary directory if you give none.
+The `expand` playbook then solves an overnight capacity expansion with its default
+settings, and the script prints the record of the final revision. The run takes about
+a minute on a laptop.
 
 To run a single block instead, without a playbook around it:
 

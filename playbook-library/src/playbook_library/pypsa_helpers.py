@@ -5,9 +5,8 @@
 """Shared PyPSA work for the blocks in this library.
 
 This is also where the blocks meet their data. A record points at a revision in a
-datarecord store, locally or in S3: `store_network` starts a store with a network,
-`to_network` builds a network from a revision, and `write_network` adds the network
-a block produced as a child revision of it.
+datarecord store, locally or in S3: `to_network` builds a network from a revision,
+and `write_network` adds the network a block produced as a child revision of it.
 Both are confined to this module, so richer record storage only ever changes it.
 """
 
@@ -16,7 +15,6 @@ from typing import Any
 
 import numpy as np
 import pypsa
-from datarecord import Workspace
 from datarecord.tools.base import UnsupportedRecordError
 from datarecord.tools.pypsa import PyPSA
 from playbook.blocks.core import DataRecord, DataRecordError, SolveError
@@ -33,13 +31,6 @@ BUILT_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store", "Line", "Transf
 def nominal_attr(component_name: str) -> str:
     """The name of a component's nominal capacity: stores hold energy, the rest power."""
     return {"Store": "e_nom", "Line": "s_nom", "Transformer": "s_nom"}.get(component_name, "p_nom")
-
-
-def store_network(n: pypsa.Network, url: str) -> DataRecord:
-    """Store `n` as the root revision of a new store at `url`, and point a record at it."""
-    ws = Workspace()
-    rev = ws.store(url).root(PyPSA.to_datarecord(n, ws.con))
-    return DataRecord(url=url, uuid=rev.id)
 
 
 def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pypsa.Network:
