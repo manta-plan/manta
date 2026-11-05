@@ -18,6 +18,7 @@ from dotenv import dotenv_values
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
+from playbook_library.public_data import download_public_store
 from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
 
@@ -27,7 +28,6 @@ BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_FILES = FRONTEND_DIR / "dist"
-PUBLIC_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
 EXAMPLE_STORE = "ac-dc-meshed"
 
 
@@ -164,14 +164,7 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 def example_store_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Downloads the example datarecord store from the public test data bucket, once a
     session (the same store the playbook library's own tests run on)."""
-    store_path = tmp_path_factory.mktemp(EXAMPLE_STORE)
-    prefix = f"{EXAMPLE_STORE}/"
-    listing = httpx2.get(PUBLIC_OBJECTS, params={"prefix": prefix}).raise_for_status().json()
-    for item in listing["items"]:
-        target = store_path / item["name"].removeprefix(prefix)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(httpx2.get(item["mediaLink"]).raise_for_status().content)
-    return store_path
+    return download_public_store(EXAMPLE_STORE, tmp_path_factory.mktemp(EXAMPLE_STORE))
 
 
 @pytest.fixture(scope="session")
