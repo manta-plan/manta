@@ -16,18 +16,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
-from datarecord import Flags, PropertySpec, RecordLike, Relations, Revision, Schema, Workspace
+from datarecord import Flags, PropertySpec, RecordLike, Relations, Schema
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
-from playbook.blocks.core import DataRecord, DataRecordError
-
-
-def revision(record: DataRecord) -> tuple[Workspace, Revision]:
-    """Return a new workspace and the revision in it that `record` points at."""
-    ws = Workspace()
-    try:
-        return ws, ws.store(record.url).revision(record.uuid)
-    except KeyError as exc:
-        raise DataRecordError(exc.args[0]) from exc
 
 
 def snapshot_relation(record: RecordLike) -> DuckDBPyRelation:

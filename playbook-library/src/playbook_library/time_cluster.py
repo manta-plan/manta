@@ -25,7 +25,8 @@ from duckdb import DuckDBPyConnection, DuckDBPyRelation
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
 
-from playbook_library.time_aggregation import revision, snapshot_frame, snapshot_relation, widened
+from playbook_library.datarecord_helpers import revision
+from playbook_library.time_aggregation import snapshot_frame, snapshot_relation, widened
 
 
 @dataclass(frozen=True)

@@ -17,13 +17,14 @@ pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA install
 import pandas as pd
 from playbook.blocks.core import DataRecord, SolveError
 
+from playbook_library.datarecord_helpers import revision
 from playbook_library.examples import build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.pypsa_helpers import nominal_attr, remove_unbuilt_cohorts, to_network
 from playbook_library.rolling_horizon_dispatch import RollingHorizonDispatch
-from playbook_library.time_aggregation import revision, snapshot_frame
+from playbook_library.time_aggregation import snapshot_frame
 from playbook_library.time_cluster import ClusterTime
 
 pytestmark = pytest.mark.pypsa

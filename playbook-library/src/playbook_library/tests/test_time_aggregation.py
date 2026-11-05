@@ -19,6 +19,7 @@ from datarecord.tools.pypsa import PyPSA
 from duckdb import DuckDBPyRelation
 from playbook.blocks.core import DataRecord
 
+from playbook_library.datarecord_helpers import revision
 from playbook_library.examples import build_example_network
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 from playbook_library.pypsa_helpers import (
@@ -28,7 +29,7 @@ from playbook_library.pypsa_helpers import (
     write_network,
 )
 from playbook_library.pypsa_time_aggregation import STATES, cluster_network, write_expanded_results
-from playbook_library.time_aggregation import cluster_starts, revision, snapshot_frame
+from playbook_library.time_aggregation import cluster_starts, snapshot_frame
 from playbook_library.time_cluster import add_snapshot_property, resample_map, segment_map
 
 pytestmark = pytest.mark.pypsa

@@ -36,11 +36,10 @@ def store_record(tmp_path: Path) -> Callable:
 @pytest.fixture
 def ancestry() -> Callable[[DataRecord], list[UUID]]:
     """The revision ids from a record's store root down to the record, root first."""
-    from datarecord import Workspace
+    from playbook_library.datarecord_helpers import revision
 
     def lineage(record: DataRecord) -> list[UUID]:
-        revision = Workspace().store(record.url).revision(record.uuid)
-        return revision.ancestry()
+        return revision(record)[1].ancestry()
 
     return lineage
 
