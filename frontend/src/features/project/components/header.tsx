@@ -25,6 +25,7 @@ import {
   LuShapes,
 } from "react-icons/lu";
 import { FaFly } from "react-icons/fa";
+import { HiOutlineViewGridAdd } from "react-icons/hi";
 import { MenuDropdown, type MenuAction } from "./menu-dropdown";
 import { ToolbarIconButton } from "./toolbar-icon-button";
 import { ToolbarModeMenu, type ToolbarModeOption } from "./toolbar-mode-menu";
@@ -40,18 +41,22 @@ import {
   projectTabHref,
   type ProjectTab,
 } from "../lib/project-route";
-import { startInspectWorkspaceTour, startModelWorkspaceTour } from "../lib/workspace-tours";
+import {
+  startInspectWorkspaceTour,
+  startModelWorkspaceTour,
+  startReportWorkspaceTour,
+} from "../lib/workspace-tours";
 import { zoneLevels } from "../lib/record-geo";
 import { selectableScenarios } from "../lib/record-scenarios";
 import { NODAL } from "../store/types";
 import { MantaLogo } from "../../home/components/manta-logo";
 import { RaiIcon } from "./rai-mascot";
 
-// Report joins once its tab is built.
 const TABS: { id: ProjectTab; label: string }[] = [
   { id: "model", label: "Model" },
   { id: "run", label: "Run" },
   { id: "inspect", label: "Inspect" },
+  { id: "report", label: "Report" },
 ];
 
 const MEASURE_OPTIONS: ToolbarModeOption<ToolId>[] = [
@@ -80,6 +85,9 @@ export function Header() {
   const setViewState = useProjectStore((s) => s.setViewState);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const isNewWidgetDrawerOpen = useProjectStore((s) => s.isNewWidgetDrawerOpen);
+  const toggleNewWidgetDrawer = useProjectStore((s) => s.toggleNewWidgetDrawer);
+  const selectedReportId = useProjectStore((s) => s.selectedReportId);
   const utilityDrawerFlow = useProjectStore((s) => s.utilityDrawerFlow);
   const toggleUtilityDrawer = useProjectStore((s) => s.toggleUtilityDrawer);
   const isMapLayersDrawerOpen = useProjectStore((s) => s.isMapLayersDrawerOpen);
@@ -332,14 +340,34 @@ export function Header() {
             </>
           )}
 
+          {activeTab === "report" && (
+            <>
+              <Toolbar.Group className="flex items-center gap-0.5">
+                <ToolbarIconButton
+                  icon={HiOutlineViewGridAdd}
+                  label="Add Widget"
+                  active={isNewWidgetDrawerOpen}
+                  disabled={!selectedReportId}
+                  onClick={toggleNewWidgetDrawer}
+                />
+              </Toolbar.Group>
+
+              <Toolbar.Separator className="bg-surface-600 mx-1 h-5 w-px" />
+            </>
+          )}
+
           {/* Project-wide actions */}
           <Toolbar.Group className="flex items-center gap-0.5">
             <ToolbarIconButton
               icon={FaFly}
               label="Start tour"
-              disabled={activeTab !== "model" && activeTab !== "inspect"}
+              disabled={activeTab === "run"}
               onClick={
-                activeTab === "inspect" ? startInspectWorkspaceTour : startModelWorkspaceTour
+                activeTab === "report"
+                  ? startReportWorkspaceTour
+                  : activeTab === "inspect"
+                    ? startInspectWorkspaceTour
+                    : startModelWorkspaceTour
               }
             />
             <ToolbarIconButton

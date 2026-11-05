@@ -10,8 +10,10 @@ import {
   LuLock,
   LuDownload,
   LuLayers,
+  LuLayoutGrid,
 } from "react-icons/lu";
 import { useProjectStore, type UtilityDrawerFlow } from "../store/project-store";
+import { WidgetConfigForm } from "../../inspect/components/widget-config-form";
 import { AiChatView } from "./ai-chat-view";
 import { MapLayersPanel } from "./map-layers-panel";
 import { RaiAnimated } from "./rai-mascot";
@@ -101,38 +103,74 @@ export function RightDrawer() {
   const closeUtilityDrawer = useProjectStore((s) => s.closeUtilityDrawer);
   const isMapLayersDrawerOpen = useProjectStore((s) => s.isMapLayersDrawerOpen);
   const toggleMapLayersDrawer = useProjectStore((s) => s.toggleMapLayersDrawer);
+  const isNewWidgetDrawerOpen = useProjectStore((s) => s.isNewWidgetDrawerOpen);
+  const closeNewWidgetDrawer = useProjectStore((s) => s.closeNewWidgetDrawer);
+  const editingWidgetId = useProjectStore((s) => s.editingWidgetId);
+  const reports = useProjectStore((s) => s.reports);
+  const selectedReportId = useProjectStore((s) => s.selectedReportId);
 
   const isUtilityOpen = utilityDrawerFlow !== null;
   const utilityMeta = utilityDrawerFlow ? UTILITY_META[utilityDrawerFlow] : null;
   const UtilityIcon = utilityMeta?.icon;
 
+  const selectedReport = reports.find((report) => report.id === selectedReportId);
+  const editingWidget = editingWidgetId
+    ? selectedReport?.widgets.find((widget) => widget.id === editingWidgetId)
+    : undefined;
+  const editingWidgetLabel = editingWidget
+    ? editingWidget.widgetType === "stat"
+      ? editingWidget.label
+      : editingWidget.title
+    : null;
+
+  const isDetailOpen = isNewWidgetDrawerOpen || isMapLayersDrawerOpen;
+  const closeDetailDrawer = () => {
+    closeNewWidgetDrawer();
+    if (isMapLayersDrawerOpen) toggleMapLayersDrawer();
+  };
+
   return (
     <>
-      {/* Layer 2 (detail): page-specific panels. Only the map layers for now;
-          the widget and run node config forms arrive with their tabs. Stacks
-          just inside layer 1 when it's open, otherwise hugs the right edge. */}
+      {/* Layer 2 (detail): page-specific panels, the map layers and the widget
+          config form. Stacks just inside layer 1 when it's open, otherwise hugs
+          the right edge. */}
       <aside
         className={clsx(
           "absolute top-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
           isUtilityOpen ? "right-72" : "right-0",
-          isMapLayersDrawerOpen
+          isDetailOpen
             ? "translate-x-0 pointer-events-auto"
             : "translate-x-full pointer-events-none",
         )}
       >
         <div className="border-surface-600/60 flex h-8 shrink-0 items-center justify-between border-b px-3">
           <div className="text-surface-200 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-            <LuLayers size={12} />
-            Layers
+            {isMapLayersDrawerOpen ? (
+              <>
+                <LuLayers size={12} />
+                Layers
+              </>
+            ) : (
+              <>
+                <LuLayoutGrid size={12} />
+                {editingWidget ? "Current Widget Config" : "New Widget Config"}
+              </>
+            )}
           </div>
           <button
-            onClick={toggleMapLayersDrawer}
+            onClick={closeDetailDrawer}
             className="text-surface-400 hover:text-surface-100 outline-none"
           >
             <LuX size={14} />
           </button>
         </div>
+        {!isMapLayersDrawerOpen && editingWidget && (
+          <div className="border-surface-600/60 text-surface-100 shrink-0 truncate border-b px-3 py-1.5 text-[12px] font-medium">
+            {editingWidgetLabel}
+          </div>
+        )}
         {isMapLayersDrawerOpen && <MapLayersPanel />}
+        {isNewWidgetDrawerOpen && <WidgetConfigForm />}
       </aside>
 
       {/* Layer 1 (utility): AI chat, share. Always anchored to the true

@@ -2,7 +2,9 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useLocation } from "wouter";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { GiMagnifyingGlass } from "react-icons/gi";
-import { LuBoxes, LuLayers, LuListFilter, LuPlus } from "react-icons/lu";
+import { LuBoxes, LuChartBar, LuCircleCheck, LuLayers, LuListFilter, LuPlus } from "react-icons/lu";
+import { ReportResultsPanel } from "../../report/components/report-results-panel";
+import { ReportsPanel } from "../../report/components/reports-panel";
 import { InspectionsPanel } from "../../inspect/components/inspections-panel";
 import { getActiveProjectTab } from "../lib/project-route";
 import { useProjectStore } from "../store/project-store";
@@ -90,6 +92,10 @@ export function Sidebar() {
   const openInspectionFilterDrawer = useProjectStore((s) => s.openInspectionFilterDrawer);
   const isInspectionFilterDrawerOpen = useProjectStore((s) => s.isInspectionFilterDrawerOpen);
   const inspectionFilters = useProjectStore((s) => s.inspectionFilters);
+  const openNewReportDrawer = useProjectStore((s) => s.openNewReportDrawer);
+  const openReportFilterDrawer = useProjectStore((s) => s.openReportFilterDrawer);
+  const isReportFilterDrawerOpen = useProjectStore((s) => s.isReportFilterDrawerOpen);
+  const reportFilters = useProjectStore((s) => s.reportFilters);
   const updatePrimaryPanelHeight = (height: number) => {
     const sidebarHeight = sidebarRef.current?.clientHeight ?? 0;
     const minimumPanelHeight = 160;
@@ -156,7 +162,7 @@ export function Sidebar() {
       className="border-surface-600 bg-surface-800 flex h-full w-72 shrink-0 flex-col border-r"
     >
       <div
-        data-tour="model-tree-panel"
+        data-tour={activeTab === "report" ? "reports-panel" : "model-tree-panel"}
         className="min-h-40 shrink-0 overflow-hidden"
         style={{
           height:
@@ -165,9 +171,32 @@ export function Sidebar() {
               : `clamp(10rem, ${primaryPanelHeight}px, calc(100% - 10rem))`,
         }}
       >
-        <SidebarPanel icon={LuBoxes} label={record?.info.label ?? "Record"}>
-          <ModelTreePanel />
-        </SidebarPanel>
+        {activeTab === "report" ? (
+          <SidebarPanel
+            icon={LuChartBar}
+            label="Reports"
+            action={
+              <div className="flex items-center gap-2">
+                <FilterButton
+                  label="Filter reports"
+                  onClick={openReportFilterDrawer}
+                  isActive={isReportFilterDrawerOpen || reportFilters.length > 0}
+                />
+                <AddButton
+                  label="New Report"
+                  tourId="new-report-action"
+                  onClick={() => openNewReportDrawer()}
+                />
+              </div>
+            }
+          >
+            <ReportsPanel />
+          </SidebarPanel>
+        ) : (
+          <SidebarPanel icon={LuBoxes} label={record?.info.label ?? "Record"}>
+            <ModelTreePanel />
+          </SidebarPanel>
+        )}
       </div>
       <div
         role="separator"
@@ -179,15 +208,29 @@ export function Sidebar() {
         onKeyDown={resizeFromKeyboard}
         className="before:bg-surface-600 hover:before:bg-accent-500 focus-visible:before:bg-accent-500 relative h-1 shrink-0 cursor-row-resize touch-none outline-none before:absolute before:top-0 before:right-0 before:left-0 before:h-px before:transition-colors"
       />
-      <div className="min-h-40 flex-1 overflow-hidden">
-        <SidebarPanel
-          icon={LuLayers}
-          label="Scenarios"
-          onHeaderPointerDown={startResize}
-          onHeaderPointerMove={continueResize}
-        >
-          <RecordScenariosPanel />
-        </SidebarPanel>
+      <div
+        data-tour={activeTab === "report" ? "scenario-runs-panel" : undefined}
+        className="min-h-40 flex-1 overflow-hidden"
+      >
+        {activeTab === "report" ? (
+          <SidebarPanel
+            icon={LuCircleCheck}
+            label="Run Results"
+            onHeaderPointerDown={startResize}
+            onHeaderPointerMove={continueResize}
+          >
+            <ReportResultsPanel />
+          </SidebarPanel>
+        ) : (
+          <SidebarPanel
+            icon={LuLayers}
+            label="Scenarios"
+            onHeaderPointerDown={startResize}
+            onHeaderPointerMove={continueResize}
+          >
+            <RecordScenariosPanel />
+          </SidebarPanel>
+        )}
       </div>
     </aside>
   );

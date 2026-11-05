@@ -1,13 +1,19 @@
 import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { builtInInspection } from "../features/project/data/inspections";
+import { ReportDashboard } from "../features/report/components/report-dashboard";
+import { ReportOverview } from "../features/report/components/report-overview";
 import { InspectOverview } from "../features/inspect/components/inspect-overview";
 import { InspectWorkspace } from "../features/inspect/components/inspect-workspace";
 import { useAppStore } from "../features/home/store";
 import { MapView } from "../features/project/components/map-view";
 import { ProjectLayout } from "../features/project/components/project-layout";
 import { WelcomeDialog } from "../features/project/components/welcome-dialog";
-import { getActiveProjectTab, projectInspectHref } from "../features/project/lib/project-route";
+import {
+  getActiveProjectTab,
+  projectInspectHref,
+  projectReportHref,
+} from "../features/project/lib/project-route";
 import { writeScenarioToUrl } from "../features/project/lib/record-scenarios";
 import { isWelcomeDialogDisabled } from "../features/project/lib/welcome-preference";
 import { useProjectStore } from "../features/project/store/project-store";
@@ -25,6 +31,10 @@ export function ProjectPage() {
   const selectInspection = useProjectStore((state) => state.selectInspection);
   const inspections = useProjectStore((state) => state.inspections);
   const inspectionsProjectId = useProjectStore((state) => state.inspectionsProjectId);
+  const selectedReportId = useProjectStore((state) => state.selectedReportId);
+  const selectReport = useProjectStore((state) => state.selectReport);
+  const reports = useProjectStore((state) => state.reports);
+  const reportsProjectId = useProjectStore((state) => state.reportsProjectId);
   const project = useAppStore((state) => state.projects.find((item) => item.id === projectId));
   const loadRecord = useProjectStore((state) => state.loadRecord);
   const openWelcomeDialog = useProjectStore((state) => state.openWelcomeDialog);
@@ -79,6 +89,30 @@ export function ProjectPage() {
     setLocation,
   ]);
 
+  useEffect(() => {
+    if (activeTab !== "report") return;
+    if (!detailId) {
+      if (selectedReportId) selectReport(null);
+      return;
+    }
+    // Wait for ProjectLayout to load this project's reports (see inspections).
+    if (reportsProjectId !== projectId) return;
+    if (!reports.some((report) => report.id === detailId)) {
+      setLocation(projectReportHref(projectId));
+      return;
+    }
+    if (selectedReportId !== detailId) selectReport(detailId);
+  }, [
+    activeTab,
+    detailId,
+    projectId,
+    reports,
+    reportsProjectId,
+    selectedReportId,
+    selectReport,
+    setLocation,
+  ]);
+
   return (
     <ProjectLayout>
       {/* Hidden with opacity + inert, not just `invisible`: maplibre's CSS sets
@@ -102,12 +136,7 @@ export function ProjectPage() {
       {activeTab === "inspect" &&
         (selectedInspectionId ? <InspectWorkspace /> : <InspectOverview />)}
 
-      {/* Report arrives with its own tab. */}
-      {activeTab === "report" && (
-        <div className="text-surface-400 flex h-full items-center justify-center text-sm">
-          This tab is not available yet.
-        </div>
-      )}
+      {activeTab === "report" && (selectedReportId ? <ReportDashboard /> : <ReportOverview />)}
 
       <WelcomeDialog />
     </ProjectLayout>

@@ -3,7 +3,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useLocation, useParams } from "wouter";
 import { FaFly } from "react-icons/fa";
 import { GiMagnifyingGlass } from "react-icons/gi";
-import { LuBoxes, LuHistory } from "react-icons/lu";
+import { LuBoxes, LuChartBar, LuHistory } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import { useAppStore } from "../../home/store";
 import { useProjectStore } from "../store/project-store";
@@ -27,6 +27,11 @@ const WORKSPACES: { label: string; description: string; icon: IconType }[] = [
     label: "Inspect",
     description: "Explore and compare run outputs as tables, maps and charts.",
     icon: GiMagnifyingGlass,
+  },
+  {
+    label: "Report",
+    description: "Assemble results into shareable report dashboards.",
+    icon: LuChartBar,
   },
 ];
 
@@ -72,7 +77,7 @@ export function WelcomeDialog() {
             Welcome to {projectName ?? "your project"}
           </Dialog.Title>
           <Dialog.Description className="text-surface-400 mt-1.5 text-[12px] leading-5">
-            A project has three workspaces so far: the model, its runs and their results.
+            A project has four workspaces: the model, its runs, their results and reports.
           </Dialog.Description>
 
           <ol className="mt-4 flex flex-col gap-3">

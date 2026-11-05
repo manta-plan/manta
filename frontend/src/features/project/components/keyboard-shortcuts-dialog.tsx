@@ -9,6 +9,7 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
       { keys: ["1"], label: "Model" },
       { keys: ["2"], label: "Run" },
       { keys: ["3"], label: "Inspect" },
+      { keys: ["4"], label: "Report" },
     ],
   },
   {
