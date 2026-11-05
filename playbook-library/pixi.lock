@@ -11983,9 +11983,6 @@ packages:
   requires_dist:
   - playbook
   - pyyaml>=6
-  - pypsa>=1.4,<2 ; extra == 'pypsa'
-  - highspy ; extra == 'pypsa'
-  - datarecord[remote,pypsa] @ git+https://github.com/energy-models/datarecord@dbdbe94312d90c6a31809572aa9f01e9234ca0ff ; extra == 'pypsa'
   requires_python: '>=3.12'
 - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
   name: datarecord
