@@ -249,6 +249,38 @@ services:
             "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
           ]
 
+  # TEMPORARY: serves a datarecord over the Quack protocol so the Model /
+  # Inspect / Report tabs can be ported to the frontend before datarecord is
+  # integrated into the backend (issue #223). Reads every store under
+  # ./quack-server/data/records (git-ignored; see quack-server/README.md).
+  # Remove once the backend serves Quack itself.
+  #
+  # Opt-in: a plain `up` (and the integration test stack) skips it. Start it
+  # with `--profile temporary-quack-setup`, or by naming the service.
+  quack-server:
+    profiles: [temporary-quack-setup]
+    build:
+      context: ./quack-server
+    environment:
+      QUACK_TOKEN: ${QUACK_TOKEN:-devtoken}
+      CORS_ORIGINS: ${QUACK_CORS_ORIGINS:-http://localhost:5173}
+      RECORDS_ROOT: /srv/data/records
+    ports:
+      - "${QUACK_SERVER_PORT:-8010}:8080"
+    volumes:
+      - ./quack-server/data/records:/srv/data/records:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   seaweedfs-data:
