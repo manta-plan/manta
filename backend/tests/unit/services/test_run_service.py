@@ -49,7 +49,10 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
     # reads the config back from the parameters Prefect stored on the flow run.
     return SimpleNamespace(
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
-        parameters={"config": config if config is not None else {}},
+        parameters={
+            "config": config if config is not None else {},
+            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
+        },
     )
 
 
@@ -386,6 +389,9 @@ def test_get_run_returns_dto_for_a_known_run(
     assert result.playbook == _LIBRARY_PLAYBOOK
     # The config is whatever the run was dispatched with, read back from Prefect.
     assert result.config == started_with_config
+    assert result.data_record == DataRecordResult(
+        store_url=_RECORD_URL, revision_uuid=_REVISION_UUID
+    )
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
 
@@ -597,15 +603,18 @@ def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | 
         parameters={
             "playbook": playbook_doc,
             "config": config,
+            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
             "catalogue": catalogue_parameter(library_catalogue()),
         },
     )
 
 
-def _fake_block_run(step_name: str, block: str, state_type: str, created: datetime):
+def _fake_block_run(
+    step_name: str, block: str, state_type: str, created: datetime, message: str | None = None
+):
     return SimpleNamespace(
         id=uuid4(),
-        state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
+        state=SimpleNamespace(type=SimpleNamespace(value=state_type), message=message),
         parameters={"step_name": step_name, "block": block},
         created=created,
         start_time=created,
@@ -785,6 +794,36 @@ def test_get_run_steps_reads_no_artifacts_before_any_block_has_run(
     # Then
     assert {step.output for step in result.steps} == {None}
     fake_client.read_artifacts.assert_not_called()
+
+
+def test_get_run_steps_reports_why_a_step_failed(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose overnight expansion failed to solve
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    message = "Flow run encountered an exception: SolveError: solver status infeasible"
+    _patch_flow_runs(
+        monkeypatch,
+        _fake_playbook_flow_run("FAILED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        [
+            _fake_block_run(
+                "expansion_overnight",
+                "overnight_capacity_expansion",
+                "FAILED",
+                datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+                message=message,
+            ),
+        ],
+    )
+    service = RunService(db=db)
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then the failed step carries the block's own error, the others nothing
+    assert [step.message for step in result.steps] == [message, None, None]
 
 
 def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(

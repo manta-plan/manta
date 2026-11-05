@@ -252,11 +252,11 @@ one for the requests.
 
    Copy the returned `uuid` as `RUN_UUID`.
 
-9. Follow the run. The first request returns the run's overall `status` and the
-   `config` it was started with. The second returns each step's `status`:
+9. Follow the run. The first request returns the run's overall `status`, and the
+   `config` and `data_record` it was started with. The second returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
    begins, and Prefect's own state from then on, plus its `output` record once
-   it has completed. The third returns the run's
+   it has completed, or the `message` with its error if it failed. The third returns the run's
    logs:
 
    ```bash

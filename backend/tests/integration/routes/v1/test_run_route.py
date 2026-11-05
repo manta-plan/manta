@@ -231,6 +231,7 @@ def test_create_and_run_a_playbook(
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
         assert (step["output"] is not None) == ran
+        assert step["message"] is None
 
     # And the step that ran reports the new revision it wrote into the run's store
     data_record = example_store(project_uuid)["data_record"]
@@ -238,11 +239,12 @@ def test_create_and_run_a_playbook(
     assert output["store_url"] == data_record["store_url"]
     assert output["revision_uuid"] != data_record["revision_uuid"]
 
-    # And the run reports which playbook it ran, and the config it was started
-    # with — the library's own default_config, since none was supplied
+    # And the run reports which playbook it ran, the config it was started with —
+    # the library's own default_config, since none was supplied — and its record
     run_body = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers).json()
     assert run_body["playbook"] == _LIBRARY_PLAYBOOK
     assert run_body["config"] == library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    assert run_body["data_record"] == data_record
 
     # And the Run row is persisted with the right linkage
     with db_connection.cursor() as cursor:

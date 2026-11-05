@@ -118,6 +118,18 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
     return flow_run.parameters["config"]
 
 
+def _flow_run_data_record(flow_run: FlowRun) -> DataRecordResult:
+    # TODO(post-MVP): the same shortcut as _flow_run_config. Store the record a run
+    # started from on Run itself once data records are tracked in Manta's database.
+    return _data_record_result(flow_run.parameters["record"])
+
+
+def _data_record_result(data: dict) -> DataRecordResult:
+    """A record as runner.flows passes it around (DataRecord.to_dict()), for the API."""
+    record = DataRecord.from_dict(data)
+    return DataRecordResult(store_url=record.url, revision_uuid=record.uuid)
+
+
 def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
     # TODO(post-MVP): the same shortcut as _flow_run_config — the playbook a run
     # was started with is rebuilt from its flow run's parameters (the document and
@@ -151,10 +163,7 @@ def _read_block_run_outputs(block_runs: list[FlowRun]) -> dict[UUID, DataRecordR
     outputs = {}
     for artifact in artifacts:
         [row] = json.loads(artifact.data)
-        record = DataRecord.from_dict(row)
-        outputs[artifact.flow_run_id] = DataRecordResult(
-            store_url=record.url, revision_uuid=record.uuid
-        )
+        outputs[artifact.flow_run_id] = _data_record_result(row)
     return outputs
 
 
@@ -186,6 +195,9 @@ def _build_run_step_result(
         start_time=block_run.start_time if block_run is not None else None,
         end_time=block_run.end_time if block_run is not None else None,
         output=outputs.get(block_run.id) if block_run is not None else None,
+        message=block_run.state.message
+        if block_run is not None and block_run.state is not None
+        else None,
     )
 
 
@@ -369,6 +381,7 @@ class RunService:
                 project_uuid=project_uuid,
                 playbook=run.playbook,
                 config=_flow_run_config(flow_runs[run.prefect_flow_run_id]),
+                data_record=_flow_run_data_record(flow_runs[run.prefect_flow_run_id]),
                 status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
                 created_at=run.created_at,
             )
@@ -397,6 +410,7 @@ class RunService:
             project_uuid=project.uuid,
             playbook=run.playbook,
             config=_flow_run_config(flow_run),
+            data_record=_flow_run_data_record(flow_run),
             status=_flow_run_status(flow_run),
             created_at=run.created_at,
         )

@@ -48,6 +48,9 @@ def docker_services() -> Iterator[DockerCompose]:
         DOCKER_DIR,
         compose_file_name="compose-test-services.yaml",
         env_file=[str(BACKEND_ENV_FILE), str(DOCKER_ENV_TEST_FILE)],
+        # Otherwise images built before a change to runner or playbook-library are
+        # reused, and the tests silently run the old code.
+        build=True,
     ) as compose:
         yield compose
         # Fetched before `stop()` removes the containers — covers the whole session.

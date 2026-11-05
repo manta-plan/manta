@@ -4,6 +4,11 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class DataRecordResult(BaseModel):
+    store_url: str
+    revision_uuid: UUID
+
+
 class CreateRunResult(BaseModel):
     uuid: UUID
     project_uuid: UUID
@@ -20,6 +25,9 @@ class GetRunResult(BaseModel):
     or the playbook's default_config when none was given (see GET /v1/playbooks/{name}
     for those defaults)."""
 
+    data_record: DataRecordResult
+    """The record this run started from, exactly as dispatched."""
+
     status: str
     created_at: datetime
 
@@ -35,11 +43,6 @@ class ListRunsResult(BaseModel):
     limit: int
     offset: int
     summary: GetRunSummaryResult
-
-
-class DataRecordResult(BaseModel):
-    store_url: str
-    revision_uuid: UUID
 
 
 class RunStepResult(BaseModel):
@@ -63,6 +66,10 @@ class RunStepResult(BaseModel):
 
     start_time: datetime | None
     end_time: datetime | None
+
+    message: str | None
+    """Prefect's message for the step's block run, e.g. the exception a failed block
+    raised. None for a step with no block run, or one that completed."""
 
     output: DataRecordResult | None
     """The revision the step wrote into the run's store. None until the step's block
