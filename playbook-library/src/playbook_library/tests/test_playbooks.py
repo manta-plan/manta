@@ -91,13 +91,15 @@ def test_a_shipped_playbook_has_no_issues_with_its_default_settings_where_its_bl
 @pytest.mark.parametrize(
     "with_defaults",
     [False, True],
-    ids=["only-the-expansion-mode", "the-defaults-switched-to-myopic"],
+    ids=["only-the-expansion-mode-and-the-cluster", "the-defaults-switched-to-myopic"],
 )
 def test_the_myopic_branch_is_reported_as_missing_the_period(name, with_defaults):
     # Myopic expansion works one investment period at a time, so it needs that
     # dimension, but this playbook's data starts with `snapshot` alone and no step
     # before it adds one. Run anyway, the branch would quietly do nothing.
-    defaults = library_playbooks()[name].default_config if with_defaults else {}
+    default_config = library_playbooks()[name].default_config
+    required = {k: v for k, v in default_config.items() if k == "cluster"}
+    defaults = default_config if with_defaults else required
     config = {**defaults, "globals": {"expansion_mode": "myopic"}}
     issues = as_the_backend_sees_it(name).find_issues(config)
     assert [(i.kind, i.step_path) for i in issues] == [("dims", ("expansion_myopic",))]
@@ -110,7 +112,8 @@ def test_a_rule_a_block_writes_in_code_is_only_checked_where_the_block_imports()
     # Python, which its JSON schema cannot carry. So the backend, knowing the block
     # only from the catalogue, lets this through; the block refuses it when it runs.
     pytest.importorskip("pypsa", reason="checking with the blocks' own models means importing them")
-    config = {**library_playbooks()["cluster-expand-dispatch"].default_config, "cluster": {}}
+    default_config = library_playbooks()["cluster-expand-dispatch"].default_config
+    config = {**default_config, "cluster": {"name": "agg_3h"}}
 
     assert as_the_backend_sees_it("cluster-expand-dispatch").find_issues(config) == []
 

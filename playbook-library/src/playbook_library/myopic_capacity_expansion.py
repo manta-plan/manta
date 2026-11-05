@@ -3,22 +3,22 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from playbook.blocks.core import BlockDims, DataRecord, MantaBlock
 from pydantic import Field
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema
+from playbook_library.pypsa_configs import PyPSAOptimizeSchema, TimeAggregatedConfig
 from playbook_library.pypsa_helpers import (
     BUILT_COMPONENTS,
     investment_periods,
     nominal_attr,
     optimize_network,
     remove_unbuilt_cohorts,
+    solve_and_write,
     to_network,
-    write_network,
 )
 
 
-class MyopicCapacityExpansionConfig(ConfigSchema):
+class MyopicCapacityExpansionConfig(TimeAggregatedConfig):
     optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
 
 
@@ -69,6 +69,7 @@ class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):
             if previous is not None:
                 self.add_brownfield(n_period, previous)
             remove_unbuilt_cohorts(n_period)
-            previous = self.optimize(n_period)
-            written = write_network(previous, written, results_only=True)
+            previous, written = solve_and_write(
+                n_period, written, self.optimize, self.config.time_aggregation, True
+            )
         return written

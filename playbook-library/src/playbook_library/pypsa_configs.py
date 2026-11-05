@@ -131,3 +131,28 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
         if self.overlap >= self.horizon:
             raise ValueError("`overlap` must be smaller than `horizon`.")
         return self
+
+
+class TimeAggregatedConfig(ConfigSchema):
+    time_aggregation: str | None = None
+    """The time aggregation to solve by: the `name` given to an earlier `cluster_time` block.
+
+    A time aggregation groups the snapshots into clusters, and the block solves one
+    snapshot per cluster. The results cover every snapshot, spread over the cluster each
+    falls in. A model without that time aggregation is refused. None solves at full
+    resolution.
+    """
+
+
+class LoadSheddingConfig(ConfigSchema):
+    marginal_cost: float = 100.0
+    """The cost of shedding one unit of load, in the unit `sign` sets."""
+
+    p_nom: float = 1e9
+    """The most load each bus can shed, in the unit `sign` sets."""
+
+    sign: float = 1e-3
+    """The scale of shed load against the model's power unit.
+
+    With power in MW, 1e-3 counts shed load in kW.
+    """
