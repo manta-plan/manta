@@ -43,6 +43,7 @@ pytest = ">=8"
 
 [feature.dev.pypi-dependencies]
 ruff = ">=0.16.0"
+playbook-library = { path = ".", editable = true, extras = ["public-data"] }
 
 [feature.dev.tasks]
 test = "pytest"
