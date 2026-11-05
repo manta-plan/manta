@@ -2,35 +2,95 @@
 #
 # SPDX-License-Identifier: MIT
 
+import logging
+
+import pandas as pd
 import pypsa
 from datarecord import Revision
-from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
+from playbook.blocks.core import BlockDims, MantaBlock, RevisionRef, SolveError
 from playbook.blocks.run import open_revision
 from pydantic import Field
 
-from playbook_library.pypsa_configs import PyPSAOptimizeRollingHorizonConfig
+from playbook_library.pypsa_configs import (
+    LoadSheddingConfig,
+    PyPSAOptimizeRollingHorizonConfig,
+    TimeAggregatedConfig,
+)
 from playbook_library.pypsa_helpers import (
     BUILT_COMPONENTS,
+    investment_periods,
     nominal_attr,
+    remove_unbuilt_cohorts,
+    solve_and_write,
     to_network,
     write_network,
 )
+from playbook_library.pypsa_time_aggregation import STATES
+from playbook_library.time_aggregation import snapshot_relation
 
 
-class RollingHorizonDispatchConfig(ConfigSchema):
+class FailedWindows(logging.Handler):
+    """A log handler that collects the windows of a rolling horizon that PyPSA could not solve.
+
+    A rolling horizon solves the snapshots one window at a time. PyPSA logs a message for
+    a window that does not solve, and moves on to the next.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.failures: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if message.startswith("Optimization failed"):
+            self.failures.append(message)
+
+
+class RollingHorizonDispatchConfig(TimeAggregatedConfig):
     optimize_config: PyPSAOptimizeRollingHorizonConfig = Field(
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
     capacity_source: RevisionRef | None = Field(default=None, title="Capacity data source")
     """Where the capacities to dispatch against come from.
 
-    Normally wired to a capacity-expansion block earlier in the playbook. Left unset,
-    the block dispatches against whatever capacities the model already has.
+    It is normally wired to a capacity-expansion block earlier in the playbook. Left
+    unset, the block dispatches against whatever capacities the model already has. Set,
+    it must have results for every period dispatched, and a capacity for every asset that
+    can be built in them. A cohort is an extendable asset of finite lifetime. When a
+    single period is dispatched, a cohort that only an earlier period could have built
+    may lack a capacity, and is left out.
+    """
+
+    periods: list[int] | None = None
+    """The investment periods to dispatch, in a model with investment periods.
+
+    An investment period is one of the years in which the model builds capacity. None
+    dispatches every one.
+    """
+
+    load_shedding: LoadSheddingConfig | None = None
+    """Load each bus may shed at a cost, so demand the capacities cannot meet is shed.
+
+    None adds no load shedding, which leaves any to the model. Set, the block adds a
+    load-shedding generator at every bus before it dispatches.
+    """
+
+    time_aggregation: str | None = None
+    """The time aggregation to solve by: the `name` given to an earlier `cluster_time` block.
+
+    A time aggregation groups the snapshots into clusters. With one, `horizon` and
+    `overlap` count clusters, not snapshots, and the results are spread over every
+    snapshot. A model without that time aggregation is refused. So is a model with
+    storage that each window cycles or starts afresh. None solves at full resolution.
     """
 
 
 class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
-    """Decide how to run a system, a stretch of time at a time."""
+    """Decide how to run a system, one window of time at a time.
+
+    Only the results are written, whichever periods are dispatched. So the capacities
+    dispatched against appear as `p_nom_opt` and the like, not as inputs.
+    """
 
     ENV = "pypsa"
     CONFIG = RollingHorizonDispatchConfig
@@ -38,34 +98,157 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     INPUTS = frozenset({"capacity_source"})
 
     @staticmethod
-    def apply_optimised_capacities(n: pypsa.Network, source: pypsa.Network) -> None:
-        """Take the capacities decided in `source` and fix them in `n`.
+    def solved_periods(rev: Revision) -> list[int]:
+        """Return the investment periods that `rev` has results for, without building a network.
 
-        This is how a dispatch block runs against capacities an expansion block chose:
-        the capacities come across as given, and dispatch cannot change them.
+        A revision without the result `p` has none.
+        """
+        if "p" not in rev.record.attributes:
+            return []
+        solved = rev.record.attributes["p"].project("snapshot").distinct()
+        held = snapshot_relation(rev.record).join(solved, "snapshot")
+        return sorted(period for (period,) in held.project("period").distinct().fetchall())
+
+    @staticmethod
+    def decided_capacities(rev: Revision) -> pd.Series:
+        """Return the optimised capacity of each asset that `rev` has one for, by asset name.
+
+        It reads the revision, not a network built from it, because a network fills an
+        undecided capacity with 0.
+        """
+        names = {nominal_attr(c) + "_opt" for c in BUILT_COMPONENTS} & set(rev.record.attributes)
+        frames = [rev.record.attributes[name].df().set_index("entity")["value"] for name in names]
+        return pd.concat(frames) if frames else pd.Series(dtype=float)
+
+    @staticmethod
+    def apply_decided_capacities(n: pypsa.Network, decided: pd.Series) -> None:
+        """Fix in `n` the capacity of each asset that `decided` has one for, matched by name.
+
+        This is how the dispatch runs against the capacities an expansion block chose.
+        Each such asset takes its capacity as given and stops being extendable, so the
+        dispatch cannot change it. Assets that `decided` lacks keep their settings.
         """
         for c in n.components[BUILT_COMPONENTS]:
             attr = nominal_attr(c.name)
-            c.static[attr] = source.c[c.name].static[attr + "_opt"]
-            c.static[attr + "_extendable"] = False
+            static = c.static
+            fixed = static.index.intersection(decided.index)
+            static.loc[fixed, attr] = decided[fixed]
+            static.loc[fixed, attr + "_extendable"] = False
+
+    @staticmethod
+    def refuse_undecided_capacities(n: pypsa.Network) -> None:
+        """Raise `ValueError` if an asset of `n` is still extendable, its capacity undecided."""
+        undecided = {}
+        for c in n.components[BUILT_COMPONENTS]:
+            static = c.static
+            extendable = static.index[static[nominal_attr(c.name) + "_extendable"]]
+            if not extendable.empty:
+                undecided[c.name] = extendable.tolist()
+        if undecided:
+            raise ValueError(f"The capacity source decided no capacity of {undecided}")
+
+    def selected_periods(self, base: Revision) -> list[int]:
+        """Return the investment periods of `base` to dispatch, in model order.
+
+        Raises `ValueError` if `periods` is set and the model has no investment periods,
+        or lacks one of those set.
+        """
+        periods = investment_periods(base)
+        if self.config.periods is None:
+            return periods
+        if not periods:
+            raise ValueError("The model has no investment periods to dispatch some of.")
+        missing = sorted(set(self.config.periods) - set(periods))
+        if missing:
+            raise ValueError(f"The model has no investment periods {missing}: {periods}.")
+        return [period for period in periods if period in self.config.periods]
+
+    def fix_capacities(self, n: pypsa.Network, source: Revision, periods: list[int]) -> None:
+        """Fix in `n` the capacities that `source` decided for `periods`, the periods `n` has.
+
+        Over a single period, overnight expansion removes the cohorts only an earlier period
+        could have built. So this removes them too, where `source` has no capacity for them. Raises
+        `ValueError` if `source` has no results for one of `periods`, or if an asset of `n`
+        is left without a decided capacity.
+        """
+        unsolved = sorted(set(periods).difference(self.solved_periods(source))) if periods else []
+        if unsolved:
+            raise ValueError(f"The capacity source holds no results of the periods {unsolved}.")
+        self.apply_decided_capacities(n, self.decided_capacities(source))
+        if len(periods) == 1:
+            remove_unbuilt_cohorts(n)
+        self.refuse_undecided_capacities(n)
+
+    def with_load_shedding(self, base: Revision) -> Revision:
+        """Add load shedding to the network of `base`, and store it as a child revision of it.
+
+        The load-shedding generators are then part of the stored model, so a later
+        results-only write includes their results.
+        """
+        n = to_network(base)
+        n.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
+        return write_network(n, base)
+
+    def refuse_restarting_storage(self, n: pypsa.Network) -> None:
+        """Raise `NotImplementedError` for storage of `n` that a window starts afresh.
+
+        The results of each window solved by a time aggregation are expanded as if the
+        whole horizon were solved at once. That holds only while each window carries over
+        the state the last window ended at. Cyclic storage cycles within each window. Over
+        investment periods, storage that cycles or starts afresh per period does so within
+        each window too.
+        """
+        multi_investment_periods = self.config.optimize_config.multi_investment_periods
+        for ctype, cyclic, cycles_per_period, starts_per_period, _ in STATES.values():
+            static = n.components[ctype].static
+            per_period = static[cycles_per_period] | static[starts_per_period]
+            restarting = static[cyclic] | (multi_investment_periods & per_period)
+            if restarting.any():
+                raise NotImplementedError(
+                    f"Rolling horizon dispatch by a time aggregation of {ctype} "
+                    f"{restarting[restarting].index.tolist()}, which each window restarts"
+                )
 
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
-        """Dispatch `n` window by window, each result series then spanning every snapshot.
+        """Solve `n` one window at a time, and return it.
 
-        PyPSA keeps a series it writes whole on each window, such as `Bus.v_ang`, at
-        the last window alone; the windows before it are missing values.
+        Each result series then spans every snapshot. PyPSA keeps a series it writes whole
+        on each window, such as `Bus.v_ang`, at the last window alone, so the windows before
+        it are missing values. Raises `SolveError` if any window does not solve, which PyPSA
+        itself only logs.
         """
-        n.optimize.optimize_with_rolling_horizon(**self.config.optimize_config.model_dump())
+        logger = logging.getLogger("pypsa.optimization.abstract")
+        failed = FailedWindows()
+        level = logger.level
+        logger.setLevel(min(logger.getEffectiveLevel(), logging.WARNING))
+        logger.addHandler(failed)
+        try:
+            n.optimize.optimize_with_rolling_horizon(**self.config.optimize_config.model_dump())
+        finally:
+            logger.removeHandler(failed)
+            logger.setLevel(level)
+        if failed.failures:
+            raise SolveError(f"PyPSA could not solve every window: {failed.failures}")
         for c in n.components:
             for attr, series in c.dynamic.items():
                 c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
     def run(self, base: Revision) -> Revision:
-        n_new = to_network(base)
+        periods = self.selected_periods(base)
+        if self.config.load_shedding is not None:
+            base = self.with_load_shedding(base)
+        n_new = to_network(base, select={"period": periods}) if periods else to_network(base)
         if self.config.capacity_source is not None:
             source = open_revision(base.store.workspace, self.config.capacity_source)
-            self.apply_optimised_capacities(n_new, to_network(source))
+            self.fix_capacities(n_new, source, periods)
+        if self.config.time_aggregation is not None:
+            self.refuse_restarting_storage(n_new)
 
-        n_new = self.optimize(n_new)
-        return write_network(n_new, base)
+        return solve_and_write(
+            n_new,
+            base,
+            self.optimize,
+            self.config.time_aggregation,
+            multi_investment_periods=self.config.optimize_config.multi_investment_periods,
+        )[1]

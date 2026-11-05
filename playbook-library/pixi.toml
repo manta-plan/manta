@@ -33,6 +33,8 @@ playbook-library = { path = ".", editable = true }
 # The solver stack, from conda-forge.
 pypsa = ">=1.4,<2"
 highspy = { version = ">=1.13.2.dev0,<1.13.3", channel = "conda-forge/label/dev" }
+tsam = ">=4.1,<5"
+pyarrow = ">=25"
 
 [feature.pypsa.pypi-dependencies]
 datarecord = { git = "https://github.com/energy-models/datarecord", rev = "8889d623865e3cab80d7a18681e48a6c2536741d", extras = ["remote", "pypsa"] }
