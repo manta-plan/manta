@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation, useParams } from "wouter";
 import { FaFly } from "react-icons/fa";
+import { GiMagnifyingGlass } from "react-icons/gi";
 import { LuBoxes, LuHistory } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import { useAppStore } from "../../home/store";
@@ -21,6 +22,11 @@ const WORKSPACES: { label: string; description: string; icon: IconType }[] = [
     label: "Run",
     description: "Execute a playbook against a scenario and track its progress.",
     icon: LuHistory,
+  },
+  {
+    label: "Inspect",
+    description: "Explore and compare run outputs as tables, maps and charts.",
+    icon: GiMagnifyingGlass,
   },
 ];
 
@@ -66,7 +72,7 @@ export function WelcomeDialog() {
             Welcome to {projectName ?? "your project"}
           </Dialog.Title>
           <Dialog.Description className="text-surface-400 mt-1.5 text-[12px] leading-5">
-            A project has two workspaces so far: the model and its runs.
+            A project has three workspaces so far: the model, its runs and their results.
           </Dialog.Description>
 
           <ol className="mt-4 flex flex-col gap-3">

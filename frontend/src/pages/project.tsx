@@ -1,10 +1,13 @@
 import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
+import { builtInInspection } from "../features/project/data/inspections";
+import { InspectOverview } from "../features/inspect/components/inspect-overview";
+import { InspectWorkspace } from "../features/inspect/components/inspect-workspace";
 import { useAppStore } from "../features/home/store";
 import { MapView } from "../features/project/components/map-view";
 import { ProjectLayout } from "../features/project/components/project-layout";
 import { WelcomeDialog } from "../features/project/components/welcome-dialog";
-import { getActiveProjectTab } from "../features/project/lib/project-route";
+import { getActiveProjectTab, projectInspectHref } from "../features/project/lib/project-route";
 import { writeScenarioToUrl } from "../features/project/lib/record-scenarios";
 import { isWelcomeDialogDisabled } from "../features/project/lib/welcome-preference";
 import { useProjectStore } from "../features/project/store/project-store";
@@ -15,9 +18,13 @@ import { RunsView } from "../features/runs/components/runs-view";
 // tabs. That keeps the maplibre instance and its already-loaded tiles and style
 // alive instead of starting the map again on every tab switch.
 export function ProjectPage() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const activeTab = getActiveProjectTab(location);
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId, detailId } = useParams<{ projectId: string; detailId?: string }>();
+  const selectedInspectionId = useProjectStore((state) => state.selectedInspectionId);
+  const selectInspection = useProjectStore((state) => state.selectInspection);
+  const inspections = useProjectStore((state) => state.inspections);
+  const inspectionsProjectId = useProjectStore((state) => state.inspectionsProjectId);
   const project = useAppStore((state) => state.projects.find((item) => item.id === projectId));
   const loadRecord = useProjectStore((state) => state.loadRecord);
   const openWelcomeDialog = useProjectStore((state) => state.openWelcomeDialog);
@@ -46,6 +53,32 @@ export function ProjectPage() {
   // Leaving the project (for example browser Back) mustn't carry an open dialog over.
   useEffect(() => closeWelcomeDialog, [projectId, closeWelcomeDialog]);
 
+  useEffect(() => {
+    if (activeTab !== "inspect") return;
+    if (!detailId) {
+      if (selectedInspectionId) selectInspection(null);
+      return;
+    }
+    // ProjectLayout loads the project's inspections in an effect that runs after
+    // this one, so on a fresh load of an inspection URL the list is still empty.
+    // Wait for it rather than redirecting to the overview.
+    if (inspectionsProjectId !== projectId) return;
+    if (!builtInInspection(detailId) && !inspections.some((canvas) => canvas.id === detailId)) {
+      setLocation(projectInspectHref(projectId));
+      return;
+    }
+    if (selectedInspectionId !== detailId) selectInspection(detailId);
+  }, [
+    activeTab,
+    detailId,
+    inspections,
+    inspectionsProjectId,
+    projectId,
+    selectedInspectionId,
+    selectInspection,
+    setLocation,
+  ]);
+
   return (
     <ProjectLayout>
       {/* Hidden with opacity + inert, not just `invisible`: maplibre's CSS sets
@@ -66,8 +99,11 @@ export function ProjectPage() {
 
       {activeTab === "run" && <RunsView />}
 
-      {/* Inspect and Report arrive with their own tabs. */}
-      {(activeTab === "inspect" || activeTab === "report") && (
+      {activeTab === "inspect" &&
+        (selectedInspectionId ? <InspectWorkspace /> : <InspectOverview />)}
+
+      {/* Report arrives with its own tab. */}
+      {activeTab === "report" && (
         <div className="text-surface-400 flex h-full items-center justify-center text-sm">
           This tab is not available yet.
         </div>

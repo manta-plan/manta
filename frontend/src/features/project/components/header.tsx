@@ -40,17 +40,18 @@ import {
   projectTabHref,
   type ProjectTab,
 } from "../lib/project-route";
-import { startModelWorkspaceTour } from "../lib/workspace-tours";
+import { startInspectWorkspaceTour, startModelWorkspaceTour } from "../lib/workspace-tours";
 import { zoneLevels } from "../lib/record-geo";
 import { selectableScenarios } from "../lib/record-scenarios";
 import { NODAL } from "../store/types";
 import { MantaLogo } from "../../home/components/manta-logo";
 import { RaiIcon } from "./rai-mascot";
 
-// Inspect and Report join once their tabs are built.
+// Report joins once its tab is built.
 const TABS: { id: ProjectTab; label: string }[] = [
   { id: "model", label: "Model" },
   { id: "run", label: "Run" },
+  { id: "inspect", label: "Inspect" },
 ];
 
 const MEASURE_OPTIONS: ToolbarModeOption<ToolId>[] = [
@@ -336,8 +337,10 @@ export function Header() {
             <ToolbarIconButton
               icon={FaFly}
               label="Start tour"
-              disabled={activeTab !== "model"}
-              onClick={startModelWorkspaceTour}
+              disabled={activeTab !== "model" && activeTab !== "inspect"}
+              onClick={
+                activeTab === "inspect" ? startInspectWorkspaceTour : startModelWorkspaceTour
+              }
             />
             <ToolbarIconButton
               icon={theme === "dark" ? LuMoon : LuSun}
