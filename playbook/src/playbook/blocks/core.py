@@ -31,6 +31,22 @@ class BlockDefinitionError(Exception):
     """
 
 
+class BlockRunError(Exception):
+    """Raised by a block when a run fails for a reason its user can act on.
+
+    Anything else a block raises is a fault in the block itself. Subclasses name the
+    reason, so whoever started the run can report it without reading the message.
+    """
+
+
+class SolveError(BlockRunError):
+    """Raised when a model a block built could not be solved to optimality."""
+
+
+class DataRecordError(BlockRunError):
+    """Raised when a block could not read a model from, or write one to, a record."""
+
+
 @dataclass
 class DataRecord:
     """Where a block's data lives.
