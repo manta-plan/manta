@@ -8,23 +8,31 @@ Each test gets one datarecord workspace, closed when it ends, and every revision
 reads or writes is opened on it.
 """
 
-import json
 import shutil
 from collections.abc import Callable, Iterator
 from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode
-from urllib.request import urlopen, urlretrieve
-from uuid import UUID
 
 import pytest
+from playbook.blocks.run import open_revision
+
+from playbook_library.examples import download_public_store, inputs_ref
 
 if TYPE_CHECKING:
     import pypsa
-    from datarecord import Revision, Workspace
+    from datarecord import Revision, Store, Workspace
 
-PUBLIC_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
+
+@pytest.fixture(scope="session")
+def store_network() -> Callable[["pypsa.Network", "Store"], "Revision"]:
+    """Return a function that stores a network as the root revision of a store."""
+    from datarecord.tools.pypsa import PyPSA
+
+    def store(n: "pypsa.Network", store: "Store") -> "Revision":
+        return store.commit(PyPSA.to_datarecord(n, store.workspace.con), parent=None)
+
+    return store
 
 
 @pytest.fixture
@@ -36,22 +44,45 @@ def workspace() -> Iterator["Workspace"]:
 
 
 @pytest.fixture
-def store_revision(tmp_path: Path, workspace: "Workspace") -> Callable[..., "Revision"]:
+def store_revision(
+    tmp_path: Path, workspace: "Workspace", store_network
+) -> Callable[["pypsa.Network", str], "Revision"]:
     """Write a network as the root revision of a new store, named `name`, under tmp_path."""
-    from playbook_library.pypsa_helpers import store_network
 
-    def write(n, name: str) -> "Revision":
+    def write(n: "pypsa.Network", name: str) -> "Revision":
         return store_network(n, workspace.store(str(tmp_path / name)))
 
     return write
 
 
-@pytest.fixture
-def single_period(store_revision) -> "Revision":
-    """Store a network of one bus, one extendable generator and a day of demand."""
-    from playbook_library.examples import build_example_network
+@pytest.fixture(scope="session")
+def new_single_period_network() -> Callable[[], "pypsa.Network"]:
+    """Return a builder of a network of one bus, one extendable generator and a day of demand."""
+    import pandas as pd
+    import pypsa
 
-    return store_revision(build_example_network(), "base")
+    def build() -> pypsa.Network:
+        n = pypsa.Network()
+        n.set_snapshots(pd.date_range("2030-01-01", periods=24, freq="h"))
+        n.add("Bus", "bus")
+        n.add(
+            "Generator",
+            "gen",
+            bus="bus",
+            p_nom_extendable=True,
+            capital_cost=100.0,
+            marginal_cost=10.0,
+        )
+        n.add("Load", "load", bus="bus", p_set=50.0)
+        return n
+
+    return build
+
+
+@pytest.fixture
+def single_period(store_revision, new_single_period_network) -> "Revision":
+    """Store the network that `new_single_period_network` builds."""
+    return store_revision(new_single_period_network(), "base")
 
 
 @pytest.fixture(scope="session")
@@ -110,16 +141,8 @@ def public_store(tmp_path_factory) -> Callable[[str], Path]:
     def download(name: str) -> Path:
         if name in stores:
             return stores[name]
-        store_dir = tmp_path_factory.mktemp(name)
-        prefix = f"{name}/"
-        with urlopen(f"{PUBLIC_OBJECTS}?{urlencode({'prefix': prefix})}") as response:
-            listing = json.load(response)
-        for item in listing["items"]:
-            target = store_dir / item["name"].removeprefix(prefix)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            urlretrieve(item["mediaLink"], target)
-        stores[name] = store_dir
-        return store_dir
+        stores[name] = download_public_store(name, tmp_path_factory.mktemp(name))
+        return stores[name]
 
     return download
 
@@ -136,8 +159,7 @@ def public_revision(
     def copy(name: str) -> "Revision":
         store_dir = tmp_path / name
         shutil.copytree(public_store(name), store_dir)
-        revisions = json.loads((store_dir / "revisions.json").read_text())
-        return workspace.store(str(store_dir)).revision(UUID(revisions["inputs"]))
+        return open_revision(workspace, inputs_ref(store_dir))
 
     return copy
 
