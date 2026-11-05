@@ -18,6 +18,7 @@ from datarecord.tools.pypsa import PyPSA
 from duckdb import DuckDBPyRelation
 from playbook.blocks.core import DataRecord
 
+from playbook_library.datarecord_helpers import revision
 from playbook_library.time_aggregation import (
     Overlay,
     checked_clusters,
@@ -25,7 +26,6 @@ from playbook_library.time_aggregation import (
     cluster_starts,
     held,
     interpolated,
-    revision,
     shaped,
     snapshot_frame,
 )

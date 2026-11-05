@@ -9,6 +9,7 @@ import pypsa
 from playbook.blocks.core import BlockDims, DataRecord, MantaBlock, SolveError
 from pydantic import Field
 
+from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import (
     LoadSheddingConfig,
     PyPSAOptimizeRollingHorizonConfig,
@@ -24,7 +25,7 @@ from playbook_library.pypsa_helpers import (
     write_network,
 )
 from playbook_library.pypsa_time_aggregation import STATES
-from playbook_library.time_aggregation import revision, snapshot_relation
+from playbook_library.time_aggregation import snapshot_relation
 
 
 class FailedWindows(logging.Handler):
