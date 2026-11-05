@@ -23,7 +23,6 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.config.s3_config import s3_bucket_name
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
@@ -193,6 +192,7 @@ class RunService:
         playbook: str,
         config: dict | None,
         data_record_url: str,
+        revision_uuid: UUID,
         user: User,
     ) -> CreateRunResult:
         project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
@@ -212,15 +212,13 @@ class RunService:
         self.playbook_service.raise_for_config_issues(playbook, run_config)
 
         run_uuid = uuid4()
-        output_prefix = f"s3://{s3_bucket_name()}/{project_uuid}/{_run_output_folder(run_uuid)}"
 
         flow_run = run_deployment(
             PLAYBOOK_DEPLOYMENT,
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
                 "config": run_config,
-                "record": {"url": data_record_url},
-                "output_prefix": output_prefix,
+                "record": {"url": data_record_url, "uuid": str(revision_uuid)},
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
             timeout=0,

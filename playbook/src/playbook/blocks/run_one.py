@@ -4,7 +4,7 @@
 
 """Run a single block from the command line.
 
-    python -m playbook.blocks.run_one <block> --record '{"url": ...}' --output-base <url> \
+    python -m playbook.blocks.run_one <block> --record '{"url": ..., "uuid": ...}' \
         [--source <block library>] [--config '<json>'] [--inputs '<json>']
 
 This is the whole contract between a block container and whatever drives it -
@@ -51,18 +51,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--record",
         required=True,
-        help='the input record as JSON, e.g. \'{"url": "in.nc"}\'',
-    )
-    parser.add_argument(
-        "--output-base",
-        required=True,
-        help="where the block should produce its output: a URL without an extension",
+        help='the input record as JSON, e.g. \'{"url": "store", "uuid": "<revision>"}\'',
     )
     parser.add_argument("--config", default="{}", help="the block's settings, as JSON")
     parser.add_argument(
         "--inputs",
         default="{}",
-        help="wired-in records by setting name, as JSON: {name: {url: ...}, ...}",
+        help="wired-in records by setting name, as JSON: {name: {url: ..., uuid: ...}, ...}",
     )
     parser.add_argument(
         "--source",
@@ -83,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     block_cls = get_block(args.block)
     wired = {name: DataRecord.from_dict(value) for name, value in json.loads(args.inputs).items()}
     result = block_cls(block_cls.merge_config(json.loads(args.config), wired)).run(
-        DataRecord.from_dict(json.loads(args.record)), args.output_base
+        DataRecord.from_dict(json.loads(args.record))
     )
 
     print(result_line(result), flush=True)

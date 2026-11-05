@@ -86,7 +86,6 @@ services:
       dockerfile: docker/block-image.Dockerfile
       target: block-prefect-runtime
       args:
-        LIBRARY_EXTRAS: pypsa
         ENV_NAME: pypsa
     image: ${MANTA_BLOCK_PREFECT_RUNTIME_IMAGE_PYPSA}
     command: python -c "import playbook_library, runner; print('pypsa block image ready')"

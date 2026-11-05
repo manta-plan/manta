@@ -18,16 +18,9 @@ authors = [
     { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
 ]
 dependencies = [
-    # Records live in object storage when run under Manta, hence the s3 extra.
-    "playbook[s3]",
+    "playbook",
     "pyyaml>=6",
 ]
-
-# PyPSA itself is an extra rather than a requirement: this package must stay
-# importable - for names, schemas, and the catalogue - in environments that cannot
-# install a solver stack. Only the environment a block actually runs in needs it.
-[project.optional-dependencies]
-pypsa = ["pypsa>=1.2,<2", "highspy", "netcdf4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/playbook_library"]
@@ -36,7 +29,8 @@ exclude = ["**/tests"]
 [tool.pytest.ini_options]
 testpaths = ["src"]
 markers = [
-    "pypsa: needs PyPSA installed (run in the `full` environment)"
+    "pypsa: needs PyPSA installed (run in the `full` environment)",
+    "slow: takes minutes, solving a real network (deselect with `-m 'not slow'`)",
 ]
 
 # Same rules as the framework next door and the backend; see CONTRIBUTING.md.
@@ -51,6 +45,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "N"]
 # S101: bare `assert` is how pytest expresses assertions.
 # E402: these tests skip themselves when PyPSA is missing, which means checking for
 # it before importing anything that needs it.
-"**/tests/**" = ["S101", "E402"]
+# S310: tests download fixtures from fixed public https URLs.
+"**/tests/**" = ["S101", "E402", "S310"]
 # F401/E402: registering this library's blocks is an import side effect.
 "__init__.py" = ["F401", "E402"]

@@ -17,6 +17,7 @@ lives outside this package and can be swapped without touching a single block.
 
 from abc import ABC, abstractmethod
 from typing import ClassVar, cast, get_args
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.dataclasses import dataclass
@@ -30,21 +31,38 @@ class BlockDefinitionError(Exception):
     """
 
 
+class BlockRunError(Exception):
+    """Raised by a block when a run fails for a reason its user can act on.
+
+    Anything else a block raises is a fault in the block itself. Subclasses name the
+    reason, so whoever started the run can report it without reading the message.
+    """
+
+
+class SolveError(BlockRunError):
+    """Raised when a model a block built could not be solved to optimality."""
+
+
+class DataRecordError(BlockRunError):
+    """Raised when a block could not read a model from, or write one to, a record."""
+
+
 @dataclass
 class DataRecord:
     """Where a block's data lives.
 
     Only ever a pointer - never the data itself - because a record is passed between
-    processes and machines, which a loaded model could not survive. The URL is either
-    a local path or an `s3://bucket/key` address; `playbook.blocks.storage` turns both into
-    bytes.
+    processes and machines, which a loaded model could not survive. The URL names a
+    datarecord store, either a local directory or an `s3://` address, and the uuid
+    names one revision in that store.
     """
 
     url: str
+    uuid: UUID
 
     def to_dict(self) -> dict:
         """Turn this record into plain data, for sending to another process."""
-        return {"url": self.url}
+        return {"url": self.url, "uuid": str(self.uuid)}
 
     @classmethod
     def from_dict(cls, data: dict) -> "DataRecord":
@@ -194,13 +212,9 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
         return cls.CONFIG.model_validate({**base, **inputs})
 
     @abstractmethod
-    def run(self, record: DataRecord, output_base: str) -> DataRecord:
+    def run(self, record: DataRecord) -> DataRecord:
         """Do this block's work, returning a record pointing at the result.
 
-        `output_base` is where the caller wants the result produced: a URL without an
-        extension, e.g. `s3://bucket/some/run/cluster`. The block writes its output
-        there, appending whatever suffix fits its format, and the returned record
-        points at the exact URL written. The caller choosing the place and the block
-        choosing the format is what lets a run's outputs land somewhere predictable
-        without this package knowing what any block produces.
+        The result is written alongside `record`, as a new revision in the input
+        record's own store, so the caller never has to say where it should go.
         """

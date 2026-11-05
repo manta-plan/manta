@@ -52,7 +52,7 @@ class PyPSAOptimizeSchema(ConfigSchema):
     """Whether to optimise as a single investment period or to optimise in multiple investment
     periods.
 
-    If multiple investment periods requested, the `investment_period` dimension must exist in the
+    If multiple investment periods requested, the `period` dimension must exist in the
     model data.
     """
 
@@ -83,11 +83,12 @@ class PyPSAOptimizeSchema(ConfigSchema):
 
     # compute_infeasibilities: bool = False # we do not allow this in MVP blocks
 
-    include_objective_constant: bool = False
+    include_objective_constant: bool = True
     """Whether to include the objective constant (capital costs of existing infrastructure) as a
     variable in the objective function.
 
-    Setting to False improves LP numerical conditioning."""
+    Setting to False improves LP numerical conditioning, but the objective then leaves out the
+    capital costs of what already exists."""
 
     committable_big_m: float | None = None
     """Big-M value for committable+extendable constraints.
@@ -124,3 +125,9 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
 
     Results of overlapping snapshots will be superseded by those provided by the next
     iteration(s)."""
+
+    @model_validator(mode="after")
+    def overlap_must_be_shorter_than_horizon(self: Self) -> Self:
+        if self.overlap >= self.horizon:
+            raise ValueError("`overlap` must be smaller than `horizon`.")
+        return self

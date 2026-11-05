@@ -292,17 +292,15 @@ class Playbook(BaseModel):
         self,
         record: DataRecord,
         config: dict,
-        output_prefix: str,
         runner: "BlockRunner | None" = None,
     ) -> DataRecord:
         """Check this playbook against `config`, then run it.
 
-        Step outputs land under `output_prefix` (see `execution.execute_playbook`).
         Without a `runner`, every block runs in this process.
         """
         from playbook.playbooks.execution import execute_playbook
 
-        return execute_playbook(self, record, config, output_prefix=output_prefix, runner=runner)
+        return execute_playbook(self, record, config, runner=runner)
 
 
 def as_block_spec(
