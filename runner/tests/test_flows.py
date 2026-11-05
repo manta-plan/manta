@@ -67,6 +67,14 @@ def _env_images(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def published(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """The Prefect artifact API, which `run-block` publishes its output record to."""
+    create = MagicMock()
+    monkeypatch.setattr(flows, "create_table_artifact", create)
+    return create
+
+
 def _completed(result: dict):
     state = SimpleNamespace(
         is_completed=lambda: True, result=lambda: result, type=SimpleNamespace(value="COMPLETED")
@@ -104,6 +112,22 @@ def test_the_block_flow_accepts_a_step_with_nothing_wired_into_it() -> None:
 
     # Then
     assert result == {"url": f"{STORE}||-", "uuid": RECORD_ID}
+
+
+def test_the_block_flow_publishes_its_output_record_as_an_artifact(
+    published: MagicMock,
+) -> None:
+    # When
+    result = flows.run_block.fn(
+        block="runtime_fake",
+        step_name="cluster",
+        config={},
+        record={"url": STORE, "uuid": RECORD_ID},
+        inputs=None,
+    )
+
+    # Then
+    published.assert_called_once_with(table=[result], key=flows.OUTPUT_ARTIFACT_KEY)
 
 
 def test_the_block_flow_imports_the_job_containers_block_library_before_looking_anything_up(

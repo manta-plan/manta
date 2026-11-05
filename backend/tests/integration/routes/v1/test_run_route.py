@@ -230,6 +230,13 @@ def test_create_and_run_a_playbook(
         ran = step["status"] == "COMPLETED"
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
+        assert (step["output"] is not None) == ran
+
+    # And the step that ran reports the new revision it wrote into the run's store
+    data_record = example_store(project_uuid)["data_record"]
+    output = steps[0]["output"]
+    assert output["store_url"] == data_record["store_url"]
+    assert output["revision_uuid"] != data_record["revision_uuid"]
 
     # And the run reports which playbook it ran, and the config it was started
     # with — the library's own default_config, since none was supplied
@@ -643,12 +650,6 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     steps_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps")
     assert steps_response.status_code == 401
 
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
-    assert outputs_response.status_code == 401
-
-    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
-    assert output_response.status_code == 401
-
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -686,14 +687,6 @@ def test_run_endpoints_reject_malformed_uuid(
 
     steps_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/steps", headers=headers)
     assert steps_response.status_code == 422
-
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
-    assert outputs_response.status_code == 422
-
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 422
 
 
 def test_list_runs_rejects_invalid_pagination_params(
@@ -734,8 +727,6 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/{run_uuid}
     #   GET    /runs/{run_uuid}/logs
     #   GET    /runs/{run_uuid}/steps
-    #   GET    /runs/{run_uuid}/outputs
-    #   GET    /runs/{run_uuid}/outputs/{name}
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -764,14 +755,6 @@ def test_run_endpoints_return_404_for_unknown_ids(
 
     steps_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/steps", headers=headers)
     assert steps_response.status_code == 404
-
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
-    assert outputs_response.status_code == 404
-
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 404
 
 
 def test_get_run_rejects_non_owner(

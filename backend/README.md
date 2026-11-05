@@ -255,7 +255,8 @@ one for the requests.
 9. Follow the run. The first request returns the run's overall `status` and the
    `config` it was started with. The second returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
-   begins, and Prefect's own state from then on. The third returns the run's
+   begins, and Prefect's own state from then on, plus its `output` record once
+   it has completed. The third returns the run's
    logs:
 
    ```bash
@@ -267,8 +268,9 @@ one for the requests.
    Repeat them until the run's `status` is `COMPLETED`.
 
 10. Each step that ran wrote a new revision into the uploaded store, under
-    `manual-test/store/revisions/`. `GET /v1/runs/RUN_UUID/outputs` does not list
-    them yet: it still lists the run's old output folder, which stays empty.
+    `PROJECT_UUID/store/revisions/`. The steps response names it as the step's
+    `output` (`store_url` and `revision_uuid`). The last step that ran holds the
+    run's final record.
 
 11. Tear down (from `docker/`, in the third terminal). This also stops the
     stack in the first terminal. Stop the backend in the second terminal with

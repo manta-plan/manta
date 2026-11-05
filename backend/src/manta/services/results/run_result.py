@@ -37,6 +37,11 @@ class ListRunsResult(BaseModel):
     summary: GetRunSummaryResult
 
 
+class DataRecordResult(BaseModel):
+    store_url: str
+    revision_uuid: UUID
+
+
 class RunStepResult(BaseModel):
     name: str
     """The step's own name within its playbook, e.g. `dispatch` (see
@@ -59,6 +64,11 @@ class RunStepResult(BaseModel):
     start_time: datetime | None
     end_time: datetime | None
 
+    output: DataRecordResult | None
+    """The revision the step wrote into the run's store. None until the step's block
+    run has COMPLETED. The run's final record is the output of its last step that
+    ran."""
+
 
 class GetRunStepsResult(BaseModel):
     uuid: UUID
@@ -66,22 +76,6 @@ class GetRunStepsResult(BaseModel):
     """Every step of the run's playbook, in playbook order."""
 
     run_status: str
-
-
-class RunOutputFileResult(BaseModel):
-    name: str
-    """The file's path within the run's outputs, e.g. `dispatch.nc` — what it is
-    downloaded by (GET /v1/runs/{uuid}/outputs/{name}). Each step writes
-    `<step name>.<suffix>`."""
-
-    size: int
-    last_modified: datetime
-
-
-class ListRunOutputsResult(BaseModel):
-    uuid: UUID
-    items: list[RunOutputFileResult]
-    total: int
 
 
 class GetRunLogsResult(BaseModel):

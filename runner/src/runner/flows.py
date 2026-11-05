@@ -24,6 +24,7 @@ from playbook.blocks import BlockSpec, Catalogue, DataRecord
 from playbook.blocks.registry import get_block, load_block_sources
 from playbook.playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
+from prefect.artifacts import create_table_artifact
 from prefect.deployments import run_deployment
 
 from runner.config import exec_image
@@ -32,6 +33,10 @@ logger = logging.getLogger(__name__)
 
 BLOCK_FLOW_NAME = "run-block"
 PLAYBOOK_FLOW_NAME = "run-playbook"
+
+OUTPUT_ARTIFACT_KEY = "block-output"
+"""The key of the one-row table artifact `run-block` publishes its output record as,
+so it can be read through the Prefect API without access to the result storage."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -108,7 +113,9 @@ def run_block(
     block_cls = get_block(block)
     wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
     result = block_cls(block_cls.merge_config(config, wired)).run(DataRecord.from_dict(record))
-    return result.to_dict()
+    output = result.to_dict()
+    create_table_artifact(table=[output], key=OUTPUT_ARTIFACT_KEY)
+    return output
 
 
 class PrefectBlockRunner:
