@@ -18,7 +18,6 @@ import pandas as pd
 from playbook.blocks.core import DataRecord, SolveError
 
 from playbook_library.datarecord_helpers import revision
-from playbook_library.examples import build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
@@ -253,8 +252,8 @@ def test_overnight_expansion_needs_the_period_it_is_given(multi_period_record):
         _run(OvernightCapacityExpansion, {"period": 2045}, multi_period_record)
 
 
-def test_a_failed_solve_raises_a_solve_error(store_record):
-    n = build_example_network()
+def test_a_failed_solve_raises_a_solve_error(store_record, new_single_period_network):
+    n = new_single_period_network()
     n.generators.p_nom_max = 0.0
     with pytest.raises(SolveError, match="infeasible"):
         _run(OvernightCapacityExpansion, {}, store_record(n, "infeasible"))
