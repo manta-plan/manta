@@ -16,7 +16,7 @@ The blocks — single units of work on a model:
 
 | Block | What it does |
 | --- | --- |
-| `cluster_time` | Shorten a model's time series, so later blocks have less to solve |
+| `cluster_time` | Group a model's time series into stretches, so later blocks can solve less |
 | `overnight_capacity_expansion` | Decide what to build, treating the whole model as one moment in time |
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
@@ -70,7 +70,7 @@ To run a single block instead, without a playbook around it:
 
 ```bash
 pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
-    --source playbook_library --config '{"n_hours": 6}' \
+    --source playbook_library --config '{"name": "agg_6h", "n_hours": 6}' \
     --record '{"url": "<store>", "uuid": "<revision>"}'
 ```
 

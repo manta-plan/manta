@@ -10,11 +10,6 @@ playbooks are the ones this library ships, and the network and example playbook 
 ones `examples.py` runs, so what a contributor runs by hand is what is tested here.
 """
 
-import json
-import shutil
-from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import urlopen, urlretrieve
 from uuid import UUID
 
 import pytest
@@ -46,9 +41,9 @@ def network_record(store_record) -> DataRecord:
 
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "globals": {"expansion_mode": "overnight"},
-    "cluster": {"n_hours": 3},
-    "expansion_overnight": {},
-    "expansion_myopic": {},
+    "cluster": {"name": "agg_3h", "n_hours": 3},
+    "expansion_overnight": {"time_aggregation": "agg_3h"},
+    "expansion_myopic": {"time_aggregation": "agg_3h"},
     "dispatch": {"optimize_config": {"horizon": 4}},
 }
 
@@ -76,7 +71,7 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network_r
     assert lineage[0] == network_record.uuid
 
     n = to_network(result)
-    assert len(n.snapshots) == 8  # clustered down from 24
+    assert len(n.snapshots) == 24
     # Capacity was chosen by the expansion block and dispatch could not change it.
     assert not n.generators.p_nom_extendable["gen"]
     assert n.generators.p_nom["gen"] == pytest.approx(50.0, rel=1e-3)
@@ -101,30 +96,6 @@ def test_a_record_pointing_at_nothing_raises_a_datarecord_error(network_record, 
     )
     with pytest.raises(DataRecordError, match="No revision"):
         to_network(record)
-
-
-BEL_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
-BEL_PREFIX = "BEL-pre-aggregated/"
-
-
-@pytest.fixture(scope="session")
-def bel_store(tmp_path_factory) -> Path:
-    store_dir = tmp_path_factory.mktemp("bel-download")
-    with urlopen(f"{BEL_OBJECTS}?{urlencode({'prefix': BEL_PREFIX})}") as response:
-        listing = json.load(response)
-    for item in listing["items"]:
-        target = store_dir / item["name"].removeprefix(BEL_PREFIX)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        urlretrieve(item["mediaLink"], target)
-    return store_dir
-
-
-@pytest.fixture
-def bel_record(tmp_path, bel_store) -> DataRecord:
-    store_dir = tmp_path / "BEL"
-    shutil.copytree(bel_store, store_dir)
-    revisions = json.loads((store_dir / "revisions.json").read_text())
-    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
 
 
 BUILT_CARRIERS = [
