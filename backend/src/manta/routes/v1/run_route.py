@@ -32,10 +32,10 @@ def create_run(
 ) -> CreateRunResult:
     return service.create_run(
         project_uuid=request.project_uuid,
-        playbook=request.playbook,
-        config=request.config,
-        data_record_url=request.data_record_url,
-        revision_uuid=request.revision_uuid,
+        playbook=request.playbook.name,
+        config=request.playbook.config,
+        store_url=request.data_record.store_url,
+        revision_uuid=request.data_record.revision_uuid,
         user=user,
     )
 

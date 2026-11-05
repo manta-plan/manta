@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
@@ -18,7 +19,8 @@ from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
 
 _LIBRARY_PLAYBOOK = "expand"
-_RECORD_URL = "s3://bucket/store"
+_BUCKET = "manta"
+_RECORD_URL = f"s3://{_BUCKET}/{uuid4()}/store"
 _REVISION_UUID = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
 
 
@@ -75,6 +77,19 @@ def _existing_project(owner_id: int = 1) -> Project:
     return project
 
 
+def _store_url(project: Project) -> str:
+    return f"s3://{_BUCKET}/{project.uuid}/store"
+
+
+def _dispatching_service(db, mock_s3_client) -> RunService:
+    """A RunService that gets as far as dispatching a run: the record's revision exists."""
+    return RunService(
+        db=db,
+        storage=S3FileStorageService(client=mock_s3_client, bucket=_BUCKET),
+        playbook_service=_library_playbook_service(),
+    )
+
+
 def _existing_run(project: Project) -> Run:
     run = Run(project_id=project.id, prefect_flow_run_id=uuid4(), playbook=_LIBRARY_PLAYBOOK)
     run.id = 1
@@ -84,7 +99,7 @@ def _existing_run(project: Project) -> Run:
 
 
 def test_create_run_persists_a_run_and_returns_its_dto(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
 ) -> None:
     # Given
     project = _existing_project()
@@ -96,14 +111,14 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     # `AsyncMock`, mirrors that real call shape.
     dispatch = MagicMock(return_value=SimpleNamespace(id=flow_run_id))
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db, playbook_service=_library_playbook_service())
+    service = _dispatching_service(db, mock_s3_client)
 
     # When
     result = service.create_run(
         project_uuid=project.uuid,
         playbook=_LIBRARY_PLAYBOOK,
         config=None,
-        data_record_url=_RECORD_URL,
+        store_url=_store_url(project),
         revision_uuid=_REVISION_UUID,
         user=user,
     )
@@ -130,20 +145,20 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
     assert parameters["config"] == library_playbook.default_config
-    assert parameters["record"] == {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)}
+    assert parameters["record"] == {"url": _store_url(project), "uuid": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
 
 
 def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
 ) -> None:
     # Given
     project = _existing_project()
     db = mock_db_class(query_results={Project: project})
     dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db, playbook_service=_library_playbook_service())
+    service = _dispatching_service(db, mock_s3_client)
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
     custom_config = {**default_config, "expansion_overnight": {"period": 2050}}
 
@@ -152,7 +167,7 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
         project_uuid=project.uuid,
         playbook=_LIBRARY_PLAYBOOK,
         config=custom_config,
-        data_record_url=_RECORD_URL,
+        store_url=_store_url(project),
         revision_uuid=_REVISION_UUID,
         user=_existing_user(),
     )
@@ -162,7 +177,10 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
 
 
 def test_create_run_logs_orphaned_flow_run_when_commit_fails(
-    monkeypatch: pytest.MonkeyPatch, mock_db_class, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    mock_db_class,
+    mock_s3_client,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # Given
     project = _existing_project()
@@ -175,7 +193,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
         "run_deployment",
         MagicMock(return_value=SimpleNamespace(id=flow_run_id)),
     )
-    service = RunService(db=db, playbook_service=_library_playbook_service())
+    service = _dispatching_service(db, mock_s3_client)
 
     # When/Then
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
@@ -183,7 +201,7 @@ def test_create_run_logs_orphaned_flow_run_when_commit_fails(
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            data_record_url=_RECORD_URL,
+            store_url=_store_url(project),
             revision_uuid=_REVISION_UUID,
             user=user,
         )
@@ -205,7 +223,7 @@ def test_create_run_with_unknown_project_raises_404(
             project_uuid=uuid4(),
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            data_record_url=_RECORD_URL,
+            store_url=_RECORD_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -228,7 +246,7 @@ def test_create_run_with_unknown_playbook_raises_404(
             project_uuid=project.uuid,
             playbook="does-not-exist",
             config=None,
-            data_record_url=_RECORD_URL,
+            store_url=_RECORD_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -258,7 +276,7 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=myopic_config,
-            data_record_url=_RECORD_URL,
+            store_url=_RECORD_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -277,6 +295,67 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
     dispatch.assert_not_called()
     db.add.assert_not_called()
     db.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "store_url",
+    [
+        f"s3://{_BUCKET}/{uuid4()}/store",
+        "s3://other-bucket/{project_uuid}/store",
+        "file:///{project_uuid}/store",
+    ],
+    ids=["other_project", "other_bucket", "not_s3"],
+)
+def test_create_run_rejects_a_store_outside_the_projects_storage(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client, store_url: str
+) -> None:
+    # Given
+    project = _existing_project()
+    dispatch = MagicMock()
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    service = _dispatching_service(mock_db_class(query_results={Project: project}), mock_s3_client)
+
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            store_url=store_url.format(project_uuid=project.uuid),
+            revision_uuid=_REVISION_UUID,
+            user=_existing_user(),
+        )
+    mock_s3_client.head_object.assert_not_called()
+    dispatch.assert_not_called()
+
+
+def test_create_run_with_unknown_revision_raises_404(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given a store in the project's storage that has no such revision
+    project = _existing_project()
+    dispatch = MagicMock()
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    mock_s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}}, "HeadObject"
+    )
+    service = _dispatching_service(mock_db_class(query_results={Project: project}), mock_s3_client)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            store_url=_store_url(project),
+            revision_uuid=_REVISION_UUID,
+            user=_existing_user(),
+        )
+    assert exc_info.value.status_code == 404
+    mock_s3_client.head_object.assert_called_once_with(
+        Bucket=_BUCKET, Key=f"{project.uuid}/store/revisions/{_REVISION_UUID}.json"
+    )
+    dispatch.assert_not_called()
 
 
 def test_get_run_returns_dto_for_a_known_run(
@@ -878,7 +957,7 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            data_record_url=_RECORD_URL,
+            store_url=_RECORD_URL,
             revision_uuid=_REVISION_UUID,
             user=other_user,
         )

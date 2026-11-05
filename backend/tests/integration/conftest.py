@@ -177,7 +177,7 @@ def example_store_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture(scope="session")
 def example_store(
     s3_client: S3Client, app_server: str, example_store_path: Path
-) -> Callable[[str], dict[str, str]]:
+) -> Callable[[str], dict[str, dict[str, str]]]:
     """Returns a function that uploads the example datarecord store under a project's own
     prefix (once per project) and returns the run payload fields for its `inputs`
     revision — a real starting record for tests that run a playbook to completion.
@@ -187,7 +187,7 @@ def example_store(
     revisions = json.loads((example_store_path / "revisions.json").read_text())
 
     @cache
-    def upload(project_uuid: str) -> dict[str, str]:
+    def upload(project_uuid: str) -> dict[str, dict[str, str]]:
         prefix = f"{project_uuid}/example_store"
         for path in example_store_path.rglob("*"):
             if path.is_file():
@@ -195,8 +195,10 @@ def example_store(
                     str(path), bucket, f"{prefix}/{path.relative_to(example_store_path).as_posix()}"
                 )
         return {
-            "data_record_url": f"s3://{bucket}/{prefix}",
-            "revision_uuid": revisions["inputs"],
+            "data_record": {
+                "store_url": f"s3://{bucket}/{prefix}",
+                "revision_uuid": revisions["inputs"],
+            }
         }
 
     return upload

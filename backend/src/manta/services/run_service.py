@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
@@ -191,7 +192,7 @@ class RunService:
         project_uuid: UUID,
         playbook: str,
         config: dict | None,
-        data_record_url: str,
+        store_url: str,
         revision_uuid: UUID,
         user: User,
     ) -> CreateRunResult:
@@ -210,6 +211,7 @@ class RunService:
         # work is refused here with every reason, rather than failing minutes later
         # inside a block's container.
         self.playbook_service.raise_for_config_issues(playbook, run_config)
+        self._raise_for_record_issues(project, store_url, revision_uuid)
 
         run_uuid = uuid4()
 
@@ -218,7 +220,7 @@ class RunService:
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
                 "config": run_config,
-                "record": {"url": data_record_url, "uuid": str(revision_uuid)},
+                "record": {"url": store_url, "uuid": str(revision_uuid)},
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
             timeout=0,
@@ -250,6 +252,26 @@ class RunService:
             playbook=run.playbook,
             created_at=run.created_at,
         )
+
+    def _raise_for_record_issues(
+        self, project: Project, store_url: str, revision_uuid: UUID
+    ) -> None:
+        # The run writes its revisions into this store, so it must be the project's own.
+        url = urlparse(store_url)
+        project_prefix = f"/{project.uuid}/"
+        if (
+            url.scheme != "s3"
+            or url.netloc != self.storage.bucket
+            or not url.path.startswith(project_prefix)
+        ):
+            raise AuthorizationError(detail="data record store is not in the project's storage")
+
+        store = url.path.removeprefix(project_prefix).rstrip("/")
+        if not self.storage.file_exists(project.uuid, f"{store}/revisions/{revision_uuid}.json"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Revision {revision_uuid} not found in {store_url!r}",
+            )
 
     def list_runs(
         self,

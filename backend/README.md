@@ -188,9 +188,11 @@ one for the requests.
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-5. Copy a starting datarecord store to S3. The `ac-dc-meshed` store of the
-   public `manta-public-test-data` bucket works; its `revisions.json` names the
-   revision to start from (`inputs`, `e5f2eacd-ba5c-463c-a663-3017ef904d1d`):
+5. Copy a starting datarecord store into the project's own storage. A run is
+   refused unless its store is under the project's prefix and the revision
+   exists. The `ac-dc-meshed` store of the public `manta-public-test-data` bucket
+   works; its `revisions.json` names the revision to start from (`inputs`,
+   `e5f2eacd-ba5c-463c-a663-3017ef904d1d`):
 
    ```bash
    uv run python -c "
@@ -208,7 +210,7 @@ one for the requests.
    listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
    for item in listing['items']:
        key = item['name'].removeprefix(prefix)
-       client.put_object(Bucket='manta', Key=f'manual-test/store/{key}', Body=httpx2.get(item['mediaLink']).content)
+       client.put_object(Bucket='manta', Key=f'PROJECT_UUID/store/{key}', Body=httpx2.get(item['mediaLink']).content)
    "
    ```
 
@@ -237,15 +239,15 @@ one for the requests.
    Sending `{}` instead checks the `default_config`, which has no issues.
 
 8. Create a run from a revision of the uploaded store. Each step writes its
-   output as a new revision into that same store. Leaving out `config` runs the
-   playbook with its `default_config`. A config with issues is refused with a
+   output as a new revision into that same store. Leaving out `playbook.config`
+   runs the playbook with its `default_config`. A config with issues is refused with a
    `422` listing the same issues the check above returns:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "expand", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/PROJECT_UUID/store", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
