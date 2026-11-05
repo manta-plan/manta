@@ -143,6 +143,9 @@ export interface CursorPosition {
 export interface ProjectState {
   currentProjectId: string | null;
   setCurrentProjectId: (id: string) => void;
+  isWelcomeDialogOpen: boolean;
+  openWelcomeDialog: () => void;
+  closeWelcomeDialog: () => void;
 
   activeTool: ToolId;
   setActiveTool: (tool: ToolId) => void;

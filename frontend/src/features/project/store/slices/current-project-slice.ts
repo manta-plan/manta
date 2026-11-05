@@ -6,5 +6,9 @@ export function createCurrentProjectSlice(set: ProjectStoreSet) {
     // scenarios are saved under.
     currentProjectId: null as string | null,
     setCurrentProjectId: (id: string) => set({ currentProjectId: id }),
+
+    isWelcomeDialogOpen: false,
+    openWelcomeDialog: () => set({ isWelcomeDialogOpen: true }),
+    closeWelcomeDialog: () => set({ isWelcomeDialogOpen: false }),
   };
 }

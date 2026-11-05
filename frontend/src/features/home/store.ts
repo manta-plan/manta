@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import { removeProjectInspections } from "../project/lib/project-inspections";
+import { removeProjectReports } from "../project/lib/project-reports";
+import { removeProjectRuns } from "../project/lib/project-runs";
+import { removeProjectScenarios } from "../project/lib/project-scenarios";
 
 export type Theme = "dark" | "light";
 
@@ -8,6 +12,9 @@ export type Project = {
   // The record on the record server the project shows.
   recordId?: string;
   lastModified: string;
+  // Set on creation and cleared once the welcome dialog is dismissed. Absent on
+  // projects made before it existed, so they never show it.
+  showWelcome?: boolean;
 };
 
 type HomeState = {
@@ -17,6 +24,7 @@ type HomeState = {
   projects: Project[];
   addProject: (name?: string, recordId?: string) => Project;
   renameProject: (id: string, name: string) => void;
+  dismissProjectWelcome: (id: string) => void;
   removeProject: (id: string) => Promise<void>;
 
   statusMessage: string;
@@ -82,6 +90,7 @@ export const useAppStore = create<HomeState>((set, get) => ({
       name: name?.trim() || `Untitled Project ${get().projects.length + 1}`,
       ...(recordId ? { recordId } : {}),
       lastModified: "Just now",
+      showWelcome: true,
     };
     const projects = [project, ...get().projects];
     persistProjects(projects);
@@ -97,7 +106,19 @@ export const useAppStore = create<HomeState>((set, get) => ({
     persistProjects(projects);
     set({ projects });
   },
+  dismissProjectWelcome: (id) => {
+    const projects = get().projects.map((project) =>
+      project.id === id ? { ...project, showWelcome: false } : project,
+    );
+    persistProjects(projects);
+    set({ projects });
+  },
   removeProject: async (id) => {
+    // What the project workspace saved under this project goes with it.
+    removeProjectScenarios(id);
+    removeProjectRuns(id);
+    removeProjectInspections(id);
+    removeProjectReports(id);
     const projects = get().projects.filter((project) => project.id !== id);
     persistProjects(projects);
     set({ projects });

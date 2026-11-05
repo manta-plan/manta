@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useAppStore } from "../../home/store";
 import type { ProjectState } from "./types";
 import { createCurrentProjectSlice } from "./slices/current-project-slice";
 import { createDrawerSlice } from "./slices/drawer-slice";
@@ -33,3 +34,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   ...createRecordSlice(set, get),
   ...createScenarioRunReportSlice(set, get),
 }));
+
+// A vector basemap follows the theme the home store keeps; satellite imagery has
+// no light/dark variant, so it stays put when the theme toggles.
+useAppStore.subscribe((state, previous) => {
+  if (state.theme === previous.theme) return;
+  const { basemap, setBasemap } = useProjectStore.getState();
+  if (basemap !== "satellite") setBasemap(state.theme === "dark" ? "vector-dark" : "vector-light");
+});
