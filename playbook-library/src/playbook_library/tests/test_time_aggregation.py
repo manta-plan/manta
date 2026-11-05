@@ -22,11 +22,9 @@ from datarecord import Revision, Workspace
 from datarecord.tools.pypsa import PyPSA
 from duckdb import DuckDBPyRelation
 
-from playbook_library.examples import build_example_network
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 from playbook_library.pypsa_helpers import (
     optimize_network,
-    store_network,
     to_network,
     write_network,
 )
@@ -202,14 +200,16 @@ def _with_solar(n: pypsa.Network, weightings: list[float]) -> pd.Series:
 
 
 @pytest.fixture(scope="module", params=list(STORAGE))
-def storage(request, tmp_path_factory, new_multi_period_network) -> Iterator[Revision]:
+def storage(
+    request, tmp_path_factory, store_network, new_multi_period_network, new_single_period_network
+) -> Iterator[Revision]:
     """Store solar, a battery, a store and a load that follows the sun, aggregated as `agg_3h`.
 
     Weightings are heaviest where the sun is, so expanded solar is never capped below
     what it dispatched when clustered.
     """
     network, battery, store = STORAGE[request.param]
-    n = new_multi_period_network() if network == "multi" else build_example_network()
+    n = new_multi_period_network() if network == "multi" else new_single_period_network()
     profile = _with_solar(n, [1.0, 1.0, 2.0])
     n.add(
         "StorageUnit",
@@ -345,9 +345,11 @@ def test_expanded_variable_generation_follows_its_profile_within_its_capacity(ex
     assert (solar[available == 0] == 0).all()
 
 
-def test_expanded_variable_generation_is_capped_where_its_weighted_mean_falls_short(store_revision):
+def test_expanded_variable_generation_is_capped_where_its_weighted_mean_falls_short(
+    store_revision, new_single_period_network
+):
     """Weightings heaviest where the sun is weakest would, uncapped, push solar past capacity."""
-    n = build_example_network()
+    n = new_single_period_network()
     _with_solar(n, [2.0, 1.0, 1.0])
     rev = store_revision(n, "capped")
     rev = add_snapshot_property(rev, "agg_3h", resample_map(rev, 3))
@@ -446,8 +448,10 @@ def test_expanding_over_expanded_results_replaces_them(expanded):
 
 
 @pytest.mark.parametrize("n_hours", [3, 24])
-def test_expanded_prices_are_per_hour_whatever_the_weighting(n_hours, store_revision):
-    n = build_example_network()
+def test_expanded_prices_are_per_hour_whatever_the_weighting(
+    n_hours, store_revision, new_single_period_network
+):
+    n = new_single_period_network()
     n.remove("Generator", "gen")
     n.add("Generator", "gen", bus="bus", p_nom=100.0, marginal_cost=10.0)
     rev = store_revision(n, "fixed")

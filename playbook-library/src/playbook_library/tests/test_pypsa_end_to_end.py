@@ -6,8 +6,7 @@
 
 This is the end-to-end check: a network revision goes in, each block writes a new
 revision into the same store, and the last revision holds the finished result. The
-playbooks are the ones this library ships, and the network and example playbook are the
-ones `examples.py` runs, so what a contributor runs by hand is what is tested here.
+playbooks are the ones this library ships.
 """
 
 import pytest
@@ -20,7 +19,7 @@ from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
-from playbook_library.examples import EXAMPLE_PLAYBOOK, build_example_network
+from playbook_library.examples import EXAMPLE_PLAYBOOK
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
@@ -35,8 +34,8 @@ def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
 
 
 @pytest.fixture
-def network(store_revision) -> Revision:
-    return store_revision(build_example_network(), "start")
+def network(store_revision, new_single_period_network) -> Revision:
+    return store_revision(new_single_period_network(), "start")
 
 
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
