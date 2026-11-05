@@ -188,12 +188,14 @@ one for the requests.
 
    Copy the returned `uuid` as `PROJECT_UUID`.
 
-5. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
-   works (from `backend/`):
+5. Copy a starting datarecord store to S3. The `ac-dc-meshed` store of the
+   public `manta-public-test-data` bucket works; its `revisions.json` names the
+   revision to start from (`inputs`, `e5f2eacd-ba5c-463c-a663-3017ef904d1d`):
 
    ```bash
    uv run python -c "
    import boto3
+   import httpx2
    from botocore.config import Config
    client = boto3.client(
        's3',
@@ -202,7 +204,11 @@ one for the requests.
        aws_secret_access_key='dev',
        config=Config(s3={'addressing_style': 'path'}),
    )
-   client.upload_file('tests/integration/fixtures/example_network.nc', 'manta', 'manual-test/input.nc')
+   prefix = 'ac-dc-meshed/'
+   listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
+   for item in listing['items']:
+       key = item['name'].removeprefix(prefix)
+       client.put_object(Bucket='manta', Key=f'manual-test/store/{key}', Body=httpx2.get(item['mediaLink']).content)
    "
    ```
 
@@ -212,17 +218,17 @@ one for the requests.
 
    ```bash
    curl -s http://localhost:8000/v1/playbooks -H "Authorization: Bearer $TOKEN"
-   curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/playbooks/expand -H "Authorization: Bearer $TOKEN"
    ```
 
 7. Check a config before running it. The answer lists every issue, each naming
    its step and, where there is one, the setting at fault. This config switches
-   the playbook to its myopic branch, which needs an `investment_period`
+   the playbook to its myopic branch, which needs a `period`
    dimension the playbook's data does not have. The answer has `"valid": false`
    and one `dims` issue on `expansion_myopic`:
 
    ```bash
-   curl -s -X POST http://localhost:8000/v1/playbooks/cluster-expand-dispatch/validate \
+   curl -s -X POST http://localhost:8000/v1/playbooks/expand/validate \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"config": {"globals": {"expansion_mode": "myopic"}}}'
@@ -230,15 +236,16 @@ one for the requests.
 
    Sending `{}` instead checks the `default_config`, which has no issues.
 
-8. Create a run. Leaving out `config` runs the playbook with its
-   `default_config`. A config with issues is refused with a `422` listing the
-   same issues the check above returns:
+8. Create a run from a revision of the uploaded store. Each step writes its
+   output as a new revision into that same store. Leaving out `config` runs the
+   playbook with its `default_config`. A config with issues is refused with a
+   `422` listing the same issues the check above returns:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/input.nc"}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": "expand", "data_record_url": "s3://manta/manual-test/store", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -257,12 +264,9 @@ one for the requests.
 
    Repeat them until the run's `status` is `COMPLETED`.
 
-10. List the run's output files, one per step that ran, then download one:
-
-    ```bash
-    curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
-    curl -s -o dispatch.nc http://localhost:8000/v1/runs/RUN_UUID/outputs/dispatch.nc -H "Authorization: Bearer $TOKEN"
-    ```
+10. Each step that ran wrote a new revision into the uploaded store, under
+    `manual-test/store/revisions/`. `GET /v1/runs/RUN_UUID/outputs` does not list
+    them yet: it still lists the run's old output folder, which stays empty.
 
 11. Tear down (from `docker/`, in the third terminal). This also stops the
     stack in the first terminal. Stop the backend in the second terminal with

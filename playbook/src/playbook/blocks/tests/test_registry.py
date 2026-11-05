@@ -153,7 +153,7 @@ def test_a_block_cannot_wire_an_input_to_a_setting_that_has_no_such_name():
             DIMS = BlockDims()
             INPUTS = frozenset({"missing"})
 
-            def run(self, record: DataRecord, output_base: str) -> DataRecord:
+            def run(self, record: DataRecord) -> DataRecord:
                 return record
 
 
@@ -166,7 +166,7 @@ def test_a_block_cannot_wire_an_input_to_a_setting_that_cannot_hold_a_record():
             DIMS = BlockDims()
             INPUTS = frozenset({"source"})
 
-            def run(self, record: DataRecord, output_base: str) -> DataRecord:
+            def run(self, record: DataRecord) -> DataRecord:
                 return record
 
 
@@ -183,5 +183,5 @@ def test_a_wired_setting_has_to_have_a_default():
             DIMS = BlockDims()
             INPUTS = frozenset({"source"})
 
-            def run(self, record: DataRecord, output_base: str) -> DataRecord:
+            def run(self, record: DataRecord) -> DataRecord:
                 return record

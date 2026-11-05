@@ -129,7 +129,7 @@ def test_an_issue_says_which_input_it_is_about():
 
 
 def test_a_missing_dim_reports_which_step_removed_it():
-    pb = Playbook(name="p", initial_dims=frozenset({"investment_period"}))
+    pb = Playbook(name="p", initial_dims=frozenset({"period"}))
     pb.add("collapse", FakeRemovesInvestmentPeriod)
     pb.add("needs_it", FakeRequiresInvestmentPeriod)
     with pytest.raises(PlaybookHasIssuesError) as exc:

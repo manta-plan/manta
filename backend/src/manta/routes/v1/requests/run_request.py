@@ -23,3 +23,6 @@ class CreateRunRequest(BaseModel):
 
     data_record_url: str
     """Where the starting DataRecord's data lives, e.g. an s3://bucket/key URL."""
+
+    revision_uuid: UUID
+    """The revision of that store the run starts from."""

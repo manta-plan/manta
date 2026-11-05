@@ -13,8 +13,9 @@ Both flows are deployed once, statically (see `deploy.py`). Playbooks are data
 passed in as parameters, so nothing is ever deployed per playbook or per block.
 
 Everything passed in has crossed a process boundary, so records arrive as plain
-`{"url": ...}` data. A loaded model could never travel this way, which is exactly
-why blocks pass pointers to data rather than the data itself.
+`{"url": ..., "uuid": ...}` data: a store and one of its revisions. A loaded
+model could never travel this way, which is exactly why blocks pass pointers to
+data rather than the data itself.
 """
 
 import logging
@@ -87,7 +88,6 @@ def run_block(
     config: dict,
     record: dict,
     inputs: dict[str, dict] | None,
-    output_base: str,
 ) -> dict:
     """Run one block by name, in this container, and report where its result went.
 
@@ -107,9 +107,7 @@ def run_block(
     load_block_sources()
     block_cls = get_block(block)
     wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
-    result = block_cls(block_cls.merge_config(config, wired)).run(
-        DataRecord.from_dict(record), output_base
-    )
+    result = block_cls(block_cls.merge_config(config, wired)).run(DataRecord.from_dict(record))
     return result.to_dict()
 
 
@@ -135,7 +133,6 @@ class PrefectBlockRunner:
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         # Dispatching from inside a flow makes the block run a child of the
         # playbook run, which is what groups a run's steps under it in Prefect.
@@ -150,7 +147,6 @@ class PrefectBlockRunner:
                 "config": config,
                 "record": record.to_dict(),
                 "inputs": {name: value.to_dict() for name, value in inputs.items()},
-                "output_base": output_base,
             },
         )
         state = flow_run.state
@@ -164,9 +160,7 @@ class PrefectBlockRunner:
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)
-def run_playbook(
-    playbook: dict, config: dict, record: dict, output_prefix: str, catalogue: str
-) -> dict:
+def run_playbook(playbook: dict, config: dict, record: dict, catalogue: str) -> dict:
     """Run a whole playbook, given its document rather than the playbook itself.
 
     `catalogue` is what `playbook`'s blocks are resolved against — this process
@@ -180,7 +174,6 @@ def run_playbook(
         built,
         DataRecord.from_dict(record),
         config,
-        output_prefix=output_prefix,
         runner=PrefectBlockRunner(),
     )
     return result.to_dict()

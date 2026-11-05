@@ -12,6 +12,7 @@ inputs.
 import pytest
 
 from playbook.blocks.tests.fakes import (
+    STORE,
     FakeAddsClustered,
     FakeNeedsUpstream,
     FakePassthrough,
@@ -90,10 +91,10 @@ def test_a_nested_steps_settings_are_addressed_from_the_top_of_the_settings():
 
 
 def test_nested_dims_fold_into_a_single_net_effect():
-    child = Playbook(name="child", initial_dims=frozenset({"investment_period"}))
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
     child.add("collapse", FakeRemovesInvestmentPeriod)
 
-    outer = Playbook(name="outer", initial_dims=frozenset({"investment_period"}))
+    outer = Playbook(name="outer", initial_dims=frozenset({"period"}))
     outer.add_playbook("regional", child)
     outer.add("needs_it", FakeRequiresInvestmentPeriod)
 
@@ -106,10 +107,10 @@ def test_nested_dims_fold_into_a_single_net_effect():
 
 
 def test_a_nested_playbooks_own_requirement_is_reported_at_its_step():
-    # The child says it needs `investment_period` before it starts. If the outer
+    # The child says it needs `period` before it starts. If the outer
     # playbook has not got it, that belongs to the step that nests the child, not to
     # something deep inside it.
-    child = Playbook(name="child", initial_dims=frozenset({"investment_period"}))
+    child = Playbook(name="child", initial_dims=frozenset({"period"}))
     child.add("needs_it", FakeRequiresInvestmentPeriod)
 
     outer = Playbook(name="outer")  # nothing to start from
@@ -148,8 +149,8 @@ def test_a_nested_playbook_executes_within_the_outer_run(initial_record):
         "nested": {"inner": {"label": "inner"}},
         "after": {"label": "after"},
     }
-    result = outer.run(initial_record, config, output_prefix="out")
-    assert result.url == "root+before+inner+after"
+    result = outer.run(initial_record, config)
+    assert result.url == f"{STORE}+before+inner+after"
 
 
 def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
@@ -162,10 +163,10 @@ def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
     outer.add_playbook("nested", child)
 
     on = {"globals": {"mode": "on"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, on, output_prefix="out").url == "root+inner"
+    assert outer.run(initial_record, on).url == f"{STORE}+inner"
 
     off = {"globals": {"mode": "off"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, off, output_prefix="out").url == "root"
+    assert outer.run(initial_record, off).url == STORE
 
 
 def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
@@ -179,4 +180,4 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
         "globals": {"mode": "off"},
         "nested": {"globals": {"mode": "on"}, "inner": {"label": "inner"}},
     }
-    assert outer.run(initial_record, config, output_prefix="out").url == "root+inner"
+    assert outer.run(initial_record, config).url == f"{STORE}+inner"

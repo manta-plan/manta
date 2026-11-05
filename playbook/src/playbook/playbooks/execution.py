@@ -5,9 +5,8 @@
 """Running a playbook.
 
 Each step gets the record the previous step produced, plus anything wired to it from
-further back, and is told where to put its output: every step's result lands under
-one `output_prefix`, named after the step, so a finished run reads as a folder of
-outputs a user can browse.
+further back. Each block writes its result into the input record's own store, so
+the engine never decides where outputs go.
 
 How a single block actually runs is behind `BlockRunner`. The default runner executes
 blocks in this process, which is what tests and plain local use want. An orchestrator
@@ -48,7 +47,6 @@ class BlockRunner(Protocol):
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         """Run `block` on `record` and return the record it produced."""
         ...
@@ -65,11 +63,10 @@ class LocalBlockRunner:
         config: dict,
         record: DataRecord,
         inputs: dict[str, DataRecord],
-        output_base: str,
     ) -> DataRecord:
         block_cls = block.block_class()
         # A fresh instance per step: a block never carries state between runs.
-        return block_cls(block_cls.merge_config(config, inputs)).run(record, output_base)
+        return block_cls(block_cls.merge_config(config, inputs)).run(record)
 
 
 def execute_playbook(
@@ -77,28 +74,22 @@ def execute_playbook(
     record: DataRecord,
     config: dict,
     *,
-    output_prefix: str,
     runner: BlockRunner | None = None,
 ) -> DataRecord:
     """Run `playbook`, returning the final step's record.
-
-    `output_prefix` is the URL under which every step's output is produced:
-    step `cluster` writes to `<output_prefix>/cluster.<suffix>`, and a step of a
-    nested playbook to `<output_prefix>/<nesting step>/<step>.<suffix>`.
 
     Nothing runs unless the playbook passes every check against `config` first:
     `PlaybookHasIssuesError` lists everything wrong at once, rather than one problem
     surfacing at a time, steps into the run.
     """
     raise_for_playbook_issues(playbook, config)
-    return _execute(playbook, record, config, output_prefix, runner or LocalBlockRunner(), {})
+    return _execute(playbook, record, config, runner or LocalBlockRunner(), {})
 
 
 def _execute(
     playbook: Playbook,
     record: DataRecord,
     config: dict,
-    output_prefix: str,
     runner: BlockRunner,
     external_inputs: dict[str, DataRecord],
 ) -> DataRecord:
@@ -106,7 +97,6 @@ def _execute(
 
     for step in playbook.active(config).steps:
         wired = _wire_up(step, results, external_inputs)
-        output_base = f"{output_prefix}/{step.name}"
 
         if isinstance(step, BlockStep):
             record = runner.run_block(
@@ -115,14 +105,12 @@ def _execute(
                 config=config.get(step.name, {}),
                 record=record,
                 inputs=wired,
-                output_base=output_base,
             )
         else:
             record = _execute(
                 step.playbook,
                 record,
                 child_config(config, step.name),
-                output_base,
                 runner,
                 wired,
             )

@@ -1141,11 +1141,6 @@ dependencies = [
     { name = "pyyaml" },
 ]
 
-[package.optional-dependencies]
-s3 = [
-    { name = "boto3" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
@@ -1166,16 +1161,14 @@ name = "playbook-library"
 version = "0.1.0"
 source = { editable = "../playbook-library" }
 dependencies = [
-    { name = "playbook", extra = ["s3"] },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "datarecord", extras = ["remote", "pypsa"], marker = "extra == 'pypsa'", git = "https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff" },
     { name = "highspy", marker = "extra == 'pypsa'" },
-    { name = "netcdf4", marker = "extra == 'pypsa'" },
-    { name = "playbook", extras = ["s3"] },
-    { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.2,<2" },
+    { name = "pypsa", marker = "extra == 'pypsa'", specifier = ">=1.4,<2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
 provides-extras = ["pypsa"]

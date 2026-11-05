@@ -35,6 +35,7 @@ def create_run(
         playbook=request.playbook,
         config=request.config,
         data_record_url=request.data_record_url,
+        revision_uuid=request.revision_uuid,
         user=user,
     )
 

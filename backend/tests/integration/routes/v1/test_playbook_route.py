@@ -3,7 +3,7 @@ from keycloak.openid_connection import KeycloakOpenID
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 
-_LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
+_LIBRARY_PLAYBOOK = "expand"
 
 
 def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
@@ -37,10 +37,9 @@ def test_list_playbooks(app_server: str, kc_oidc_client: KeycloakOpenID) -> None
     assert body["total"] == len(library_playbooks())
     playbook = next(item for item in body["items"] if item["name"] == _LIBRARY_PLAYBOOK)
     assert playbook["steps"] == [
-        {"name": "cluster", "block": "cluster_time"},
         {"name": "expansion_overnight", "block": "overnight_capacity_expansion"},
         {"name": "expansion_myopic", "block": "myopic_capacity_expansion"},
-        {"name": "dispatch", "block": "rolling_horizon_dispatch"},
+        {"name": "expansion_perfect", "block": "perfect_capacity_expansion"},
     ]
 
 
@@ -63,12 +62,11 @@ def test_get_playbook(app_server: str, kc_oidc_client: KeycloakOpenID) -> None:
         block = catalogue.blocks[step["block"]]
         assert step["block_summary"] == block.doc
         assert step["block_config_schema"] == block.config_schema
-    assert steps["cluster"]["when"] is None
     assert steps["expansion_overnight"]["when"] == {
         "config": "globals.expansion_mode",
         "equals": "overnight",
     }
-    assert steps["dispatch"]["inputs"] == {"capacity_source": "${steps.expansion_overnight.output}"}
+    assert steps["expansion_overnight"]["inputs"] == {}
 
 
 def test_get_playbook_with_unknown_name_returns_404(
@@ -110,7 +108,7 @@ def test_validate_playbook_config_lists_every_issue_with_a_200(
     config = {
         **default_config,
         "globals": {"expansion_mode": "myopic"},
-        "cluster": {"n_hours": 3, "n_hour": 6},
+        "expansion_myopic": {"optimize_confg": {}},
     }
 
     # When
@@ -129,7 +127,7 @@ def test_validate_playbook_config_lists_every_issue_with_a_200(
         (issue["kind"], issue["step_path"], issue["config_path"]) for issue in body["issues"]
     ] == [
         ("dims", ["expansion_myopic"], None),
-        ("config", ["cluster"], ["cluster", "n_hour"]),
+        ("config", ["expansion_myopic"], ["expansion_myopic", "optimize_confg"]),
     ]
 
 
