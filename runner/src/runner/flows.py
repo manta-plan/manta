@@ -18,13 +18,21 @@ model could never travel this way, which is exactly why blocks pass pointers to
 data rather than the data itself.
 """
 
+import json
 import logging
+from uuid import UUID
 
 from playbook.blocks import BlockSpec, Catalogue, DataRecord
 from playbook.blocks.registry import get_block, load_block_sources
 from playbook.playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
 from prefect.artifacts import create_table_artifact
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import (
+    ArtifactFilter,
+    ArtifactFilterFlowRunId,
+    ArtifactFilterKey,
+)
 from prefect.deployments import run_deployment
 
 from runner.config import exec_image
@@ -35,8 +43,9 @@ BLOCK_FLOW_NAME = "run-block"
 PLAYBOOK_FLOW_NAME = "run-playbook"
 
 OUTPUT_ARTIFACT_KEY = "block-output"
-"""The key of the one-row table artifact `run-block` publishes its output record as,
-so it can be read through the Prefect API without access to the result storage."""
+"""The key of the one-row table artifact `run-block` publishes its output record as.
+It is how that record travels back out of the block's container: to the orchestrator,
+which hands it to the next step, and to Manta's backend, which reports it."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -81,9 +90,6 @@ def parse_catalogue_parameter(raw: str) -> Catalogue:
     # Fills in from this flow's own call parameters below, not from anything
     # read in the function body — this is the only place `step_name` is used.
     flow_run_name="{step_name}[{block}]",
-    # The step's output record, read back by the orchestrator from the object
-    # store. The data itself never travels this way — only the pointer to it.
-    persist_result=True,
     # A block's own print()s are part of its log, and solvers are talkative.
     log_prints=True,
 )
@@ -163,7 +169,28 @@ class PrefectBlockRunner:
                 f"{state.type.value if state else 'UNKNOWN'}; "
                 f"its log is on flow run {flow_run.id}"
             )
-        return DataRecord.from_dict(state.result())
+        return _block_output(flow_run.id, step_name)
+
+
+def _block_output(flow_run_id: UUID, step_name: str) -> DataRecord:
+    """The output record a completed `run-block` flow run published (see `run_block`)."""
+    # TODO(post-MVP): like the backend's reading of a run's outputs, this only finds a
+    # step's output through the artifact its block run publishes to Prefect. Once data
+    # records are tracked in Manta's own database, consider reading it from there.
+    with get_client(sync_client=True) as client:
+        artifacts = client.read_artifacts(
+            artifact_filter=ArtifactFilter(
+                flow_run_id=ArtifactFilterFlowRunId(any_=[flow_run_id]),
+                key=ArtifactFilterKey(any_=[OUTPUT_ARTIFACT_KEY]),
+            )
+        )
+    if not artifacts:
+        raise BlockRunFailedError(
+            f"step {step_name!r} completed without publishing its output record; "
+            f"its log is on flow run {flow_run_id}"
+        )
+    [row] = json.loads(artifacts[0].data)
+    return DataRecord.from_dict(row)
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)

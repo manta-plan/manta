@@ -9,8 +9,10 @@ what dispatches at it. Both are exercised without Prefect infrastructure: the
 flow through its undecorated function, the runner with `run_deployment` stubbed.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from playbook.blocks import Catalogue, DataRecord
@@ -75,11 +77,39 @@ def published(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return create
 
 
-def _completed(result: dict):
-    state = SimpleNamespace(
-        is_completed=lambda: True, result=lambda: result, type=SimpleNamespace(value="COMPLETED")
-    )
-    return SimpleNamespace(id="flow-run-id", state=state)
+_PUBLISHED_OUTPUTS: dict = {}
+"""The output record each completed fake step published, by its flow run id."""
+
+
+class _FakePrefectClient:
+    """Serves the output artifacts of the steps `_completed` made up."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        return None
+
+    def read_artifacts(self, artifact_filter):
+        assert artifact_filter.key.any_ == [flows.OUTPUT_ARTIFACT_KEY]
+        [flow_run_id] = artifact_filter.flow_run_id.any_
+        output = _PUBLISHED_OUTPUTS.get(flow_run_id)
+        return [] if output is None else [SimpleNamespace(data=json.dumps([output]))]
+
+
+@pytest.fixture(autouse=True)
+def _prefect_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    _PUBLISHED_OUTPUTS.clear()
+    monkeypatch.setattr(flows, "get_client", lambda sync_client: _FakePrefectClient())
+
+
+def _completed(output: dict | None):
+    """A step's flow run that completed, having published `output` (None: nothing)."""
+    flow_run_id = uuid4()
+    if output is not None:
+        _PUBLISHED_OUTPUTS[flow_run_id] = output
+    state = SimpleNamespace(is_completed=lambda: True, type=SimpleNamespace(value="COMPLETED"))
+    return SimpleNamespace(id=flow_run_id, state=state)
 
 
 def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs() -> None:
@@ -205,6 +235,23 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
     assert "runtime_fake" in message
     assert "CRASHED" in message
     assert "flow-run-id" in message
+
+
+def test_a_step_that_completed_without_publishing_its_output_fails_the_playbook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=_completed(None)))
+
+    # When/Then
+    with pytest.raises(BlockRunFailedError, match="without publishing its output record"):
+        PrefectBlockRunner().run_block(
+            _spec(),
+            step_name="cluster",
+            config={},
+            record=DataRecord(url=STORE, uuid=RECORD_ID),
+            inputs={},
+        )
 
 
 def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
