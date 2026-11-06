@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Start and follow a run
 
 This guide shows how to start a run in the web app and follow its status and log.
-You need a Manta account and the web address of your Manta.
+You need a Manta account and the web address of your Manta app.
 
 !!! note "What the web app supports today"
 

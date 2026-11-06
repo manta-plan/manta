@@ -22,21 +22,28 @@ The top row shows what you do, from left to right.
 The bottom part shows the project's data record, which Manta builds up one layer at a time as you go.
 Each layer sits on top of the layers before it, so the layers underneath stay as they were.
 A solid arrow shows a stage adding a layer, and a dashed arrow shows a stage reading the layers beneath it.
-The diagram shows three blocks as an example, and a real run adds one result layer for each block in its playbook.
+The diagram shows three blocks as an example; a real run adds one result layer for each block in its playbook.
 
 You sign in, then create a project or open one you made before.
-You bring a model into the project: a premade model, an example model or your own [PyPSA](https://pypsa.org) model.
-PyPSA is the open-source power system modelling tool that Manta's models are built with.
+You bring a model into the project: a premade model, an example model or your own model.
 Manta stores the model as the first layer of the project's data record.
 
+!!! note "Supported Modelling Frameworks"
+
+    Initially, only [PyPSA](https://pypsa.org) models are supported in Manta.
+    PyPSA is the open-source power system modelling tool that Manta's models are currently built with.
+    We aim to support a range of the most popular open-source capacity expansion, production cost, and (eventually) power flow modelling frameworks.
+    To do so, we will use a generalised model and data schema.
+
 In the Model stage you look at the model's network and define scenarios.
-A scenario is the base model plus an ordered set of changes, and Manta stores each scenario as patch layers on top of the model layer.
+A scenario is the base model plus an ordered set of changes.
+Manta stores each scenario as patch layers on top of the model layer.
 The network you see is read from the model layer together with the patch layers of the scenario you pick.
 
 In the Run stage you pick a [playbook](playbooks.md) and a scenario, adjust the playbook's settings, and run it while you follow its status and log.
-The first block reads the scenario, and each later block reads the result layer the block before it added.
+The first block reads the scenario, and each later block reads the result layer added by the previous block.
 Each block adds its own result layer on top, and the last block adds the final result layer.
-So you can look at the model as each block left it.
+This allows you to inspect results from intermediate stages of a run, in case you need to understand unexpected results.
 
 In the Inspect stage you read the final result layer through inspections, which are pages of charts and tables, and compare runs.
 In the Report stage you arrange charts and text from the same final result layer into pages to print or share.

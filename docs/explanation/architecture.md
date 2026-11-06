@@ -12,7 +12,7 @@ The backend starts it for a project, and the run saves its results as revisions 
 Manta keeps its modelling code apart from the code that schedules and runs it.
 So you can write and test a block without any of Manta's services.
 This page covers the packages and their dependencies, the running services, one playbook run, and where each kind of data is kept.
-It assumes you know what a block and a playbook are, as the [user guide concepts](../user-guide/concepts.md) define them.
+It assumes you know what a block and a playbook are, which are defined in the [user guide concepts page](../user-guide/concepts.md).
 
 ## The packages and their dependencies
 

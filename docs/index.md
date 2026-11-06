@@ -5,8 +5,6 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Manta
 
-## What Manta does
-
 --8<-- "README.md:docs-preamble"
 
 Manta is a web platform for energy system studies.
