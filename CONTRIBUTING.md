@@ -41,6 +41,17 @@ commits get squashed together:
   [commitlint](https://commitlint.js.org/), configured in
   `commitlint.config.cjs`.
 
+### Sign off your commits
+
+Every commit must carry a `Signed-off-by` trailer certifying you wrote it or
+otherwise have the right to submit it under this project's license (the
+[DCO](https://developercertificate.org/) text itself). Add it with
+`git commit -s`, or `git commit --amend -s` if you forgot. It's one flag, and
+it's a lighter-weight way of getting the same assurance a CLA is after — no
+separate agreement to sign, no bot blocking your first PR on paperwork. A
+[GitHub check](https://github.com/dcoapp/app) enforces this on every PR; if it
+fails, a follow-up commit with `-s` fixes it without a rebase.
+
 - Open a PR against `main` for review before merging.
 - Style/formatting disputes are considered solved problems — defer to the
   linter/formatter for the language you're working in rather than debating it
