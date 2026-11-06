@@ -184,7 +184,13 @@ one for the requests.
    docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
    ```
 
-   Wait until the logs settle before going on.
+   Wait until the logs settle before going on. Two dashboards are then up, for
+   following along in later steps:
+
+   - Prefect, at [localhost:4200](http://localhost:4200): each run, and the
+     flow run of each of its steps, with their logs.
+   - SeaweedFS, at [localhost:23646](http://localhost:23646): the `manta`
+     bucket's files, such as the example data and the revisions runs write.
 
 2. In the second terminal, start the backend (from `backend/`) and leave it
    running:
@@ -246,8 +252,8 @@ one for the requests.
 
 6. Create a run in manta-admin's example project
    (`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, see [Example data](#example-data)),
-   from the `inputs` revision of its `ac-dc-meshed` store. Each step writes its
-   output as a new revision into that same store. Leaving out `playbook.config`
+   from the `inputs` revision of its `BEL-pre-aggregated` store. Each step
+   writes its output as a new revision into that same store. Leaving out `playbook.config`
    runs the playbook with its `default_config`. A config with issues is refused with a
    `422` listing the same issues the check above returns:
 
@@ -255,7 +261,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/ac-dc-meshed", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
+     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated", "revision_uuid": "c7525fa8-e4da-4569-bbf3-b76669d1a2df"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -273,12 +279,15 @@ one for the requests.
    curl -s http://localhost:8000/v1/runs/RUN_UUID/logs -H "Authorization: Bearer $TOKEN"
    ```
 
-   Repeat them until the run's `status` is `COMPLETED`.
+   Repeat them until the run's `status` is `COMPLETED`. The Prefect dashboard
+   shows the same run as it goes, as a `run-playbook` flow run with a `run-block`
+   flow run for each step.
 
 8. Each step that ran wrote a new revision into the project's store, under
-   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/ac-dc-meshed/revisions/`. The steps
-   response names it as the step's `output` (`store_url` and `revision_uuid`).
-   The last step that ran holds the run's final record.
+   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/revisions/`, which
+   you can browse in the SeaweedFS dashboard. The steps response names it as the
+   step's `output` (`store_url` and `revision_uuid`). The last step that ran
+   holds the run's final record.
 
 9. Tear down (from `docker/`, in the third terminal). This also stops the
    stack in the first terminal. Stop the backend in the second terminal with
