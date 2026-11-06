@@ -40,13 +40,15 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
 _MANIFEST = "manifest.json"
-_CONCURRENT_COPIES = 16
+# boto3's own connection pool size: any more and it discards connections, with a warning.
+_CONCURRENT_COPIES = 10
 _DESCRIPTION = "Example datarecord stores to start runs from."
 _S3_ERRORS = (ClientError, BotoCoreError, S3UploadFailedError)
 
 
 def _http_client() -> httpx2.Client:
-    return httpx2.Client()
+    # The 5s default is too short for the public bucket when downloading concurrently.
+    return httpx2.Client(timeout=60)
 
 
 def _copy_store(store: str, names: Collection[str], copy: Callable[[str], object]) -> None:
@@ -137,7 +139,8 @@ class ExampleDataService:
         """Copies the given stores (all downloaded ones when none are given), skipping those
         already in the project."""
         for store, names in self._downloaded_stores().items():
-            if stores and store not in stores:
+            # Without a manifest, its download was cut short (see _copy_store()).
+            if (stores and store not in stores) or f"{store}/{_MANIFEST}" not in names:
                 continue
             if self._exists(f"{project_uuid}/{store}/{_MANIFEST}"):
                 continue

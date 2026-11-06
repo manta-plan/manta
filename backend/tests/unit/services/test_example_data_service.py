@@ -109,6 +109,19 @@ def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example
     }
 
 
+def test_copy_to_project_skips_stores_whose_download_was_cut_short(mock_db, s3_client) -> None:
+    # Given
+    s3_client.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": "example-data/small/revisions.json"}]}
+    ]
+
+    # When
+    _service(mock_db, s3_client).copy_to_project(uuid4())
+
+    # Then
+    s3_client.copy_object.assert_not_called()
+
+
 def test_create_project_keeps_the_project_when_copying_the_example_data_fails(
     mock_db, s3_client
 ) -> None:
