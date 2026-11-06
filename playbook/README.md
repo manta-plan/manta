@@ -49,6 +49,7 @@ src/playbook/
 needs.
 
 ## Getting started
+<!-- --8<-- [start:docs-setup] -->
 
 ```bash
 uv sync
@@ -58,6 +59,7 @@ uv run pytest
 The tests need nothing installed beyond this package. That they pass without PyPSA —
 or any other modelling framework — is the proof that a block's own dependencies stay
 its own.
+<!-- --8<-- [end:docs-setup] -->
 
 ## Writing a block
 
@@ -330,6 +332,7 @@ offer a playbook's settings and [check](#checking-a-playbook) a playbook against
 without importing a single block.
 
 ## Testing your contribution
+<!-- --8<-- [start:docs-testing] -->
 
 ```bash
 uv run pytest                 # the whole suite
@@ -350,8 +353,9 @@ test module: a block name can only be claimed once per process.
 
 A pull request is expected to keep this suite green and to add tests for what it
 changes. If you are adding a real block rather than a framework feature, it belongs in
-[`playbook-library`](../playbook-library), which has its own suite and its own
+[`playbook-library`](https://github.com/manta-plan/manta/tree/main/playbook-library), which has its own suite and its own
 instructions.
+<!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
 
