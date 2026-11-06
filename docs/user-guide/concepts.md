@@ -16,7 +16,7 @@ You attach a model to it, and its data record holds that model with the scenario
 Model
 :   A model is a description of an energy system that a solver can optimise: its network, technologies, costs and time series.
 Manta currently represents models using the [PyPSA](https://pypsa.org) energy modelling framework terminology and can import PyPSA models.
-We aim to support models from several model modelling frameworks and to represent the model in Manta using a common schema.
+We aim to support models from several modelling frameworks and to represent the model in Manta using a common schema.
 
 Scenario
 :   A scenario is the base model plus an ordered set of changes, such as a higher carbon price or a new interconnector.
@@ -26,7 +26,7 @@ Playbook
 [Playbooks and blocks](playbooks.md) explains what one is made of.
 
 Block
-:   A block is one step of an analysis applied to a model (a _playbook_), such as shortening its time series or optimising future technology capacities.
+:   A block is one step of an analysis applied to a model (a _playbook_), such as aggregating its time series or optimising future technology capacities.
 
 Run
 :   A run is one pass of a playbook over a model, with the settings you chose.
@@ -36,8 +36,8 @@ Data record
 :   A data record is the store that holds a project's model, scenarios and results as layers, each on top of the one before.
 The input model is the first layer, each scenario adds patch layers, and each block in a run adds a result layer.
 Each stage also reads from the data record.
-The `model` stage reads the input model and scenario layers, and each block in run reads the layer the block before it added.
-`inspect` and `report` stages read a run's final result layer.
+The Model stage reads the input model and scenario layers, and each block in a run reads the layer the block before it added.
+The Inspect and Report stages read a run's final result layer.
 
 Inspection
 :   An inspection is a page of charts and tables built from the results of one or more runs.

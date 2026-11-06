@@ -43,7 +43,7 @@ The network you see is read from the model layer together with the patch layers 
 In the Run stage you pick a [playbook](playbooks.md) and a scenario, adjust the playbook's settings, and run it while you follow its status and log.
 The first block reads the scenario, and each later block reads the result layer added by the previous block.
 Each block adds its own result layer on top, and the last block adds the final result layer.
-This allows you to inspect results from intermediate stages of a run, in case you need to understand unexpected results.
+This allows you to inspect results from intermediate blocks of a run, in case you need to understand unexpected results.
 
 In the Inspect stage you read the final result layer through inspections, which are pages of charts and tables, and compare runs.
 In the Report stage you arrange charts and text from the same final result layer into pages to print or share.

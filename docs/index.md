@@ -9,7 +9,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 Manta is a web platform for energy system studies.
 A study in Manta is a project.
-It moves through these stages: sign in, open a project, bring in a model, define scenarios, run a playbook, inspect the results and report on them.
+Its stages are: sign in, open a project, bring in a model, define scenarios, run a playbook, inspect the results and report on them.
 The [user guide](user-guide/index.md) describes each stage and what the web app supports in it.
 
 ## The parts of Manta
