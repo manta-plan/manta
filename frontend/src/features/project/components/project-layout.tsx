@@ -29,7 +29,7 @@ export function ProjectLayout({ children }: { children: ReactNode }) {
   }, [activeTab, closePageDrawers, projectId]);
 
   return (
-    <div className="bg-surface-900 flex h-full w-full flex-col">
+    <div className="bg-surface-900 flex h-svh w-full flex-col">
       <Header />
       <div className="flex flex-1 overflow-hidden">
         {/* The model tree and the record's scenarios; the other tabs fill the page. */}
