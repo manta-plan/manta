@@ -944,6 +944,7 @@ dependencies = [
     { name = "alembic" },
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "playbook" },
     { name = "playbook-library" },
     { name = "prefect" },
@@ -960,7 +961,6 @@ dependencies = [
 dev = [
     { name = "boto3-stubs", extra = ["s3"] },
     { name = "diff-cover" },
-    { name = "httpx2" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -972,6 +972,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "httpx2", specifier = ">=2.9.1" },
     { name = "playbook", editable = "../playbook" },
     { name = "playbook-library", editable = "../playbook-library" },
     { name = "prefect", specifier = "==3.8.3" },
@@ -988,7 +989,6 @@ requires-dist = [
 dev = [
     { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.43.73" },
     { name = "diff-cover", specifier = ">=10.5.0" },
-    { name = "httpx2", specifier = ">=2.9.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.16.0" },

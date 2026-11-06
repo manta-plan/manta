@@ -60,6 +60,33 @@ migrations, the target bucket is provisioned automatically on startup (see
 `ensure_bucket_exists()` in `main.py`) — nothing to run by hand, beyond having
 SeaweedFS up.
 
+### Example data
+
+With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also
+copies the example datarecord stores of the public `manta-public-test-data`
+bucket into the storage of the example project
+`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, each under
+`s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/<store>` (see
+[`ExampleDataService`](src/manta/services/example_data_service.py)). Stores
+already there are skipped, so only a clean SeaweedFS volume pays for the
+download. Stores listed in `EXAMPLE_DATA_EXCLUDED_STORES` are left out, which
+by default is `europe-full-res-2030` (~125 MB). Without internet access, the
+app logs a warning and starts without them.
+
+| Store | Size | `inputs` revision |
+| --- | --- | --- |
+| `ac-dc-meshed` | 0.1 MB | `e5f2eacd-ba5c-463c-a663-3017ef904d1d` |
+| `model-energy` | 0.2 MB | `075955d5-fe04-48de-bc6c-75ad873de6c0` |
+| `BEL-pre-aggregated` | 0.4 MB | `c7525fa8-e4da-4569-bbf3-b76669d1a2df` |
+| `BEL-pre-aggregated-hourly` | 2.9 MB | `fc0145a7-3cdf-4c5f-a9c9-ec77a472cb99` |
+| `BEL-pre-aggregated-incl-patches-incl-results` | 11.5 MB | `4dbf521c-2911-40be-8c6e-b075daa1a8ec` |
+| `BEL-full-res` | 32.5 MB | `f910244f-99d2-4ae0-8ba7-a10dbd54f7e0` |
+| `europe-full-res-2030` | 124.4 MB | `2f276825-9deb-4abc-ad57-ceb08f57ea94` |
+
+Each store's `revisions.json` names its revisions, `inputs` being the one a run
+starts from. The integration tests copy only `ac-dc-meshed`, with the same code,
+under each test's own project.
+
 ## Linting & formatting
 
 We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting.
@@ -190,27 +217,19 @@ one for the requests.
 
 5. Copy a starting datarecord store into the project's own storage. A run is
    refused unless its store is under the project's prefix and the revision
-   exists. The `ac-dc-meshed` store of the public `manta-public-test-data` bucket
-   works; its `revisions.json` names the revision to start from (`inputs`,
-   `e5f2eacd-ba5c-463c-a663-3017ef904d1d`):
+   exists. This copies `ac-dc-meshed` the same way the example data is seeded
+   (see [Example data](#example-data)) and prints its `store_url` and `inputs`
+   revision:
 
    ```bash
    uv run python -c "
-   import boto3
+   from uuid import UUID
    import httpx2
-   from botocore.config import Config
-   client = boto3.client(
-       's3',
-       endpoint_url='http://localhost:8333',
-       aws_access_key_id='dev',
-       aws_secret_access_key='dev',
-       config=Config(s3={'addressing_style': 'path'}),
-   )
-   prefix = 'ac-dc-meshed/'
-   listing = httpx2.get('https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o', params={'prefix': prefix}).json()
-   for item in listing['items']:
-       key = item['name'].removeprefix(prefix)
-       client.put_object(Bucket='manta', Key=f'PROJECT_UUID/store/{key}', Body=httpx2.get(item['mediaLink']).content)
+   from manta.config.s3_config import get_s3_client, s3_bucket_name
+   from manta.services.example_data_service import ExampleDataService
+   from manta.services.s3_file_storage_service import S3FileStorageService
+   storage = S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name())
+   print(ExampleDataService(storage, httpx2.Client()).copy_store('ac-dc-meshed', UUID('PROJECT_UUID')))
    "
    ```
 
@@ -247,7 +266,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/PROJECT_UUID/store", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
+     -d '{"project_uuid": "PROJECT_UUID", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/PROJECT_UUID/ac-dc-meshed", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -268,7 +287,7 @@ one for the requests.
    Repeat them until the run's `status` is `COMPLETED`.
 
 10. Each step that ran wrote a new revision into the uploaded store, under
-    `PROJECT_UUID/store/revisions/`. The steps response names it as the step's
+    `PROJECT_UUID/ac-dc-meshed/revisions/`. The steps response names it as the step's
     `output` (`store_url` and `revision_uuid`). The last step that ran holds the
     run's final record.
 

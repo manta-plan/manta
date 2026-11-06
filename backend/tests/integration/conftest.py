@@ -1,4 +1,3 @@
-import json
 import os
 import socket
 import subprocess
@@ -7,7 +6,7 @@ import time
 from collections.abc import Callable, Iterator
 from functools import cache
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import boto3
 import httpx2
@@ -21,13 +20,15 @@ from mypy_boto3_s3.client import S3Client
 from pynpm import NPMPackage
 from testcontainers.compose import DockerCompose
 
+from manta.services.example_data_service import ExampleDataService
+from manta.services.s3_file_storage_service import S3FileStorageService
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_FILES = FRONTEND_DIR / "dist"
-PUBLIC_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
 EXAMPLE_STORE = "ac-dc-meshed"
 
 
@@ -164,47 +165,26 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
-def example_store_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Downloads the example datarecord store from the public test data bucket, once a
-    session (the same store the playbook library's own tests run on)."""
-    store_path = tmp_path_factory.mktemp(EXAMPLE_STORE)
-    prefix = f"{EXAMPLE_STORE}/"
-    listing = httpx2.get(PUBLIC_OBJECTS, params={"prefix": prefix}).raise_for_status().json()
-    for item in listing["items"]:
-        target = store_path / item["name"].removeprefix(prefix)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(httpx2.get(item["mediaLink"]).raise_for_status().content)
-    return store_path
-
-
-@pytest.fixture(scope="session")
 def example_store(
-    s3_client: S3Client, app_server: str, example_store_path: Path
-) -> Callable[[str], dict[str, dict[str, str]]]:
-    """Returns a function that uploads the example datarecord store under a project's own
-    prefix (once per project) and returns the run payload fields for its `inputs`
-    revision — a real starting record for tests that run a playbook to completion.
-    `app_server` is an ordering dependency, not a used value: the bucket only exists once
-    the app has started (see create_app())."""
-    bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
-    revisions = json.loads((example_store_path / "revisions.json").read_text())
+    s3_client: S3Client, app_server: str
+) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
+    """Returns a function that copies the small example datarecord store under a project's
+    own prefix (once per project), the same way the app seeds its example project, and
+    returns the run payload fields for its `inputs` revision — a real starting record for
+    tests that run a playbook to completion. `app_server` is an ordering dependency, not a
+    used value: the bucket only exists once the app has started (see create_app())."""
+    storage = S3FileStorageService(
+        client=s3_client, bucket=dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+    )
+    with httpx2.Client() as http:
+        service = ExampleDataService(storage, http)
 
-    @cache
-    def upload(project_uuid: str) -> dict[str, dict[str, str]]:
-        prefix = f"{project_uuid}/example_store"
-        for path in example_store_path.rglob("*"):
-            if path.is_file():
-                s3_client.upload_file(
-                    str(path), bucket, f"{prefix}/{path.relative_to(example_store_path).as_posix()}"
-                )
-        return {
-            "data_record": {
-                "store_url": f"s3://{bucket}/{prefix}",
-                "revision_uuid": revisions["inputs"],
-            }
-        }
+        @cache
+        def copy(project_uuid: str) -> dict[str, dict[str, str]]:
+            record = service.copy_store(EXAMPLE_STORE, UUID(project_uuid))
+            return {"data_record": record.model_dump(mode="json")}
 
-    return upload
+        yield copy
 
 
 @pytest.fixture(scope="session")
@@ -300,6 +280,8 @@ def app_server(
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
         "KEYCLOAK_HOST": keycloak_service["host"],
         "KEYCLOAK_PORT": keycloak_service["port"],
+        # Tests copy only the store they need (see example_store).
+        "EXAMPLE_DATA_SEED": "false",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
