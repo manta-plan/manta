@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LuFolderPen, LuX } from "react-icons/lu";
-import { useAppStore } from "../store";
+import { updateProject } from "../api";
+import { isLocalProjectId, useAppStore } from "../store";
 
 export function RenameProjectDrawer() {
   const project = useAppStore((s) => s.projectToRename);
@@ -8,17 +9,35 @@ export function RenameProjectDrawer() {
   const renameProject = useAppStore((s) => s.renameProject);
   const setStatusMessage = useAppStore((s) => s.setStatusMessage);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setName(project?.name ?? "");
+    setDescription(project?.description ?? "");
   }, [project]);
 
-  const handleRename = () => {
-    if (!project || !name.trim()) return;
-    const projectName = name.trim();
-    renameProject(project.id, projectName);
-    setStatusMessage(`${projectName} was renamed.`);
-    closeRenameProjectDrawer();
+  const canRename = Boolean(name.trim()) && !isSaving;
+  const handleRename = async () => {
+    if (!project || !canRename) return;
+    setIsSaving(true);
+    try {
+      // Projects made before the backend stored them only exist in this browser.
+      const saved = isLocalProjectId(project.id)
+        ? { name: name.trim(), description }
+        : await updateProject(project.id, name.trim(), description);
+      renameProject(project.id, saved.name, saved.description ?? "");
+      setStatusMessage(`${saved.name} was renamed.`);
+      closeRenameProjectDrawer();
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? `Couldn't rename the project: ${error.message}`
+          : "Couldn't rename the project.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -50,7 +69,20 @@ export function RenameProjectDrawer() {
             autoFocus={Boolean(project)}
             value={name}
             onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleRename();
+            }}
             className="border-surface-600 bg-surface-900 text-surface-50 focus:border-accent-500 h-8 rounded border px-2 text-[13px] outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-surface-400 text-[11px] font-medium">Description</span>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What is this project for? (optional)"
+            rows={3}
+            className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 resize-none rounded border px-2 py-1.5 text-[13px] outline-none"
           />
         </label>
       </div>
@@ -63,8 +95,8 @@ export function RenameProjectDrawer() {
           Cancel
         </button>
         <button
-          onClick={handleRename}
-          disabled={!name.trim()}
+          onClick={() => void handleRename()}
+          disabled={!canRename}
           className="bg-accent-600 hover:bg-accent-500 h-8 rounded px-3 text-[12px] font-medium text-white disabled:pointer-events-none disabled:opacity-50"
         >
           Rename
