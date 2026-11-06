@@ -7,19 +7,30 @@ from keycloak import KeycloakOpenID
 
 
 class _FakeQuery:
+    """Returns canned results and records the clauses it was given, so tests can
+    check which filters/ordering a service built (it does not execute them)."""
+
     def __init__(self, result) -> None:
         self._result = result
+        self.filters: list = []
+        self.order_by_args: tuple = ()
+        self.offset_value: int | None = None
+        self.limit_value: int | None = None
 
-    def filter(self, *_args, **_kwargs):
+    def filter(self, *args, **_kwargs):
+        self.filters.extend(args)
         return self
 
-    def order_by(self, *_args, **_kwargs):
+    def order_by(self, *args, **_kwargs):
+        self.order_by_args = args
         return self
 
-    def offset(self, *_args, **_kwargs):
+    def offset(self, value, *_args, **_kwargs):
+        self.offset_value = value
         return self
 
-    def limit(self, *_args, **_kwargs):
+    def limit(self, value, *_args, **_kwargs):
+        self.limit_value = value
         return self
 
     def one_or_none(self):
@@ -45,14 +56,17 @@ class _MockSession:
         self.add = MagicMock(side_effect=self._assign_generated_fields)
         self.commit = MagicMock()
         self.flush = MagicMock()
+        self.delete = MagicMock()
 
-    def query(self, model: type):
-        return _FakeQuery(self._query_results.get(model))
+    def query(self, model: type) -> _FakeQuery:
+        self.last_query = _FakeQuery(self._query_results.get(model))
+        return self.last_query
 
     def _assign_generated_fields(self, entity) -> None:
         entity.id = self.id
         entity.uuid = self.uuid
         entity.created_at = self.created_at
+        entity.updated_at = self.created_at
 
 
 @pytest.fixture
