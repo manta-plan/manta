@@ -18,10 +18,11 @@ from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
 from pynpm import NPMPackage
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from testcontainers.compose import DockerCompose
 
 from manta.services.example_data_service import ExampleDataService
-from manta.services.s3_file_storage_service import S3FileStorageService
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
@@ -166,25 +167,40 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 @pytest.fixture(scope="session")
 def example_store(
-    s3_client: S3Client, app_server: str
+    s3_client: S3Client, postgres_service: dict[str, str], app_server: str
 ) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
-    """Returns a function that copies the small example datarecord store under a project's
-    own prefix (once per project), the same way the app seeds its example project, and
-    returns the run payload fields for its `inputs` revision — a real starting record for
-    tests that run a playbook to completion. `app_server` is an ordering dependency, not a
-    used value: the bucket only exists once the app has started (see create_app())."""
-    storage = S3FileStorageService(
-        client=s3_client, bucket=dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+    """Returns a function that copies the example datarecord store the app downloaded on
+    startup under a project's own prefix (once per project), the same way new users'
+    example projects are filled, and returns the run payload fields for its `inputs`
+    revision — a real starting record for tests that run a playbook to completion."""
+    env = dotenv_values(BACKEND_ENV_FILE)
+    engine = create_engine(
+        f"postgresql+psycopg://{env['POSTGRES_USER']}:{env['POSTGRES_PASSWORD']}"
+        f"@{postgres_service['host']}:{postgres_service['port']}/{env['POSTGRES_DB']}"
     )
-    with httpx2.Client() as http:
-        service = ExampleDataService(storage, http)
+    with Session(engine) as db:
+        service = ExampleDataService(db, s3_client, env["S3_BUCKET"])
 
         @cache
         def copy(project_uuid: str) -> dict[str, dict[str, str]]:
-            record = service.copy_store(EXAMPLE_STORE, UUID(project_uuid))
+            service.copy_to_project(UUID(project_uuid), [EXAMPLE_STORE])
+            record = service.data_record(UUID(project_uuid), EXAMPLE_STORE)
             return {"data_record": record.model_dump(mode="json")}
 
         yield copy
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def example_store_exists(s3_client: S3Client) -> Callable[[str], bool]:
+    """Returns whether a project has the example datarecord store (see example_store)."""
+    bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+
+    def exists(project_uuid: str) -> bool:
+        key = f"{project_uuid}/{EXAMPLE_STORE}/manifest.json"
+        return s3_client.list_objects_v2(Bucket=bucket, Prefix=key).get("KeyCount") == 1
+
+    return exists
 
 
 @pytest.fixture(scope="session")
@@ -280,8 +296,8 @@ def app_server(
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
         "KEYCLOAK_HOST": keycloak_service["host"],
         "KEYCLOAK_PORT": keycloak_service["port"],
-        # Tests copy only the store they need (see example_store).
-        "EXAMPLE_DATA_SEED": "false",
+        # Only the small store every test needs, instead of all of them.
+        "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input

@@ -1,14 +1,12 @@
 import logging
 
-import httpx2
 import uvicorn
 from fastapi import FastAPI
+from sqlalchemy.orm import Session
 
-from manta.config.example_data_config import (
-    EXAMPLE_PROJECT_UUID,
-    example_data_excluded_stores,
-    example_data_seed_enabled,
-)
+from manta.config.database_config import get_engine
+from manta.config.example_data_config import example_data_seed_enabled, example_data_stores
+from manta.config.keycloak_config import get_keycloak_openid, well_known
 from manta.config.logging_config import configure_logging
 from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
@@ -35,13 +33,14 @@ def create_app() -> FastAPI:
     logger.info("Running database migrations...")
     run_migrations()
     logger.info("Ensuring S3 bucket exists...")
-    storage = S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name())
-    storage.ensure_bucket_exists()
+    S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name()).ensure_bucket_exists()
     if example_data_seed_enabled():
-        logger.info("Seeding example data into project %s...", EXAMPLE_PROJECT_UUID)
-        with httpx2.Client() as http:
-            ExampleDataService(storage, http).seed(
-                EXAMPLE_PROJECT_UUID, example_data_excluded_stores()
+        logger.info("Seeding example data...")
+        with Session(get_engine()) as db:
+            example_data = ExampleDataService(db, get_s3_client(), s3_bucket_name())
+            example_data.seed(example_data_stores())
+            example_data.ensure_admin_project(
+                idp_source=well_known(get_keycloak_openid())["issuer"]
             )
     logger.info("Ensuring Prefect is ready...")
     ensure_prefect_ready()

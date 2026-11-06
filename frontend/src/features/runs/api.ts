@@ -20,10 +20,13 @@ const defaultRunPayload = {
   // TODO: there is no data-record creation in the frontend yet (store upload,
   // or any other way to point a run at real data). These placeholders satisfy
   // the API shape but don't resolve to anything real, so the backend refuses a
-  // run created this way — replace once that functionality exists. Until then,
-  // once the backend's example project is owned by the dev user, runs could use
-  // it and one of its seeded stores (see "Example data" in backend/README.md)
-  // instead of creating "My First Project" above.
+  // run created this way. Every user now gets an "Example project" on
+  // registration, with the example datarecord stores already in it (see
+  // "Example data" in backend/README.md). Until real data-record creation
+  // exists, use that project instead of creating "My First Project" above (this
+  // needs a backend endpoint listing the user's projects), and point runs at
+  // one of its stores: store_url s3://manta/<project uuid>/<store>, revision_uuid
+  // that store's `inputs` revision (from its revisions.json).
   data_record: {
     store_url: "s3://manta/placeholder/store",
     revision_uuid: "00000000-0000-0000-0000-000000000000",

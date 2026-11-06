@@ -62,16 +62,27 @@ SeaweedFS up.
 
 ### Example data
 
-With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also
-copies the example datarecord stores of the public `manta-public-test-data`
-bucket into the storage of the example project
-`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, each under
-`s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/<store>` (see
-[`ExampleDataService`](src/manta/services/example_data_service.py)). Stores
-already there are skipped, so only a clean SeaweedFS volume pays for the
-download. Stores listed in `EXAMPLE_DATA_EXCLUDED_STORES` are left out, which
-by default is `europe-full-res-2030` (~125 MB). Without internet access, the
-app logs a warning and starts without them.
+With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
+
+1. Downloads the example datarecord stores listed in `EXAMPLE_DATA_STORES` (all
+   of them when empty) from the public `manta-public-test-data` bucket, into
+   `s3://manta/example-data/<store>`. That belongs to no project, so no run ever
+   writes to it. Stores already there are skipped, so
+   only a clean SeaweedFS volume pays for the download. Without internet
+   access, the app logs a warning and starts without them.
+2. Creates the `manta-admin` user, with its Keycloak id pinned in
+   [manta-realm.json](../docker/conf/manta-realm.json) (`0b7b2a6e-4c55-4b1e-9d0e-6f3c2a8e5d41`),
+   and its "Example project" `33b9abe3-2f25-4824-89e2-5a3d93671b6c`, unless they
+   exist.
+3. Copies every downloaded store into that project, under
+   `s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/<store>`, within S3 itself.
+
+With `EXAMPLE_PROJECT_FOR_NEW_USERS=true` (the default), every newly registered
+user also gets an "Example project" of their own, with the same copies. A failed
+copy only logs a warning: the project is still created, just without the data.
+
+Projects get copies so their runs can write new revisions into them without
+touching anyone else's. The stores, sizes and `inputs` revisions:
 
 | Store | Size | `inputs` revision |
 | --- | --- | --- |
@@ -84,8 +95,13 @@ app logs a warning and starts without them.
 | `europe-full-res-2030` | 124.4 MB | `2f276825-9deb-4abc-ad57-ceb08f57ea94` |
 
 Each store's `revisions.json` names its revisions, `inputs` being the one a run
-starts from. The integration tests copy only `ac-dc-meshed`, with the same code,
-under each test's own project.
+starts from. `europe-full-res-2030` is left out of `EXAMPLE_DATA_STORES` by
+default for its size. The integration tests download only `ac-dc-meshed`.
+
+Keycloak only imports the realm into a fresh database. If your Keycloak volume
+predates the pinned `manta-admin` id, recreate it once with
+`docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v`
+(from `docker/`), or `manta-admin` won't own its example project.
 
 ## Linting & formatting
 
@@ -204,36 +220,7 @@ one for the requests.
    The token expires after 5 minutes. Repeat this step when a request returns
    `401`.
 
-4. Create a project:
-
-   ```bash
-   curl -s -X POST http://localhost:8000/v1/projects \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"name": "Manual test", "description": "Manual test project"}'
-   ```
-
-   Copy the returned `uuid` as `PROJECT_UUID`.
-
-5. Copy a starting datarecord store into the project's own storage. A run is
-   refused unless its store is under the project's prefix and the revision
-   exists. This copies `ac-dc-meshed` the same way the example data is seeded
-   (see [Example data](#example-data)) and prints its `store_url` and `inputs`
-   revision:
-
-   ```bash
-   uv run python -c "
-   from uuid import UUID
-   import httpx2
-   from manta.config.s3_config import get_s3_client, s3_bucket_name
-   from manta.services.example_data_service import ExampleDataService
-   from manta.services.s3_file_storage_service import S3FileStorageService
-   storage = S3FileStorageService(client=get_s3_client(), bucket=s3_bucket_name())
-   print(ExampleDataService(storage, httpx2.Client()).copy_store('ac-dc-meshed', UUID('PROJECT_UUID')))
-   "
-   ```
-
-6. List the playbooks you can run, then look at one in detail. The detail
+4. List the playbooks you can run, then look at one in detail. The detail
    shows each step's block, its settings schema, and the playbook's
    `default_config`:
 
@@ -242,7 +229,7 @@ one for the requests.
    curl -s http://localhost:8000/v1/playbooks/expand -H "Authorization: Bearer $TOKEN"
    ```
 
-7. Check a config before running it. The answer lists every issue, each naming
+5. Check a config before running it. The answer lists every issue, each naming
    its step and, where there is one, the setting at fault. This config switches
    the playbook to its myopic branch, which needs a `period`
    dimension the playbook's data does not have. The answer has `"valid": false`
@@ -257,7 +244,9 @@ one for the requests.
 
    Sending `{}` instead checks the `default_config`, which has no issues.
 
-8. Create a run from a revision of the uploaded store. Each step writes its
+6. Create a run in manta-admin's example project
+   (`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, see [Example data](#example-data)),
+   from the `inputs` revision of its `ac-dc-meshed` store. Each step writes its
    output as a new revision into that same store. Leaving out `playbook.config`
    runs the playbook with its `default_config`. A config with issues is refused with a
    `422` listing the same issues the check above returns:
@@ -266,12 +255,12 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/PROJECT_UUID/ac-dc-meshed", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
+     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/ac-dc-meshed", "revision_uuid": "e5f2eacd-ba5c-463c-a663-3017ef904d1d"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
 
-9. Follow the run. The first request returns the run's overall `status`, and the
+7. Follow the run. The first request returns the run's overall `status`, and the
    `config` and `data_record` it was started with. The second returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
    begins, and Prefect's own state from then on, plus its `output` record once
@@ -286,15 +275,15 @@ one for the requests.
 
    Repeat them until the run's `status` is `COMPLETED`.
 
-10. Each step that ran wrote a new revision into the uploaded store, under
-    `PROJECT_UUID/ac-dc-meshed/revisions/`. The steps response names it as the step's
-    `output` (`store_url` and `revision_uuid`). The last step that ran holds the
-    run's final record.
+8. Each step that ran wrote a new revision into the project's store, under
+   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/ac-dc-meshed/revisions/`. The steps
+   response names it as the step's `output` (`store_url` and `revision_uuid`).
+   The last step that ran holds the run's final record.
 
-11. Tear down (from `docker/`, in the third terminal). This also stops the
-    stack in the first terminal. Stop the backend in the second terminal with
-    `Ctrl+C`:
+9. Tear down (from `docker/`, in the third terminal). This also stops the
+   stack in the first terminal. Stop the backend in the second terminal with
+   `Ctrl+C`:
 
-    ```bash
-    docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
-    ```
+   ```bash
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+   ```

@@ -1,143 +1,135 @@
+import io
 import json
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import httpx2
+import pytest
+from botocore.exceptions import BotoCoreError
 
+from manta.config.example_data_config import ADMIN_IDP_SUBJECT, ADMIN_USERNAME
+from manta.entities import User
+from manta.services import example_data_service
 from manta.services.example_data_service import PUBLIC_OBJECTS_URL, ExampleDataService
-from manta.services.s3_file_storage_service import S3StorageError
 
+ISSUER = "http://localhost:8080/realms/manta"
 INPUTS = "e5f2eacd-ba5c-463c-a663-3017ef904d1d"
 
 FILES = {
     "small/manifest.json": b"{}",
     "small/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
     "small/layers/a.parquet": b"data",
-    "large/manifest.json": b"{}",
-    "large/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
 }
 
 
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
     if str(request.url).startswith(PUBLIC_OBJECTS_URL):
-        params = request.url.params
-        if params.get("delimiter") == "/":
-            return httpx2.Response(200, json={"prefixes": ["small/", "large/"]})
-        items = [
-            {"name": name, "mediaLink": f"https://media/{name}"}
-            for name in FILES
-            if name.startswith(params["prefix"])
-        ]
+        if request.url.params.get("delimiter") == "/":
+            return httpx2.Response(200, json={"prefixes": ["small/"]})
+        items = [{"name": name, "mediaLink": f"https://media/{name}"} for name in FILES]
         return httpx2.Response(200, json={"items": items})
     return httpx2.Response(200, content=FILES[request.url.path.removeprefix("/")])
 
 
-def _service(storage: MagicMock, handler=_public_bucket) -> ExampleDataService:
-    return ExampleDataService(storage, httpx2.Client(transport=httpx2.MockTransport(handler)))
+@pytest.fixture
+def s3_client() -> MagicMock:
+    """An S3 client whose bucket holds the downloaded example store, and nothing else."""
+    client = MagicMock()
+    client.list_objects_v2.return_value = {"KeyCount": 0}
+    client.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": f"example-data/{name}"} for name in FILES]}
+    ]
+    return client
 
 
-def _storage(existing: set[str] = frozenset()) -> MagicMock:
-    storage = MagicMock()
-    storage.bucket = "manta"
-    storage.file_exists.side_effect = lambda _project_uuid, filename: filename in existing
-    return storage
+def _service(mock_db, s3_client) -> ExampleDataService:
+    return ExampleDataService(mock_db, s3_client, "manta")
 
 
-def _uploaded(storage: MagicMock) -> list[str]:
-    return [call.args[1] for call in storage.upload_file.call_args_list]
-
-
-def test_copy_store_uploads_every_file_under_the_project_and_returns_its_inputs() -> None:
+def test_seed_downloads_every_store_into_the_example_data(mock_db, s3_client, monkeypatch) -> None:
     # Given
-    storage = _storage()
-    project_uuid = uuid4()
+    monkeypatch.setattr(
+        example_data_service,
+        "_http_client",
+        lambda: httpx2.Client(transport=httpx2.MockTransport(_public_bucket)),
+    )
 
     # When
-    record = _service(storage).copy_store("small", project_uuid)
+    _service(mock_db, s3_client).seed()
 
     # Then
-    assert sorted(_uploaded(storage)) == sorted(n for n in FILES if n.startswith("small/"))
-    assert {call.args[0] for call in storage.upload_file.call_args_list} == {project_uuid}
-    assert record.store_url == f"s3://manta/{project_uuid}/small"
-    assert str(record.revision_uuid) == INPUTS
+    uploads = [call.kwargs for call in s3_client.put_object.call_args_list]
+    assert sorted(upload["Key"] for upload in uploads) == sorted(
+        f"example-data/{name}" for name in FILES
+    )
+    assert uploads[-1]["Key"] == "example-data/small/manifest.json"
 
 
-def test_copy_store_uploads_the_manifest_last() -> None:
+def test_seed_does_not_raise_when_the_public_bucket_is_unreachable(
+    mock_db, s3_client, monkeypatch
+) -> None:
     # Given
-    storage = _storage()
-
-    # When
-    _service(storage).copy_store("small", uuid4())
-
-    # Then
-    assert _uploaded(storage)[-1] == "small/manifest.json"
-
-
-def test_copy_store_follows_listing_pages() -> None:
-    # Given
-    storage = _storage()
-
-    def paged(request: httpx2.Request) -> httpx2.Response:
-        if "pageToken" in request.url.params:
-            items = [
-                {"name": "small/revisions.json", "mediaLink": "https://media/small/revisions.json"}
-            ]
-            return httpx2.Response(200, json={"items": items})
-        if "prefix" in request.url.params:
-            items = [
-                {"name": "small/manifest.json", "mediaLink": "https://media/small/manifest.json"}
-            ]
-            return httpx2.Response(200, json={"items": items, "nextPageToken": "next"})
-        return _public_bucket(request)
-
-    # When
-    _service(storage, paged).copy_store("small", uuid4())
-
-    # Then
-    assert sorted(_uploaded(storage)) == ["small/manifest.json", "small/revisions.json"]
-
-
-def test_seed_copies_every_store_not_excluded() -> None:
-    # Given
-    storage = _storage()
-
-    # When
-    _service(storage).seed(uuid4(), excluded_stores={"large"})
-
-    # Then
-    assert all(name.startswith("small/") for name in _uploaded(storage))
-    assert "small/manifest.json" in _uploaded(storage)
-
-
-def test_seed_skips_stores_already_present() -> None:
-    # Given
-    storage = _storage(existing={"small/manifest.json"})
-
-    # When
-    _service(storage).seed(uuid4())
-
-    # Then
-    assert all(name.startswith("large/") for name in _uploaded(storage))
-
-
-def test_seed_does_not_raise_when_the_public_bucket_is_unreachable() -> None:
-    # Given
-    storage = _storage()
-
     def unreachable(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("offline", request=request)
 
+    monkeypatch.setattr(
+        example_data_service,
+        "_http_client",
+        lambda: httpx2.Client(transport=httpx2.MockTransport(unreachable)),
+    )
+
     # When
-    _service(storage, unreachable).seed(uuid4())
+    _service(mock_db, s3_client).seed()
 
     # Then
-    storage.upload_file.assert_not_called()
+    s3_client.put_object.assert_not_called()
 
 
-def test_seed_does_not_raise_when_storage_fails() -> None:
+def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example_data(
+    mock_db, s3_client
+) -> None:
+    # When
+    _service(mock_db, s3_client).ensure_admin_project(idp_source=ISSUER)
+
+    # Then
+    user, project = [call.args[0] for call in mock_db.add.call_args_list]
+    assert (user.username, user.idp_subject, user.idp_source) == (
+        ADMIN_USERNAME,
+        ADMIN_IDP_SUBJECT,
+        ISSUER,
+    )
+    assert project.owner_id == user.id
+    copies = [call.kwargs for call in s3_client.copy_object.call_args_list]
+    assert sorted(copy["Key"] for copy in copies) == sorted(
+        f"{project.uuid}/{name}" for name in FILES
+    )
+    assert copies[-1]["CopySource"] == {
+        "Bucket": "manta",
+        "Key": "example-data/small/manifest.json",
+    }
+
+
+def test_create_project_keeps_the_project_when_copying_the_example_data_fails(
+    mock_db, s3_client
+) -> None:
     # Given
-    storage = _storage()
-    storage.upload_file.side_effect = S3StorageError("boom")
+    s3_client.copy_object.side_effect = BotoCoreError()
 
-    # When / Then
-    _service(storage).seed(uuid4())
+    # When
+    _service(mock_db, s3_client).create_project(User(username="alice"))
+
+    # Then
+    mock_db.commit.assert_called_once()
+
+
+def test_data_record_is_the_stores_inputs_revision(mock_db, s3_client) -> None:
+    # Given
+    s3_client.get_object.return_value = {"Body": io.BytesIO(FILES["small/revisions.json"])}
+    project_uuid = uuid4()
+
+    # When
+    record = _service(mock_db, s3_client).data_record(project_uuid, "small")
+
+    # Then
+    assert record.store_url == f"s3://manta/{project_uuid}/small"
+    assert str(record.revision_uuid) == INPUTS
