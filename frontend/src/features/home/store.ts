@@ -7,8 +7,11 @@ import { removeProjectScenarios } from "../project/lib/project-scenarios";
 export type Theme = "dark" | "light";
 
 export type Project = {
+  // The backend project's uuid, or a local id for projects made before the
+  // backend stored them.
   id: string;
   name: string;
+  description?: string;
   // The record on the record server the project shows.
   recordId?: string;
   lastModified: string;
@@ -17,13 +20,33 @@ export type Project = {
   showWelcome?: boolean;
 };
 
+export type BackendProject = {
+  uuid: string;
+  name: string;
+  description: string | null;
+  updated_at: string;
+};
+
+const localProjectIdPrefix = "project-";
+
+// Projects made before the backend stored them have a local id, not a uuid, so
+// the backend has nothing to rename or delete for them.
+export function isLocalProjectId(id: string) {
+  return id.startsWith(localProjectIdPrefix);
+}
+
 type HomeState = {
   theme: Theme;
   toggleTheme: () => void;
 
   projects: Project[];
-  addProject: (name?: string, recordId?: string) => Project;
-  renameProject: (id: string, name: string) => void;
+  addProject: (
+    name?: string,
+    recordId?: string,
+    backend?: { uuid: string; description?: string | null },
+  ) => Project;
+  syncProjects: (backendProjects: BackendProject[]) => void;
+  renameProject: (id: string, name: string, description?: string) => void;
   dismissProjectWelcome: (id: string) => void;
   removeProject: (id: string) => Promise<void>;
 
@@ -33,8 +56,8 @@ type HomeState = {
   isNewProjectDrawerOpen: boolean;
   openNewProjectDrawer: () => void;
   closeNewProjectDrawer: () => void;
-  projectToRename: Pick<Project, "id" | "name"> | null;
-  openRenameProjectDrawer: (project: Pick<Project, "id" | "name">) => void;
+  projectToRename: Pick<Project, "id" | "name" | "description"> | null;
+  openRenameProjectDrawer: (project: Pick<Project, "id" | "name" | "description">) => void;
   closeRenameProjectDrawer: () => void;
 };
 
@@ -84,10 +107,11 @@ export const useAppStore = create<HomeState>((set, get) => ({
     }),
 
   projects: readInitialProjects(),
-  addProject: (name, recordId) => {
+  addProject: (name, recordId, backend) => {
     const project: Project = {
-      id: `project-${Date.now()}`,
+      id: backend?.uuid ?? `${localProjectIdPrefix}${Date.now()}`,
       name: name?.trim() || `Untitled Project ${get().projects.length + 1}`,
+      ...(backend?.description ? { description: backend.description } : {}),
       ...(recordId ? { recordId } : {}),
       lastModified: "Just now",
       showWelcome: true,
@@ -97,12 +121,43 @@ export const useAppStore = create<HomeState>((set, get) => ({
     set({ projects });
     return project;
   },
-  renameProject: (id, name) => {
+  syncProjects: (backendProjects) => {
+    const localById = new Map(get().projects.map((project) => [project.id, project]));
+    const fromBackend: Project[] = backendProjects.map((backendProject) => {
+      // The backend doesn't store the record or the welcome flag, so they stay
+      // with the browser's copy of the project.
+      const local = localById.get(backendProject.uuid);
+      return {
+        id: backendProject.uuid,
+        name: backendProject.name,
+        ...(backendProject.description ? { description: backendProject.description } : {}),
+        ...(local?.recordId ? { recordId: local.recordId } : {}),
+        lastModified: new Date(backendProject.updated_at).toLocaleString(),
+        ...(local?.showWelcome ? { showWelcome: true } : {}),
+      };
+    });
+    // Projects made before the backend stored them only exist in this browser.
+    const localOnly = get().projects.filter((project) =>
+      project.id.startsWith(localProjectIdPrefix),
+    );
+    const projects = [...fromBackend, ...localOnly];
+    persistProjects(projects);
+    set({ projects });
+  },
+  renameProject: (id, name, description) => {
     const projectName = name.trim();
     if (!projectName) return;
-    const projects = get().projects.map((project) =>
-      project.id === id ? { ...project, name: projectName } : project,
-    );
+    const projects = get().projects.map((project) => {
+      if (project.id !== id) return project;
+      // `description` left out keeps the current one; an empty string clears it.
+      const { description: current, ...rest } = project;
+      const nextDescription = description === undefined ? current : description.trim();
+      return {
+        ...rest,
+        name: projectName,
+        ...(nextDescription ? { description: nextDescription } : {}),
+      };
+    });
     persistProjects(projects);
     set({ projects });
   },

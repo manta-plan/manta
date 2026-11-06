@@ -14,6 +14,20 @@ export function postJson<ResponseBody>(url: string, body: unknown) {
   });
 }
 
+export function patchJson<ResponseBody>(url: string, body: unknown) {
+  return requestJson<ResponseBody>(url, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteRequest(url: string) {
+  return requestJson<void>(url, { method: "DELETE" });
+}
+
 async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
   const accessToken = getAccessToken();
   const headers = new Headers(init.headers);
@@ -35,6 +49,11 @@ async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
     }
 
     throw error;
+  }
+
+  // A 204 (e.g. a delete) has no body to parse.
+  if (response.status === 204) {
+    return undefined as ResponseBody;
   }
 
   return (await response.json()) as ResponseBody;
