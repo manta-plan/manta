@@ -9,3 +9,27 @@ class CreateProjectResult(BaseModel):
     name: str
     description: str | None
     created_at: datetime
+    updated_at: datetime
+
+
+class GetProjectResult(BaseModel):
+    uuid: UUID
+    name: str
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class UpdateProjectResult(BaseModel):
+    uuid: UUID
+    name: str
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ListProjectsResult(BaseModel):
+    items: list[GetProjectResult]
+    total: int
+    limit: int
+    offset: int
