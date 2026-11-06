@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LuDatabase, LuFolderPlus, LuX } from "react-icons/lu";
 import { useLocation } from "wouter";
+import { createProject } from "../api";
 import { useAppStore } from "../store";
 import { useRecordCatalogue } from "../lib/use-record-catalogue";
 import { FormSelect } from "./form-select";
@@ -12,16 +13,19 @@ export function NewProjectDrawer() {
   const addProject = useAppStore((s) => s.addProject);
   const setStatusMessage = useAppStore((s) => s.setStatusMessage);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   const { catalogue, error } = useRecordCatalogue();
   const records = catalogue?.records ?? [];
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string | null>("s3://manta/manual-test/input.nc");
   // The server's default until one is picked.
   const recordId = chosen ?? catalogue?.default ?? null;
 
   useEffect(() => {
     if (!isOpen) return;
     setName("");
-    setChosen(null);
+    setDescription("");
+    // setChosen(null);
   }, [isOpen]);
 
   useEffect(() => {
@@ -29,12 +33,28 @@ export function NewProjectDrawer() {
   }, [location, closeNewProjectDrawer]);
 
   // A project shows one record from the record server's catalogue.
-  const canCreate = Boolean(name.trim() && recordId);
-  const handleCreate = () => {
+  const canCreate = Boolean(name.trim() && recordId) && !isCreating;
+  const handleCreate = async () => {
     if (!canCreate || !recordId) return;
-    const project = addProject(name, recordId);
-    setStatusMessage(`${project.name} was created.`);
-    closeNewProjectDrawer();
+    setIsCreating(true);
+    try {
+      // The backend owns the project; its uuid becomes the project's id here.
+      const created = await createProject(name.trim(), description);
+      const project = addProject(created.name, recordId, {
+        uuid: created.uuid,
+        description: created.description,
+      });
+      setStatusMessage(`${project.name} was created.`);
+      closeNewProjectDrawer();
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? `Couldn't create the project: ${error.message}`
+          : "Couldn't create the project.",
+      );
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -71,6 +91,16 @@ export function NewProjectDrawer() {
             }}
             placeholder="Project name"
             className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 h-8 rounded border px-2 text-[13px] outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-surface-400 text-[11px] font-medium">Description</span>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What is this project for? (optional)"
+            rows={3}
+            className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 resize-none rounded border px-2 py-1.5 text-[13px] outline-none"
           />
         </label>
         <div className="flex flex-col gap-1.5">
