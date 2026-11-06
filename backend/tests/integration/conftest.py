@@ -226,14 +226,14 @@ def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
 
 
 @pytest.fixture(scope="session")
-def second_user_headers(
+def second_user(
     app_server: str, kc_oidc_client: KeycloakOpenID, kc_admin_client: KeycloakAdmin
-) -> dict[str, str]:
-    """A second, distinct registered identity — for asserting that one user
-    can't act on another user's resources (e.g. project ownership checks).
-    Session-scoped: created once via the Keycloak admin API and reused by
-    every test that needs a non-owner, rather than provisioning a fresh
-    Keycloak user per test."""
+) -> tuple[str, str]:
+    """A second, distinct registered identity's username and password — for asserting
+    that one user can't act on another user's resources (e.g. project ownership
+    checks). Session-scoped: created once via the Keycloak admin API and reused by
+    every test that needs a non-owner, rather than provisioning a fresh Keycloak user
+    per test."""
     username = f"mallory-{uuid4()}"
     password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
     kc_admin_client.create_user(
@@ -247,14 +247,23 @@ def second_user_headers(
     )
 
     token = kc_oidc_client.token(username, password)
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
     claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
     response = httpx2.post(
         f"{app_server}/v1/auth/register",
         json={"username": username, "idp_subject": claims["sub"], "idp_source": claims["iss"]},
     )
     assert response.status_code == 201
-    return headers
+    return username, password
+
+
+@pytest.fixture
+def second_user_headers(
+    second_user: tuple[str, str], kc_oidc_client: KeycloakOpenID
+) -> dict[str, str]:
+    """The second user's auth headers. A fresh token per test: access tokens expire after
+    a few minutes, well within a single integration session."""
+    token = kc_oidc_client.token(*second_user)
+    return {"Authorization": f"Bearer {token['access_token']}"}
 
 
 def _free_port() -> int:
