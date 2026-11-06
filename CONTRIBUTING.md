@@ -10,6 +10,7 @@ If a file or module doesn't clearly fit the conventions below, raise it in your
 PR rather than guessing — conventions get updated by discussion, not by silent
 drift.
 
+<!-- --8<-- [start:docs-general] -->
 ## General
 
 ### Commits
@@ -45,8 +46,10 @@ commits get squashed together:
 - Style/formatting disputes are considered solved problems — defer to the
   linter/formatter for the language you're working in rather than debating it
   in review.
+<!-- --8<-- [end:docs-general] -->
 
 ## Backend (Python)
+<!-- --8<-- [start:docs-backend] -->
 
 The backend follows a **Model-Service-Controller (MSC)** pattern — essentially
 MVCS adapted for a JSON API, where the "view" is folded into the controller
@@ -105,7 +108,7 @@ everywhere, so which package a file is in never changes how it should look.
 
 - **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against every
   Python package and auto-fixes what it can before each commit — see
-  [backend/README.md](backend/README.md) for one-time setup.
+  [backend/README.md](https://github.com/manta-plan/manta/blob/main/backend/README.md) for one-time setup.
 - **In CI**, the same Ruff checks run read-only on every PR: they fail the
   build on violations but never push a fixup commit. If pre-commit was
   skipped or bypassed, fix locally and re-push.
@@ -126,8 +129,10 @@ Structure test bodies as **Given/When/Then**, using plain comments.
 **TODO**: expand this with more guidance (fixtures, mocking conventions, what
 belongs in unit vs. integration) as we accumulate more tests to draw examples
 from.
+<!-- --8<-- [end:docs-backend] -->
 
 ## Playbooks (`playbook/`, `playbook-library/`)
+<!-- --8<-- [start:docs-playbooks] -->
 
 These two are **not** backend code and deliberately do not follow the MSC pattern
 above: they are standalone libraries that must keep working outside Manta entirely.
@@ -150,6 +155,7 @@ They keep the same Ruff rules as the backend, but are managed by their own tools
 installs far more reliably from conda-forge and a block library needs several
 environments side by side. Each package's README explains how to run its tests, and
 a change to either is expected to keep both suites green.
+<!-- --8<-- [end:docs-playbooks] -->
 
 ## Frontend
 

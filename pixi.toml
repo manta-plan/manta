@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+[workspace]
+name = "manta-docs"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[dependencies]
+python = "3.12.*"
+
+[feature.docs.dependencies]
+zensical = "==0.0.63"
+mkdocstrings = ">=0.29"
+mkdocstrings-python = ">=1.16"
+pymdown-extensions = ">=10.0"
+# mkdocstrings formats signatures with one of these; without it every signature
+# renders on a single unwrapped line.
+ruff = "*"
+
+[feature.docs.pypi-dependencies]
+markdown-callouts = ">=0.4"
+essentials-openapi = ">=1.2"
+rich = ">=13"
+httpx = "<1"
+
+[feature.docs.tasks.docs-openapi]
+cmd = "uv run --project backend python tools/docs/export_openapi.py"
+
+[feature.docs.tasks.docs-rest-api]
+cmd = "python tools/docs/gen_rest_api.py"
+
+[feature.docs.tasks.docs-serve]
+cmd = "python -m zensical serve"
+depends-on = ["docs-rest-api"]
+
+[feature.docs.tasks.docs-build]
+cmd = "python -m zensical build --strict"
+depends-on = ["docs-rest-api"]
+
+[environments]
+default = ["docs"]

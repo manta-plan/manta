@@ -135,6 +135,7 @@ really be built or resolved independently until that changes.
 something concrete is what will keep either change to one function plus a new
 step, not a refactor of every call site.
 
+<!-- --8<-- [start:docs-dev] -->
 ## Configuration
 
 Everything in `config.py` is read from the environment (`MANTA_*`, `S3_*`,
@@ -155,3 +156,4 @@ functions and `PrefectBlockRunner` with `run_deployment` stubbed — no live
 Prefect server or Docker daemon needed. `tests/test_isolation.py` is the
 boundary this package cannot afford to lose by accident: that it never imports
 this monorepo's own backend or a block library.
+<!-- --8<-- [end:docs-dev] -->

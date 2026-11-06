@@ -1,5 +1,6 @@
 # Manta Frontend
 
+<!-- --8<-- [start:docs-setup] -->
 The Manta frontend is a [React](https://react.dev/) app built with
 [Vite](https://vite.dev/), [TypeScript](https://www.typescriptlang.org/), and
 [Tailwind CSS](https://tailwindcss.com/). UI primitives come from
@@ -33,7 +34,9 @@ pnpm dev
 ```
 
 Vite prints the local URL, usually `http://localhost:5173`.
+<!-- --8<-- [end:docs-setup] -->
 
+<!-- --8<-- [start:docs-dev] -->
 ## Design Tokens
 
 Tailwind theme tokens live in `src/index.css` using Tailwind v4's CSS-first
@@ -74,3 +77,4 @@ Build and serve the production output locally:
 pnpm build
 pnpm preview
 ```
+<!-- --8<-- [end:docs-dev] -->

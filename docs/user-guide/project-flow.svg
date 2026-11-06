@@ -1,0 +1,85 @@
+<svg class="mpf" viewBox="0 0 1180 400" width="100%" role="img" aria-labelledby="mpf-title mpf-desc" xmlns="http://www.w3.org/2000/svg">
+  <title id="mpf-title">How a project moves through Manta</title>
+  <desc id="mpf-desc">Seven stages run left to right: sign in, project, bring in a model, model, run, inspect and report. Underneath, the project's data record grows in layers: a model layer, scenario patch layers, a result layer per block and a final result layer. Bringing in a model adds the model layer. The Model stage adds the patch layers and reads the layers below. The Run stage reads the scenario, adds a result layer per block and adds the final result layer. Inspect and Report read the final result layer.</desc>
+  <style>
+    .mpf text { font-family: inherit; fill: var(--md-default-fg-color); }
+    .mpf .mpf-band { font-size: 13px; font-weight: 700; fill: var(--md-default-fg-color--light); letter-spacing: 0.04em; }
+    .mpf .mpf-t { font-size: 14px; font-weight: 700; }
+    .mpf .mpf-s { font-size: 12px; fill: var(--md-default-fg-color--light); }
+    .mpf .mpf-l { font-size: 13px; font-weight: 600; }
+    .mpf .mpf-b { font-size: 10px; }
+    .mpf .mpf-box { fill: var(--md-default-bg-color); stroke: var(--md-default-fg-color--lighter); stroke-width: 1.5; }
+    .mpf .mpf-flow { stroke: var(--md-default-fg-color--lighter); stroke-width: 1.5; fill: none; }
+    .mpf .mpf-add { stroke: var(--md-primary-fg-color); stroke-width: 2; fill: none; }
+    .mpf .mpf-read { stroke: var(--md-accent-fg-color); stroke-width: 2; stroke-dasharray: 5 4; fill: none; }
+    .mpf .mpf-h-flow { fill: var(--md-default-fg-color--lighter); }
+    .mpf .mpf-h-add { fill: var(--md-primary-fg-color); }
+    .mpf .mpf-h-read { fill: var(--md-accent-fg-color); }
+    .mpf .mpf-layer { fill: var(--md-primary-fg-color); stroke: var(--md-primary-fg-color); stroke-width: 1; }
+  </style>
+  <defs>
+    <marker id="mpf-m-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mpf-h-flow" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="mpf-m-add" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mpf-h-add" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="mpf-m-read" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mpf-h-read" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+  <text class="mpf-band" x="20" y="24">WHAT YOU DO</text>
+  <rect class="mpf-box" x="20" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="92.5" y="78" text-anchor="middle">Sign in</text>
+  <rect class="mpf-box" x="186" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="258.5" y="68" text-anchor="middle">Project</text>
+  <text class="mpf-s" x="258.5" y="88" text-anchor="middle">create or open one</text>
+  <rect class="mpf-box" x="352" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="424.5" y="60" text-anchor="middle">Bring in a model</text>
+  <text class="mpf-s" x="424.5" y="80" text-anchor="middle">premade, example</text>
+  <text class="mpf-s" x="424.5" y="96" text-anchor="middle">or your own</text>
+  <rect class="mpf-box" x="518" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="590.5" y="60" text-anchor="middle">Model</text>
+  <text class="mpf-s" x="590.5" y="80" text-anchor="middle">view the network,</text>
+  <text class="mpf-s" x="590.5" y="96" text-anchor="middle">define scenarios</text>
+  <rect class="mpf-box" x="684" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="756.5" y="60" text-anchor="middle">Run</text>
+  <text class="mpf-s" x="756.5" y="80" text-anchor="middle">run a playbook</text>
+  <text class="mpf-s" x="756.5" y="96" text-anchor="middle">on a scenario</text>
+  <rect class="mpf-box" x="850" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="922.5" y="60" text-anchor="middle">Inspect</text>
+  <text class="mpf-s" x="922.5" y="80" text-anchor="middle">charts and tables</text>
+  <text class="mpf-s" x="922.5" y="96" text-anchor="middle">of the results</text>
+  <rect class="mpf-box" x="1016" y="36" width="145" height="74" rx="6"/>
+  <text class="mpf-t" x="1088.5" y="60" text-anchor="middle">Report</text>
+  <text class="mpf-s" x="1088.5" y="80" text-anchor="middle">pages to print</text>
+  <text class="mpf-s" x="1088.5" y="96" text-anchor="middle">or share</text>
+  <line class="mpf-flow" x1="167" y1="73" x2="184" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <line class="mpf-flow" x1="333" y1="73" x2="350" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <line class="mpf-flow" x1="499" y1="73" x2="516" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <line class="mpf-flow" x1="665" y1="73" x2="682" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <line class="mpf-flow" x1="831" y1="73" x2="848" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <line class="mpf-flow" x1="997" y1="73" x2="1014" y2="73" marker-end="url(#mpf-m-flow)"/>
+  <text class="mpf-band" x="20" y="214">THE PROJECT'S DATA RECORD</text>
+  <text class="mpf-s" x="20" y="236">Each stage adds its layer on top</text>
+  <text class="mpf-s" x="20" y="252">of the layers before it, and reads</text>
+  <text class="mpf-s" x="20" y="268">the layers beneath it.</text>
+  <line class="mpf-add" x1="20" y1="318" x2="58" y2="318" marker-end="url(#mpf-m-add)"/>
+  <text class="mpf-s" x="68" y="322">adds a layer</text>
+  <line class="mpf-read" x1="20" y1="346" x2="58" y2="346" marker-end="url(#mpf-m-read)"/>
+  <text class="mpf-s" x="68" y="350">reads the layers beneath</text>
+  <rect class="mpf-layer" x="352" y="340" width="809" height="40" rx="4" fill-opacity="0.12" stroke-opacity="0.5"/>
+  <text class="mpf-l" x="362" y="365">Model layer</text>
+  <rect class="mpf-layer" x="518" y="296" width="643" height="40" rx="4" fill-opacity="0.2" stroke-opacity="0.5"/>
+  <text class="mpf-l" x="528" y="321">Scenario patch layers</text>
+  <rect class="mpf-layer" x="690" y="280" width="471" height="14" rx="3" fill-opacity="0.28" stroke-opacity="0.5"/>
+  <text class="mpf-b" x="840" y="291">Block 1 result</text>
+  <rect class="mpf-layer" x="700" y="264" width="461" height="14" rx="3" fill-opacity="0.28" stroke-opacity="0.5"/>
+  <text class="mpf-b" x="840" y="275">Block 2 result</text>
+  <rect class="mpf-layer" x="710" y="248" width="451" height="14" rx="3" fill-opacity="0.28" stroke-opacity="0.5"/>
+  <text class="mpf-b" x="840" y="259">Block 3 result</text>
+  <rect class="mpf-layer" x="780" y="204" width="381" height="40" rx="4" fill-opacity="0.36" stroke-opacity="0.6"/>
+  <text class="mpf-l" x="790" y="229">Final result layer</text>
+  <line class="mpf-add" x1="424.5" y1="112" x2="424.5" y2="337" marker-end="url(#mpf-m-add)"/>
+  <line class="mpf-add" x1="575" y1="112" x2="575" y2="293" marker-end="url(#mpf-m-add)"/>
+  <line class="mpf-read" x1="606" y1="294" x2="606" y2="113" marker-end="url(#mpf-m-read)"/>
+  <line class="mpf-add" x1="728" y1="112" x2="728" y2="245" marker-end="url(#mpf-m-add)"/>
+  <line class="mpf-read" x1="752" y1="246" x2="752" y2="113" marker-end="url(#mpf-m-read)"/>
+  <line class="mpf-add" x1="805" y1="112" x2="805" y2="201" marker-end="url(#mpf-m-add)"/>
+  <line class="mpf-read" x1="922.5" y1="202" x2="922.5" y2="113" marker-end="url(#mpf-m-read)"/>
+  <line class="mpf-read" x1="1088.5" y1="202" x2="1088.5" y2="113" marker-end="url(#mpf-m-read)"/>
+</svg>
