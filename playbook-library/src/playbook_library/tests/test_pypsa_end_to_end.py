@@ -13,8 +13,6 @@ ones `examples.py` runs, so what a contributor runs by hand is what is tested he
 import json
 import shutil
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import urlopen, urlretrieve
 from uuid import UUID
 
 import pytest
@@ -30,6 +28,7 @@ from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
+from playbook_library.public_data import download_public_store
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
 
 pytestmark = pytest.mark.pypsa
@@ -103,20 +102,9 @@ def test_a_record_pointing_at_nothing_raises_a_datarecord_error(network_record, 
         to_network(record)
 
 
-BEL_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
-BEL_PREFIX = "BEL-pre-aggregated/"
-
-
 @pytest.fixture(scope="session")
 def bel_store(tmp_path_factory) -> Path:
-    store_dir = tmp_path_factory.mktemp("bel-download")
-    with urlopen(f"{BEL_OBJECTS}?{urlencode({'prefix': BEL_PREFIX})}") as response:
-        listing = json.load(response)
-    for item in listing["items"]:
-        target = store_dir / item["name"].removeprefix(BEL_PREFIX)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        urlretrieve(item["mediaLink"], target)
-    return store_dir
+    return download_public_store("BEL-pre-aggregated", tmp_path_factory.mktemp("bel-download"))
 
 
 @pytest.fixture
