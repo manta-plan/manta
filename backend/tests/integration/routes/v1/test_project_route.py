@@ -1,10 +1,15 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx2
 import psycopg
 import pytest
+from dotenv import dotenv_values
 from keycloak.openid_connection import KeycloakOpenID
+from mypy_boto3_s3.client import S3Client
+
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
 
 def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
@@ -666,6 +671,32 @@ def test_delete_project(
     with db_connection.cursor() as cursor:
         cursor.execute("SELECT count(*) FROM projects WHERE uuid = %s", (created["uuid"],))
         assert cursor.fetchone() == (0,)
+
+
+def test_delete_project_removes_its_files_from_s3(
+    app_server: str, s3_client: S3Client, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a project with files in its own S3 prefix, and another project's file
+    headers = _auth_headers(app_server, kc_oidc_client)
+    doomed = _create_project(app_server, headers, "North Sea Wind")
+    other = _create_project(app_server, headers, "Baltic Wind")
+    bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+    for key in (
+        f"{doomed['uuid']}/network.nc",
+        f"{doomed['uuid']}/runs/{uuid4()}/output/step.nc",
+        f"{other['uuid']}/network.nc",
+    ):
+        s3_client.put_object(Bucket=bucket, Key=key, Body=b"x")
+
+    # When
+    response = httpx2.delete(f"{app_server}/v1/projects/{doomed['uuid']}", headers=headers)
+
+    # Then only the deleted project's files are gone
+    assert response.status_code == 204
+    left = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"{doomed['uuid']}/")
+    assert left["KeyCount"] == 0
+    kept = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"{other['uuid']}/")
+    assert kept["KeyCount"] == 1
 
 
 def test_delete_project_that_does_not_exist_is_a_404(

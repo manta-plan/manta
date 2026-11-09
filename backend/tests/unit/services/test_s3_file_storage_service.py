@@ -308,3 +308,85 @@ def test_ensure_bucket_exists_raises_on_connection_failure(mock_s3_client) -> No
     with pytest.raises(S3StorageError):
         service.ensure_bucket_exists()
     mock_s3_client.create_bucket.assert_not_called()
+
+
+def _listing(mock_s3_client, keys: list[str]) -> None:
+    last_modified = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+    mock_s3_client.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": k, "Size": 1, "LastModified": last_modified} for k in keys]}
+    ]
+
+
+def test_delete_project_files_deletes_everything_under_the_project_prefix(mock_s3_client) -> None:
+    # Given
+    project_uuid = uuid4()
+    keys = [f"{project_uuid}/a.nc", f"{project_uuid}/runs/r1/output/b.nc"]
+    _listing(mock_s3_client, keys)
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    service.delete_project_files(project_uuid)
+
+    # Then
+    mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="manta", Prefix=f"{project_uuid}/"
+    )
+    mock_s3_client.delete_objects.assert_called_once_with(
+        Bucket="manta",
+        Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
+    )
+
+
+def test_delete_project_files_without_files_deletes_nothing(mock_s3_client) -> None:
+    # Given
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    service.delete_project_files(uuid4())
+
+    # Then
+    mock_s3_client.delete_objects.assert_not_called()
+
+
+def test_delete_project_files_deletes_in_batches_of_1000(mock_s3_client) -> None:
+    # Given
+    project_uuid = uuid4()
+    _listing(mock_s3_client, [f"{project_uuid}/f{i}.nc" for i in range(2500)])
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When
+    service.delete_project_files(project_uuid)
+
+    # Then
+    batch_sizes = [
+        len(call.kwargs["Delete"]["Objects"])
+        for call in mock_s3_client.delete_objects.call_args_list
+    ]
+    assert batch_sizes == [1000, 1000, 500]
+
+
+@pytest.mark.parametrize("error", DELETE_FAILURES, ids=DELETE_FAILURE_IDS)
+def test_delete_project_files_wraps_delete_objects_failures(mock_s3_client, error) -> None:
+    # Given
+    project_uuid = uuid4()
+    _listing(mock_s3_client, [f"{project_uuid}/a.nc"])
+    mock_s3_client.delete_objects.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.delete_project_files(project_uuid)
+
+
+def test_delete_project_files_fails_when_s3_reports_per_object_errors(mock_s3_client) -> None:
+    # Given
+    project_uuid = uuid4()
+    _listing(mock_s3_client, [f"{project_uuid}/a.nc"])
+    mock_s3_client.delete_objects.return_value = {
+        "Errors": [{"Key": "a.nc", "Code": "AccessDenied"}]
+    }
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.delete_project_files(project_uuid)

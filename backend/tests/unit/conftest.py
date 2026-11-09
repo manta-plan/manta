@@ -90,6 +90,7 @@ class _MockS3Client:
         self.head_bucket = MagicMock()
         self.create_bucket = MagicMock()
         self.delete_object = MagicMock()
+        self.delete_objects = MagicMock(return_value={})
         self.get_paginator = MagicMock(return_value=MagicMock(paginate=MagicMock(return_value=[])))
 
 

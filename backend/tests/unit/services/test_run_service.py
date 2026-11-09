@@ -934,3 +934,45 @@ def test_get_run_logs_rejects_non_owner(mock_db_class) -> None:
     # When/Then
     with pytest.raises(AuthorizationError):
         service.get_run_logs(run_uuid=run.uuid, user=other_user)
+
+
+def test_delete_flow_runs_deletes_block_runs_then_the_playbook_run(monkeypatch) -> None:
+    # Given
+    playbook_run_id, block_a, block_b = uuid4(), uuid4(), uuid4()
+    client = MagicMock()
+    client.read_flow_runs.return_value = [SimpleNamespace(id=block_a), SimpleNamespace(id=block_b)]
+    _patch_get_client(monkeypatch, client)
+
+    # When
+    run_service_module.delete_flow_runs([playbook_run_id])
+
+    # Then
+    deleted = [call.args[0] for call in client.delete_flow_run.call_args_list]
+    assert deleted == [block_a, block_b, playbook_run_id]
+
+
+def test_delete_flow_runs_skips_flow_runs_that_are_already_gone(monkeypatch) -> None:
+    # Given
+    first, second = uuid4(), uuid4()
+    client = MagicMock()
+    client.read_flow_runs.return_value = []
+    client.delete_flow_run.side_effect = [run_service_module.ObjectNotFound(Exception()), None]
+    _patch_get_client(monkeypatch, client)
+
+    # When
+    run_service_module.delete_flow_runs([first, second])
+
+    # Then
+    assert [call.args[0] for call in client.delete_flow_run.call_args_list] == [first, second]
+
+
+def test_delete_flow_runs_without_ids_does_not_call_prefect(monkeypatch) -> None:
+    # Given
+    client = MagicMock()
+    _patch_get_client(monkeypatch, client)
+
+    # When
+    run_service_module.delete_flow_runs([])
+
+    # Then
+    client.read_flow_runs.assert_not_called()

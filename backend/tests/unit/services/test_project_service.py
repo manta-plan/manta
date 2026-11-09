@@ -1,12 +1,15 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 
-from manta.entities import Project, User
+from manta.entities import Project, Run, User
+from manta.services import project_service as project_service_module
 from manta.services.errors import AuthorizationError
 from manta.services.project_service import ProjectService
+from manta.services.s3_file_storage_service import S3StorageError
 
 
 @pytest.mark.parametrize(
@@ -295,38 +298,88 @@ def test_update_project_of_another_owner_is_a_403(mock_db_class) -> None:
     db.commit.assert_not_called()
 
 
-def test_delete_project(mock_db_class) -> None:
-    # Given
+def test_delete_project(mock_db_class, monkeypatch) -> None:
+    # Given a project with two runs
     project = _project()
-    db = mock_db_class({Project: project})
-    service = ProjectService(db=db)
+    runs = [Run(project_id=10, prefect_flow_run_id=uuid4(), playbook="expand") for _ in range(2)]
+    db = mock_db_class({Project: project, Run: runs})
+    storage = MagicMock()
+    deleted_flow_runs: list = []
+    monkeypatch.setattr(
+        project_service_module, "delete_flow_runs", lambda ids: deleted_flow_runs.extend(ids)
+    )
+    service = ProjectService(db=db, storage=storage)
 
     # When
     service.delete_project(project.uuid, user=_user())
 
-    # Then
+    # Then the runs' Prefect flow runs and the project's S3 files are cleaned up,
+    # and the project row is deleted
+    assert deleted_flow_runs == [run.prefect_flow_run_id for run in runs]
+    storage.delete_project_files.assert_called_once_with(project.uuid)
     db.delete.assert_called_once_with(project)
     db.commit.assert_called_once()
 
 
+def test_delete_project_keeps_the_project_when_prefect_cleanup_fails(
+    mock_db_class, monkeypatch
+) -> None:
+    # Given
+    project = _project()
+    db = mock_db_class({Project: project})
+    storage = MagicMock()
+
+    def fail(_ids) -> None:
+        raise RuntimeError("prefect down")
+
+    monkeypatch.setattr(project_service_module, "delete_flow_runs", fail)
+    service = ProjectService(db=db, storage=storage)
+
+    # When / Then
+    with pytest.raises(RuntimeError):
+        service.delete_project(project.uuid, user=_user())
+    storage.delete_project_files.assert_not_called()
+    db.delete.assert_not_called()
+
+
+def test_delete_project_keeps_the_project_when_s3_cleanup_fails(mock_db_class, monkeypatch) -> None:
+    # Given
+    project = _project()
+    db = mock_db_class({Project: project})
+    storage = MagicMock()
+    storage.delete_project_files.side_effect = S3StorageError("s3 down")
+    monkeypatch.setattr(project_service_module, "delete_flow_runs", lambda _ids: None)
+    service = ProjectService(db=db, storage=storage)
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.delete_project(project.uuid, user=_user())
+    db.delete.assert_not_called()
+    db.commit.assert_not_called()
+
+
 def test_delete_project_that_does_not_exist_is_a_404(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    storage = MagicMock()
+    service = ProjectService(db=mock_db, storage=storage)
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
         service.delete_project(uuid4(), user=_user())
     assert exc_info.value.status_code == 404
     mock_db.delete.assert_not_called()
+    storage.delete_project_files.assert_not_called()
 
 
 def test_delete_project_of_another_owner_is_a_403(mock_db_class) -> None:
     # Given
     project = _project(owner_id=2)
     db = mock_db_class({Project: project})
-    service = ProjectService(db=db)
+    storage = MagicMock()
+    service = ProjectService(db=db, storage=storage)
 
     # When/Then
     with pytest.raises(AuthorizationError):
         service.delete_project(project.uuid, user=_user(user_id=1))
     db.delete.assert_not_called()
+    storage.delete_project_files.assert_not_called()
