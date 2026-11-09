@@ -13,6 +13,7 @@ import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
+import duckdb
 import numpy as np
 import pandas as pd
 from datarecord.tools.pypsa import PyPSA
@@ -27,7 +28,7 @@ from playbook_library.pypsa_helpers import (
     write_network,
 )
 from playbook_library.pypsa_time_aggregation import STATES, cluster_network, write_expanded_results
-from playbook_library.time_aggregation import cluster_starts, snapshot_frame
+from playbook_library.time_aggregation import cluster_starts, shaped, snapshot_frame
 from playbook_library.time_cluster import add_snapshot_property, resample_map, segment_map
 
 pytestmark = pytest.mark.pypsa
@@ -427,6 +428,23 @@ def test_expanding_refuses_a_network_clustered_otherwise(expanded):
     other = add_snapshot_property(record, "agg_6h", resample_map(record, 6))
     with pytest.raises(ValueError, match="not clustered by snapshot.agg_6h"):
         write_expanded_results(n_c, n_c, other, "agg_6h", n_c.has_periods)
+
+
+@pytest.mark.parametrize("duplicated", ["demand", "profile"])
+def test_shaping_refuses_a_series_with_duplicate_rows(duplicated):
+    con = duckdb.connect()
+    series = {
+        name: con.sql("SELECT 'g' AS entity, 0 AS snapshot, NULL AS scenario, 1.0 AS value")
+        for name in ("demand", "profile")
+    }
+    series[duplicated] = series[duplicated].union(series[duplicated])
+    rel = con.sql(
+        "SELECT {'entity': 'g'} AS connection, 0 AS snapshot, NULL AS scenario, 1.0 AS value"
+    )
+    members = con.sql("SELECT 0 AS rep, 0 AS snapshot, 1.0 AS weight")
+    capacity = con.sql("SELECT 'g' AS entity, 1.0 AS value")
+    with pytest.raises(duckdb.InvalidInputException, match="Map keys must be unique"):
+        shaped(rel, members, capacity=capacity, **series).fetchall()
 
 
 def test_expansion_writes_one_layer(expanded, ancestry):
