@@ -14,11 +14,8 @@ uv sync
 
 ## Running
 
-You can access API endpoints without [building the
-frontend](../frontend/README.md#production-preview) first.
-
-The default url is `localhost:8000`, but the run command should automatically
-select a free port.
+The backend is served at `localhost:8000`, set by `APP_HOST` and `APP_PORT` in
+`backend/.env`.
 
 ```bash
 uv run manta

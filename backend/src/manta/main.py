@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy.orm import Session
 
+from manta.config.app_config import app_host, app_port
 from manta.config.database_config import get_engine
 from manta.config.example_data_config import example_data_seed_enabled, example_data_stores
 from manta.config.keycloak_config import get_keycloak_openid, well_known
@@ -46,10 +47,7 @@ def create_app() -> FastAPI:
     ensure_prefect_ready()
 
     app = FastAPI(title="Manta")
-    app.frontend("/", directory="../frontend/dist")
     app.include_router(v1_router)
-    # Mounting the frontend needs to be sequenced after all other routes so as
-    # to not accidentally shadow any api endpoints.
     return app
 
 
@@ -57,7 +55,7 @@ app = create_app()
 
 
 def main():
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host=app_host(), port=app_port())
 
 
 if __name__ == "__main__":

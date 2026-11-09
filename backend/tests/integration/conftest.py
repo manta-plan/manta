@@ -17,7 +17,6 @@ from dotenv import dotenv_values
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
-from pynpm import NPMPackage
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from testcontainers.compose import DockerCompose
@@ -28,8 +27,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
-FRONTEND_DIR = REPO_ROOT / "frontend"
-FRONTEND_FILES = FRONTEND_DIR / "dist"
 EXAMPLE_STORE = "ac-dc-meshed"
 
 
@@ -90,13 +87,6 @@ def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
         "admin_username": env["KEYCLOAK_ADMIN_USERNAME"],
         "admin_password": env["KEYCLOAK_ADMIN_PASSWORD"],
     }
-
-
-@pytest.fixture(scope="session")
-def frontend_files() -> Path:
-    pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
-    _ = pkg.build(wait=True)
-    return FRONTEND_FILES
 
 
 @pytest.fixture(scope="session")

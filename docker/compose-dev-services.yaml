@@ -64,6 +64,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # Startup runs Prefect's own database migrations, which can be slow on a
+      # fresh volume or a slower machine. Failed checks during this window don't
+      # count against the retries; a passing one still marks it healthy at once.
+      start_period: 60s
 
   # Everything below runs playbooks: one one-shot build step per block
   # environment, the one-shot provisioner, and the two long-lived workers.
