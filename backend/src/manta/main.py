@@ -3,6 +3,7 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 
+from manta.config.app_config import app_host, app_port
 from manta.config.logging_config import configure_logging
 from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
@@ -41,7 +42,7 @@ app = create_app()
 
 
 def main():
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host=app_host(), port=app_port())
 
 
 if __name__ == "__main__":
