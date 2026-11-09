@@ -43,14 +43,13 @@ commits get squashed together:
 
 ### Sign off your commits
 
-Every commit must carry a `Signed-off-by` trailer certifying you wrote it or
-otherwise have the right to submit it under this project's license (the
-[DCO](https://developercertificate.org/) text itself). Add it with
-`git commit -s`, or `git commit --amend -s` if you forgot. It's one flag, and
-it's a lighter-weight way of getting the same assurance a CLA is after — no
-separate agreement to sign, no bot blocking your first PR on paperwork. A
-[GitHub check](https://github.com/dcoapp/app) enforces this on every PR; if it
-fails, a follow-up commit with `-s` fixes it without a rebase.
+Every PR must contain one commit with a `Signed-off-by` trailer certifying you
+wrote it or otherwise have the right to submit it under this project's license
+(the [DCO](https://developercertificate.org/) text itself). Add the trailer at
+commit time with `git commit -s`, (or `git commit --amend -s` to update an
+existing commit) A [GitHub check](https://github.com/dcoapp/app) enforces this
+on every PR. You can add an empty commit with just the signature to an existing
+open PR.
 
 - Open a PR against `main` for review before merging.
 - Style/formatting disputes are considered solved problems — defer to the
