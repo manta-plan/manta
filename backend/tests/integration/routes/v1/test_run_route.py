@@ -1,17 +1,24 @@
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx2
 import psycopg
 from keycloak.openid_connection import KeycloakOpenID
+from mypy_boto3_s3.client import S3Client
+from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import SyncPrefectClient
 from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT
+
+from manta.config.s3_config import s3_bucket_name
 
 _LIBRARY_PLAYBOOK = "cluster-expand-dispatch"
 """Runs cluster → expansion_overnight → dispatch under the library's own
 default config (globals.expansion_mode: overnight) — three real blocks, a
 real PyPSA/HiGHS solve each, dispatched through the actual docker work pool."""
+_STEP_NAMES = ["cluster", "expansion_overnight", "expansion_myopic", "dispatch"]
+"""Every step of _LIBRARY_PLAYBOOK, in playbook order — including the myopic
+branch, which its default config skips."""
 
 # The provisioner registers this deployment as part of bringing the stack up
 # (see docker_services in conftest.py, which waits on it via `--wait`), so this
@@ -75,19 +82,30 @@ def _wait_for_deployment_registered(
 
 
 def _create_run(
-    app_server: str, project_uuid: str, data_record_url: str, headers: dict[str, str]
+    app_server: str,
+    project_uuid: str,
+    data_record_url: str,
+    headers: dict[str, str],
+    config: dict | None = None,
 ) -> dict:
-    response = httpx2.post(
-        f"{app_server}/v1/runs",
-        json={
-            "project_uuid": project_uuid,
-            "playbook": _LIBRARY_PLAYBOOK,
-            "data_record_url": data_record_url,
-        },
-        headers=headers,
-    )
+    payload = {
+        "project_uuid": project_uuid,
+        "playbook": _LIBRARY_PLAYBOOK,
+        "data_record_url": data_record_url,
+    }
+    if config is not None:
+        payload["config"] = config
+    response = httpx2.post(f"{app_server}/v1/runs", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _get_steps(app_server: str, run_uuid: str, headers: dict[str, str]) -> list[dict]:
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["uuid"] == run_uuid
+    return body["steps"]
 
 
 def _wait_for_terminal_status(
@@ -157,6 +175,7 @@ def test_create_and_run_a_playbook(
     prefect_db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
     data_record_url: str,
+    s3_client: S3Client,
 ) -> None:
     # Given a project, and the provisioner's deployment registered with the
     # Prefect server
@@ -167,10 +186,18 @@ def test_create_and_run_a_playbook(
     # When a run is created against it
     body = _create_run(app_server, project_uuid, data_record_url, headers)
 
-    # Then it's accepted and returns a run uuid linked to the project
+    # Then it's accepted and returns a run uuid linked to the project and playbook
     run_uuid = body["uuid"]
     assert UUID(run_uuid)
     assert body["project_uuid"] == project_uuid
+    assert body["playbook"] == _LIBRARY_PLAYBOOK
+
+    # And its steps are reported straight away, before any has finished: every
+    # step of the playbook in order, with the myopic branch skipped under the
+    # default config (globals.expansion_mode: overnight)
+    early_steps = _get_steps(app_server, run_uuid, headers)
+    assert [step["name"] for step in early_steps] == _STEP_NAMES
+    assert early_steps[2]["status"] == "SKIPPED"
 
     # And it eventually completes: dispatched through a real Prefect server,
     # the playbook worker walking the playbook, and three real block
@@ -187,20 +214,67 @@ def test_create_and_run_a_playbook(
     assert logs_body["run_status"] == "COMPLETED"
     assert logs_body["logs"]
 
+    # And each step reports its own block run's outcome, not just the playbook's
+    steps = _get_steps(app_server, run_uuid, headers)
+    assert [(step["name"], step["block"], step["status"]) for step in steps] == [
+        ("cluster", "cluster_time", "COMPLETED"),
+        ("expansion_overnight", "overnight_capacity_expansion", "COMPLETED"),
+        ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
+        ("dispatch", "rolling_horizon_dispatch", "COMPLETED"),
+    ]
+    for step in steps:
+        ran = step["status"] == "COMPLETED"
+        assert (step["start_time"] is not None) == ran
+        assert (step["end_time"] is not None) == ran
+
+    # And its output files are listed by name — one per step that ran — without
+    # the caller needing to know where in S3 they live
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs", headers=headers)
+    assert outputs_response.status_code == 200
+    outputs = {item["name"]: item for item in outputs_response.json()["items"]}
+    assert set(outputs) == {"cluster.nc", "expansion_overnight.nc", "dispatch.nc"}
+
+    # And each can be downloaded through the backend, byte for byte what is in S3
+    download = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc", headers=headers)
+    assert download.status_code == 200
+    stored = s3_client.get_object(
+        Bucket=s3_bucket_name(), Key=f"{project_uuid}/runs/{run_uuid}/output/dispatch.nc"
+    )["Body"].read()
+    assert download.content == stored
+    assert int(download.headers["content-length"]) == outputs["dispatch.nc"]["size"]
+    assert download.headers["content-disposition"] == "attachment; filename*=utf-8''dispatch.nc"
+
+    # And nothing the run didn't output can be downloaded: neither a missing
+    # file, nor the run's own input, which really exists in the bucket, reached
+    # by climbing out of the output folder (`../` percent-encoded, so the HTTP
+    # client sends it as-is instead of resolving it itself first)
+    climbing_to_the_input = "%2E%2E%2F" * 4 + "integration-tests%2Fexample_network.nc"
+    for name in ("missing.nc", climbing_to_the_input):
+        response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/{name}", headers=headers)
+        assert response.status_code == 404, name
+
+    # And the run reports which playbook it ran, and the config it was started
+    # with — the library's own default_config, since none was supplied
+    run_body = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers).json()
+    assert run_body["playbook"] == _LIBRARY_PLAYBOOK
+    assert run_body["config"] == library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+
     # And the Run row is persisted with the right linkage
     with db_connection.cursor() as cursor:
         cursor.execute("SELECT id FROM projects WHERE uuid = %s", (project_uuid,))
         project_row = cursor.fetchone()
         cursor.execute(
-            "SELECT project_id, prefect_flow_run_id FROM runs WHERE uuid = %s", (run_uuid,)
+            "SELECT project_id, prefect_flow_run_id, playbook FROM runs WHERE uuid = %s",
+            (run_uuid,),
         )
         run_row = cursor.fetchone()
 
     assert project_row is not None
     assert run_row is not None
-    run_project_id, prefect_flow_run_id = run_row
+    run_project_id, prefect_flow_run_id, run_playbook = run_row
     assert run_project_id == project_row[0]
     assert prefect_flow_run_id is not None
+    assert run_playbook == _LIBRARY_PLAYBOOK
 
     # And the flow run is persisted in Prefect's own Postgres database — proof
     # it's actually backed by Postgres rather than an ephemeral/SQLite store
@@ -233,6 +307,35 @@ def test_create_run_with_unknown_playbook_returns_404(
     assert response.status_code == 404
 
 
+def test_get_run_returns_the_config_it_was_started_with(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    data_record_url: str,
+) -> None:
+    # Given a run started with a config changed from the library's defaults
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    _wait_for_deployment_registered(prefect_service)
+    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    changed_config = {**default_config, "cluster": {"n_hours": 6}}
+    run_uuid = _create_run(
+        app_server, project_uuid, data_record_url, headers, config=changed_config
+    )["uuid"]
+
+    # When it is fetched, alone and as part of its project's runs
+    run_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+
+    # Then both report exactly the changed config, not the defaults
+    assert run_response.status_code == 200
+    assert run_response.json()["config"] == changed_config
+    assert list_response.status_code == 200
+    assert [item["config"] for item in list_response.json()["items"]] == [changed_config]
+
+
 def test_run_is_cascade_deleted_when_project_is_deleted(
     app_server: str,
     db_connection: psycopg.Connection,
@@ -258,9 +361,10 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
 
     assert run_row is None
 
-    # And the run is no longer reachable via the API, due to not being accessible
-    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
-    assert response.status_code == 401
+    # And the run is no longer reachable via the API, even for the project's
+    # former owner, since the run row itself is gone
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers)
+    assert response.status_code == 404
 
 
 def test_list_runs_returns_project_runs_with_pagination_and_summary(
@@ -292,6 +396,7 @@ def test_list_runs_returns_project_runs_with_pagination_and_summary(
     assert len(first_page["items"]) == 2
     assert {item["uuid"] for item in first_page["items"]}.issubset(set(run_uuids))
     assert {item["project_uuid"] for item in first_page["items"]} == {project_uuid}
+    assert {item["playbook"] for item in first_page["items"]} == {_LIBRARY_PLAYBOOK}
     assert {item["status"] for item in first_page["items"]} == {"COMPLETED"}
     assert first_page["summary"] == {
         "total": 3,
@@ -352,6 +457,17 @@ def test_list_runs_filters_project_runs_by_status(
     assert running_body["summary"]["total"] == 2
     assert running_body["summary"]["statuses"] == {"COMPLETED": 2}
 
+    # And filtering is case-insensitive end-to-end, not just at the unit level
+    lowercase_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "statuses": "completed", "limit": 10, "offset": 0},
+        headers=headers,
+    )
+    assert lowercase_response.status_code == 200
+    lowercase_body = lowercase_response.json()
+    assert lowercase_body["total"] == 2
+    assert {item["uuid"] for item in lowercase_body["items"]} == set(run_uuids)
+
 
 def test_get_run_summary_returns_project_counts(
     app_server: str,
@@ -393,3 +509,263 @@ def test_list_runs_with_unknown_project_returns_404(
 
     # Then the API reports that the project does not exist
     assert response.status_code == 404
+
+
+def test_run_endpoints_return_empty_for_project_with_no_runs(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a project with no runs against it
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # When listing its runs
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid}, headers=headers
+    )
+
+    # Then the list is empty, not an error
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["items"] == []
+    assert list_body["total"] == 0
+    assert list_body["summary"] == {"total": 0, "statuses": {}}
+
+    # And the summary endpoint agrees
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 200
+    assert summary_response.json() == {"total": 0, "statuses": {}}
+
+
+def test_run_endpoints_require_authentication(app_server: str) -> None:
+    # Given no Authorization header at all
+    project_uuid = "00000000-0000-0000-0000-000000000000"
+    run_uuid = "00000000-0000-0000-0000-000000000000"
+
+    # Then every endpoint rejects the request before doing any work
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": project_uuid,
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
+    )
+    assert create_response.status_code == 401
+
+    list_response = httpx2.get(f"{app_server}/v1/runs", params={"project_uuid": project_uuid})
+    assert list_response.status_code == 401
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": project_uuid}
+    )
+    assert summary_response.status_code == 401
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}")
+    assert get_response.status_code == 401
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/logs")
+    assert logs_response.status_code == 401
+
+    steps_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps")
+    assert steps_response.status_code == 401
+
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
+    assert outputs_response.status_code == 401
+
+    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
+    assert output_response.status_code == 401
+
+
+def test_run_endpoints_reject_malformed_uuid(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a well-formed request, but a UUID-shaped field that isn't one
+    headers = _auth_headers(app_server, kc_oidc_client)
+
+    # Then FastAPI's own UUID coercion rejects it before any service logic runs
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": "not-a-uuid",
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 422
+
+    list_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert list_response.status_code == 422
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": "not-a-uuid"}, headers=headers
+    )
+    assert summary_response.status_code == 422
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid", headers=headers)
+    assert get_response.status_code == 422
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/logs", headers=headers)
+    assert logs_response.status_code == 422
+
+    steps_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/steps", headers=headers)
+    assert steps_response.status_code == 422
+
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
+    assert outputs_response.status_code == 422
+
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 422
+
+
+def test_list_runs_rejects_invalid_pagination_params(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a real project
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+
+    # Then out-of-bounds limit/offset values are rejected, per ListRunsRequest's
+    # declared bounds (limit: 1-100, offset: >=0)
+    zero_limit_response = httpx2.get(
+        f"{app_server}/v1/runs", params={"project_uuid": project_uuid, "limit": 0}, headers=headers
+    )
+    assert zero_limit_response.status_code == 422
+
+    oversized_limit_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "limit": 101},
+        headers=headers,
+    )
+    assert oversized_limit_response.status_code == 422
+
+    negative_offset_response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_uuid, "offset": -1},
+        headers=headers,
+    )
+    assert negative_offset_response.status_code == 422
+
+
+def test_run_endpoints_return_404_for_unknown_ids(
+    app_server: str, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # Given a syntactically valid but nonexistent project/run UUID. Covers:
+    #   POST   /runs
+    #   GET    /runs/summary
+    #   GET    /runs/{run_uuid}
+    #   GET    /runs/{run_uuid}/logs
+    #   GET    /runs/{run_uuid}/steps
+    #   GET    /runs/{run_uuid}/outputs
+    #   GET    /runs/{run_uuid}/outputs/{name}
+    # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
+    headers = _auth_headers(app_server, kc_oidc_client)
+    unknown_uuid = str(uuid4())
+
+    create_response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": unknown_uuid,
+            "playbook": _LIBRARY_PLAYBOOK,
+            "data_record_url": "s3://unused/record",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 404
+
+    summary_response = httpx2.get(
+        f"{app_server}/v1/runs/summary", params={"project_uuid": unknown_uuid}, headers=headers
+    )
+    assert summary_response.status_code == 404
+
+    get_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}", headers=headers)
+    assert get_response.status_code == 404
+
+    logs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/logs", headers=headers)
+    assert logs_response.status_code == 404
+
+    steps_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/steps", headers=headers)
+    assert steps_response.status_code == 404
+
+    outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
+    assert outputs_response.status_code == 404
+
+    output_response = httpx2.get(
+        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
+    )
+    assert output_response.status_code == 404
+
+
+def test_get_run_rejects_non_owner(
+    app_server: str,
+    kc_oidc_client: KeycloakOpenID,
+    second_user_headers: dict[str, str],
+    data_record_url: str,
+) -> None:
+    # Ownership-denial logic itself is exhaustively unit-tested in
+    # test_run_service.py; this single endpoint proves the real wiring —
+    # that Security(authenticated_user) resolves the right user and the
+    # route actually threads it through to RunService — end to end.
+
+    # Given a run owned by one user
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    body = _create_run(app_server, project_uuid, data_record_url, headers)
+    run_uuid = body["uuid"]
+
+    # When a different, authenticated-but-unrelated user requests it
+    response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=second_user_headers)
+
+    # Then they're rejected, not just an unauthenticated caller
+    assert response.status_code == 403
+
+
+def test_list_runs_does_not_leak_other_users_runs(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    second_user_headers: dict[str, str],
+    data_record_url: str,
+) -> None:
+    # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
+    # and the unit-level *_rejects_non_owner tests) — it's testing that the
+    # query behind a *legitimate* access is actually scoped to the requested
+    # project, not just any project the caller happens to own. A mocked
+    # `.filter()` can't distinguish "filtered correctly" from "not filtered
+    # at all", so this can only be proven against a real database.
+
+    # Given two users, each with their own project and a completed run in it
+    headers_a = _auth_headers(app_server, kc_oidc_client)
+    project_a = _create_project(app_server, headers_a)
+    _create_completed_runs(
+        app_server, prefect_service, project_a, data_record_url, count=1, headers=headers_a
+    )
+
+    project_b = _create_project(app_server, second_user_headers)
+    run_b = _create_completed_runs(
+        app_server,
+        prefect_service,
+        project_b,
+        data_record_url,
+        count=1,
+        headers=second_user_headers,
+    )
+
+    # When user B lists runs for their own project (legitimate access)
+    response = httpx2.get(
+        f"{app_server}/v1/runs",
+        params={"project_uuid": project_b},
+        headers=second_user_headers,
+    )
+
+    # Then only user B's own run is returned — user A's never leaks in
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert {item["uuid"] for item in body["items"]} == set(run_b)

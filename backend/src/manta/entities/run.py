@@ -11,3 +11,7 @@ class Run(Base):
 
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     prefect_flow_run_id: Mapped[UUID] = mapped_column(unique=True)
+    # TODO(post-MVP): once ephemeral playbooks are introduced, replace this column
+    # with a separate playbooks table holding all of a playbook's data, referenced
+    # from here. A bare library playbook name is fine for the MVP.
+    playbook: Mapped[str]
