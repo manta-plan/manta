@@ -7,7 +7,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.entities import Project, User
+from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
 from manta.services.results.project_result import (
     CreateProjectResult,
@@ -15,13 +15,20 @@ from manta.services.results.project_result import (
     ListProjectsResult,
     UpdateProjectResult,
 )
+from manta.services.run_service import delete_flow_runs
+from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
 
 
 class ProjectService:
-    def __init__(self, db: Session = Depends(get_db_session)) -> None:
+    def __init__(
+        self,
+        db: Session = Depends(get_db_session),
+        storage: S3FileStorageService = Depends(),
+    ) -> None:
         self.db = db
+        self.storage = storage
 
     def create_project(
         self, name: str, description: str | None, owner: User
@@ -111,11 +118,16 @@ class ProjectService:
         )
 
     def delete_project(self, project_uuid: UUID, user: User) -> None:
-        """Deletes the project; its runs go with it (ON DELETE CASCADE).
+        """Deletes the project and everything it owns: its runs' Prefect flow runs, its
+        files in S3, then the project row (its runs' rows go with it, ON DELETE CASCADE).
 
-        TODO: the runs' Prefect flow runs and S3 outputs are not cleaned up here.
+        The external cleanup runs first, so a failure there leaves the project in
+        place and the delete can simply be retried.
         """
         project = self._get_owned_project(project_uuid, user)
+        runs = self.db.query(Run).filter(Run.project_id == project.id).all()
+        delete_flow_runs([run.prefect_flow_run_id for run in runs])
+        self.storage.delete_project_files(project.uuid)
         self.db.delete(project)
         self.db.commit()
 

@@ -1,4 +1,5 @@
 import logging
+from contextlib import suppress
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
@@ -18,6 +19,7 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from prefect.exceptions import ObjectNotFound
 from runner.flows import PLAYBOOK_DEPLOYMENT, catalogue_parameter, parse_catalogue_parameter
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -101,6 +103,24 @@ def _read_flow_run_with_block_runs(flow_run_id: UUID) -> tuple[FlowRun, list[Flo
             )
         )
         return flow_run, block_runs
+
+
+def delete_flow_runs(flow_run_ids: list[UUID]) -> None:
+    """Deletes each playbook flow run together with the block flow runs dispatched
+    under it. A flow run that is already gone is skipped, so a retry after a partial
+    failure picks up where it stopped."""
+    if not flow_run_ids:
+        return
+    with get_client(sync_client=True) as client:
+        for flow_run_id in flow_run_ids:
+            block_runs = client.read_flow_runs(
+                flow_run_filter=FlowRunFilter(
+                    parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
+                )
+            )
+            for doomed_id in [*(block_run.id for block_run in block_runs), flow_run_id]:
+                with suppress(ObjectNotFound):
+                    client.delete_flow_run(doomed_id)
 
 
 def _flow_run_status(flow_run: FlowRun) -> str:
