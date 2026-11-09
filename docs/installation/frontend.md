@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 This page shows how to run the frontend's development server, which reloads the web app as you edit its source.
 The development server sends every request under `/v1` to a backend at `http://127.0.0.1:8000`.
-So before you start, run the backend as [Backend](backend.md) shows, with `FASTAPI_ENV=development` because the development server serves the web app itself.
+So before you start, run the backend as [Backend](backend.md) shows.
 
 --8<-- "frontend/README.md:docs-setup"
 

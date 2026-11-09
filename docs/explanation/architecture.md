@@ -71,7 +71,7 @@ Manta is a monorepo of five packages.
 | Package            | Directory           | What it is                                                                                   |
 | ------------------ | ------------------- | -------------------------------------------------------------------------------------------- |
 | `manta`            | `backend/`          | The FastAPI web service: REST API, authentication, projects and runs.                        |
-| frontend           | `frontend/`         | The React web app, built to static files that the backend serves.                            |
+| frontend           | `frontend/`         | The React web app, served by Vite, which passes `/v1` requests to the backend.              |
 | `playbook`         | `playbook/`         | The modelling framework: what a block and a playbook are, how to check and run a playbook.  |
 | `playbook-library` | `playbook-library/` | The blocks and playbooks Manta ships, built on PyPSA.                                        |
 | `runner`           | `runner/`           | The Prefect flows that run a playbook and run each of its blocks in a container.             |
@@ -129,12 +129,13 @@ That would cost a service, a schema and a deployment, and pays off only if somet
 
 ## The running system
 
-A running Manta is the backend process plus the services in [`docker/compose-dev-services.yaml`](https://github.com/manta-plan/manta/blob/main/docker/compose-dev-services.yaml).
+A running Manta is the backend process, the web app's Vite server and the services in [`docker/compose-dev-services.yaml`](https://github.com/manta-plan/manta/blob/main/docker/compose-dev-services.yaml).
 The diagram shows the long-lived parts and the connections between them.
 
 ```mermaid
 flowchart LR
-    browser["Browser"] -- "HTTP: web app and /v1 API" --> backend["Backend<br/>(manta, FastAPI)"]
+    browser["Browser"] -- "HTTP: web app and /v1 API" --> vite["Vite server<br/>(frontend)"]
+    vite -- "HTTP: /v1 API" --> backend["Backend<br/>(manta, FastAPI)"]
     backend -- "log in, verify tokens" --> keycloak["Keycloak<br/>(identity provider)"]
     backend -- "users, projects, runs" --> postgres[("Postgres")]
     backend -- "start runs, read states and logs" --> prefect["Prefect server"]
@@ -149,7 +150,8 @@ flowchart LR
     pworker -- "read each step's result record" --> seaweed
 ```
 
-The browser talks only to the backend, which serves both the built web app and the `/v1` REST API on one port.
+The browser loads the web app from Vite on port 5173, and Vite passes every `/v1` request to the backend on port 8000.
+So the browser never calls the backend directly, and the backend serves the REST API only.
 The backend logs a user in through Keycloak and checks each request's token against it.
 Postgres holds three databases: the backend's own, Keycloak's and Prefect's.
 
