@@ -1,0 +1,155 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+site_name: Manta
+site_description: An open-source energy modelling tool, designed to make cutting-edge energy models accessible to all.
+repo_url: https://github.com/manta-plan/manta
+site_dir: .docs
+edit_uri: edit/main/docs/
+strict: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+theme:
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.prune
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+  language: en
+
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - github-callouts
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: zensical.extensions.emoji.twemoji
+      emoji_generator: zensical.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          inventories:
+            - https://docs.python.org/3/objects.inv
+          paths: ["playbook/src", "runner/src"]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            separate_signature: true
+            show_root_toc_entry: false
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+
+watch:
+  - playbook/src/playbook
+  - runner/src/runner
+  - README.md
+  - CONTRIBUTING.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/manta-plan/manta
+      name: Manta on GitHub
+
+extra_css:
+  - static/extras.css
+  - static/mkdocs-oad.css
+
+nav:
+  - Home: index.md
+  - User guide:
+      - user-guide/index.md
+      - Concepts: user-guide/concepts.md
+      - Playbooks and blocks: user-guide/playbooks.md
+      - Start and follow a run: user-guide/run.md
+  - Installation:
+      - installation/index.md
+      - Full stack: installation/full-stack.md
+      - Blocks and playbooks: installation/blocks-and-playbooks.md
+      - Backend: installation/backend.md
+      - Frontend: installation/frontend.md
+  - Explanation:
+      - explanation/index.md
+      - Users and scope: explanation/scope.md
+      - Architecture: explanation/architecture.md
+      - Orchestration with Prefect: explanation/orchestration.md
+      - Blocks, playbooks and the catalogue: explanation/blocks-and-playbooks.md
+      - Run lifecycle: explanation/run-lifecycle.md
+      - Deployment topology: explanation/deployment.md
+      - Planned changes: explanation/planned-changes.md
+      - Open questions: explanation/open-questions.md
+  - Reference:
+      - reference/index.md
+      - playbook: reference/playbook/api.md
+      - runner: reference/runner/api.md
+      - REST API: reference/backend/rest-api.md
+  - Contributing:
+      - contributing/index.md
+      - Backend: contributing/backend.md
+      - Frontend: contributing/frontend.md
+      - playbook and playbook-library: contributing/playbook.md
+      - runner: contributing/runner.md
+      - Documentation: contributing/docs.md
+      - Run a playbook through the REST API: contributing/manual-run.md
+      - Test deployment: contributing/test-deployment.md
