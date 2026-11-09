@@ -33,10 +33,7 @@ def create_app() -> FastAPI:
     ensure_prefect_ready()
 
     app = FastAPI(title="Manta")
-    app.frontend("/", directory="../frontend/dist")
     app.include_router(v1_router)
-    # Mounting the frontend needs to be sequenced after all other routes so as
-    # to not accidentally shadow any api endpoints.
     return app
 
 

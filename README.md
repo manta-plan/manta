@@ -48,33 +48,35 @@ takes a while. Leave it running and wait until the logs settle. All
 configuration comes from [`backend/.env`](backend/.env), which already has
 working local defaults. Nothing needs to be filled in.
 
-### 3. Build the frontend
+### 3. Start the backend
 
 In a second terminal:
 
 ```bash
-cd frontend
-pnpm install
-pnpm build
-```
-
-### 4. Start the backend
-
-```bash
-cd ..
 cd backend
 uv sync
 uv run manta
 ```
 
 On startup the backend applies database migrations, creates the storage
-bucket and checks that Prefect is reachable, then serves both the API and the
-frontend you just built. 
+bucket and checks that Prefect is reachable, then serves the API on
+`localhost:8000`.
 
+### 4. Start the frontend
+
+In a third terminal:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The dev server proxies `/v1` requests to the backend on `localhost:8000`.
 
 ### 5. Open Manta
 
-Go to `localhost:8000` and log in as `manta-admin`,
+Go to `localhost:5173` and log in as `manta-admin`,
 password `manta-admin`.
 
 The services also have their own UIs, which help when you want to see what is
@@ -196,23 +198,25 @@ curl -fsSL https://get.pnpm.io/install.sh | sh -
 source ~/.bashrc # reload to get access to pnpm
 ```
 
-Build the frontend files
-
-```bash
-cd frontend
-pnpm install && pnpm build
-```
-
 Spin up the backend
 
 ```bash
-cd ../backend
+cd backend
 uv sync
 uv run uvicorn manta.main:app --host 0.0.0.0 --port 8000
 ```
 
-This runs in an attached mode, you can use `ctrl-z` to pause it and then `bg` to
-background the task, or use `nohup` / `disown` to detach it from your ssh process and let it live on. 
+Build and serve the frontend, which proxies `/v1` requests to the backend on
+port 8000
+
+```bash
+cd ../frontend
+pnpm install && pnpm build
+pnpm preview --host 0.0.0.0
+```
+
+Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to
+background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on. 
 
 ### Summary
 
