@@ -11,8 +11,58 @@ The backend starts it for a project, and the run saves its results as revisions 
 
 Manta keeps its modelling code apart from the code that schedules and runs it.
 So you can write and test a block without any of Manta's services.
-This page covers the packages and their dependencies, the running services, one playbook run, and where each kind of data is kept.
+This page covers the design principles, who and what Manta talks to, the packages and their dependencies, the running services and the backend inside.
+It then follows one playbook run, and states where each kind of data is kept and which technologies Manta uses.
 It assumes you know what a block and a playbook are, which are defined in the [user guide concepts page](../user-guide/concepts.md).
+
+## Design principles
+
+Five decisions answer most questions about why Manta is built the way it is.
+
+The backend orchestrates runs and never runs modelling code.
+It hands each run to Prefect, the orchestration tool, and reads the state back.
+So the backend process stays small and installs no solver and no modelling framework.
+[Orchestration with Prefect](orchestration.md) explains how Manta uses Prefect.
+
+Prefect is the only record of a run's state.
+The `runs` table links a project to a Prefect flow run and has no status, progress or log column.
+State kept in two places drifts apart, so the backend reads it from Prefect on every request.
+
+The environment is the unit of isolation.
+A block names the environment it needs, and that name picks the container image its step runs in.
+So one playbook can chain blocks whose dependencies could never be installed side by side, such as two modelling frameworks.
+
+Everything about a block is known without importing it.
+No single Python environment can import every block, so Manta describes each block as data, in the catalogue.
+The backend checks a playbook made of blocks it could never import.
+[Blocks, playbooks and the catalogue](blocks-and-playbooks.md) explains the design.
+
+The playbook document is the form in which a playbook travels.
+The backend sends the document itself to Prefect, not a name to look up later.
+So a run uses the playbook as it was when the run started, even if the library changes afterwards.
+
+## Manta and the world around it
+
+Manta is one system to the people who use it and to the services it relies on.
+
+```mermaid
+flowchart LR
+    modeller["Modeller<br/>(browser)"] -- "HTTPS" --> manta["Manta"]
+    author["Block author"] -- "writes blocks<br/>and playbooks" --> library["Block library<br/>(playbook-library)"]
+    library -- "block image<br/>and catalogue" --> manta
+    manta -- "OpenID Connect" --> idp["Identity provider<br/>(Keycloak)"]
+```
+
+A modeller uses Manta through the web app.
+[Users and scope](scope.md) describes each kind of user Manta is designed for, and the constraints they place on it.
+
+A block author never deploys code into the backend process.
+Their blocks reach Manta in two forms: a container image that runs them, and an entry in the catalogue that describes them.
+Today the only block library is `playbook-library`, in this repository, and the block image is built from it on the local machine.
+
+Manta signs users in through an identity provider over OpenID Connect.
+The local stack runs Keycloak for this.
+[Planned changes](planned-changes.md) lists the external systems Manta does not talk to yet, such as a container registry and a solver licence server.
 
 ## The packages and their dependencies
 
@@ -69,6 +119,14 @@ The `playbook.blocks` rule means a block library depends on the block layer alon
 The backend's import of `playbook-library` is the one edge that goes against this design.
 The backend reads the shipped playbooks and the block catalogue from it directly, and a comment in `backend/pyproject.toml` marks that dependency as a shortcut.
 
+The backend imports `playbook` itself, rather than talking to Prefect alone.
+With Prefect alone, the backend could start runs but could neither check a playbook nor describe its blocks.
+The web app could then build no settings forms and mark no problems.
+The only way round that is a second copy of the checks in TypeScript, kept in step by hand.
+`playbook` could also run as an HTTP service of its own.
+It needs no process of its own, because it has no heavy dependencies.
+That would cost a service, a schema and a deployment, and pays off only if something other than Python needs the playbook engine.
+
 ## The running system
 
 A running Manta is the backend process plus the services in [`docker/compose-dev-services.yaml`](https://github.com/manta-plan/manta/blob/main/docker/compose-dev-services.yaml).
@@ -107,6 +165,43 @@ It also means a playbook run continues while the backend restarts, because the b
 Two one-shot services run when the stack starts and then exit.
 `block-image-builder-pypsa` builds the block image for the `pypsa` environment.
 `playbooks-provision` runs `python -m runner.deploy`, which creates both work pools, registers the two deployments, and points Prefect's result storage at the object store.
+
+## Inside the backend
+
+The backend is one FastAPI process.
+Each route checks its request and hands it to one service, and each service holds the logic for one kind of thing.
+
+```mermaid
+flowchart LR
+    routes["Routes<br/>(routes/v1)"] --> auth["AuthService"]
+    routes --> projects["ProjectService"]
+    routes --> playbooks["PlaybookService"]
+    routes --> runs["RunService"]
+    runs --> playbooks
+    runs --> storage["S3FileStorageService"]
+    auth -- "log in,<br/>verify tokens" --> keycloak["Keycloak"]
+    auth --> db[("Postgres")]
+    projects --> db
+    runs --> db
+    runs -- "start flow runs,<br/>read states and logs" --> prefect["Prefect server"]
+    runs -- "deployment name,<br/>catalogue encoding" --> runner["runner"]
+    playbooks -- "build and check<br/>a playbook" --> framework["playbook"]
+    playbooks -- "shipped playbooks<br/>and catalogue" --> library["playbook-library"]
+    storage -- "S3 API" --> s3[("Object store")]
+```
+
+`PlaybookService` serves the playbooks that `playbook-library` ships.
+It lists them, returns one with each step's block summary and settings schema from the catalogue, and checks a set of settings against one.
+`RunService` checks the settings through `PlaybookService` before it starts a run.
+It then starts the `run-playbook` flow run and records it, and later reads the run's state, steps, log and output files back.
+`AuthService` logs a user in through Keycloak and checks each request's token.
+
+The backend reads the catalogue and the playbooks from `playbook-library` but never runs a block.
+It stores no playbook of its own and serves no catalogue or playbook drawing yet, which [Planned changes](planned-changes.md) covers.
+
+!!! info "See also"
+
+    [Contributing: Backend](../contributing/backend.md#coding-standards) sets out the backend's layers: routes, services, entities and the request and result models.
 
 ## A run from click to result
 
@@ -182,6 +277,26 @@ No block writes to a run's output folder, so the models a run produces are found
 
 The `runs` table does not contain a run's settings or status.
 The backend reads both back from the Prefect flow run each time a client asks for a run.
+[Orchestration with Prefect](orchestration.md#the-runs-table) gives the reasons.
+
+## Technologies
+
+Each layer of Manta uses one main technology.
+
+| Layer                | Technology                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| Web app              | TypeScript and React                                                                        |
+| Backend              | Python 3.14, FastAPI, SQLAlchemy and Alembic                                                |
+| Modelling packages   | Python 3.12 or later, Pydantic, and pixi for the block environments                         |
+| Orchestration        | Prefect 3, with its own database on the shared Postgres server                              |
+| Block execution      | A Prefect work pool of type `docker`, with one fresh container per step                     |
+| Application database | PostgreSQL                                                                                  |
+| Model data           | datarecord stores, which are Parquet files read through DuckDB, in an S3-compatible object store |
+| Object store         | SeaweedFS on the local stack                                                                |
+| Identity provider    | Keycloak, over OpenID Connect                                                               |
+
+Every part except the web app is Python, so a modeller who writes a block reads the same language as the code that runs it.
+The model data format comes from the [datarecord](https://github.com/energy-models/datarecord) package, and only `playbook-library` reads or writes it.
 
 ## Where to read next
 
@@ -192,6 +307,14 @@ The package READMEs go into each package in detail:
 - [`runner/README.md`](https://github.com/manta-plan/manta/blob/main/runner/README.md) explains the two flows, the work pools and the block images.
 - [`docker/README.md`](https://github.com/manta-plan/manta/blob/main/docker/README.md) describes each local service.
 - [`CONTRIBUTING.md`](https://github.com/manta-plan/manta/blob/main/CONTRIBUTING.md) sets out the backend's layers and the coding standards.
+
+The other explanation pages go deeper into one part each:
+
+- [Orchestration with Prefect](orchestration.md) explains the two flows, the work pools and why run state stays in Prefect.
+- [Blocks, playbooks and the catalogue](blocks-and-playbooks.md) explains how a playbook names, wires and checks blocks it cannot import.
+- [Run lifecycle](run-lifecycle.md) explains where a run is checked and what happens when part of it fails.
+- [Deployment topology](deployment.md) explains how the stack is set up, and what changes on Kubernetes.
+- [Planned changes](planned-changes.md) and [Open questions](open-questions.md) cover what is not built yet.
 
 The reference pages list the interfaces:
 

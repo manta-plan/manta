@@ -131,7 +131,14 @@ nav:
       - Frontend: installation/frontend.md
   - Explanation:
       - explanation/index.md
+      - Users and scope: explanation/scope.md
       - Architecture: explanation/architecture.md
+      - Orchestration with Prefect: explanation/orchestration.md
+      - Blocks, playbooks and the catalogue: explanation/blocks-and-playbooks.md
+      - Run lifecycle: explanation/run-lifecycle.md
+      - Deployment topology: explanation/deployment.md
+      - Planned changes: explanation/planned-changes.md
+      - Open questions: explanation/open-questions.md
   - Reference:
       - reference/index.md
       - playbook: reference/playbook/api.md
