@@ -175,6 +175,18 @@ END
 """
 
 
+def _by_cluster(series: DuckDBPyRelation, members: DuckDBPyRelation) -> DuckDBPyRelation:
+    """Return `series` per entity, scenario and representative `rep`, as a map over the members.
+
+    Each row also has `weighted`, the sum of each member's `weight` times its value.
+    """
+    keys = "s.entity, s.scenario, m.rep"
+    values = "map_from_entries(list((m.snapshot, s.value))) AS members"
+    weighted = "sum(m.weight * s.value) AS weighted"
+    paired = series.set_alias("s").join(members.set_alias("m"), "m.snapshot = s.snapshot")
+    return paired.aggregate(f"{keys}, {values}, {weighted}", keys)
+
+
 def shaped(
     rel: DuckDBPyRelation,
     members: DuckDBPyRelation,
@@ -189,15 +201,19 @@ def shaped(
     profile's mean across the cluster, weighted by each member's `weight`. It is capped at
     `capacity * profile`, and held where that mean is 0. Any other series is held.
     """
-    keyed = rel.project("*, connection.entity AS entity, row_number() OVER () AS series")
-    spread = _paired(keyed, members).join(capacity.set_alias("c"), "c.entity = r.entity", "left")
+    totals = members.aggregate("rep, sum(weight) AS total", "rep").set_alias("t")
+    keyed = rel.project("*, connection.entity AS entity").set_alias("r")
+    spread = keyed.join(capacity.set_alias("c"), "c.entity = r.entity", "left")
+    spread = spread.join(totals, "t.rep = r.snapshot", "left")
     for alias, series in {"d": demand, "p": profile}.items():
-        on = f"{alias}.entity = r.entity AND {alias}.snapshot = m.snapshot"
+        on = f"{alias}.entity = r.entity AND {alias}.rep = r.snapshot"
         scenario = f"{alias}.scenario IS NOT DISTINCT FROM r.scenario"
-        spread = spread.join(series.set_alias(alias), f"{on} AND {scenario}", "left")
-    inputs = "d.value AS demand, p.value AS profile, c.value AS capacity"
-    spread = spread.project(f"r.*, m.snapshot AS member, m.weight, {inputs}")
-    window = "OVER (PARTITION BY series)"
-    mean = f"sum(weight * profile) {window} / sum(weight) {window} AS mean"
-    averaged = spread.project(f"*, {mean}")
-    return _restated(averaged.project(f"* REPLACE (member AS snapshot, {SHAPED} AS value)"), rel)
+        clustered = _by_cluster(series, members).set_alias(alias)
+        spread = spread.join(clustered, f"{on} AND {scenario}", "left")
+    inputs = "d.members AS demand, p.members AS profile, p.weighted / t.total AS mean"
+    gathered = spread.project(f"r.*, c.value AS capacity, {inputs}")
+    found = ", ".join(f"map_extract_value(r.{c}, m.snapshot) AS {c}" for c in ("demand", "profile"))
+    expanded = _paired(gathered, members).project(
+        f"r.* EXCLUDE (demand, profile), m.snapshot AS member, {found}"
+    )
+    return _restated(expanded.project(f"* REPLACE (member AS snapshot, {SHAPED} AS value)"), rel)
