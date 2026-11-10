@@ -64,6 +64,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # Startup runs Prefect's own database migrations, which can be slow on a
+      # fresh volume or a slower machine. Failed checks during this window don't
+      # count against the retries; a passing one still marks it healthy at once.
+      start_period: 60s
 
   # Everything below runs playbooks: one one-shot build step per block
   # environment, the one-shot provisioner, and the two long-lived workers.
@@ -86,15 +90,13 @@ services:
       dockerfile: docker/block-image.Dockerfile
       target: block-prefect-runtime
       args:
-        LIBRARY_EXTRAS: pypsa
         ENV_NAME: pypsa
     image: ${MANTA_BLOCK_PREFECT_RUNTIME_IMAGE_PYPSA}
     command: python -c "import playbook_library, runner; print('pypsa block image ready')"
 
-  # One-shot: creates both work pools, registers the two deployments, and points
-  # Prefect's result storage at the object store, then exits. Idempotent — pools
-  # and deployments are created or updated, never duplicated, which is also how
-  # an image or wiring change rolls out. The backend only ever starts runs on
+  # One-shot: creates both work pools and registers the two deployments, then
+  # exits. Idempotent — pools and deployments are created or updated, never
+  # duplicated, which is also how an image or wiring change rolls out. The backend only ever starts runs on
   # the deployment this container has registered.
   playbooks-provision:
     build:
@@ -115,7 +117,6 @@ services:
       MANTA_JOB_S3_ENDPOINT: ${MANTA_JOB_S3_ENDPOINT}
       MANTA_BLOCK_SOURCES: ${MANTA_BLOCK_SOURCES}
       MANTA_BLOCK_LOGGERS: ${MANTA_BLOCK_LOGGERS}
-      S3_BUCKET: ${S3_BUCKET}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
     depends_on:
@@ -151,8 +152,8 @@ services:
   # dispatches by deployment name and is not in the execution path at all.
   #
   # It needs no Docker socket and no S3 credentials: it only dispatches each
-  # step at the run-block deployment and reads the record that step returns
-  # back through Prefect's result storage. It only ever moves pointers.
+  # step at the run-block deployment and reads the record that step publishes
+  # back as a Prefect artifact. It only ever moves pointers.
   playbook-worker:
     image: ${MANTA_RUNNER_IMAGE}
     command: prefect worker start --pool ${MANTA_PLAYBOOKS_POOL} --type process
@@ -249,6 +250,38 @@ services:
             "-c",
             "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
           ]
+
+  # TEMPORARY: serves a datarecord over the Quack protocol so the Model /
+  # Inspect / Report tabs can be ported to the frontend before datarecord is
+  # integrated into the backend (issue #223). Reads every store under
+  # ./quack-server/data/records (git-ignored; see quack-server/README.md).
+  # Remove once the backend serves Quack itself.
+  #
+  # Opt-in: a plain `up` (and the integration test stack) skips it. Start it
+  # with `--profile temporary-quack-setup`, or by naming the service.
+  quack-server:
+    profiles: [temporary-quack-setup]
+    build:
+      context: ./quack-server
+    environment:
+      QUACK_TOKEN: ${QUACK_TOKEN:-devtoken}
+      CORS_ORIGINS: ${QUACK_CORS_ORIGINS:-http://localhost:5173}
+      RECORDS_ROOT: /srv/data/records
+    ports:
+      - "${QUACK_SERVER_PORT:-8010}:8080"
+    volumes:
+      - ./quack-server/data/records:/srv/data/records:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres-data:

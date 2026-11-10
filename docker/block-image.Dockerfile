@@ -42,9 +42,8 @@
 # Built from the repo root (see compose-dev-services.yaml), with the repo-root
 # .dockerignore keeping the context down to the packages copied below.
 
-FROM python:3.12-slim AS bare
+FROM ghcr.io/prefix-dev/pixi:0.83.0-bookworm-slim AS bare
 
-ARG LIBRARY_EXTRAS=pypsa
 ARG ENV_NAME=pypsa
 
 WORKDIR /opt/manta
@@ -52,16 +51,26 @@ WORKDIR /opt/manta
 COPY playbook ./playbook
 COPY playbook-library ./playbook-library
 
-# playbook-library depends on playbook by a local path (see its pyproject.toml),
-# which means nothing to plain pip — installing it first is what makes pip
-# resolve that dependency against what's already on disk instead of an index.
-RUN pip install --no-cache-dir "./playbook[s3]" \
-    && pip install --no-cache-dir "./playbook-library[${LIBRARY_EXTRAS}]"
+# One environment of playbook-library's pixi.toml, so the image carries exactly
+# what `pixi run -e <env>` tests against. git fetches its git dependencies.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /root/.aws \
+    && printf '[default]\n' > /root/.aws/config \
+    && pixi install --manifest-path playbook-library/pixi.toml --locked -e ${ENV_NAME}
 
+ENV PATH=/opt/manta/playbook-library/.pixi/envs/${ENV_NAME}/bin:${PATH}
 # Used by the block catalogue and error messages, not for dependency resolution.
 ENV MANTA_ENV=${ENV_NAME}
 
+# datarecord runs `INSTALL httpfs` for s3:// stores, which is a no-op once the
+# extension is cached here. Without it, every throwaway block container downloads it.
+RUN python -c "import duckdb; duckdb.execute('INSTALL httpfs')"
+
 FROM bare AS block-prefect-runtime
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.18 /uv /usr/local/bin/uv
 
 # Matches CODE_PATH in runner.deploy: the deployment points Prefect at a
 # directory the container already has, so starting a flow run is a `cd` rather
@@ -70,8 +79,7 @@ WORKDIR /app
 
 COPY runner ./runner
 
-# playbook is already installed by the `bare` stage, so pip resolves runner's
-# dependency on it against what's present rather than an index (it isn't
-# published, and tool.uv.sources means nothing to pip). The `docker` extra is
-# deliberately absent: nothing here talks to the Docker daemon.
-RUN pip install --no-cache-dir ./runner
+# Into the block environment from `bare`, which playbook-library's pixi.toml knows
+# nothing about. The `docker` extra is deliberately absent: nothing here talks to
+# the Docker daemon.
+RUN uv pip install --no-cache --no-sources --python "$(command -v python)" ./runner

@@ -1,5 +1,4 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
-import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
   CreateProjectResponse,
   CreateRunResponse,
@@ -17,13 +16,21 @@ const defaultProjectPayload = {
 };
 
 const defaultRunPayload = {
-  playbook: "cluster-expand-dispatch",
-  // TODO: there is no data-record creation in the frontend yet (file upload,
-  // or any other way to point a run at real data). For now this points at the
-  // example network uploaded by step 5 of backend/README.md ("manual-test"), so
-  // that file must exist in the dev object store or the run fails at its first
-  // block. Replace once that functionality exists.
-  data_record_url: "s3://manta/manual-test/input.nc",
+  playbook: { name: "expand" },
+  // TODO: there is no data-record creation in the frontend yet (store upload,
+  // or any other way to point a run at real data). These placeholders satisfy
+  // the API shape but don't resolve to anything real, so the backend refuses a
+  // run created this way. Every user now gets an "Example project" on
+  // registration, with the example datarecord stores already in it (see
+  // "Example data" in backend/README.md). Until real data-record creation
+  // exists, use that project instead of creating "My First Project" above (this
+  // needs a backend endpoint listing the user's projects), and point runs at
+  // one of its stores: store_url s3://manta/<project uuid>/<store>, revision_uuid
+  // that store's `inputs` revision (from its revisions.json).
+  data_record: {
+    store_url: "s3://manta/placeholder/store",
+    revision_uuid: "00000000-0000-0000-0000-000000000000",
+  },
 };
 
 const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
@@ -51,18 +58,12 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
   return { uuid: project.uuid, wasCached: false };
 }
 
-type CreateRunOptions = {
-  playbook: string;
-  config: PlaybookConfig;
-};
-
-export async function createRun(project: DefaultProject, options?: CreateRunOptions) {
+export async function createRun(project: DefaultProject) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      playbook: options?.playbook ?? defaultRunPayload.playbook,
-      ...(options === undefined ? {} : { config: options.config }),
-      data_record_url: defaultRunPayload.data_record_url,
+      playbook: defaultRunPayload.playbook,
+      data_record: defaultRunPayload.data_record,
     });
   } catch (error) {
     if (project.wasCached && error instanceof ApiError && error.status === 404) {

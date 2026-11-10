@@ -3,9 +3,10 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from functools import cache
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import boto3
 import httpx2
@@ -16,15 +17,17 @@ from dotenv import dotenv_values
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
-from pynpm import NPMPackage
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from testcontainers.compose import DockerCompose
+
+from manta.services.example_data_service import ExampleDataService
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
-FRONTEND_DIR = REPO_ROOT / "frontend"
-FRONTEND_FILES = FRONTEND_DIR / "dist"
+EXAMPLE_STORE = "ac-dc-meshed"
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -44,6 +47,9 @@ def docker_services() -> Iterator[DockerCompose]:
         DOCKER_DIR,
         compose_file_name="compose-test-services.yaml",
         env_file=[str(BACKEND_ENV_FILE), str(DOCKER_ENV_TEST_FILE)],
+        # Otherwise images built before a change to runner or playbook-library are
+        # reused, and the tests silently run the old code.
+        build=True,
     ) as compose:
         yield compose
         # Fetched before `stop()` removes the containers — covers the whole session.
@@ -81,13 +87,6 @@ def keycloak_service(docker_services: DockerCompose) -> dict[str, str | None]:
         "admin_username": env["KEYCLOAK_ADMIN_USERNAME"],
         "admin_password": env["KEYCLOAK_ADMIN_PASSWORD"],
     }
-
-
-@pytest.fixture(scope="session")
-def frontend_files() -> Path:
-    pkg = NPMPackage(FRONTEND_DIR, npm_bin="pnpm")
-    _ = pkg.build(wait=True)
-    return FRONTEND_FILES
 
 
 @pytest.fixture(scope="session")
@@ -157,17 +156,41 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
-def data_record_url(s3_client: S3Client, app_server: str) -> str:
-    """Uploads the committed example network once per session and returns its
-    `s3://` URL — a real starting record for tests that run a playbook to
-    completion. `app_server` is an ordering dependency, not a used value: the
-    bucket only exists once the app has started (see create_app())."""
+def example_store(
+    s3_client: S3Client, postgres_service: dict[str, str], app_server: str
+) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
+    """Returns a function that copies the example datarecord store the app downloaded on
+    startup under a project's own prefix (once per project), the same way new users'
+    example projects are filled, and returns the run payload fields for its `inputs`
+    revision — a real starting record for tests that run a playbook to completion."""
     env = dotenv_values(BACKEND_ENV_FILE)
-    bucket = env["S3_BUCKET"]
-    key = "integration-tests/example_network.nc"
-    fixture_path = Path(__file__).parent / "fixtures" / "example_network.nc"
-    s3_client.upload_file(str(fixture_path), bucket, key)
-    return f"s3://{bucket}/{key}"
+    engine = create_engine(
+        f"postgresql+psycopg://{env['POSTGRES_USER']}:{env['POSTGRES_PASSWORD']}"
+        f"@{postgres_service['host']}:{postgres_service['port']}/{env['POSTGRES_DB']}"
+    )
+    with Session(engine) as db:
+        service = ExampleDataService(db, s3_client, env["S3_BUCKET"])
+
+        @cache
+        def copy(project_uuid: str) -> dict[str, dict[str, str]]:
+            service.copy_to_project(UUID(project_uuid), [EXAMPLE_STORE])
+            record = service.data_record(UUID(project_uuid), EXAMPLE_STORE)
+            return {"data_record": record.model_dump(mode="json")}
+
+        yield copy
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def example_store_exists(s3_client: S3Client) -> Callable[[str], bool]:
+    """Returns whether a project has the example datarecord store (see example_store)."""
+    bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+
+    def exists(project_uuid: str) -> bool:
+        key = f"{project_uuid}/{EXAMPLE_STORE}/manifest.json"
+        return s3_client.list_objects_v2(Bucket=bucket, Prefix=key).get("KeyCount") == 1
+
+    return exists
 
 
 @pytest.fixture(scope="session")
@@ -193,14 +216,14 @@ def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
 
 
 @pytest.fixture(scope="session")
-def second_user_headers(
+def second_user(
     app_server: str, kc_oidc_client: KeycloakOpenID, kc_admin_client: KeycloakAdmin
-) -> dict[str, str]:
-    """A second, distinct registered identity — for asserting that one user
-    can't act on another user's resources (e.g. project ownership checks).
-    Session-scoped: created once via the Keycloak admin API and reused by
-    every test that needs a non-owner, rather than provisioning a fresh
-    Keycloak user per test."""
+) -> tuple[str, str]:
+    """A second, distinct registered identity's username and password — for asserting
+    that one user can't act on another user's resources (e.g. project ownership
+    checks). Session-scoped: created once via the Keycloak admin API and reused by
+    every test that needs a non-owner, rather than provisioning a fresh Keycloak user
+    per test."""
     username = f"mallory-{uuid4()}"
     password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
     kc_admin_client.create_user(
@@ -214,14 +237,23 @@ def second_user_headers(
     )
 
     token = kc_oidc_client.token(username, password)
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
     claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
     response = httpx2.post(
         f"{app_server}/v1/auth/register",
         json={"username": username, "idp_subject": claims["sub"], "idp_source": claims["iss"]},
     )
     assert response.status_code == 201
-    return headers
+    return username, password
+
+
+@pytest.fixture
+def second_user_headers(
+    second_user: tuple[str, str], kc_oidc_client: KeycloakOpenID
+) -> dict[str, str]:
+    """The second user's auth headers. A fresh token per test: access tokens expire after
+    a few minutes, well within a single integration session."""
+    token = kc_oidc_client.token(*second_user)
+    return {"Authorization": f"Bearer {token['access_token']}"}
 
 
 def _free_port() -> int:
@@ -263,6 +295,8 @@ def app_server(
         "PREFECT_API_URL": f"http://{prefect_service['host']}:{prefect_service['port']}/api",
         "KEYCLOAK_HOST": keycloak_service["host"],
         "KEYCLOAK_PORT": keycloak_service["port"],
+        # Only the small store every test needs, instead of all of them.
+        "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
