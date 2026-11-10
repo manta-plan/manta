@@ -29,9 +29,6 @@ dependencies = [
 # Deliberately absent: anything orchestration-related, and any modelling framework.
 # Running a block is a plain method call here; what schedules that call, and what a
 # block does when it runs, both live outside this package.
-[project.optional-dependencies]
-# For records that live in S3-compatible object storage (see playbook/blocks/storage.py).
-s3 = ["boto3>=1.34"]
 
 [dependency-groups]
 dev = [

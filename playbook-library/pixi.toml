@@ -26,7 +26,7 @@ python = ">=3.12,<3.15"
 [pypi-dependencies]
 # The framework this library is written against, from the folder next door. Once it
 # is published, this becomes an ordinary version requirement and nothing else changes.
-playbook = { path = "../playbook", editable = true, extras = ["s3"] }
+playbook = { path = "../playbook", editable = true }
 playbook-library = { path = ".", editable = true }
 
 [feature.pypsa.dependencies]
@@ -43,6 +43,7 @@ pytest = ">=8"
 
 [feature.dev.pypi-dependencies]
 ruff = ">=0.16.0"
+playbook-library = { path = ".", editable = true, extras = ["public-data"] }
 
 [feature.dev.tasks]
 test = "pytest"

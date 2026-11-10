@@ -34,6 +34,7 @@
   ],
   "users": [
     {
+      "id": "0b7b2a6e-4c55-4b1e-9d0e-6f3c2a8e5d41",
       "username": "manta-admin",
       "enabled": true,
       "emailVerified": true,

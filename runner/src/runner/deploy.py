@@ -49,36 +49,6 @@ a run a `cd` rather than a copy.
 """
 
 
-def register_result_storage() -> None:
-    """Where a step's output record is persisted, so the orchestrator can read it.
-
-    On the object store rather than a shared volume: a volume would be the one
-    thing tying every container to a single machine. Only the small record
-    pointers go here — model data never passes through Prefect at all.
-    """
-    from botocore.config import Config
-    from prefect_aws import AwsCredentials, S3Bucket
-    from prefect_aws.client_parameters import AwsClientParameters
-
-    access_key, secret_key = config.s3_credentials()
-    credentials = AwsCredentials(
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        # SeaweedFS has no bucket-subdomain DNS, so path-style addressing — the
-        # same reason playbook.blocks.storage uses it.
-        aws_client_parameters=AwsClientParameters(
-            endpoint_url=config.s3_endpoint(),
-            config=Config(s3={"addressing_style": "path"}),
-        ),
-    )
-    S3Bucket(
-        bucket_name=config.s3_bucket(),
-        bucket_folder="prefect-results",
-        credentials=credentials,
-    ).save(config.RESULT_STORAGE_BLOCK_NAME, overwrite=True)
-    logger.info("Registered result storage %r", config.RESULT_STORAGE_BLOCK)
-
-
 def docker_job_template() -> dict:
     """A docker work pool's job template: each job is a container running a block.
 
@@ -149,8 +119,6 @@ def deploy(flow, name: str, pool: str) -> str:
 
 
 def main() -> None:
-    register_result_storage()
-
     blocks_pool = config.blocks_pool()
     ensure_docker_pool(blocks_pool, docker_job_template())
     deploy(run_block, BLOCK_FLOW_NAME, blocks_pool)
