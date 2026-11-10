@@ -253,52 +253,6 @@ services:
             "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
           ]
 
-  # The app itself (backend/Dockerfile, frontend/Dockerfile). To run either on
-  # the host instead (`uv run manta`, `pnpm dev`), stop its container first:
-  # they share ports.
-  backend:
-    build:
-      context: ../backend
-      # The backend depends on these by path; see backend/Dockerfile.
-      additional_contexts:
-        playbook: ../playbook
-        playbook-library: ../playbook-library
-        runner: ../runner
-    env_file: ../backend/.env
-    environment:
-      # backend/.env addresses everything via localhost and the host-published
-      # ports; inside the compose network it's service names and container ports.
-      APP_HOST: 0.0.0.0
-      APP_PORT: 8000
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      S3_HOST: seaweedfs
-      S3_PORT: 8333
-      KEYCLOAK_HOST: keycloak
-      KEYCLOAK_PORT: 8080
-      PREFECT_API_URL: http://prefect-server:4200/api
-    ports:
-      - "${APP_PORT}:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      seaweedfs:
-        condition: service_healthy
-      prefect-server:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: ../frontend
-    environment:
-      BACKEND_URL: http://backend:8000
-    ports:
-      - "${FRONTEND_PORT:-5173}:5173"
-    depends_on:
-      - backend
-
   # TEMPORARY: serves a datarecord over the Quack protocol so the Model /
   # Inspect / Report tabs can be ported to the frontend before datarecord is
   # integrated into the backend (issue #223). Reads every store under

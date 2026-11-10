@@ -1,0 +1,75 @@
+# The app itself (backend/Dockerfile, frontend/Dockerfile), on top of every
+# service in compose-dev-services.yaml. Kept out of that file on purpose: it is
+# also what the integration tests boot, and they run the backend themselves and
+# don't need the frontend.
+#
+# To run either app on the host instead (`uv run manta`, `pnpm dev`), stop its
+# container first: they share ports.
+#
+# Image names default to local tags; deploys set MANTA_BACKEND_IMAGE /
+# MANTA_FRONTEND_IMAGE / IMAGE_TAG to pull prebuilt images from a registry
+# instead (see .github/workflows/deploy.yml).
+name: manta
+
+include:
+  - compose-dev-services.yaml
+
+services:
+  backend:
+    image: ${MANTA_BACKEND_IMAGE:-manta-backend}:${IMAGE_TAG:-latest}
+    build:
+      context: ../backend
+      # The backend depends on these by path; see backend/Dockerfile.
+      additional_contexts:
+        playbook: ../playbook
+        playbook-library: ../playbook-library
+        runner: ../runner
+    env_file: ../backend/.env
+    environment:
+      # backend/.env addresses everything via localhost and the host-published
+      # ports; inside the compose network it's service names and container ports.
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      S3_HOST: seaweedfs
+      S3_PORT: 8333
+      KEYCLOAK_HOST: keycloak
+      KEYCLOAK_PORT: 8080
+      PREFECT_API_URL: http://prefect-server:4200/api
+    ports:
+      - "${APP_PORT}:8000"
+    healthcheck:
+      # No curl in python:*-slim, so using `python` instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  frontend:
+    image: ${MANTA_FRONTEND_IMAGE:-manta-frontend}:${IMAGE_TAG:-latest}
+    build:
+      context: ../frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
