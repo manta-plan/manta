@@ -16,16 +16,3 @@ export function HomePage() {
     </HomeLayout>
   );
 }
-
-function toRunListItem(run: GetRunResponse, owner: string): RunListItem {
-  return {
-    id: run.uuid,
-    name: "Expand",
-    playbook: "expand",
-    status: normalizeRunStatus(run.status),
-    startedAt: run.created_at,
-    durationSeconds: null,
-    trigger: "Manual",
-    owner,
-  };
-}
