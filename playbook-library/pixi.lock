@@ -599,7 +599,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/05/6d/78dc67a9e779e594b49bf62604034d3a6aa428a55afc729cafda4b7333e1/googleapis_common_protos-1.76.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/09/77/4376bb26f24966008a9522c61bae025d7030baabf443f20c4b795fb58308/google_cloud_storage-3.17.1-py3-none-any.whl
@@ -885,7 +885,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/03/73/388e493d6c3e252e37165d22efe5a1361f872a24425391b999822861b23a/google_crc32c-1.9.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/05/6d/78dc67a9e779e594b49bf62604034d3a6aa428a55afc729cafda4b7333e1/googleapis_common_protos-1.76.0-py3-none-any.whl
@@ -1161,7 +1161,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/05/6d/78dc67a9e779e594b49bf62604034d3a6aa428a55afc729cafda4b7333e1/googleapis_common_protos-1.76.0-py3-none-any.whl
@@ -1448,7 +1448,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/22/9d/d08a1128ab199b2f0cf25bfeb0639bd05119fff4b7c47bec24ef9a8ec23f/rpds_py-2026.9.1-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
@@ -1711,7 +1711,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl
@@ -1964,7 +1964,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ../playbook
       - pypi: ./
-      - pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+      - pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
       - pypi: git+https://github.com/energy-models/mathspec?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
@@ -12047,11 +12047,11 @@ packages:
   - pyyaml>=6
   - google-cloud-storage>=3.17,<4 ; extra == 'public-data'
   requires_python: '>=3.12'
-- pypi: git+https://github.com/energy-models/datarecord?rev=dbdbe94312d90c6a31809572aa9f01e9234ca0ff#dbdbe94312d90c6a31809572aa9f01e9234ca0ff
+- pypi: git+https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d
   name: datarecord
   version: 0.0.0
   requires_dist:
-  - duckdb>=2.0
+  - duckdb<=2.0.0,>=2.0.0
   - pydantic>=2.12
   - mathspec @ git+https://github.com/energy-models/mathspec.git@8982c556114992d149a83b3c6f3604c72e569829
   - pypsa>=1.4 ; extra == 'pypsa'

@@ -1,7 +1,7 @@
 """The record catalogue: datarecord stores under one root, opened on demand.
 
 - **A record is a store** under the root (local folder, or `s3://bucket/…`):
-  a folder `<id>/` with `revisions/`, and `<id>.json` beside it naming its
+  a folder `<id>/` with `layers/`, and `<id>.json` beside it naming its
   revisions. Or a **plain record**, a folder with `manifest.json` and no
   revisions: one scenario, `inputs`. `<id>.labels.json`, also beside it, is
   optional: per revision a `name`, `description` and `kind`, and under
@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import duckdb
 from datarecord import Workspace
@@ -172,7 +173,7 @@ class Catalogue:
                 by_store.setdefault(head, []).append(StoreFile(rest, o.size, o.modified))
         stores = {}
         for id, files in sorted(by_store.items()):
-            is_store = f"{id}.json" in names and any(f.path.startswith("revisions/") for f in files)
+            is_store = f"{id}.json" in names and any(f.path.startswith("layers/") for f in files)
             plain = not is_store and any(f.path == "manifest.json" for f in files)
             if not is_store and not plain:
                 continue
@@ -231,12 +232,8 @@ class Catalogue:
         """The layers the named revisions read: each one's own and its
         ancestors'. A store also keeps earlier revisions' layers, often most
         of its files, which nothing named reads."""
-        used: set[str] = set()
-        for revision_id in names.values():
-            while revision_id and revision_id not in used:
-                used.add(revision_id)
-                revision_id = read_json(self.ws, f"{summary.uri}/revisions/{revision_id}.json").get("parent")
-        return used
+        store = self.ws.store(summary.uri)
+        return {str(id) for revision_id in names.values() for id in store.revision(UUID(revision_id)).ancestry()}
 
     def _prewarm(self, summary: StoreSummary, names: dict[str, str]) -> None:
         """Read the metadata of every parquet file the record reads, in
@@ -272,7 +269,7 @@ class Catalogue:
             revisions = [
                 Revision(
                     name=BASE_NAME,
-                    id=str(record.schema.id),
+                    id=str(record.revision_id),
                     parent=None,
                     kind="scenario",
                     label=label.get("name") or BASE_LABEL,

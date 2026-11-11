@@ -187,7 +187,7 @@ def example_store_exists(s3_client: S3Client) -> Callable[[str], bool]:
     bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
 
     def exists(project_uuid: str) -> bool:
-        key = f"{project_uuid}/{EXAMPLE_STORE}/manifest.json"
+        key = f"{project_uuid}/{EXAMPLE_STORE}/revisions.json"
         return s3_client.list_objects_v2(Bucket=bucket, Prefix=key).get("KeyCount") == 1
 
     return exists
