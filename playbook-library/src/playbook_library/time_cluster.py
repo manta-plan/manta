@@ -69,7 +69,8 @@ def add_snapshot_property(rev: Revision, name: str, values: pd.Series) -> Revisi
         raise ValueError(f"snapshot.{name} needs {len(frame)} values, got {len(values)}")
     frame[name] = values.loc[frame["snapshot"]].to_numpy()
     schema = widened(base.schema, {name: PropertySpec(one_of="snapshot")})
-    return rev.child(_SnapshotAxis(schema, rev.store.workspace.con.from_df(frame)))
+    snapshots = rev.store.workspace.con.from_df(frame)
+    return rev.store.commit(_SnapshotAxis(schema, snapshots), parent=rev)
 
 
 def resample_map(rev: Revision, n_hours: int) -> pd.Series:
