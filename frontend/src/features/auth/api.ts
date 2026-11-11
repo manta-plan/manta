@@ -9,11 +9,11 @@ type LoginParams = {
 };
 
 export async function login({ username, password, remember }: LoginParams) {
-  const { access_token: accessToken } = await postJson<LoginResponse>("/v1/auth/login", {
+  const tokens = await postJson<LoginResponse>("/v1/auth/login", {
     username,
     password,
   });
-  const claims = decodeTokenClaims(accessToken);
+  const claims = decodeTokenClaims(tokens.access_token);
 
   if (claims === null) {
     throw new Error("Received an invalid access token.");
@@ -27,5 +27,5 @@ export async function login({ username, password, remember }: LoginParams) {
     idp_source: claims.iss,
   });
 
-  startSession(accessToken, remember);
+  startSession(tokens, remember);
 }
