@@ -62,7 +62,7 @@ SeaweedFS up.
 With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
 
 1. Downloads the example datarecord stores listed in `EXAMPLE_DATA_STORES` (all
-   of them when empty) from the public `manta-public-test-data` bucket, into
+   of them when empty) from the `2026-11-11` folder of the public `manta-public-test-data` bucket, into
    `s3://manta/example-data/<store>`. That belongs to no project, so no run ever
    writes to it. Stores already there are skipped, so
    only a clean SeaweedFS volume pays for the download. Without internet
@@ -83,12 +83,12 @@ touching anyone else's. The stores, sizes and `inputs` revisions:
 
 | Store | Size | `inputs` revision |
 | --- | --- | --- |
-| `ac-dc-meshed` | 0.1 MB | `e5f2eacd-ba5c-463c-a663-3017ef904d1d` |
-| `model-energy` | 0.2 MB | `075955d5-fe04-48de-bc6c-75ad873de6c0` |
-| `BEL-pre-aggregated` | 0.4 MB | `c7525fa8-e4da-4569-bbf3-b76669d1a2df` |
-| `BEL-pre-aggregated-hourly` | 2.9 MB | `fc0145a7-3cdf-4c5f-a9c9-ec77a472cb99` |
-| `BEL-pre-aggregated-incl-patches-incl-results` | 11.5 MB | `4dbf521c-2911-40be-8c6e-b075daa1a8ec` |
-| `BEL-full-res` | 32.5 MB | `f910244f-99d2-4ae0-8ba7-a10dbd54f7e0` |
+| `ac-dc-meshed` | 0.1 MB | `1bad4cfd-9f32-4675-aa4b-6cd71660cbc1` |
+| `model-energy` | 0.1 MB | `fc70f1c9-1082-46a9-8774-66bd5fad7297` |
+| `BEL-pre-aggregated` | 0.5 MB | `8ff7a95a-8aed-42a3-9acb-a2e36906685f` |
+| `BEL-pre-aggregated-hourly` | 3.5 MB | `8b7175d6-f540-4aa0-98c0-2df460693ff1` |
+| `BEL-pre-aggregated-incl-patches-incl-results` | 13.2 MB | `9ec88f52-d2d7-4785-9cbb-0c9a1da9b827` |
+| `BEL-full-res` | 36.3 MB | `0921e11f-1998-4983-9992-9a2f923ed392` |
 | `europe-full-res-2030` | 124.4 MB | `2f276825-9deb-4abc-ad57-ceb08f57ea94` |
 
 Each store's `revisions.json` names its revisions, `inputs` being the one a run
@@ -258,7 +258,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated", "revision_uuid": "c7525fa8-e4da-4569-bbf3-b76669d1a2df"}}'
+     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated", "revision_uuid": "8ff7a95a-8aed-42a3-9acb-a2e36906685f"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
@@ -281,7 +281,7 @@ one for the requests.
    flow run for each step.
 
 8. Each step that ran wrote a new revision into the project's store, under
-   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/revisions/`, which
+   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/layers/`, which
    you can browse in the SeaweedFS dashboard. The steps response names it as the
    step's `output` (`store_url` and `revision_uuid`). The last step that ran
    holds the run's final record.

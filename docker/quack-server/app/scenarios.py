@@ -25,9 +25,10 @@ from typing import Any
 from uuid import UUID
 
 import duckdb
-from datarecord import Record, Workspace
+from datarecord import Record, Store, Workspace
 
 from .manta_views import SCHEMA, SUBJECTS
+from .record import has_rows
 
 BASE_NAME = "inputs"
 BASE_LABEL = "Base case"
@@ -62,7 +63,7 @@ def read_json(ws: Workspace, uri: str) -> Any:
     found = ws.files(uri).read_text(uri)
     if found is None:
         raise FileNotFoundError(uri)
-    return json.loads(found[0])
+    return json.loads(found)
 
 
 def _layer_attributes(ws: Workspace, store: str, revision_id: str) -> list[str]:
@@ -70,12 +71,10 @@ def _layer_attributes(ws: Workspace, store: str, revision_id: str) -> list[str]:
     return sorted(name.removesuffix(".parquet") for name in ws.files(folder).list(folder) if name.endswith(".parquet"))
 
 
-def _named_parent(ws: Workspace, store: str, revision_id: str, names_by_id: dict[str, str]) -> str | None:
+def _named_parent(store: Store, revision_id: str, names_by_id: dict[str, str]) -> str | None:
     """The nearest named ancestor of a revision."""
-    parent = read_json(ws, f"{store}/revisions/{revision_id}.json").get("parent")
-    while parent and parent not in names_by_id:
-        parent = read_json(ws, f"{store}/revisions/{parent}.json").get("parent")
-    return names_by_id.get(parent) if parent else None
+    ancestors = store.revision(UUID(revision_id)).ancestry()[:-1]
+    return next((names_by_id[str(id)] for id in reversed(ancestors) if str(id) in names_by_id), None)
 
 
 def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dict[str, dict[str, str]]) -> list[Revision]:
@@ -87,12 +86,13 @@ def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dic
 
     revisions = []
     for name, revision_id in names.items():
-        parent = _named_parent(ws, store, revision_id, names_by_id)
+        parent = _named_parent(opened, revision_id, names_by_id)
         label = labels.get(name, {})
         kind = label.get("kind")
         if kind is None:
             written = _layer_attributes(ws, store, revision_id)
-            new = [a for a in written if parent is None or a not in records[parent].attributes]
+            held = records[parent].attributes if parent is not None else {}
+            new = [a for a in written if a not in held or not has_rows(held[a])]
             kind = "result" if parent is not None and len(new) * 2 > len(written) else "scenario"
         revisions.append(
             Revision(
