@@ -69,6 +69,6 @@ class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):
                 self.add_brownfield(n_period, previous)
             remove_unbuilt_cohorts(n_period)
             previous, written = solve_and_write(
-                n_period, written, self.optimize, self.config.time_aggregation, True
+                n_period, written, self.optimize, self.config.aggregation, True
             )
         return written

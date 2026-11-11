@@ -133,22 +133,82 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
         return self
 
 
-class PyPSAOptimizeBlockConfig(ConfigSchema):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
-    time_aggregation: str | None = None
+class Aggregation(ConfigSchema):
+    snapshot: str | None = Field(None, json_schema_extra={"x-uses-property": "snapshot"})
     """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
 
     A time aggregation groups the snapshots into clusters, and the block solves one
     snapshot per cluster. The results cover every snapshot, spread over the cluster each
-    falls in. A model without that time aggregation is refused. None solves at full
-    resolution. A time aggregation cannot be combined with `optimize_config.snapshots`.
+    falls in. A model without that time aggregation is refused. None solves every snapshot.
+    A time aggregation cannot be combined with `optimize_config.snapshots`.
+    """
+
+    bus: str | None = Field(None, json_schema_extra={"x-uses-property": "bus"})
+    """The bus property to merge buses by, such as `country`.
+
+    Buses with the same value merge into the first of them. Lines between the same merged
+    buses merge, span the distance between those buses and take the impedances of their
+    type. Land-use limits at buses that merge add up. The results of each bus are those of
+    the bus it merged into. None keeps every bus.
+    """
+
+    entity: str | None = Field(None, json_schema_extra={"x-uses-property": "entity"})
+    """The entity property to merge assets by, such as `carrier`.
+
+    Assets merge where they share this value, their component and every bus they connect
+    to. Candidates, by the entity property `asset_status`, merge only with the same build
+    year and lifetime. Other assets merge across build years with those active in the same
+    investment periods, as PyPSA-Eur merges power plants, and retire with the first of
+    them. An asset without a value is kept apart or left out, as
+    `ungrouped` says. Capacities and dispatch are split back over the assets by their
+    largest possible capacity if extendable candidates, or their capacity if not, or
+    equally where one of them has no limit. None keeps every asset.
+    """
+
+    ungrouped: Literal["keep", "drop"] = "keep"
+    """What to do with a generator, load, storage unit or store without a value of the
+    `entity` property.
+
+    `keep` solves it apart from the others, at its merged bus. `drop` leaves it out of the
+    solve, and it keeps its capacity and carries no flow, so a dropped load takes its
+    demand out of the solve. Links and lines without a value are always kept. `drop`
+    needs `entity` to be set.
+    """
+
+    clip_p_max_pu: float | None = Field(None, ge=0.0)
+    """The threshold at or below which time-varying availabilities are set to 0, after
+    every other aggregation, as PyPSA-Eur's `solving.options.clip_p_max_pu` sets them.
+
+    It applies to the `p_max_pu` and `p_min_pu` series of generators and links, and the
+    `inflow` series of storage units, by their absolute value. Static values are left as
+    they are. It applies with or without any other aggregation. Results split back over
+    the assets are judged against their unclipped values, so a dispatch may fall below
+    an unclipped `p_min_pu` by up to the threshold. PyPSA-Eur sets 0.01. None
+    leaves every value as it is.
+    """
+
+    @model_validator(mode="after")
+    def drop_needs_entity(self: Self) -> Self:
+        if self.ungrouped == "drop" and self.entity is None:
+            raise ValueError("`ungrouped: drop` needs `entity` to be set.")
+        return self
+
+
+class PyPSAOptimizeBlockConfig(ConfigSchema):
+    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+    aggregation: Aggregation = Field(default_factory=Aggregation)
+    """What to merge before solving: snapshots, buses or assets, each by a property of the
+    model.
+
+    Buses merge first, then assets, then snapshots. The results cover the model at full
+    resolution.
     """
 
     @model_validator(mode="after")
     def snapshots_are_not_chosen_with_a_time_aggregation(self: Self) -> Self:
-        if self.time_aggregation is not None and self.optimize_config.snapshots is not None:
+        if self.aggregation.snapshot is not None and self.optimize_config.snapshots is not None:
             raise ValueError(
-                "`optimize_config.snapshots` cannot be set together with `time_aggregation`."
+                "`optimize_config.snapshots` cannot be set together with `aggregation.snapshot`."
             )
         return self
 
