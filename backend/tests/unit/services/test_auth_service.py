@@ -100,6 +100,53 @@ def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_k
         AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "manta-admin")
 
 
+def test_refresh_returns_new_tokens(mock_db, mock_kc_client) -> None:
+    # Given
+    mock_kc_client.refresh_token.return_value = {
+        "access_token": "new-access",
+        "expires_in": 300,
+        "refresh_token": "new-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+
+    # When
+    result = AuthService(db=mock_db, kc_client=mock_kc_client).refresh("old-refresh")
+
+    # Then
+    mock_kc_client.refresh_token.assert_called_once_with("old-refresh")
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "new-refresh"  # noqa: S105 It's not a password
+    assert result.expires_in == 300
+    assert result.refresh_expires_in == 1800
+
+
+def test_refresh_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a garbage, expired or revoked refresh token
+    mock_kc_client.refresh_token.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid refresh token"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).refresh("bad-refresh")
+
+
+def test_refresh_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:
+    # Given - e.g. a misconfigured client secret
+    mock_kc_client.refresh_token.side_effect = KeycloakPostError(
+        error_message="invalid_client",
+        response_code=401,
+        response_body=b'{"error":"invalid_client"}',
+    )
+
+    # When / Then
+    with pytest.raises(BackendError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).refresh("some-refresh")
+
+
 def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
     # Given
     example_data = MagicMock()

@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -15,6 +17,7 @@ from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
 from manta.services.results.login_result import LoginResult
+from manta.services.results.refresh_result import RefreshResult
 from manta.services.results.register_result import RegisterResult
 
 logger = logging.getLogger(__name__)
@@ -84,23 +87,22 @@ class AuthService:
         # This doesn't currently update the user object if the Identity Provider
         # has new claims regarding the entity.
         # TODO: fix update functionality here
-        try:
+        with _translate_token_errors():
             token = self.kc_client.token(username, password)
-        except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
-            raise AuthenticationError from request_error
-        except KeycloakPostError as post_error:
-            # Keycloak rejects wrong credentials with `400 invalid_grant`, which
-            # python-keycloak raises as a generic KeycloakPostError.
-            if _is_invalid_grant(post_error):
-                raise AuthenticationError from post_error
-            raise BackendError from post_error
-        except (
-            KeycloakConnectionError
-        ) as transient_error:  # Transient or configuration-based connection error
-            raise BackendError from transient_error
-        except (TypeError, AttributeError) as config_error:  # configuration-based connection error
-            raise BackendError from config_error
         return LoginResult(
+            access_token=token["access_token"],
+            expires_in=token["expires_in"],
+            refresh_token=token["refresh_token"],
+            refresh_expires_in=token["refresh_expires_in"],
+        )
+
+    def refresh(self, refresh_token: str) -> RefreshResult:
+        with _translate_token_errors():
+            token = self.kc_client.refresh_token(refresh_token)
+        # Keycloak issues a new refresh token on every refresh. Callers must
+        # replace the one they hold: if the realm's "Revoke Refresh Token"
+        # setting is turned on, the old one stops working after one use.
+        return RefreshResult(
             access_token=token["access_token"],
             expires_in=token["expires_in"],
             refresh_token=token["refresh_token"],
@@ -130,6 +132,29 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
+
+
+@contextmanager
+def _translate_token_errors() -> Iterator[None]:
+    # Maps python-keycloak errors from token-endpoint calls (password and
+    # refresh grants) onto manta's error types.
+    try:
+        yield
+    except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
+        raise AuthenticationError from request_error
+    except KeycloakPostError as post_error:
+        # Keycloak rejects wrong credentials, and invalid, expired or revoked
+        # refresh tokens, with `400 invalid_grant`, which python-keycloak
+        # raises as a generic KeycloakPostError.
+        if _is_invalid_grant(post_error):
+            raise AuthenticationError from post_error
+        raise BackendError from post_error
+    except (
+        KeycloakConnectionError
+    ) as transient_error:  # Transient or configuration-based connection error
+        raise BackendError from transient_error
+    except (TypeError, AttributeError) as config_error:  # configuration-based connection error
+        raise BackendError from config_error
 
 
 def _is_invalid_grant(error: KeycloakPostError) -> bool:
