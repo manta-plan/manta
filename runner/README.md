@@ -47,11 +47,15 @@ Each step is dispatched at the `run-block` deployment on a **docker** work pool
 as child flow runs of the playbook's flow run, named `<step>[<block>]`, which is
 what groups a run's steps under it in Prefect.
 
-A step's output record travels back through Prefect's result storage, which
-points at the object store rather than a shared volume — a volume would be the
-one thing tying every container to a single machine. Only the small record
-pointers go that way; model data never passes through Prefect or the
-orchestrator at all.
+A step's output record travels back as a Prefect table artifact
+(`OUTPUT_ARTIFACT_KEY`), published by `run-block` and read through the Prefect
+API, rather than through a shared volume, which would be the one thing tying
+every container to a single machine. Manta's backend reads the same artifact to
+report each step's output. Only the small record pointers go that way; model
+data never passes through Prefect or the orchestrator at all. This is an MVP
+shortcut: once data records are tracked in Manta's own database, both the
+orchestrator and the backend should consider reading step outputs from there
+instead.
 
 ### The catalogue crosses as a JSON string, never a dict
 
@@ -92,7 +96,7 @@ So the image a block runs in is built in two stages, in one file
 bare                     (stage 1)   the artifact a block author writes, tests
         │ FROM                        and runs against. No Prefect. No
         ▼                             orchestration code.
-block-prefect-runtime    (stage 2)   + prefect, prefect-aws, runner. Named for
+block-prefect-runtime    (stage 2)   + prefect, runner. Named for
                                       what it specifically is: the
                                       Prefect-flavored runtime a block executes
                                       under, not "the" runtime a block needs in
