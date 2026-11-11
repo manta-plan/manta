@@ -212,4 +212,4 @@ def write_expanded_results(
         return held(rel, members)
 
     attributes = LazyRelations(tuple(results.attributes), expanded)
-    return rev.child(Overlay(results, attributes=attributes))
+    return rev.store.commit(Overlay(results, attributes=attributes), parent=rev)

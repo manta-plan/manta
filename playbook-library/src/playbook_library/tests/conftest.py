@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playbook.blocks.run import open_revision
 
-from playbook_library.examples import download_public_store, inputs_ref
+from playbook_library.examples import inputs_ref
+from playbook_library.public_data import download_public_store
 
 if TYPE_CHECKING:
     import pypsa
