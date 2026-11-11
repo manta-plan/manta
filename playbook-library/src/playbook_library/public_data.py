@@ -15,11 +15,12 @@ except ImportError as err:
     ) from err
 
 PUBLIC_BUCKET = "manta-public-test-data"
+PUBLIC_DATA_VERSION = "2026-11-11"
 
 
 def download_public_store(name: str, store_dir: Path) -> Path:
     """Download the store `name` of the public test data bucket into `store_dir`."""
-    prefix = f"{name}/"
+    prefix = f"{PUBLIC_DATA_VERSION}/{name}/"
     bucket = Client.create_anonymous_client().bucket(PUBLIC_BUCKET)
     names = [blob.name.removeprefix(prefix) for blob in bucket.list_blobs(prefix=prefix)]
     transfer_manager.download_many_to_path(

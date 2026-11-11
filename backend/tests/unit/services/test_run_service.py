@@ -357,7 +357,7 @@ def test_create_run_with_unknown_revision_raises_404(
         )
     assert exc_info.value.status_code == 404
     mock_s3_client.head_object.assert_called_once_with(
-        Bucket=_BUCKET, Key=f"{project.uuid}/store/revisions/{_REVISION_UUID}.json"
+        Bucket=_BUCKET, Key=f"{project.uuid}/store/layers/{_REVISION_UUID}/manifest.json"
     )
     dispatch.assert_not_called()
 

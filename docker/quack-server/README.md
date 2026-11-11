@@ -45,7 +45,7 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
                                                         └── /api/*                            └── in-process DuckDB: one view per record relation
 ```
 
-- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `revisions/`, and `<store>.json` beside it naming its revisions. A plain record (a folder with `manifest.json` and no revisions) is listed too, with one scenario, `inputs`.
+- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/`, and `<store>.json` beside it naming its revisions. A plain record (a folder with `manifest.json` and no revisions) is listed too, with one scenario, `inputs`.
 - **A record opens on first use**: when a project (or the explorer) first asks for it, then stays open while the server runs. The default record opens in the background at start. The listing refreshes every minute, so a store uploaded to the root shows without a restart; replacing a store that's open needs one.
 - **datarecord resolves each scenario in Python.** `app/record.py` registers every relation as a view in the schemas `dims`, `properties` and `attributes`, for example `attributes.p_nom`. The browser never sees layers or parquet files.
 - **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_perfect__patch.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get no catalog yet. `docs/views-design.md` has the details.
@@ -80,7 +80,7 @@ Then open <http://localhost:8010/?token=devtoken>. Without `QUACK_TOKEN`, a rand
 
 The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks a record in its header (`?record=` keeps it) and has two tabs:
 
-- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes and the manifest; no data). Clicking a file or folder shows its manifest entry and links to the views it backs, in the base case's catalog. Attributes without rows have no view: datarecord leaves them out.
+- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes and the manifest; no data). Clicking a file or folder shows its manifest entry and links to the views it backs, in the base case's catalog. Attributes without rows have no view.
 - **Views:** the views the browser sees through ATTACH, as scenario → schema → view → column, base case first. Clicking a view previews 200 rows and counts it on the server. The editor runs any SQL in DuckDB-Wasm, against `r.<catalog>.<schema>.<view>` (`r.bel_pre_aggregated_perfect__patch.attributes.p_nom`).
 
 **API.** `/api/*` takes the same token as Quack, as `Authorization: Bearer …`.
@@ -135,7 +135,7 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 
 ## Findings (DuckDB 2.0.0, 2026-10-24)
 
-- **datarecord** comes from `energy-models/datarecord` `main`, pinned to commit `1781cfb` (2026-10-27), the first to require DuckDB 2.0. A record written by another commit may not open.
+- **datarecord** comes from `energy-models/datarecord` `main`, pinned to commit `8889d62` (2026-11-10), where each layer carries its own manifest. A record written by another commit may not open, and the 30 October records, written before it, do not.
 - `quack_serve` runs fine inside the Python process. The views and the served catalog are the same database.
 - **Two guards make access read-only.** Without them, any client can `read_csv('/etc/passwd')` and `COPY` to any path. That was confirmed on 1.5.5.
   1. DuckDB's own settings: the HTTP file systems switched off (no reads of arbitrary URLs), no extension installs, and the configuration locked. `enable_external_access = false` (with `allowed_directories`) was stricter, but datarecord's SQL reads Python objects by name, which DuckDB only resolves with external access on, and it can't be switched back on: records couldn't open after the lockdown. Bucket reads go through a key that can only read `manta-records`. The local file system stays on, as DuckDB needs it for temp files, so local files are guarded by the macro alone.

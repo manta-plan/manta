@@ -1154,9 +1154,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "google-cloud-storage", marker = "extra == 'public-data'", specifier = ">=3.17,<4" },
     { name = "playbook" },
     { name = "pyyaml", specifier = ">=6" },
 ]
+provides-extras = ["public-data"]
 
 [[package]]
 name = "pluggy"
