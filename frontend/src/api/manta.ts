@@ -41,6 +41,10 @@ async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
     throw error;
   }
 
+  if (response.status === 204) {
+    return undefined as ResponseBody;
+  }
+
   return (await response.json()) as ResponseBody;
 }
 

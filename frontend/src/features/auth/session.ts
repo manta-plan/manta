@@ -89,6 +89,10 @@ export function refreshAccessToken(staleAccessToken: string): Promise<string | n
   return inFlightRefresh;
 }
 
+export function getRefreshToken(): string | null {
+  return readStoredSession()?.session.refreshToken ?? null;
+}
+
 export function useSessionUser(): SessionUser | null {
   const accessToken = useSyncExternalStore(subscribe, getSignedInAccessToken);
   const claims = accessToken === null ? null : decodeTokenClaims(accessToken);

@@ -87,7 +87,7 @@ class AuthService:
         # This doesn't currently update the user object if the Identity Provider
         # has new claims regarding the entity.
         # TODO: fix update functionality here
-        with _translate_token_errors():
+        with _translate_keycloak_errors():
             token = self.kc_client.token(username, password)
         return LoginResult(
             access_token=token["access_token"],
@@ -97,7 +97,7 @@ class AuthService:
         )
 
     def refresh(self, refresh_token: str) -> RefreshResult:
-        with _translate_token_errors():
+        with _translate_keycloak_errors():
             token = self.kc_client.refresh_token(refresh_token)
         # Keycloak issues a new refresh token on every refresh. Callers must
         # replace the one they hold: if the realm's "Revoke Refresh Token"
@@ -108,6 +108,16 @@ class AuthService:
             refresh_token=token["refresh_token"],
             refresh_expires_in=token["refresh_expires_in"],
         )
+
+    def logout(self, refresh_token: str) -> None:
+        # Ends the Keycloak session the refresh token belongs to, so neither it
+        # nor any other refresh token from that session can be used again.
+        # Access tokens already issued stay valid until they expire: they are
+        # verified by signature alone, without asking Keycloak.
+        # Keycloak accepts a token whose session has already ended, so logging
+        # out twice is not an error.
+        with _translate_keycloak_errors():
+            self.kc_client.logout(refresh_token)
 
     def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
         user = _find_user_by_credentials(self.db, idp_subject, idp_source)
@@ -135,9 +145,9 @@ class AuthService:
 
 
 @contextmanager
-def _translate_token_errors() -> Iterator[None]:
-    # Maps python-keycloak errors from token-endpoint calls (password and
-    # refresh grants) onto manta's error types.
+def _translate_keycloak_errors() -> Iterator[None]:
+    # Maps python-keycloak errors from calls made with user credentials or a
+    # refresh token (login, refresh, logout) onto manta's error types.
     try:
         yield
     except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side

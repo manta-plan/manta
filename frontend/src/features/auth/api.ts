@@ -1,5 +1,5 @@
 import { postJson } from "../../api/manta";
-import { decodeTokenClaims, startSession } from "./session";
+import { clearSession, decodeTokenClaims, getRefreshToken, startSession } from "./session";
 import type { LoginResponse, RegisterResponse } from "./types";
 
 type LoginParams = {
@@ -28,4 +28,23 @@ export async function login({ username, password, remember }: LoginParams) {
   });
 
   startSession(tokens, remember);
+}
+
+export async function logout() {
+  const refreshToken = getRefreshToken();
+
+  // Sign out locally first, so the UI never waits on the network and the user
+  // is signed out even if the request below fails.
+  clearSession();
+
+  if (refreshToken === null) {
+    return;
+  }
+
+  try {
+    await postJson<void>("/v1/auth/logout", { refresh_token: refreshToken });
+  } catch {
+    // The Keycloak session stays active until its refresh token expires, but
+    // this browser no longer holds any token for it.
+  }
 }

@@ -147,6 +147,30 @@ def test_refresh_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock
         AuthService(db=mock_db, kc_client=mock_kc_client).refresh("some-refresh")
 
 
+def test_logout_ends_the_keycloak_session(mock_db, mock_kc_client) -> None:
+    # Given - python-keycloak turns Keycloak's `204 No Content` into {}
+    mock_kc_client.logout.return_value = {}
+
+    # When
+    AuthService(db=mock_db, kc_client=mock_kc_client).logout("some-refresh")
+
+    # Then
+    mock_kc_client.logout.assert_called_once_with("some-refresh")
+
+
+def test_logout_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a garbage refresh token
+    mock_kc_client.logout.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid refresh token"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).logout("bad-refresh")
+
+
 def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
     # Given
     example_data = MagicMock()
