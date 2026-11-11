@@ -71,7 +71,7 @@ def add_snapshot_property(record: DataRecord, name: str, values: pd.Series) -> D
         raise ValueError(f"snapshot.{name} needs {len(frame)} values, got {len(values)}")
     frame[name] = values.loc[frame["snapshot"]].to_numpy()
     schema = widened(base.schema, {name: PropertySpec(one_of="snapshot")})
-    child = rev.child(_SnapshotAxis(schema, ws.con.from_df(frame)))
+    child = rev.store.commit(_SnapshotAxis(schema, ws.con.from_df(frame)), parent=rev)
     return DataRecord(url=record.url, uuid=child.id)
 
 

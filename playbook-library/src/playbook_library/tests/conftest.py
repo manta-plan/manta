@@ -13,7 +13,8 @@ from uuid import UUID
 import pytest
 from playbook.blocks.core import DataRecord
 
-from playbook_library.examples import download_public_store, inputs_record
+from playbook_library.examples import inputs_record
+from playbook_library.public_data import download_public_store
 
 if TYPE_CHECKING:
     import pypsa
