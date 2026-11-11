@@ -281,7 +281,7 @@ one for the requests.
    flow run for each step.
 
 8. Each step that ran wrote a new revision into the project's store, under
-   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/revisions/`, which
+   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/layers/`, which
    you can browse in the SeaweedFS dashboard. The steps response names it as the
    step's `output` (`store_url` and `revision_uuid`). The last step that ran
    holds the run's final record.
