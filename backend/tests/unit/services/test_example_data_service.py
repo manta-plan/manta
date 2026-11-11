@@ -17,7 +17,7 @@ from manta.services.example_data_service import (
 )
 
 ISSUER = "http://localhost:8080/realms/manta"
-INPUTS = "1bad4cfd-9f32-4675-aa4b-6cd71660cbc1"
+INPUTS = "00000000-0000-0000-0000-000000000000"
 
 FILES = {
     "small/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
