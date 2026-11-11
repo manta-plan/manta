@@ -13,7 +13,8 @@ from uuid import UUID
 import pytest
 from playbook.blocks.core import DataRecord
 
-from playbook_library.examples import download_public_store, inputs_record
+from playbook_library.examples import inputs_record
+from playbook_library.public_data import download_public_store
 
 if TYPE_CHECKING:
     import pypsa
@@ -27,7 +28,7 @@ def store_network() -> Callable[["pypsa.Network", str], DataRecord]:
 
     def store(n: "pypsa.Network", url: str) -> DataRecord:
         ws = Workspace()
-        rev = ws.store(url).root(PyPSA.to_datarecord(n, ws.con))
+        rev = ws.store(url).commit(PyPSA.to_datarecord(n, ws.con), parent=None)
         return DataRecord(url=url, uuid=rev.id)
 
     return store
