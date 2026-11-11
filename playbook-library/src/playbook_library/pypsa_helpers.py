@@ -42,7 +42,7 @@ def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pyps
     """
     _, rev = revision(record)
     try:
-        return PyPSA.build(rev.record, select=select)
+        return PyPSA.build(rev.record.select(**select) if select else rev.record)
     except UnsupportedRecordError as exc:
         raise DataRecordError(str(exc)) from exc
 
@@ -70,7 +70,7 @@ def write_network(
     ws, rev = revision(parent_record)
     source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
     source = carry_snapshot_properties(source, rev.record, ws.con)
-    return DataRecord(url=parent_record.url, uuid=rev.child(source).id)
+    return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
 
 
 def remove_unbuilt_cohorts(n: pypsa.Network) -> None:

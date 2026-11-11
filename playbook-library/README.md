@@ -46,6 +46,7 @@ src/playbook_library/
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   datarecord_helpers.py         Opening the datarecord revision a record points at
   examples.py                   The example run: the `expand` playbook on the Belgian test model
+  public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships, with default settings
 ```
 

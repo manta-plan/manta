@@ -1,0 +1,29 @@
+[project]
+name = "manta-record-server"
+version = "0.1.0"
+description = "Proof of concept: serve a datarecord to DuckDB-Wasm over the Quack protocol"
+requires-python = ">=3.12"
+dependencies = [
+  "datarecord[remote]",
+  "duckdb>=2,<3",
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "uvicorn[standard]>=0.32",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+# Pinned by commit: the format changes often, and a record written by one
+# commit may not open with another. 8889d62 is `main` with a manifest per
+# layer; stores written before it have none and do not open.
+datarecord = { git = "https://github.com/energy-models/datarecord.git", rev = "8889d623865e3cab80d7a18681e48a6c2536741d" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

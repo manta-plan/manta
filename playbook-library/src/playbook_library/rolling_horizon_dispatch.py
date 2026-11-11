@@ -213,7 +213,10 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
         """Solve `n` one window at a time, and return it.
 
-        Raises `SolveError` if any window does not solve, which PyPSA itself only logs.
+        Each result series then spans every snapshot. PyPSA keeps a series it writes whole
+        on each window, such as `Bus.v_ang`, at the last window alone, so the windows before
+        it are missing values. Raises `SolveError` if any window does not solve, which PyPSA
+        itself only logs.
         """
         logger = logging.getLogger("pypsa.optimization.abstract")
         failed = FailedWindows()
@@ -227,6 +230,9 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             logger.setLevel(level)
         if failed.failures:
             raise SolveError(f"PyPSA could not solve every window: {failed.failures}")
+        for c in n.components:
+            for attr, series in c.dynamic.items():
+                c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
     def run(self, record: DataRecord) -> DataRecord:

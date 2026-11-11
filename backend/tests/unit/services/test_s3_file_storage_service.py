@@ -30,6 +30,9 @@ GET_FAILURE_IDS = ["client_error", "botocore_error"]
 DELETE_FAILURES = [_client_error(500), BotoCoreError()]
 DELETE_FAILURE_IDS = ["client_error", "botocore_error"]
 
+EXISTS_FAILURES = [_client_error(500), BotoCoreError()]
+EXISTS_FAILURE_IDS = ["client_error", "botocore_error"]
+
 LIST_FAILURES = [_client_error(500), BotoCoreError()]
 LIST_FAILURE_IDS = ["client_error", "botocore_error"]
 
@@ -183,6 +186,41 @@ def test_delete_file_wraps_delete_object_failures(mock_s3_client, error) -> None
     # When / Then
     with pytest.raises(S3StorageError):
         service.delete_file(uuid4(), "network.nc")
+
+
+def test_file_exists_when_the_object_is_there(mock_s3_client) -> None:
+    # Given
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+    project_uuid = uuid4()
+
+    # When
+    result = service.file_exists(project_uuid, "store/manifest.json")
+
+    # Then
+    assert result is True
+    mock_s3_client.head_object.assert_called_once_with(
+        Bucket="manta", Key=f"{project_uuid}/store/manifest.json"
+    )
+
+
+def test_file_exists_when_the_object_is_missing(mock_s3_client) -> None:
+    # Given
+    mock_s3_client.head_object.side_effect = _client_error(404)
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    assert service.file_exists(uuid4(), "store/manifest.json") is False
+
+
+@pytest.mark.parametrize("error", EXISTS_FAILURES, ids=EXISTS_FAILURE_IDS)
+def test_file_exists_wraps_head_object_failures(mock_s3_client, error) -> None:
+    # Given
+    mock_s3_client.head_object.side_effect = error
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When / Then
+    with pytest.raises(S3StorageError):
+        service.file_exists(uuid4(), "store/manifest.json")
 
 
 def test_list_files_returns_all_files_across_pages(mock_s3_client) -> None:

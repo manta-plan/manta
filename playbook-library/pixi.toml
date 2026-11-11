@@ -26,7 +26,7 @@ python = ">=3.12,<3.15"
 [pypi-dependencies]
 # The framework this library is written against, from the folder next door. Once it
 # is published, this becomes an ordinary version requirement and nothing else changes.
-playbook = { path = "../playbook", editable = true, extras = ["s3"] }
+playbook = { path = "../playbook", editable = true }
 playbook-library = { path = ".", editable = true }
 
 [feature.pypsa.dependencies]
@@ -37,7 +37,7 @@ tsam = ">=4.1,<5"
 pyarrow = ">=25"
 
 [feature.pypsa.pypi-dependencies]
-datarecord = { git = "https://github.com/energy-models/datarecord", rev = "dbdbe94312d90c6a31809572aa9f01e9234ca0ff", extras = ["remote", "pypsa"] }
+datarecord = { git = "https://github.com/energy-models/datarecord", rev = "8889d623865e3cab80d7a18681e48a6c2536741d", extras = ["remote", "pypsa"] }
 mathspec = { git = "https://github.com/energy-models/mathspec", rev = "8982c556114992d149a83b3c6f3604c72e569829" }
 
 [feature.dev.dependencies]
@@ -45,6 +45,7 @@ pytest = ">=8"
 
 [feature.dev.pypi-dependencies]
 ruff = ">=0.16.0"
+playbook-library = { path = ".", editable = true, extras = ["public-data"] }
 
 [feature.dev.tasks]
 test = "pytest"

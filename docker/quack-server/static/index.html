@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Record explorer</title>
+<style>
+  /* The app's tokens (src/index.css): ocean-navy dark by default, brand light. */
+  :root {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+    --color-surface-950: #05090f;
+    --color-surface-900: #0a121d;
+    --color-surface-800: #0f1a29;
+    --color-surface-700: #16253a;
+    --color-surface-600: #1f3350;
+    --color-surface-500: #2c4763;
+    --color-surface-400: #4d6a89;
+    --color-surface-300: #7391ab;
+    --color-surface-200: #a0b6ca;
+    --color-surface-100: #cddce8;
+    --color-surface-50: #eef4f9;
+    --color-accent-600: #225dd9;
+    --color-accent-500: #2c73ff;
+    --color-accent-400: #5699ff;
+    --color-accent-300: #8ec1ff;
+    --color-secondary-300: #6ebcb2;
+    --color-ok-500: #61c568;
+    --color-warn-500: #d9a521;
+    --color-danger-500: #dc4545;
+  }
+  :root[data-theme='light'] {
+    --color-surface-950: #ffffff;
+    --color-surface-900: #f8fafc;
+    --color-surface-800: #ffffff;
+    --color-surface-700: #f1f5f9;
+    --color-surface-600: #cbd5e1;
+    --color-surface-500: #b0bccb;
+    --color-surface-400: #94a3b8;
+    --color-surface-300: #64748b;
+    --color-surface-200: #475569;
+    --color-surface-100: #1e293b;
+    --color-surface-50: #0f172a;
+    /* Accent text needs the darker stops on white. */
+    --color-accent-400: #225dd9;
+    --color-accent-300: #1846ab;
+    --color-secondary-300: #146b63;
+    --color-warn-500: #a87b0c;
+  }
+
+  * { box-sizing: border-box; }
+  [x-cloak] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; grid-template-rows: auto 1fr auto;
+    font: 13px/1.5 var(--font-sans);
+    background: var(--color-surface-900); color: var(--color-surface-100);
+    -webkit-font-smoothing: antialiased;
+  }
+  input, textarea, button { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  pre, textarea, .mono { font-family: var(--font-mono); font-size: 12px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-surface-500); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+
+  .field {
+    height: 30px; padding: 0 10px; border-radius: 6px;
+    background: var(--color-surface-800); border: 1px solid var(--color-surface-600);
+  }
+  .field:focus, textarea:focus { outline: 2px solid var(--color-accent-500); outline-offset: -1px; }
+  .btn {
+    height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--color-surface-600);
+    background: var(--color-surface-700); white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--color-surface-400); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.primary { background: var(--color-accent-600); border-color: var(--color-accent-600); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: var(--color-accent-500); }
+  .btn.link { height: auto; padding: 2px 8px; font-size: 12px; color: var(--color-accent-400); }
+
+  /* Header */
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px;
+    background: var(--color-surface-800); border-bottom: 1px solid var(--color-surface-600);
+  }
+  header h1 { margin: 0 8px 0 0; font-size: 14px; font-weight: 600; color: var(--color-surface-50); }
+  header h1 span { color: var(--color-surface-300); font-weight: 400; }
+  header form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; }
+  header form .field { width: 180px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-surface-300); }
+  .status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--color-surface-400); }
+  .status[data-status='connecting']::before { background: var(--color-warn-500); }
+  .status[data-status='connected']::before { background: var(--color-ok-500); }
+  .status[data-status='error']::before { background: var(--color-danger-500); }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; min-height: 0; }
+  aside {
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--color-surface-800); border-right: 1px solid var(--color-surface-600);
+  }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 16px; gap: 12px; overflow: auto; }
+
+  .tabs { display: flex; padding: 8px 8px 0; gap: 4px; border-bottom: 1px solid var(--color-surface-600); }
+  .tabs button {
+    padding: 6px 12px; border: 0; background: none; color: var(--color-surface-300);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs button[aria-selected='true'] { color: var(--color-surface-50); border-bottom-color: var(--color-accent-500); }
+  .tabs .count { margin-left: 6px; font-size: 11px; color: var(--color-surface-400); }
+  .filter { margin: 8px; }
+
+  /* Tree */
+  .tree { flex: 1; overflow: auto; padding-bottom: 8px; }
+  .node {
+    display: flex; align-items: center; gap: 4px; height: 26px; padding-right: 10px;
+    cursor: pointer; white-space: nowrap; user-select: none;
+  }
+  .node:hover { background: var(--color-surface-700); }
+  .node.selected { background: color-mix(in srgb, var(--color-accent-500) 18%, transparent); }
+  .node .chev { width: 14px; flex: none; color: var(--color-surface-400); text-align: center; font-size: 10px; }
+  .node .icon { display: inline-flex; color: var(--color-surface-300); }
+  .node .icon svg { width: 14px; height: 14px; }
+  .node[data-kind='view'] .icon, .node[data-kind='file'] .icon { color: var(--color-accent-400); }
+  .node[data-kind='database'] .icon { color: var(--color-accent-400); }
+  .node[data-kind='schema'] .icon, .node[data-kind='dir'] .icon, .node[data-kind='root'] .icon { color: var(--color-secondary-300); }
+  .node .label { overflow: hidden; text-overflow: ellipsis; }
+  .node .detail { margin-left: auto; padding-left: 12px; color: var(--color-surface-400); font-size: 11px; }
+  .empty { margin: 0; padding: 24px 16px; color: var(--color-surface-300); }
+
+  /* Query */
+  .editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  textarea {
+    width: 100%; min-height: 96px; resize: vertical; padding: 10px; border-radius: 6px;
+    background: var(--color-surface-800); border: 1px solid var(--color-surface-600);
+  }
+  .bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--color-surface-300); }
+  .bar .spacer { flex: 1; }
+  kbd { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--color-surface-600); }
+  .error {
+    padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px;
+    border: 1px solid color-mix(in srgb, var(--color-danger-500) 50%, transparent);
+    background: color-mix(in srgb, var(--color-danger-500) 10%, transparent);
+  }
+  .table-wrap { flex: 1; min-height: 160px; overflow: auto; border: 1px solid var(--color-surface-600); border-radius: 6px; }
+  table { border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+  th, td { padding: 4px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--color-surface-700); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  th { position: sticky; top: 0; background: var(--color-surface-700); font-weight: 600; color: var(--color-surface-50); }
+  td.num { text-align: right; }
+  td.null { color: var(--color-surface-400); font-style: italic; }
+  tr:hover td { background: var(--color-surface-800); }
+
+  /* Manifest */
+  .meta-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-surface-50); word-break: break-all; }
+  .meta-head p { margin: 2px 0 0; color: var(--color-surface-300); }
+  .meta-head .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  pre.json {
+    margin: 0; padding: 12px; overflow: auto; border-radius: 6px; line-height: 1.6;
+    background: var(--color-surface-800); border: 1px solid var(--color-surface-600);
+  }
+  .json .k { color: var(--color-accent-300); }
+  .json .s { color: var(--color-secondary-300); }
+  .json .n { color: var(--color-warn-500); }
+  .json .z { color: var(--color-surface-400); }
+
+  /* Log */
+  footer { border-top: 1px solid var(--color-surface-600); background: var(--color-surface-800); }
+  footer summary { padding: 6px 16px; cursor: pointer; color: var(--color-surface-300); }
+  footer pre { margin: 0; padding: 0 16px 10px; max-height: 160px; overflow: auto; color: var(--color-surface-200); }
+
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 40vh) 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--color-surface-600); }
+    header form .field { width: 100%; }
+  }
+</style>
+</head>
+<body x-data="explorer" x-cloak>
+<header>
+  <h1>Record explorer</h1>
+  <form @submit.prevent="connect()">
+    <input class="field" x-model="server" placeholder="host:port" aria-label="Server">
+    <input class="field" x-model="token" type="password" placeholder="Token" aria-label="Token">
+    <button class="btn primary" :disabled="status === 'connecting'" x-text="status === 'connected' ? 'Reconnect' : 'Connect'"></button>
+    <span class="status" :data-status="status" x-text="statusText"></span>
+  </form>
+  <select class="field" x-show="records.length" x-model="recordId" @change="loadRecord()" aria-label="Record">
+    <template x-for="record in records" :key="record.id">
+      <option :value="record.id" x-text="record.error ? `${record.label} (failed to open)` : record.label"
+              :title="record.error ?? record.description"></option>
+    </template>
+  </select>
+  <button class="btn" @click="toggleTheme()" x-text="theme === 'dark' ? 'Light theme' : 'Dark theme'"></button>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="tabs" role="tablist">
+      <button role="tab" :aria-selected="tab === 'files'" @click="tab = 'files'">Files<span class="count" x-text="files.length || ''"></span></button>
+      <button role="tab" :aria-selected="tab === 'catalog'" @click="tab = 'catalog'">Views<span class="count" x-text="views.length || ''"></span></button>
+    </div>
+    <input class="field filter" type="search" x-model.debounce.150ms="filter" aria-label="Filter"
+           :placeholder="tab === 'catalog' ? 'Filter views and columns' : 'Filter files'">
+    <div class="tree" role="tree">
+      <template x-for="row in rows" :key="row.node.id">
+        <div class="node" role="treeitem" :data-kind="row.node.kind" :class="{ selected: selected[tab] === row.node.id }"
+             :style="`padding-left: ${8 + row.depth * 14}px`" :aria-expanded="row.node.children ? String(row.open) : null"
+             @click="activate(row.node)">
+          <span class="chev" @click.stop="toggle(row.node)" x-text="row.node.children ? (row.open ? '▾' : '▸') : ''"></span>
+          <span class="icon" x-html="ICONS[row.node.kind]"></span>
+          <span class="label" x-text="row.node.label" :title="row.node.label"></span>
+          <span class="detail" x-text="row.node.detail ?? ''"></span>
+        </div>
+      </template>
+      <p class="empty" x-show="!rows.length" x-text="status === 'connected' ? 'Nothing matches the filter.' : 'Connect to load the record.'"></p>
+    </div>
+  </aside>
+
+  <main>
+    <!-- Views: query the views the browser sees through ATTACH. -->
+    <template x-if="tab === 'catalog'">
+      <div class="editor">
+        <textarea x-model="sql" spellcheck="false" aria-label="SQL"
+                  @keydown.meta.enter.prevent="run()" @keydown.ctrl.enter.prevent="run()"
+                  placeholder="Pick a view, or write SQL against r.<catalog>.<schema>.<view>, one catalog per scenario (e.g. r.bel_pre_aggregated_perfect__patch.attributes.p_nom)"></textarea>
+        <div class="bar">
+          <button class="btn primary" @click="run()" :disabled="status !== 'connected' || running" x-text="running ? 'Running…' : 'Run'"></button>
+          <span><kbd>⌘</kbd> <kbd>↵</kbd></span>
+          <span class="spacer"></span>
+          <span x-show="result && !error" x-text="resultSummary"></span>
+        </div>
+        <div class="error" x-show="error" x-text="error"></div>
+        <div class="table-wrap" x-show="result && !error">
+          <table>
+            <thead><tr>
+              <template x-for="column in result?.columns ?? []"><th x-text="column.name" :title="column.type"></th></template>
+            </tr></thead>
+            <tbody>
+              <template x-for="(row, i) in result?.rows ?? []" :key="i">
+                <tr><template x-for="(value, j) in row">
+                  <td :class="{ null: value === null, num: result.columns[j].numeric }" x-text="value ?? 'NULL'" :title="value ?? ''"></td>
+                </template></tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </template>
+
+    <!-- Files: the record as stored, and what its manifest says about each part. -->
+    <template x-if="tab === 'files'">
+      <div style="display: contents">
+        <template x-if="entry">
+          <div class="meta-head">
+            <h2 class="mono" x-text="entry.title"></h2>
+            <p x-text="entry.subtitle"></p>
+            <div class="actions" x-show="entry.views.length">
+              <template x-for="view in entry.views">
+                <button class="btn link" @click="openView(view)" x-text="`Query ${view}`"></button>
+              </template>
+            </div>
+          </div>
+        </template>
+        <pre class="json" x-show="entry" x-html="entry ? highlight(entry.json) : ''"></pre>
+        <p class="empty" x-show="!entry" x-text="status === 'connected' ? 'Pick a file or folder to see its manifest entry.' : 'Connect to load the record.'"></p>
+      </div>
+    </template>
+  </main>
+</div>
+
+<footer>
+  <details>
+    <summary x-text="`Log (${logs.length})`"></summary>
+    <pre x-text="logs.join('\n')"></pre>
+  </details>
+</footer>
+
+<script type="module">
+// DuckDB v2.0.0 in the browser: a dev build of duckdb-wasm, plus the extensions
+// this server prepares (scripts/prepare_wasm.py). See the README.
+const DUCKDB_WASM = '1.33.1-dev110.0'
+const SCHEMAS = ['dims', 'properties', 'attributes', 'manta']
+// Folder in the record → its manifest section.
+const SECTIONS = { dims: 'dimensions', attributes: 'attributes' }
+const PREVIEW_ROWS = 200
+const MAX_ROWS = 1000
+
+const svg = (d) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`
+const FOLDER = '<path d="M2 4.5h4l1.5 1.5H14v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>'
+const ICONS = {
+  database: svg('<ellipse cx="8" cy="3.5" rx="5.5" ry="1.8"/><path d="M2.5 3.5v9c0 1 2.5 1.8 5.5 1.8s5.5-.8 5.5-1.8v-9"/><path d="M2.5 8c0 1 2.5 1.8 5.5 1.8s5.5-.8 5.5-1.8" opacity=".5"/>'),
+  schema: svg('<ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>'),
+  view: svg('<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M6 6.5V13"/>'),
+  column: svg('<path d="M5 3v10M11 3v10" opacity=".5"/><circle cx="8" cy="8" r="1.5"/>'),
+  root: svg(`${FOLDER}<path d="M5 9.5h6"/>`),
+  dir: svg(FOLDER),
+  file: svg('<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>'),
+}
+
+// Outside Alpine's reactive state: its proxies break the worker-backed objects.
+let conn
+
+const params = new URLSearchParams(location.search)
+const quote = (name) => `"${name.replaceAll('"', '""')}"`
+const bytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`)
+const plural = (n, word, many = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : many}`
+
+function storedTheme() {
+  try { return localStorage.getItem('explorer-theme') } catch { return null }
+}
+
+// An Arrow value as table text; null stays null.
+function text(value, type) {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'bigint') return value.toString()
+  if (value instanceof Uint8Array) return `<${bytes(value.length)}>`
+  if (type.startsWith('Date')) return new Date(Number(value)).toISOString().slice(0, 10)
+  if (type.startsWith('Timestamp')) return new Date(Number(value)).toISOString().replace('.000Z', '')
+  if (typeof value === 'object') {
+    const json = typeof value.toJSON === 'function' ? value.toJSON() : value
+    return JSON.stringify(json, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+  }
+  return String(value)
+}
+
+// Scenario → schema → view → column: each scenario of the record has its own
+// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions.
+function catalogTree(columns, revisions) {
+  const databases = revisions.filter((r) => r.catalog).map((r) => ({
+    id: `k:${r.catalog}`, label: r.label, kind: 'database', db: r.catalog,
+    schemas: new Map(SCHEMAS.map((s) => [s, { id: `s:${r.catalog}.${s}`, label: s, kind: 'schema', children: [] }])),
+  }))
+  const byDb = new Map(databases.map((d) => [d.db, d]))
+  const views = new Map()
+  for (const { db, schema_name: schema, table_name: name, column_name: column, data_type: type } of columns) {
+    const database = byDb.get(db)
+    if (!database) continue
+    const key = `${db}.${schema}.${name}`
+    if (!views.has(key)) {
+      const view = { id: `v:${key}`, label: name, kind: 'view', db, schema, name, children: [] }
+      views.set(key, view)
+      database.schemas.get(schema)?.children.push(view)
+    }
+    views.get(key).children.push({ id: `c:${key}.${column}`, label: column, kind: 'column', detail: type.toLowerCase() })
+  }
+  for (const node of [...databases.flatMap((d) => [...d.schemas.values()]), ...views.values()]) node.detail = String(node.children.length)
+  return databases
+    .map(({ schemas, ...database }) => ({ ...database, detail: database.db, children: [...schemas.values()].filter((s) => s.children.length) }))
+    .filter((d) => d.children.length)
+}
+
+// A view as SQL names it: through the attached `r` in the browser, or on the server.
+const viewName = (view, local) => [local && 'r', view.db, view.schema, quote(view.name)].filter(Boolean).join('.')
+
+// Folders and files, from the flat listing; folders first.
+function filesTree(name, files) {
+  const root = { id: 'f:', label: name, kind: 'root', path: '', children: [] }
+  const dirs = new Map([['', root]])
+  for (const { path, size } of files) {
+    const parts = path.split('/')
+    let parent = root
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join('/')
+      if (!dirs.has(dir)) {
+        const node = { id: `f:${dir}/`, label: parts[i - 1], kind: 'dir', path: dir, children: [] }
+        dirs.set(dir, node)
+        parent.children.push(node)
+      }
+      parent = dirs.get(dir)
+    }
+    parent.children.push({ id: `f:${path}`, label: parts.at(-1), kind: 'file', path, size, detail: bytes(size) })
+  }
+  for (const node of dirs.values()) {
+    node.children.sort((a, b) => (a.kind === 'file') - (b.kind === 'file') || a.label.localeCompare(b.label))
+    if (node !== root) node.detail = String(node.children.length)
+  }
+  return [root]
+}
+
+// The rows a tree shows: the children of open nodes. Under a filter, every
+// branch leading to a match opens; a match itself shows all its children when open.
+function visibleRows(nodes, open, filter, depth = 0, out = []) {
+  const hit = (node) => node.label.toLowerCase().includes(filter)
+  const matches = (node) => hit(node) || (node.children ?? []).some(matches)
+  for (const node of nodes) {
+    if (filter && !matches(node)) continue
+    const self = !filter || hit(node)
+    const isOpen = Boolean(node.children) && (self ? Boolean(open[node.id]) : true)
+    out.push({ node, depth, open: isOpen })
+    if (isOpen) visibleRows(node.children, open, self ? '' : filter, depth + 1, out)
+  }
+  return out
+}
+
+function highlight(value) {
+  const html = JSON.stringify(value, null, 2).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
+  return html.replace(/("(?:[^"\\]|\\.)*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi, (m, str, colon, literal) =>
+    str ? `<span class="${colon ? 'k' : 's'}">${str}</span>${colon ?? ''}` : `<span class="${literal ? 'z' : 'n'}">${m}</span>`)
+}
+
+async function select(sql) {
+  return (await conn.query(sql)).toArray().map((row) => row.toJSON())
+}
+
+async function startDuckDB() {
+  const duckdb = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${DUCKDB_WASM}/+esm`)
+  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles())
+  const worker = new Worker(URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })))
+  const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker)
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
+  // The relabelled extensions are unsigned.
+  await db.open({ allowUnsignedExtensions: true })
+  conn = await db.connect()
+  await conn.query(`SET custom_extension_repository = '${location.origin}/ext'`)
+  await conn.query('LOAD quack')
+  return (await select('SELECT version() AS v'))[0].v
+}
+
+document.addEventListener('alpine:init', () => {
+  window.Alpine.data('explorer', () => ({
+    ICONS,
+    highlight,
+    server: params.get('server') ?? location.host,
+    token: params.get('token') ?? '',
+    status: 'idle',
+    statusText: 'Not connected',
+    duckdbVersion: '',
+    theme: storedTheme() ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'),
+    tab: 'files',
+    filter: '',
+    open: { 'f:': true },
+    selected: { catalog: null, files: null },
+    catalog: [],
+    views: [],
+    filesRoot: [],
+    files: [],
+    manifest: null,
+    records: [],
+    quackUri: '',
+    quackSecure: false,
+    recordId: params.get('record') ?? '',
+    // The catalog of the record's default scenario: what the Files tab's views are.
+    defaultDb: '',
+    entry: null,
+    sql: '',
+    result: null,
+    error: '',
+    running: false,
+    logs: [],
+
+    init() {
+      document.documentElement.dataset.theme = this.theme
+      this.$watch('tab', () => { this.filter = '' })
+      if (this.token) this.connect()
+    },
+
+    get rows() {
+      return visibleRows(this.tab === 'catalog' ? this.catalog : this.filesRoot, this.open, this.filter.trim().toLowerCase())
+    },
+
+    get resultSummary() {
+      const r = this.result
+      if (!r) return ''
+      const shown = r.rows.length < r.numRows ? `first ${r.rows.length.toLocaleString()} of ${plural(r.numRows, 'row')}` : plural(r.numRows, 'row')
+      return `${shown}${r.total == null ? '' : ` · ${plural(r.total, 'row')} in the view`} · ${r.ms} ms`
+    },
+
+    log(message) {
+      this.logs.push(`${new Date().toLocaleTimeString()}  ${message}`)
+    },
+
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark'
+      document.documentElement.dataset.theme = this.theme
+      try { localStorage.setItem('explorer-theme', this.theme) } catch {}
+    },
+
+    toggle(node) {
+      if (node.children) this.open[node.id] = !this.open[node.id]
+    },
+
+    activate(node) {
+      this.selected[this.tab] = node.id
+      if (this.tab === 'files') {
+        if (node.children && !this.open[node.id]) this.toggle(node)
+        this.entry = this.describe(node)
+      } else if (node.kind === 'view') {
+        this.preview(node)
+      } else {
+        this.toggle(node)
+      }
+    },
+
+    async connect() {
+      this.status = 'connecting'
+      this.error = ''
+      const [host, port] = this.server.split(':')
+      const secure = location.protocol === 'https:' || !['localhost', '127.0.0.1'].includes(host)
+      try {
+        this.statusText = 'Reading the catalogue…'
+        const listing = await this.api('/api/records')
+        this.records = listing.records
+        if (!this.records.some((r) => r.id === this.recordId)) this.recordId = listing.default ?? ''
+        this.log(`catalogue: ${this.records.map((r) => `${r.id}${r.open ? ' (open)' : ''}`).join(', ') || 'no records'}`)
+
+        if (!conn) {
+          this.statusText = 'Starting DuckDB…'
+          this.duckdbVersion = await startDuckDB()
+          this.log(`duckdb-wasm ${DUCKDB_WASM} (DuckDB ${this.duckdbVersion}), quack loaded`)
+        }
+        this.statusText = 'Attaching…'
+        this.quackUri = `quack:${host}:${port ?? (secure ? 443 : 80)}`
+        this.quackSecure = secure
+        await this.attach()
+        if (this.recordId) await this.loadRecord()
+        this.status = 'connected'
+        this.statusText = `Connected · DuckDB ${this.duckdbVersion}`
+      } catch (error) {
+        console.error(error)
+        this.status = 'error'
+        this.statusText = 'Not connected'
+        this.error = error.message ?? String(error)
+        this.log(`✗ ${this.error}`)
+      }
+    },
+
+    // `r` lists the server's catalogs as they are when it attaches.
+    async attach() {
+      await conn.query('DETACH DATABASE IF EXISTS r')
+      await conn.query(`ATTACH '${this.quackUri}' AS r (TOKEN '${this.token.replaceAll("'", "''")}', DISABLE_SSL ${!this.quackSecure})`)
+      this.log(`attached ${this.quackUri} as r`)
+    },
+
+    async api(path, method = 'GET') {
+      const [host] = this.server.split(':')
+      const secure = location.protocol === 'https:' || !['localhost', '127.0.0.1'].includes(host)
+      const response = await fetch(`${secure ? 'https' : 'http'}://${this.server}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${this.token}` },
+      })
+      if (!response.ok) {
+        const detail = await response.json().then((body) => body.detail).catch(() => '')
+        throw new Error(response.status === 401 ? 'The token was refused.' : `${method} ${path}: HTTP ${response.status}${detail ? ` · ${detail}` : ''}`)
+      }
+      return response.json()
+    },
+
+    // One record: its files, and its scenarios' catalogs as the Views tree.
+    async loadRecord() {
+      const id = this.recordId
+      try {
+        const url = new URL(location.href)
+        url.searchParams.set('record', id)
+        history.replaceState(null, '', url)
+        const wasOpen = this.records.find((r) => r.id === id)?.open
+        if (!wasOpen) this.log(`opening record ${id}…`)
+        const [info, stored] = await Promise.all([
+          this.api(`/api/records/${encodeURIComponent(id)}/open`, 'POST'),
+          this.api(`/api/records/${encodeURIComponent(id)}/files`),
+        ])
+        // A record opened just now has catalogs `r` doesn't list yet.
+        if (!wasOpen) {
+          await this.attach()
+          const record = this.records.find((r) => r.id === id)
+          if (record) record.open = true
+        }
+        this.manifest = stored.manifest
+        this.files = stored.files
+        this.filesRoot = filesTree(stored.name, stored.files)
+        this.entry = null
+        this.result = null
+        this.log(`record ${id}: ${plural(stored.files.length, 'file')}`)
+        const catalogs = info.revisions.filter((r) => r.catalog).map((r) => `'${r.catalog}'`).join(', ')
+        const columns = await select(`FROM quack_query_by_name('r', $$
+          SELECT database_name AS db, schema_name, table_name, column_name, data_type FROM duckdb_columns()
+          WHERE database_name IN (${catalogs}) AND schema_name IN (${SCHEMAS.map((s) => `'${s}'`).join(', ')})
+          ORDER BY db, schema_name, table_name, column_index$$)`)
+        this.defaultDb = info.revisions.find((r) => r.name === info.defaultScenario)?.catalog ?? ''
+        this.catalog = catalogTree(columns, info.revisions)
+        // The default scenario first, opened at its attributes.
+        this.catalog.sort((a, b) => (b.db === this.defaultDb) - (a.db === this.defaultDb))
+        this.open[`k:${this.defaultDb}`] = true
+        this.open[`s:${this.defaultDb}.attributes`] = true
+        this.views = this.catalog.flatMap((database) => database.children.flatMap((schema) => schema.children))
+        this.log(`scenarios: ${this.catalog.map((d) => `${d.label} (${d.db})`).join(', ')}; ${plural(this.views.length, 'view')}`)
+      } catch (error) {
+        console.error(error)
+        this.error = error.message ?? String(error)
+        this.log(`✗ ${this.error}`)
+      }
+    },
+
+    preview(view) {
+      this.sql = `FROM ${viewName(view, true)}\nLIMIT ${PREVIEW_ROWS}`
+      // Counted on the server, next to the data, rather than pulling every row over.
+      return this.run(`FROM quack_query_by_name('r', $$SELECT count(*) AS n FROM ${viewName(view, false)}$$)`)
+    },
+
+    async run(countSql) {
+      if (this.status !== 'connected' || this.running) return
+      this.running = true
+      this.error = ''
+      const sql = this.sql
+      try {
+        const started = performance.now()
+        const [table, total] = await Promise.all([
+          conn.query(sql),
+          countSql ? select(countSql).then((rows) => Number(rows[0].n)) : null,
+        ])
+        const ms = Math.round(performance.now() - started)
+        const columns = table.schema.fields.map((field) => {
+          const type = String(field.type)
+          return { name: field.name, type, numeric: /^(Int|Uint|Float|Decimal)/.test(type) }
+        })
+        const vectors = columns.map((_, i) => table.getChildAt(i))
+        const rows = Array.from({ length: Math.min(table.numRows, MAX_ROWS) }, (_, j) =>
+          vectors.map((vector, i) => text(vector?.get(j), columns[i].type)))
+        this.result = { columns, rows, numRows: table.numRows, total, ms }
+        this.log(`${sql.replace(/\s+/g, ' ').slice(0, 120)} → ${plural(table.numRows, 'row')}, ${ms} ms`)
+      } catch (error) {
+        this.error = error.message ?? String(error)
+        this.log(`✗ ${this.error.split('\n')[0]}`)
+      } finally {
+        this.running = false
+      }
+    },
+
+    // From the Files tab: shown in the default scenario's catalog.
+    openView(key) {
+      const [schema, name] = key.split(/\.(.*)/)
+      const db = this.defaultDb
+      this.tab = 'catalog'
+      this.open[`k:${db}`] = true
+      this.open[`s:${db}.${schema}`] = true
+      this.selected.catalog = `v:${db}.${schema}.${name}`
+      this.preview({ db, schema, name })
+    },
+
+    // What the manifest says about a file or folder, and the views it backs.
+    describe(node) {
+      const m = this.manifest
+      const isView = (key) => this.views.some((v) => v.db === this.defaultDb && `${v.schema}.${v.name}` === key)
+      if (node.kind === 'root') {
+        const { dimensions, attributes, properties, ...rest } = m
+        const sections = { dimensions, attributes, properties }
+        return {
+          title: node.label,
+          subtitle: `${plural(this.files.length, 'file')} · ${Object.entries(sections).map(([k, v]) => `${Object.keys(v).length} ${k}`).join(', ')}`,
+          // The sections by name only; their folders show them in full.
+          json: { ...rest, ...Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, Object.keys(v)])) },
+          views: [],
+        }
+      }
+      if (node.path === 'manifest.json') return { title: node.path, subtitle: bytes(node.size), json: m, views: [] }
+      const [dir, file] = node.path.split('/')
+      const section = SECTIONS[dir]
+      if (node.kind === 'dir') {
+        return {
+          title: `${node.path}/`,
+          subtitle: section ? `manifest.${section} · ${plural(Object.keys(m[section]).length, 'entry', 'entries')}` : 'No manifest section',
+          json: section ? m[section] : null,
+          views: [],
+        }
+      }
+      const name = file?.replace(/\.parquet$/, '')
+      const entry = section ? m[section]?.[name] : undefined
+      // A dimension's table also holds its properties.
+      const json = dir === 'dims' ? { dimension: entry ?? null, properties: m.properties?.[name] ?? null } : entry ?? null
+      const views = [`${dir}.${name}`, `properties.${name}`].filter((key, i) => (i === 0 || dir === 'dims') && isView(key))
+      // An attribute without rows has no view.
+      const empty = section && !views.length ? ' · no rows, so no view' : ''
+      return {
+        title: node.path,
+        subtitle: `${bytes(node.size)} · ${entry ? `manifest.${section}.${name}` : 'not in the manifest'}${empty}`,
+        json,
+        views,
+      }
+    },
+  }))
+})
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+</body>
+</html>
