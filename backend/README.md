@@ -62,7 +62,7 @@ SeaweedFS up.
 With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
 
 1. Downloads the example datarecord stores listed in `EXAMPLE_DATA_STORES` (all
-   of them when empty) from the public `manta-public-test-data` bucket, into
+   of them when empty) from the `2026-11-11` folder of the public `manta-public-test-data` bucket, into
    `s3://manta/example-data/<store>`. That belongs to no project, so no run ever
    writes to it. Stores already there are skipped, so
    only a clean SeaweedFS volume pays for the download. Without internet

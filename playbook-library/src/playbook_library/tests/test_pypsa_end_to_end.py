@@ -156,11 +156,11 @@ PYPSA_EUR_BUILT: dict[tuple[str, int | None], list[float]] = {
     ],
 }  # fmt: skip
 PYPSA_EUR_OBJECTIVE: dict[tuple[str, int | None], float] = {
-    ("perfect", None): 2.2021688830e11,
-    ("overnight2050", 2050): 6.4785309730e10,
-    ("myopic", 2030): 6.8140855875e10,
-    ("myopic", 2040): 2.4082960130e10,
-    ("myopic", 2050): 1.4424425926e10,
+    ("perfect", None): 2.0088690824e11,
+    ("overnight2050", 2050): 6.8943088274e10,
+    ("myopic", 2030): 5.2184445142e10,
+    ("myopic", 2040): 2.9012039811e10,
+    ("myopic", 2050): 1.9758761984e10,
 }
 
 
@@ -172,7 +172,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
         active = c.static[c.get_active_assets(n.investment_periods)]
         built = active.groupby("carrier")[nominal_attr(c.name) + "_opt"].sum()
         totals |= built.add_prefix(f"{c.name} ").to_dict()
-    return totals
+    return {carrier: totals.pop(carrier, 0.0) for carrier in BUILT_CARRIERS} | totals
 
 
 @pytest.mark.slow

@@ -39,6 +39,11 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 """The public bucket of example datarecord stores (the same ones playbook-library's
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
+PUBLIC_DATA_VERSION = "2026-11-11"
+"""The bucket folder holding the stores written with the pinned datarecord version."""
+
+_PUBLIC_PREFIX = f"{PUBLIC_DATA_VERSION}/"
+
 _MARKER = "revisions.json"
 # boto3's own connection pool size: any more and it discards connections, with a warning.
 _CONCURRENT_COPIES = 10
@@ -188,13 +193,17 @@ class ExampleDataService:
         return stores
 
     def _public_stores(self, http: httpx2.Client) -> list[str]:
-        listing = http.get(PUBLIC_OBJECTS_URL, params={"delimiter": "/"})
+        listing = http.get(PUBLIC_OBJECTS_URL, params={"delimiter": "/", "prefix": _PUBLIC_PREFIX})
         return [
-            prefix.removesuffix("/") for prefix in listing.raise_for_status().json()["prefixes"]
+            prefix.removeprefix(_PUBLIC_PREFIX).removesuffix("/")
+            for prefix in listing.raise_for_status().json()["prefixes"]
         ]
 
     def _download_store(self, http: httpx2.Client, store: str) -> None:
-        links = {item["name"]: item["mediaLink"] for item in self._public_objects(http, store)}
+        links = {
+            item["name"].removeprefix(_PUBLIC_PREFIX): item["mediaLink"]
+            for item in self._public_objects(http, store)
+        }
 
         def download(name: str) -> None:
             content = http.get(links[name]).raise_for_status().content
@@ -206,7 +215,7 @@ class ExampleDataService:
 
     def _public_objects(self, http: httpx2.Client, store: str) -> list[dict]:
         objects: list[dict] = []
-        params = {"prefix": f"{store}/"}
+        params = {"prefix": f"{_PUBLIC_PREFIX}{store}/"}
         while True:
             page = http.get(PUBLIC_OBJECTS_URL, params=params).raise_for_status().json()
             objects.extend(page.get("items", []))

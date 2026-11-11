@@ -10,7 +10,11 @@ from botocore.exceptions import BotoCoreError
 from manta.config.example_data_config import ADMIN_IDP_SUBJECT, ADMIN_USERNAME
 from manta.entities import User
 from manta.services import example_data_service
-from manta.services.example_data_service import PUBLIC_OBJECTS_URL, ExampleDataService
+from manta.services.example_data_service import (
+    PUBLIC_DATA_VERSION,
+    PUBLIC_OBJECTS_URL,
+    ExampleDataService,
+)
 
 ISSUER = "http://localhost:8080/realms/manta"
 INPUTS = "1bad4cfd-9f32-4675-aa4b-6cd71660cbc1"
@@ -24,8 +28,11 @@ FILES = {
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
     if str(request.url).startswith(PUBLIC_OBJECTS_URL):
         if request.url.params.get("delimiter") == "/":
-            return httpx2.Response(200, json={"prefixes": ["small/"]})
-        items = [{"name": name, "mediaLink": f"https://media/{name}"} for name in FILES]
+            return httpx2.Response(200, json={"prefixes": [f"{PUBLIC_DATA_VERSION}/small/"]})
+        items = [
+            {"name": f"{PUBLIC_DATA_VERSION}/{name}", "mediaLink": f"https://media/{name}"}
+            for name in FILES
+        ]
         return httpx2.Response(200, json={"items": items})
     return httpx2.Response(200, content=FILES[request.url.path.removeprefix("/")])
 
