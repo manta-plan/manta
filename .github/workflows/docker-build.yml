@@ -1,0 +1,42 @@
+name: Docker build
+
+# Builds the deployable images without pushing them, so a change that breaks
+# a Dockerfile (or a lockfile the image installs with --locked) fails the PR
+# rather than the next person's local `docker compose up`.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Mirrors the build section of compose-dev-backend.yaml: the backend
+      # depends on these packages by path, so each is its own named context.
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          build-contexts: |
+            playbook=playbook
+            playbook-library=playbook-library
+            runner=runner
+          push: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
