@@ -247,7 +247,7 @@ class TimePartition(MantaBlock[TimePartitionConfig]):
 
     A cluster is a contiguous stretch of snapshots within one investment period. The
     record keeps this time aggregation under its `name`, alongside the full time series.
-    Only the blocks whose `time_aggregation` names it solve by it, and their results
+    Only the blocks whose `aggregation.snapshot` names it solve by it, and their results
     cover every snapshot.
     """
 

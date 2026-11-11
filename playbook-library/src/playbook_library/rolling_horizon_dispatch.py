@@ -11,6 +11,7 @@ from pydantic import Field
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import (
+    Aggregation,
     LoadSheddingConfig,
     PyPSAOptimizeBlockConfig,
     PyPSAOptimizeRollingHorizonConfig,
@@ -73,13 +74,13 @@ class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
     load-shedding generator at every bus before it dispatches.
     """
 
-    time_aggregation: str | None = None
-    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
+    aggregation: Aggregation = Field(default_factory=Aggregation)
+    """What to merge before dispatching: snapshots, buses or assets, each by a property of
+    the model.
 
-    A time aggregation groups the snapshots into clusters. With one, `horizon` and
-    `overlap` count clusters, not snapshots, and the results are spread over every
-    snapshot. A model without that time aggregation is refused. So is a model with
-    storage that each window cycles or starts afresh. None solves at full resolution.
+    With a time aggregation, `horizon` and `overlap` count clusters, not snapshots, and a
+    model with storage that each window cycles or starts afresh is refused. The results
+    cover the model at full resolution.
     """
 
 
@@ -241,13 +242,13 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         n_new = to_network(record, select={"period": periods}) if periods else to_network(record)
         if self.config.capacity_source is not None:
             self.fix_capacities(n_new, self.config.capacity_source, periods)
-        if self.config.time_aggregation is not None:
+        if self.config.aggregation.snapshot is not None:
             self.refuse_restarting_storage(n_new)
 
         return solve_and_write(
             n_new,
             record,
             self.optimize,
-            self.config.time_aggregation,
+            self.config.aggregation,
             multi_investment_periods=self.config.optimize_config.multi_investment_periods,
         )[1]
