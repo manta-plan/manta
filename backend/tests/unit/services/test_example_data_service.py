@@ -16,7 +16,6 @@ ISSUER = "http://localhost:8080/realms/manta"
 INPUTS = "1bad4cfd-9f32-4675-aa4b-6cd71660cbc1"
 
 FILES = {
-    "small/manifest.json": b"{}",
     "small/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
     "small/layers/a.parquet": b"data",
 }
@@ -62,7 +61,7 @@ def test_seed_downloads_every_store_into_the_example_data(mock_db, s3_client, mo
     assert sorted(upload["Key"] for upload in uploads) == sorted(
         f"example-data/{name}" for name in FILES
     )
-    assert uploads[-1]["Key"] == "example-data/small/manifest.json"
+    assert uploads[-1]["Key"] == "example-data/small/revisions.json"
 
 
 def test_seed_does_not_raise_when_the_public_bucket_is_unreachable(
@@ -105,14 +104,14 @@ def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example
     )
     assert copies[-1]["CopySource"] == {
         "Bucket": "manta",
-        "Key": "example-data/small/manifest.json",
+        "Key": "example-data/small/revisions.json",
     }
 
 
 def test_copy_to_project_skips_stores_whose_download_was_cut_short(mock_db, s3_client) -> None:
     # Given
     s3_client.get_paginator.return_value.paginate.return_value = [
-        {"Contents": [{"Key": "example-data/small/revisions.json"}]}
+        {"Contents": [{"Key": "example-data/small/layers/a.parquet"}]}
     ]
 
     # When

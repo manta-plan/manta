@@ -39,7 +39,7 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 """The public bucket of example datarecord stores (the same ones playbook-library's
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
-_MANIFEST = "manifest.json"
+_MARKER = "revisions.json"
 # boto3's own connection pool size: any more and it discards connections, with a warning.
 _CONCURRENT_COPIES = 10
 _DESCRIPTION = "Example datarecord stores to start runs from."
@@ -52,13 +52,13 @@ def _http_client() -> httpx2.Client:
 
 
 def _copy_store(store: str, names: Collection[str], copy: Callable[[str], object]) -> None:
-    """Copies a store's files concurrently, the manifest only once everything else is in,
-    so a store with a manifest is complete."""
-    manifest = f"{store}/{_MANIFEST}"
+    """Copies a store's files concurrently, `revisions.json` only once everything else is in,
+    so a store with a `revisions.json` is complete."""
+    marker = f"{store}/{_MARKER}"
     with ThreadPoolExecutor(_CONCURRENT_COPIES) as pool:
-        list(pool.map(copy, [name for name in names if name != manifest]))
-    if manifest in names:
-        copy(manifest)
+        list(pool.map(copy, [name for name in names if name != marker]))
+    if marker in names:
+        copy(marker)
 
 
 class ExampleDataService:
@@ -86,7 +86,7 @@ class ExampleDataService:
         try:
             with _http_client() as http:
                 for store in stores or self._public_stores(http):
-                    if self._exists(f"{EXAMPLE_DATA_PREFIX}/{store}/{_MANIFEST}"):
+                    if self._exists(f"{EXAMPLE_DATA_PREFIX}/{store}/{_MARKER}"):
                         logger.info("Example store %r already downloaded, skipping", store)
                         continue
                     logger.info("Downloading example store %r...", store)
@@ -139,10 +139,10 @@ class ExampleDataService:
         """Copies the given stores (all downloaded ones when none are given), skipping those
         already in the project."""
         for store, names in self._downloaded_stores().items():
-            # Without a manifest, its download was cut short (see _copy_store()).
-            if (stores and store not in stores) or f"{store}/{_MANIFEST}" not in names:
+            # Without a revisions.json, its download was cut short (see _copy_store()).
+            if (stores and store not in stores) or f"{store}/{_MARKER}" not in names:
                 continue
-            if self._exists(f"{project_uuid}/{store}/{_MANIFEST}"):
+            if self._exists(f"{project_uuid}/{store}/{_MARKER}"):
                 continue
             logger.info("Copying example store %r into project %s...", store, project_uuid)
             _copy_store(
@@ -159,7 +159,7 @@ class ExampleDataService:
         """The record a run on one of the project's copied stores starts from: its
         `inputs` revision."""
         prefix = f"{project_uuid}/{store}"
-        revisions = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/revisions.json")
+        revisions = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_MARKER}")
         return DataRecordResult(
             store_url=f"s3://{self.bucket}/{prefix}",
             revision_uuid=json.loads(revisions["Body"].read())["inputs"],
