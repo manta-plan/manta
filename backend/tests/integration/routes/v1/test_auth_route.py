@@ -81,6 +81,9 @@ def test_login_with_valid_credentials_returns_token(app_server: str) -> None:
     body = response.json()
     assert body["access_token"]
     assert body["token_type"] == "bearer"  # noqa: S105 It's not a password
+    assert body["refresh_token"]
+    assert body["expires_in"] > 0
+    assert body["refresh_expires_in"] > 0
 
 
 def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:

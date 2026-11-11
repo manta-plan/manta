@@ -100,7 +100,12 @@ class AuthService:
             raise BackendError from transient_error
         except (TypeError, AttributeError) as config_error:  # configuration-based connection error
             raise BackendError from config_error
-        return LoginResult(access_token=token["access_token"])
+        return LoginResult(
+            access_token=token["access_token"],
+            expires_in=token["expires_in"],
+            refresh_token=token["refresh_token"],
+            refresh_expires_in=token["refresh_expires_in"],
+        )
 
     def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
         user = _find_user_by_credentials(self.db, idp_subject, idp_source)
