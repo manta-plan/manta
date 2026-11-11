@@ -27,6 +27,7 @@ import { RunPlaybookDialog } from "../features/runs/components/run-playbook-dial
 import { normalizeRunStatus } from "../features/runs/status";
 import type { PlaybookConfig } from "../utils/playbookTypes";
 import type {
+  DataRecordChoice,
   DefaultProject,
   ExpandedRunState,
   GetRunResponse,
@@ -51,6 +52,8 @@ export function HomePage() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  // Shown inside the dialog, which stays open when the backend refuses a run.
+  const [createRunError, setCreateRunError] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
@@ -141,16 +144,23 @@ export function HomePage() {
   ];
 
   async function handleDialogPlaybook() {
+    setCreateRunError(null);
     setPlaybookDialog(true);
   }
 
-  async function handleNewRun(_name: string, playbook: string, config: PlaybookConfig) {
+  async function handleNewRun(
+    _name: string,
+    playbook: string,
+    config: PlaybookConfig,
+    dataRecord: DataRecordChoice,
+  ) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
+    setCreateRunError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project, { playbook, config });
+      await createRun(project, { playbook, config, dataRecord });
       setPlaybookDialog(false);
 
       setSearchRunId("");
@@ -158,7 +168,7 @@ export function HomePage() {
       setRunsOffset(0);
       await refreshRunsPage(project, 0, selectedStatuses);
     } catch (error) {
-      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
+      setCreateRunError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
       setIsLoadingRuns(false);
     }
@@ -418,7 +428,7 @@ export function HomePage() {
       </header>
 
       <RunPlaybookDialog
-        error={runCreationError}
+        error={createRunError}
         isSubmitting={isLoadingRuns}
         onOpenChange={setPlaybookDialog}
         onSubmit={handleNewRun}

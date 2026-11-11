@@ -1,5 +1,4 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { Select } from "@base-ui/react/select";
 import {
   Background,
   Controls,
@@ -12,7 +11,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { FiCheck, FiChevronDown, FiLoader, FiPlay, FiX } from "react-icons/fi";
+import { FiLoader, FiPlay, FiX } from "react-icons/fi";
 import "@xyflow/react/dist/style.css";
 import { getPlaybook, listPlaybooks, validatePlaybookConfig } from "../../playbooks/api";
 import type {
@@ -23,6 +22,7 @@ import type {
   PlaybookSummary,
   RunPlaybookDialogProps,
 } from "../../../utils/playbookTypes";
+import { exampleDataRecords } from "../exampleDataRecords";
 import { buildConfig } from "../../playbook-config/buildConfig";
 import {
   deriveGlobalFields,
@@ -34,20 +34,21 @@ import { exactlyOneOf } from "../../playbook-config/exclusiveSettings";
 import { validateStep } from "../../playbook-config/validation";
 import { humanize } from "../../../utils/jsonSchema";
 import { PlaybookConfigForm } from "./playbook-config-form";
+import { SelectField } from "./select-field";
 
 // Wide enough that a node (about 13rem) never touches its neighbour.
 const nodeSpacing = 300;
 const nodeTypes = { playbook: PlaybookNodeComponent };
 
-function layoutNodes(playbook: PlaybookSummary | null): PlaybookCanvasNode[] {
+function layoutNodes(steps: PlaybookSummary["steps"]): PlaybookCanvasNode[] {
   // One node per step, in step order. The canvas shows the step's name; the block it
   // runs is kept as the node's `block` value. A node's id is the step's name, which is
   // what its settings are filed under (and is unique even if a block is used twice).
-  return (playbook?.steps ?? []).map((step, index) => ({
+  return steps.map((step, index) => ({
     id: step.name,
     type: "playbook",
     position: { x: index * nodeSpacing, y: 40 },
-    data: { label: step.name, block: step.block, inactive: false },
+    data: { label: step.name, block: step.block },
   }));
 }
 
@@ -59,6 +60,7 @@ export function RunPlaybookDialog({
   onSubmit,
 }: RunPlaybookDialogProps) {
   const [name, setName] = useState("My First Run");
+  const [dataRecordName, setDataRecordName] = useState(exampleDataRecords[0].name);
   // null until the user picks one.
   const [playbook, setPlaybook] = useState<string | null>(null);
   const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookSummary[]>([]);
@@ -76,28 +78,6 @@ export function RunPlaybookDialog({
 
   const selectedPlaybook = availablePlaybooks.find((item) => item.name === playbook) ?? null;
 
-  // Nodes are state, not derived, so React Flow can select and drag them. They are
-  // laid out again whenever another playbook is picked.
-  const [nodes, setNodes, onNodesChange] = useNodesState<PlaybookCanvasNode>([]);
-  const [laidOutPlaybook, setLaidOutPlaybook] = useState<PlaybookSummary | null>(null);
-
-  if (laidOutPlaybook !== selectedPlaybook) {
-    setLaidOutPlaybook(selectedPlaybook);
-    setNodes(layoutNodes(selectedPlaybook));
-  }
-
-  // Connected in step order.
-  const edges = useMemo<Edge[]>(
-    () =>
-      (selectedPlaybook?.steps ?? []).slice(1).map((step, index) => ({
-        id: `${selectedPlaybook?.steps[index].name}->${step.name}`,
-        source: selectedPlaybook?.steps[index].name ?? "",
-        target: step.name,
-        markerEnd: { type: MarkerType.ArrowClosed },
-      })),
-    [selectedPlaybook],
-  );
-
   // A step with a `when` only runs when that setting has the given value (e.g. only
   // the myopic expansion runs when globals.expansion_mode is "myopic").
   const inactiveSteps = useMemo(() => {
@@ -112,15 +92,34 @@ export function RunPlaybookDialog({
     return inactive;
   }, [playbookDetail, configValues]);
 
-  useEffect(() => {
-    setNodes((current) =>
-      current.map((node) =>
-        node.data.inactive === inactiveSteps.has(node.id)
-          ? node
-          : { ...node, data: { ...node.data, inactive: inactiveSteps.has(node.id) } },
-      ),
-    );
-  }, [inactiveSteps, setNodes]);
+  // Only the steps that will run are drawn, in step order.
+  const visibleSteps = useMemo(
+    () => (selectedPlaybook?.steps ?? []).filter((step) => !inactiveSteps.has(step.name)),
+    [selectedPlaybook, inactiveSteps],
+  );
+  const layoutKey = `${playbook ?? ""}:${visibleSteps.map((step) => step.name).join("|")}`;
+
+  // Nodes are state, not derived, so React Flow can select and drag them. They are
+  // laid out again whenever another playbook is picked or the visible steps change.
+  const [nodes, setNodes, onNodesChange] = useNodesState<PlaybookCanvasNode>([]);
+  const [laidOutKey, setLaidOutKey] = useState<string | null>(null);
+
+  if (laidOutKey !== layoutKey) {
+    setLaidOutKey(layoutKey);
+    setNodes(layoutNodes(visibleSteps));
+  }
+
+  // Connected in step order.
+  const edges = useMemo<Edge[]>(
+    () =>
+      visibleSteps.slice(1).map((step, index) => ({
+        id: `${visibleSteps[index].name}->${step.name}`,
+        source: visibleSteps[index].name,
+        target: step.name,
+        markerEnd: { type: MarkerType.ArrowClosed },
+      })),
+    [visibleSteps],
+  );
 
   // `globals` has no schema; its settings are the ones the steps' `when`s test.
   const globalFields = useMemo(
@@ -145,7 +144,10 @@ export function RunPlaybookDialog({
     return byStep;
   }, [playbookDetail, configValues, inactiveSteps]);
 
-  const selectedStep = playbookDetail?.steps.find((step) => step.name === selectedNodeId) ?? null;
+  const selectedStep =
+    playbookDetail?.steps.find(
+      (step) => step.name === selectedNodeId && !inactiveSteps.has(step.name),
+    ) ?? null;
 
   useEffect(() => {
     if (!open) {
@@ -242,6 +244,13 @@ export function RunPlaybookDialog({
       return;
     }
 
+    const dataRecord = exampleDataRecords.find((record) => record.name === dataRecordName);
+
+    if (dataRecord === undefined) {
+      setValidationError("Select a data record before creating a run.");
+      return;
+    }
+
     if (stepErrors.size > 0) {
       setValidationError("Fix the highlighted settings first.");
       return;
@@ -273,7 +282,7 @@ export function RunPlaybookDialog({
       setIsValidating(false);
     }
 
-    await onSubmit(name.trim(), playbook, buildConfig(playbookDetail, configValues));
+    await onSubmit(name.trim(), playbook, buildConfig(playbookDetail, configValues), dataRecord);
   }
 
   return (
@@ -300,11 +309,6 @@ export function RunPlaybookDialog({
             </div>
 
             <form className="mt-6 grid gap-5" onSubmit={handleSubmit}>
-              {error ? (
-                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {error}
-                </div>
-              ) : null}
               <div className="grid gap-2">
                 <label className="text-sm font-semibold" htmlFor="run-name">
                   Name
@@ -315,6 +319,21 @@ export function RunPlaybookDialog({
                   onChange={(event) => setName(event.target.value)}
                   required
                   value={name}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold" htmlFor="run-data-record">
+                  Data record
+                </label>
+                <SelectField
+                  id="run-data-record"
+                  items={exampleDataRecords.map((record) => ({
+                    label: record.name,
+                    value: record.name,
+                  }))}
+                  onValueChange={setDataRecordName}
+                  value={dataRecordName}
                 />
               </div>
 
@@ -331,7 +350,8 @@ export function RunPlaybookDialog({
                     {playbooksError}
                   </div>
                 ) : (
-                  <Select.Root
+                  <SelectField
+                    id="run-playbook"
                     items={availablePlaybooks.map((item) => ({
                       label: item.name,
                       value: item.name,
@@ -340,45 +360,9 @@ export function RunPlaybookDialog({
                       setPlaybook(value);
                       setValidationError(null);
                     }}
+                    placeholder="Select a playbook"
                     value={playbook}
-                  >
-                    <Select.Trigger
-                      aria-label="Playbook"
-                      className="border-border bg-surface text-text focus-visible:outline-secondary inline-flex h-10 w-full items-center justify-between gap-2 rounded-md border px-3 text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2"
-                      id="run-playbook"
-                    >
-                      <Select.Value placeholder="Select a playbook" />
-                      <Select.Icon>
-                        <FiChevronDown className="size-4" aria-hidden="true" />
-                      </Select.Icon>
-                    </Select.Trigger>
-                    <Select.Portal>
-                      <Select.Positioner
-                        alignItemWithTrigger={false}
-                        className="z-30 outline-none"
-                        sideOffset={6}
-                      >
-                        <Select.Popup className="border-border bg-surface text-text min-w-[var(--anchor-width)] rounded-md border py-1 shadow-xl outline-none">
-                          <Select.List>
-                            {availablePlaybooks.map((option) => (
-                              <Select.Item
-                                className="data-highlighted:bg-surface-alt grid cursor-default grid-cols-[1rem_1fr] items-center gap-2 px-3 py-2 text-sm outline-none"
-                                key={option.name}
-                                value={option.name}
-                              >
-                                <Select.ItemIndicator className="text-primary">
-                                  <FiCheck className="size-4" aria-hidden="true" />
-                                </Select.ItemIndicator>
-                                <Select.ItemText className="col-start-2">
-                                  {option.name}
-                                </Select.ItemText>
-                              </Select.Item>
-                            ))}
-                          </Select.List>
-                        </Select.Popup>
-                      </Select.Positioner>
-                    </Select.Portal>
-                  </Select.Root>
+                  />
                 )}
               </div>
 
@@ -390,27 +374,24 @@ export function RunPlaybookDialog({
                     <label className="text-sm font-semibold" htmlFor={`global.${field.path}`}>
                       {humanize(field.path.split(".").pop() ?? "")}
                     </label>
-                    <select
-                      className="border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 rounded-md border px-3 text-sm transition outline-none focus:ring-2"
+                    <SelectField
                       id={`global.${field.path}`}
-                      onChange={(event) =>
+                      items={field.options.map((option) => ({
+                        label: String(option),
+                        value: String(option),
+                      }))}
+                      onValueChange={(next) =>
                         setConfigValues((previous) =>
                           setAtPath(
                             previous,
                             field.path,
-                            field.options.find((option) => String(option) === event.target.value),
+                            field.options.find((option) => String(option) === next),
                           ),
                         )
                       }
-                      value={current === undefined ? "" : String(current)}
-                    >
-                      {current === undefined ? <option value="">—</option> : null}
-                      {field.options.map((option) => (
-                        <option key={String(option)} value={String(option)}>
-                          {String(option)}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="—"
+                      value={current === undefined ? null : String(current)}
+                    />
                   </div>
                 );
               })}
@@ -432,7 +413,7 @@ export function RunPlaybookDialog({
                         edges={edges}
                         fitView
                         fitViewOptions={{ padding: 0.2 }}
-                        key={playbook ?? "none"}
+                        key={layoutKey}
                         nodeTypes={nodeTypes}
                         nodes={nodes}
                         nodesConnectable={false}
@@ -470,12 +451,6 @@ export function RunPlaybookDialog({
                     {selectedStep.block_summary ? (
                       <p className="text-text-secondary mt-1 text-xs">
                         {selectedStep.block_summary}
-                      </p>
-                    ) : null}
-                    {inactiveSteps.has(selectedStep.name) && selectedStep.when !== null ? (
-                      <p className="mt-1 text-xs text-amber-700">
-                        Skipped unless expansion mode is{" "}
-                        <span className="font-semibold">{String(selectedStep.when.equals)}.</span>
                       </p>
                     ) : null}
                   </div>
@@ -520,6 +495,16 @@ export function RunPlaybookDialog({
                       ))}
                     </ul>
                   ) : null}
+                </div>
+              ) : null}
+
+              {/* Next to the Create button, so a refused run is seen where it was sent. */}
+              {error ? (
+                <div
+                  className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                  role="alert"
+                >
+                  {error}
                 </div>
               ) : null}
 
@@ -578,13 +563,11 @@ function PlaybookNodeComponent({ data, selected }: NodeProps<PlaybookCanvasNode>
         selected
           ? "border-primary bg-primary/10 ring-primary/30 ring-4"
           : "border-border bg-surface hover:border-primary"
-      } ${data.inactive ? "opacity-50" : ""}`}
+      }`}
     >
       <Handle isConnectable={false} position={Position.Left} type="target" />
       <p className="text-sm font-semibold">{data.label}</p>
-      <p className="text-text-secondary mt-1 text-xs">
-        {data.inactive ? "Skipped in current mode · click to configure" : "Click to configure"}
-      </p>
+      <p className="text-text-secondary mt-1 text-xs">Click to configure</p>
       <Handle isConnectable={false} position={Position.Right} type="source" />
     </div>
   );
