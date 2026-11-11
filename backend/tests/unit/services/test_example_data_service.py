@@ -13,7 +13,7 @@ from manta.services import example_data_service
 from manta.services.example_data_service import PUBLIC_OBJECTS_URL, ExampleDataService
 
 ISSUER = "http://localhost:8080/realms/manta"
-INPUTS = "e5f2eacd-ba5c-463c-a663-3017ef904d1d"
+INPUTS = "1bad4cfd-9f32-4675-aa4b-6cd71660cbc1"
 
 FILES = {
     "small/manifest.json": b"{}",

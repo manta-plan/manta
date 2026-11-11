@@ -42,7 +42,7 @@ def _revision(record: DataRecord) -> tuple[Workspace, Revision]:
 def store_network(n: pypsa.Network, url: str) -> DataRecord:
     """Store `n` as the root revision of a new store at `url`, and point a record at it."""
     ws = Workspace()
-    rev = ws.store(url).root(PyPSA.to_datarecord(n, ws.con))
+    rev = ws.store(url).commit(PyPSA.to_datarecord(n, ws.con), parent=None)
     return DataRecord(url=url, uuid=rev.id)
 
 
@@ -55,7 +55,7 @@ def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pyps
     """
     _, rev = _revision(record)
     try:
-        return PyPSA.build(rev.record, select=select)
+        return PyPSA.build(rev.record.select(**select) if select else rev.record)
     except UnsupportedRecordError as exc:
         raise DataRecordError(str(exc)) from exc
 
@@ -81,7 +81,7 @@ def write_network(
     """
     ws, rev = _revision(parent_record)
     source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
-    return DataRecord(url=parent_record.url, uuid=rev.child(source).id)
+    return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
 
 
 def remove_unbuilt_cohorts(n: pypsa.Network) -> None:
