@@ -49,6 +49,4 @@ class OvernightCapacityExpansion(MantaBlock[OvernightCapacityExpansionConfig]):
             remove_unbuilt_cohorts(n)
         else:
             n = to_network(base)
-        return solve_and_write(n, base, self.optimize, self.config.time_aggregation, n.has_periods)[
-            1
-        ]
+        return solve_and_write(n, base, self.optimize, self.config.aggregation, n.has_periods)[1]

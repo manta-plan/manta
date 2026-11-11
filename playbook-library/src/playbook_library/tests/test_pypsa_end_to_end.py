@@ -41,8 +41,8 @@ def network(store_revision, new_single_period_network) -> Revision:
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "globals": {"expansion_mode": "overnight"},
     "cluster": {"name": "agg_3h", "n_hours": 3},
-    "expansion_overnight": {"time_aggregation": "agg_3h"},
-    "expansion_myopic": {"time_aggregation": "agg_3h"},
+    "expansion_overnight": {"aggregation": {"snapshot": "agg_3h"}},
+    "expansion_myopic": {"aggregation": {"snapshot": "agg_3h"}},
     "dispatch": {"optimize_config": {"horizon": 4}},
 }
 
