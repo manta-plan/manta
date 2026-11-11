@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: Contributors to datarecord <https://github.com/energy-models/datarecord>
+#
+# SPDX-License-Identifier: MIT
+
+# Builds the site on every pull request and publishes it: `main` to the root of
+# `gh-pages`, a pull request to `pr-<N>/` beside it.
+#
+# One-time setup, already done for this repository:
+#
+#   git switch --orphan gh-pages
+#   touch .nojekyll          # or Pages runs Jekyll and drops mkdocs' _dirs
+#   git add -A && git commit -m 'docs: initialise gh-pages'
+#   git push -u origin gh-pages
+#
+# then point Settings > Pages at branch `gh-pages`, folder `/`.
+name: Docs
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: docs
+      # A pull request's build is served from a subdirectory, so the links
+      # mkdocs generates have to be rooted there rather than at the domain.
+      - name: Point the site at its preview URL
+        if: github.event_name == 'pull_request'
+        run: |
+          printf '\nsite_url: %s/pr-%s/\n' \
+            "https://${OWNER}.github.io/${REPO#*/}" "${PR}" >> mkdocs.yml
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.number }}
+      # `--strict` is what makes a pull request fail on a dead cross-reference:
+      # the docstrings link into these pages by anchor, so a section renamed
+      # without updating them is a broken build here rather than a 404 later.
+      - name: Build site
+        run: pixi run -e docs docs-build
+        env:
+          CLICOLOR_FORCE: 1
+      - name: Upload site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site
+          path: site
+          retention-days: 7
+
+  # Pushed to a branch rather than deployed as a Pages artifact, because an
+  # artifact deployment replaces the *whole* site - there is no path prefix and
+  # no concurrent deployments, so a pull request's build would replace `main`'s
+  # rather than sit beside it. `actions/deploy-pages` has a `preview` input for
+  # exactly this, but it is an internal alpha with no ship date. A branch is a
+  # filesystem, so `pr-<N>/` and the root coexist.
+  #
+  # Publishing is a separate job so the build above never holds a write token:
+  # it runs `pixi`, which executes the repository's own code, and a fork's pull
+  # request must not be able to reach `gh-pages` through it. This job checks out
+  # only `gh-pages` and copies in a downloaded artifact.
+  publish:
+    name: Publish
+    # `pull_request` gives a fork's build a read-only token, so a preview is
+    # only published for a branch on this repository. A fork's docs still build
+    # and are downloadable from the artifact above.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # `gh-pages` is created once, by hand - see CONTRIBUTING. It carries a
+      # `.nojekyll`, without which Pages runs Jekyll over the build and drops
+      # every directory mkdocs writes with a leading underscore.
+      - name: Checkout gh-pages
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: pages
+      - name: Download site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site
+          path: site
+      # `main` owns the root; a pull request owns `pr-<N>/` and nothing else.
+      # The root is replaced wholesale except for the preview directories, so a
+      # page deleted on `main` stops being served.
+      - name: Stage the build
+        run: |
+          if [ "${EVENT}" = "push" ]; then
+            find pages -mindepth 1 -maxdepth 1 \
+              -not -name .git -not -name .nojekyll -not -name 'pr-*' -exec rm -rf {} +
+            cp -r site/. pages/
+          else
+            rm -rf "pages/pr-${PR}"
+            mkdir -p "pages/pr-${PR}"
+            cp -r site/. "pages/pr-${PR}/"
+          fi
+        env:
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.number }}
+      - name: Push
+        working-directory: pages
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --staged --quiet || git commit -m "${MESSAGE}"
+          git push
+        env:
+          MESSAGE: >-
+            docs: ${{ github.event_name == 'push'
+            && 'update site' || format('preview for #{0}', github.event.number) }}
+
+  comment:
+    name: Comment
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      # Edits one comment in place rather than adding one per push, so a long
+      # pull request does not accumulate a column of identical links.
+      - name: Link the preview
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: docs-preview
+          message: |
+            📖 Docs preview: <https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-${{ github.event.number }}/>
+
+            Built from ${{ github.event.pull_request.head.sha }}. Removed when this pull request closes, and swept after 7 days.
