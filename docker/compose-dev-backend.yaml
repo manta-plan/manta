@@ -1,0 +1,71 @@
+# The backend (backend/Dockerfile), on top of every service in
+# compose-dev-services.yaml. compose-dev-fullstack.yaml adds the frontend on
+# top of this. Could also back the integration tests later, instead of them
+# running the backend on the host.
+#
+# To run the backend on the host instead (`uv run manta`), stop its container
+# first: they share ports.
+#
+# Image name defaults to a local tag; deploys set MANTA_BACKEND_IMAGE /
+# IMAGE_TAG to pull a prebuilt image from a registry instead.
+name: manta
+
+include:
+  - compose-dev-services.yaml
+
+services:
+  backend:
+    image: ${MANTA_BACKEND_IMAGE:-manta-backend}:${IMAGE_TAG:-latest}
+    build:
+      context: ../backend
+      # The backend depends on these by path; see backend/Dockerfile.
+      additional_contexts:
+        playbook: ../playbook
+        playbook-library: ../playbook-library
+        runner: ../runner
+    env_file: ../backend/.env
+    environment:
+      # backend/.env addresses everything via localhost and the host-published
+      # ports; inside the compose network it's service names and container ports.
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      S3_HOST: seaweedfs
+      S3_PORT: 8333
+      KEYCLOAK_HOST: keycloak
+      KEYCLOAK_PORT: 8080
+      PREFECT_API_URL: http://prefect-server:4200/api
+    ports:
+      - "${APP_PORT}:8000"
+    healthcheck:
+      # No curl in python:*-slim, so using `python` instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      # First boot on a fresh volume downloads the example data stores
+      # (EXAMPLE_DATA_SEED) before the app serves, which takes ~2 minutes.
+      # Failed checks during this window don't count against the retries; a
+      # passing one still marks it healthy at once.
+      start_period: 300s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      # Registers the deployments the backend starts runs on. Without this, a
+      # fresh Prefect database leaves a window where the backend is healthy but
+      # a run request fails looking up a deployment that doesn't exist yet.
+      playbooks-provision:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy

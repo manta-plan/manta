@@ -7,6 +7,9 @@ requires-python = "==3.14.*"
 dependencies = [
     "alembic>=1.18.5",
     "boto3>=1.43.73",
+    # Runtime, not dev: S3Client is used in FastAPI Depends() annotations,
+    # which FastAPI evaluates at import time.
+    "boto3-stubs[s3]>=1.43.73",
     "fastapi>=0.141.1",
     "httpx2>=2.9.1",
     # TODO(post-MVP): this is the same corner-cut flagged in runner/README.md
@@ -43,7 +46,6 @@ packages = ["src/manta"]
 
 [dependency-groups]
 dev = [
-    "boto3-stubs[s3]>=1.43.73",
     "diff-cover>=10.5.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.0.0",

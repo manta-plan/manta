@@ -943,6 +943,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "boto3" },
+    { name = "boto3-stubs", extra = ["s3"] },
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "playbook" },
@@ -958,7 +959,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["s3"] },
     { name = "diff-cover" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -970,6 +970,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
+    { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.43.73" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx2", specifier = ">=2.9.1" },
     { name = "playbook", editable = "../playbook" },
@@ -985,7 +986,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.43.73" },
     { name = "diff-cover", specifier = ">=10.5.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
