@@ -62,5 +62,10 @@ services:
         condition: service_healthy
       prefect-server:
         condition: service_healthy
+      # Registers the deployments the backend starts runs on. Without this, a
+      # fresh Prefect database leaves a window where the backend is healthy but
+      # a run request fails looking up a deployment that doesn't exist yet.
+      playbooks-provision:
+        condition: service_completed_successfully
       keycloak:
         condition: service_healthy
