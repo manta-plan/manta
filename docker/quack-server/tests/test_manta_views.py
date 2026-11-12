@@ -9,6 +9,7 @@ the AWS_* environment (server/.env)."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -265,6 +266,44 @@ def test_labels_beside_the_store(tmp_path):
         ws.close()
 
 
+def test_scenario_on_a_run_result(tmp_path):
+    # `patch/overnight2050` relabelled a scenario: its parent, `patch`, is
+    # relabelled a run result. Its changes are read against that result,
+    # whose catalog is attached when the store opens, as the scenarios' are.
+    link_store(tmp_path)
+    (tmp_path / f"{STORE}.labels.json").write_text(json.dumps({
+        "patch": {"kind": "result"},
+        "patch/overnight2050": {"kind": "scenario"},
+    }))
+    ws, catalogue = open_catalogue(str(tmp_path))
+    try:
+        record = catalogue.open(STORE)
+        opened = {r.name for r in record.revisions if r.open}
+        assert opened == {"inputs", "patch", "patch/overnight2050"}
+        changed = rows(ws.con, f"SELECT DISTINCT scenario FROM {BASE}.manta.scenario_changes ORDER BY 1")
+        assert changed == [("patch/overnight2050",)]
+        assert rows(ws.con, f"SELECT count(*) > 0 FROM {BASE}.manta.scenario_changes") == [(True,)]
+    finally:
+        ws.close()
+
+
+def test_files_endpoint(opened):
+    from types import SimpleNamespace
+
+    from app.main import record_files
+
+    _, catalogue = opened
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(catalogue=catalogue)))
+    found = record_files(STORE, request)
+    names = json.loads((ROOT / STORE / "revisions.json").read_text())
+    assert found["revisions"] == names
+    assert set(found["layers"]) == set(names.values())
+    assert all("schema" not in m and "files" in m for m in found["layers"].values())
+    assert "p_nom_opt" in found["schema"]["attributes"]
+    perfect = found["layers"][names["perfect"]]
+    assert perfect["parent"] == names["inputs"] and "p_nom_opt" in perfect["files"]["attributes"]
+
+
 @pytest.mark.skipif(not PLAIN.is_dir(), reason="plain record not present")
 def test_plain_record(tmp_path):
     (tmp_path / PLAIN.name).symlink_to(PLAIN, target_is_directory=True)
@@ -314,10 +353,28 @@ def test_copy_to_disk(tmp_path):
         assert rows(ws.con, f"SELECT count(*) FROM {PATCH}.manta.scenario_changes WHERE scenario = 'patch'") == [(83,)]
         catalogue.open_revision(STORE, "myopic")
         assert rows(ws.con, f"SELECT count(*) > 0 FROM {RESULTS}.attributes.p_nom_opt") == [(True,)]
-        # Copied files aren't copied again.
+        # Layer data copied once isn't copied again; the small files (names,
+        # manifests), which can change in place, are.
         copied = len(s3.copied)
         catalogue._download(summary, json.loads((ROOT / STORE / "revisions.json").read_text()))
-        assert len(s3.copied) == copied
+        again = s3.copied[copied:]
+        assert again and all(not (k.startswith(f"{STORE}/layers/") and k.count("/") > 3) for k in again)
+        assert f"{STORE}/revisions.json" in again
+    finally:
+        ws.close()
+
+
+def test_copy_stays_in_the_cache(tmp_path):
+    ws, catalogue = open_catalogue(str(ROOT))
+    s3 = FakeS3()
+    catalogue.remote, catalogue.cache = True, tmp_path / "cache"
+    catalogue._s3 = lambda: (s3, "bucket", "")
+    try:
+        summary = catalogue.get(STORE)
+        planted = stores.StoreFile("../../escaped.json", 2, summary.files[0].modified)
+        with pytest.raises(ValueError, match="outside the store"):
+            catalogue._download(dataclasses.replace(summary, files=[planted, *summary.files]), {})
+        assert not (tmp_path / "escaped.json").exists() and not s3.copied
     finally:
         ws.close()
 

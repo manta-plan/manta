@@ -15,7 +15,8 @@
   registered in datarecord's own database) and `manta`. A run result
   gets its catalog, alike, when first asked for (`open_revision`): its views
   take several times as long to build as a scenario's, and a record can hold
-  many.
+  many. (A run result a scenario is built on opens with the scenarios: the
+  scenario's changes are read against it.)
 - **A store opens when first asked for** (a project using it), and stays open
   for the life of the process. Opens are serialised, so a store opens once
   however many ask at the same time; one that fails is retried on the next
@@ -129,8 +130,9 @@ class Catalogue:
         self.ws = ws
         self.remote = "://" in root
         self.root = root.rstrip("/") if self.remote else Path(root).resolve().as_posix()
-        # Where remote stores are copied to (unused for a local root). A file
-        # already there with the same size isn't copied again.
+        # Where remote stores are copied to (unused for a local root). A
+        # layer's data file already there with the same size isn't copied
+        # again.
         self.cache = Path(cache or tempfile.mkdtemp(prefix="manta-records-")) if self.remote else None
         if self.remote:
             # datarecord sets up boto3, httpfs and the S3 secret on first use;
@@ -188,6 +190,9 @@ class Catalogue:
                 by_store.setdefault(head, []).append(StoreFile(rest, o.size, o.modified))
         stores = {}
         for id, files in sorted(by_store.items()):
+            # Not `.`/`..`: an id names a folder under the root and the cache.
+            if id.startswith("."):
+                continue
             paths = {f.path for f in files}
             is_store = "revisions.json" in paths and any(f.path.startswith("layers/") for f in files)
             plain = not is_store and "manifest.json" in paths
@@ -287,10 +292,17 @@ class Catalogue:
         local = self.cache / summary.id
         s3, bucket, prefix = self._s3()
 
-        def fetch(files: list[StoreFile]) -> None:
+        # A key with `..` would write outside the cache: refused before
+        # anything is copied.
+        root = local.resolve()
+        for f in summary.files:
+            if not (local / f.path).resolve().is_relative_to(root):
+                raise ValueError(f"{summary.id}: {f.path!r} is outside the store")
+
+        def fetch(files: list[StoreFile], reuse: bool) -> None:
             def one(f: StoreFile) -> None:
                 target = local / f.path
-                if target.is_file() and target.stat().st_size == f.size:
+                if reuse and target.is_file() and target.stat().st_size == f.size:
                     return
                 target.parent.mkdir(parents=True, exist_ok=True)
                 # Into place only once whole: a failed copy isn't taken for one.
@@ -304,15 +316,19 @@ class Catalogue:
         def is_data(f: StoreFile) -> bool:
             return f.path.startswith("layers/") and f.path.count("/") > 2
 
+        # The small files (revisions.json, manifests) are copied every time:
+        # rewritten in place, they can keep their size. A layer's data is
+        # never rewritten (a new revision is a new layer), so what's already
+        # copied is kept.
         first = [f for f in summary.files if not is_data(f)]
-        fetch(first)
+        fetch(first, reuse=False)
         used: set[str] = set()
         for revision_id in names.values():
             while revision_id and revision_id not in used:
                 used.add(revision_id)
                 revision_id = layer_manifest(self.ws, local.as_posix(), revision_id).get("parent")
         layers = [f for f in summary.files if is_data(f) and f.path.split("/")[1] in used]
-        fetch(layers)
+        fetch(layers, reuse=True)
         copied = first + layers
         log.info(
             "Copied record %s (%d files, %.1f MB) in %.1f s",
@@ -345,6 +361,10 @@ class Catalogue:
         scenarios = [r for r in revisions if r.kind == "scenario"]
         if not scenarios:
             raise ValueError(f"{summary.id} has no scenario revisions")
+        # Opened now: the scenarios, and any run result a scenario is built
+        # on (its changes are read against it). Other run results on demand.
+        parents = {r.parent for r in scenarios}
+        now = {r.name for r in revisions if r.kind == "scenario" or r.name in parents}
         views: dict[str, dict[str, list[str]]] = {}
         taken = {name for (name,) in con.execute("SELECT database_name FROM duckdb_databases()").fetchall()}
         attached: list[str] = []
@@ -355,14 +375,14 @@ class Catalogue:
                     catalog += "_"
                 taken.add(catalog)
                 r.catalog = catalog
-                if r.kind != "scenario":
+                if r.name not in now:
                     continue
                 con.execute(f"ATTACH ':memory:' AS {catalog}")
                 attached.append(catalog)
                 views[r.name] = create_views(con, r.record, catalog, self.ws.name)
             tables = register_scenarios(con, self.ws, uri, revisions, attached)
-            for r in scenarios:
-                r.open = True
+            for r in revisions:
+                r.open = r.name in now
         except Exception:
             # Half a record would shadow the next attempt's catalogs.
             for catalog in attached:

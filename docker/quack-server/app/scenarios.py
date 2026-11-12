@@ -104,7 +104,8 @@ def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dic
         parent = _named_parent(ws, store, manifest, names_by_id)
         label = labels.get(name, {})
         written = sorted(manifest["files"].get("attributes", []))
-        new = [a for a in written if parent is None or not records[parent].attributes[a].limit(1).fetchall()]
+        before = records[parent].attributes if parent is not None else None
+        new = [a for a in written if before is None or a not in before or not before[a].limit(1).fetchall()]
         kind = (
             label.get("kind")
             or manifest.get("meta", {}).get("kind")
@@ -177,9 +178,15 @@ def register_scenarios(con: duckdb.DuckDBPyConnection, ws: Workspace, store: str
             continue
         parent = by_name[r.parent]
         for attribute in r.written:
+            # Each catalog has a view per attribute its record declares.
+            if attribute not in r.record.attributes:
+                continue
             dims = list(r.record.schema.attributes[attribute].dims)
             view = f'attributes."{attribute}"'
-            selects.append(_change_select(r.name, attribute, dims, f"FROM {parent.catalog}.{view}", f"FROM {r.catalog}.{view}"))
+            after = f"FROM {r.catalog}.{view}"
+            # An attribute the parent doesn't declare: every row is added.
+            before = f"FROM {parent.catalog}.{view}" if attribute in parent.record.attributes else f"{after} WHERE false"
+            selects.append(_change_select(r.name, attribute, dims, before, after))
     empty = (
         "SELECT NULL::VARCHAR AS scenario, NULL::VARCHAR AS attribute, NULL::VARCHAR AS dim, NULL::VARCHAR AS label, "
         "NULL::VARCHAR AS bus, NULL::VARCHAR AS before, NULL::VARCHAR AS after, 0::BIGINT AS series_rows, "

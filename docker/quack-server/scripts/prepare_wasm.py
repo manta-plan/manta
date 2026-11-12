@@ -57,9 +57,23 @@ def relabel(blob: bytes, release: str, commit: str) -> bytes:
     return blob[:start] + commit.encode().ljust(FIELD, b"\0") + blob[start + FIELD :]
 
 
+def relabelled(path: Path, commit: str) -> bool:
+    """Whether `path` is a whole extension this script relabelled: its
+    footer, at the end, carries `commit`."""
+    blob = path.read_bytes()
+    if len(blob) < FOOTER:
+        return False
+    start = len(blob) - FOOTER + VERSION_FIELD * FIELD
+    return blob[start : start + FIELD].rstrip(b"\0") == commit.encode()
+
+
 def write(path: Path, blob: bytes) -> None:
+    """Into place only once whole, so an interrupted run leaves no partial
+    extension behind to be kept."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(blob)
+    partial = path.with_name(f".{path.name}.partial")
+    partial.write_bytes(blob)
+    partial.replace(path)
     print(path.relative_to(STATIC.parent))
 
 
@@ -74,6 +88,9 @@ def main() -> None:
         if extension == "quack" and args.quack:
             blob = args.quack.read_bytes()
         elif extension == "quack" and target.is_file():
+            if not relabelled(target, COMMIT):
+                msg = f"{target} isn't a relabelled Quack build; build one and pass it with --quack"
+                raise SystemExit(msg)
             print(f"{target.relative_to(STATIC.parent)} (kept)")
             continue
         else:

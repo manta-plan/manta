@@ -80,7 +80,7 @@ Then open <http://localhost:8010/?token=devtoken>. Without `QUACK_TOKEN`, a rand
 
 The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks a record in its header (`?record=` keeps it) and has two tabs:
 
-- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes and the manifest; no data). Clicking a file or folder shows its manifest entry and links to the views it backs, in the base case's catalog. Attributes without rows have no view: datarecord leaves them out.
+- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes, the revision names and each layer's manifest; no data). Clicking a file or folder under `layers/<id>/` shows what that layer's manifest and the schema say about it, and links to the views it backs in its revision's catalog, once that is attached.
 - **Views:** the views the browser sees through ATTACH, as scenario → schema → view → column, base case first. Clicking a view previews 200 rows and counts it on the server. The editor runs any SQL in DuckDB-Wasm, against `r.<catalog>.<schema>.<view>` (`r.bel_pre_aggregated_perfect__patch.attributes.p_nom`).
 
 **API.** `/api/*` takes the same token as Quack, as `Authorization: Bearer …`.
@@ -94,17 +94,19 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 | Env | Default |
 |---|---|
 | `RECORDS_ROOT` | `data/records`: a folder of stores, or `s3://bucket[/prefix]` |
-| `RECORDS_CACHE` | a fresh temporary folder: where an `s3://` root's records are copied to when they open. A file already there with the same size isn't copied again |
+| `RECORDS_CACHE` | a fresh temporary folder: where an `s3://` root's records are copied to when they open. A layer's data file already there with the same size isn't copied again; the small files (`revisions.json`, manifests) are, every time |
 | `DEFAULT_RECORD` | the first store: what a project that names no record opens |
 | `AWS_ENDPOINT_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | for an `s3://` root. For GCS: `https://storage.googleapis.com`, `auto`, and a bucket-reader HMAC key (deployment.md). `uv run --env-file .env …` reads them from `server/.env` |
 | (file) `<store>.labels.json` | optional, beside the store's folder: per revision name a `name` and `description` to show, and `kind` (`scenario` or `result`) where the guess is wrong; under `_store`, the record's own `name` and `description` |
 | `RECORD_TEST_ROOT` | tests only: also run the remote test against this `s3://` root |
 
-Local records live in `data/records` (git-ignored, never in the image), as in the bucket (`gs://manta-records`): the modeller's 11 November combined store (the repo's `.idea/11-november-data`, see its README), copied as shipped. Its `inputs` revision is the base case and `patch` a stress test, each solved three ways (`perfect`, `myopic`, `overnight2050`, and `patch/…`). The tests use it.
+Local records live in `data/records` (git-ignored, never in the image), as in the bucket (`gs://manta-records`): the modeller's 11 November combined store, copied as shipped (from the modeller's `11-november-data` folder, baby-manta's `.idea/11-november-data`, or from the bucket). Its `inputs` revision is the base case and `patch` a stress test, each solved three ways (`perfect`, `myopic`, `overnight2050`, and `patch/…`). The tests use it.
 
 ```sh
 mkdir -p data/records
-cp -R ../.idea/11-november-data/BEL-pre-aggregated-incl-patches-incl-results data/records/
+# The modeller's 11 November store, or from the bucket:
+cp -R <path-to>/11-november-data/BEL-pre-aggregated-incl-patches-incl-results data/records/
+# gcloud storage cp -r gs://manta-records/BEL-pre-aggregated-incl-patches-incl-results data/records/
 ```
 
 Without a labels file, the Scenarios panel shows each revision by its name in `revisions.json` (`patch/myopic`), `inputs` as "Base case", and the record by its folder name. `<store>.labels.json` beside the folder, optional, gives nicer names without touching the store:
