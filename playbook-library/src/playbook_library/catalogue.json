@@ -1,61 +1,5 @@
 {
   "blocks": {
-    "cluster_time": {
-      "config_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "n_hours": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "N Hours"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "segments": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Segments"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "ClusterTimeConfig",
-        "type": "object"
-      },
-      "dims": {
-        "adds": [],
-        "removes": [],
-        "requires": [
-          "snapshot"
-        ]
-      },
-      "doc": "Group a model's snapshots into clusters, so later blocks can solve a smaller model.",
-      "env": "pypsa",
-      "inputs": [],
-      "manifest": null,
-      "module": "playbook_library.time_cluster:ClusterTime",
-      "name": "cluster_time",
-      "outputs": [
-        "output"
-      ]
-    },
     "myopic_capacity_expansion": {
       "config_schema": {
         "$defs": {
@@ -999,6 +943,7 @@
                 "items": {
                   "type": "integer"
                 },
+                "minItems": 1,
                 "type": "array"
               },
               {
@@ -1039,6 +984,62 @@
       "manifest": null,
       "module": "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
       "name": "rolling_horizon_dispatch",
+      "outputs": [
+        "output"
+      ]
+    },
+    "time_partition": {
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "n_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "N Hours"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Segments"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TimePartitionConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Group a model's snapshots into clusters, so later blocks can solve a smaller model.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.time_partition:TimePartition",
+      "name": "time_partition",
       "outputs": [
         "output"
       ]

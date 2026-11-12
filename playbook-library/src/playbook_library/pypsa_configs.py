@@ -133,15 +133,24 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
         return self
 
 
-class TimeAggregatedConfig(ConfigSchema):
+class PyPSAOptimizeBlockConfig(ConfigSchema):
+    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
     time_aggregation: str | None = None
-    """The time aggregation to solve by: the `name` given to an earlier `cluster_time` block.
+    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
 
     A time aggregation groups the snapshots into clusters, and the block solves one
     snapshot per cluster. The results cover every snapshot, spread over the cluster each
     falls in. A model without that time aggregation is refused. None solves at full
-    resolution.
+    resolution. A time aggregation cannot be combined with `optimize_config.snapshots`.
     """
+
+    @model_validator(mode="after")
+    def snapshots_are_not_chosen_with_a_time_aggregation(self: Self) -> Self:
+        if self.time_aggregation is not None and self.optimize_config.snapshots is not None:
+            raise ValueError(
+                "`optimize_config.snapshots` cannot be set together with `time_aggregation`."
+            )
+        return self
 
 
 class LoadSheddingConfig(ConfigSchema):

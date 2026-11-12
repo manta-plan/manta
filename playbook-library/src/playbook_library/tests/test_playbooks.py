@@ -108,7 +108,7 @@ def test_the_myopic_branch_is_reported_as_missing_the_period(name, with_defaults
 
 @pytest.mark.pypsa
 def test_a_rule_a_block_writes_in_code_is_only_checked_where_the_block_imports():
-    # `cluster_time` needs exactly one of `n_hours` and `segments`: a rule written in
+    # `time_partition` needs exactly one of `n_hours` and `segments`: a rule written in
     # Python, which its JSON schema cannot carry. So the backend, knowing the block
     # only from the catalogue, lets this through; the block refuses it when it runs.
     pytest.importorskip("pypsa", reason="checking with the blocks' own models means importing them")

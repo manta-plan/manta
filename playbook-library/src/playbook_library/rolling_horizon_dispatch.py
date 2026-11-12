@@ -12,8 +12,8 @@ from pydantic import Field
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import (
     LoadSheddingConfig,
+    PyPSAOptimizeBlockConfig,
     PyPSAOptimizeRollingHorizonConfig,
-    TimeAggregatedConfig,
 )
 from playbook_library.pypsa_helpers import (
     BUILT_COMPONENTS,
@@ -44,7 +44,7 @@ class FailedWindows(logging.Handler):
             self.failures.append(message)
 
 
-class RollingHorizonDispatchConfig(TimeAggregatedConfig):
+class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
     optimize_config: PyPSAOptimizeRollingHorizonConfig = Field(
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
@@ -59,11 +59,11 @@ class RollingHorizonDispatchConfig(TimeAggregatedConfig):
     may lack a capacity, and is left out.
     """
 
-    periods: list[int] | None = None
+    periods: list[int] | None = Field(default=None, min_length=1)
     """The investment periods to dispatch, in a model with investment periods.
 
     An investment period is one of the years in which the model builds capacity. None
-    dispatches every one.
+    dispatches every one, and an empty list is refused.
     """
 
     load_shedding: LoadSheddingConfig | None = None
@@ -74,7 +74,7 @@ class RollingHorizonDispatchConfig(TimeAggregatedConfig):
     """
 
     time_aggregation: str | None = None
-    """The time aggregation to solve by: the `name` given to an earlier `cluster_time` block.
+    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
 
     A time aggregation groups the snapshots into clusters. With one, `horizon` and
     `overlap` count clusters, not snapshots, and the results are spread over every

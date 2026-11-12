@@ -21,8 +21,12 @@ from playbook.blocks.core import DataRecord, DataRecordError, SolveError
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
-from playbook_library.pypsa_time_aggregation import cluster_network, write_expanded_results
-from playbook_library.time_aggregation import carry_snapshot_properties
+from playbook_library.pypsa_time_aggregation import (
+    PYPSA_LABELS,
+    cluster_network,
+    write_expanded_results,
+)
+from playbook_library.time_aggregation import carry_time_properties
 
 BUILT_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store", "Line", "Transformer"]
 """The components whose capacity is built in one investment period and lasts into later ones."""
@@ -69,7 +73,7 @@ def write_network(
     """
     ws, rev = revision(parent_record)
     source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
-    source = carry_snapshot_properties(source, rev.record, ws.con)
+    source = carry_time_properties(source, rev.record, ws.con, PYPSA_LABELS)
     return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
 
 

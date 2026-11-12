@@ -10,27 +10,141 @@ is clustered to the representative snapshots and solved. Its results are then ex
 to every snapshot of the record by the rules in `time_aggregation`.
 """
 
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 import pypsa
-from datarecord import LazyRelations, RecordLike
+from datarecord import LazyRelations, RecordLike, Schema
 from datarecord.tools.pypsa import PyPSA
-from duckdb import DuckDBPyRelation
+from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb.sqltypes import DuckDBPyType
 from playbook.blocks.core import DataRecord
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.time_aggregation import (
     Overlay,
+    TimeAxis,
+    TimeLabels,
     checked_clusters,
     cluster_members,
     cluster_starts,
-    has_periods,
     held,
     interpolated,
+    settled,
     shaped,
-    snapshot_frame,
-    snapshot_rows,
+    time_aggregations,
+    time_relation,
 )
+
+PYPSA_TIME = TimeAxis("snapshot", "timestep", "period")
+"""The time axis of a record with investment periods, whose snapshots are structs."""
+
+
+def has_periods(schema: Schema) -> bool:
+    """Whether a record of `schema` has investment periods, so `snapshot` is a multi-dim."""
+    return PYPSA_TIME.dim in schema.multi_dims
+
+
+def pypsa_time(schema: Schema) -> TimeAxis:
+    """Return the time axis of a record of `schema`.
+
+    Without investment periods, a time aggregation refers to `snapshot` itself.
+    """
+    if has_periods(schema):
+        return PYPSA_TIME
+    return TimeAxis(PYPSA_TIME.dim, PYPSA_TIME.dim, None)
+
+
+def snapshot_labels(schema: Schema, column: pd.Series) -> pd.Series:
+    """Return the snapshots in `column`, read from a record of `schema`, as PyPSA labels them.
+
+    A record with investment periods stores a snapshot as a struct, which PyPSA labels by
+    the tuple `(period, timestep)`. Any other snapshot is its timestep already.
+    """
+    if not has_periods(schema):
+        return column
+    return column.map(lambda s: (s["period"], s["timestep"]), na_action="ignore")
+
+
+def _typed(
+    con: DuckDBPyConnection, frame: pd.DataFrame, types: dict[str, DuckDBPyType]
+) -> DuckDBPyRelation:
+    """Return `frame` as a relation, with each column in `types` cast to its type."""
+    rel = con.from_df(frame)
+    casts = {c: f'CAST("{c}" AS {t}) AS "{c}"' for c, t in types.items()}
+    return rel.project(", ".join(casts.get(c, f'"{c}"') for c in rel.columns))
+
+
+def _packed(schema: Schema, frame: pd.DataFrame, labels: Sequence[str]) -> pd.DataFrame:
+    """Return `frame` with the snapshots in columns `labels` as structs, if `schema` has periods."""
+    if not has_periods(schema):
+        return frame
+    structs = {
+        c: frame[c].map(lambda s: {"period": s[0], "timestep": s[1]}, na_action="ignore")
+        for c in labels
+    }
+    return frame.assign(**structs)
+
+
+def snapshot_rows(
+    schema: Schema, con: DuckDBPyConnection, frame: pd.DataFrame, labels: Sequence[str]
+) -> DuckDBPyRelation:
+    """Return `frame` as a relation, with the snapshots in columns `labels` as `schema` has them.
+
+    It reverses `snapshot_labels`.
+    """
+    snapshot = schema.duck_type(schema.dimensions["snapshot"])
+    return _typed(con, _packed(schema, frame, labels), dict.fromkeys(labels, snapshot))
+
+
+def snapshot_axis(schema: Schema, con: DuckDBPyConnection, frame: pd.DataFrame) -> DuckDBPyRelation:
+    """Return `frame`, the snapshots and properties as `snapshot_frame` gives them, as stored.
+
+    It reverses `snapshot_frame` over the columns of the `snapshot` axis of `schema`.
+    """
+    axis = pypsa_time(schema)
+    aggregations = time_aggregations(schema, axis)
+    if has_periods(schema):
+        frame = frame.assign(
+            **{n: frame[n].map(lambda s: s[1], na_action="ignore") for n in aggregations}
+        )
+    step = schema.duck_type(schema.dimensions[axis.step])
+    types = {"snapshot": schema.duck_type(schema.dimensions["snapshot"])}
+    return _typed(
+        con, _packed(schema, frame, ["snapshot"]), types | dict.fromkeys(aggregations, step)
+    )
+
+
+def snapshot_frame(record: RecordLike) -> pd.DataFrame:
+    """Return every snapshot of `record` with its properties, in axis order.
+
+    Snapshots, and the representatives of time aggregations, are labelled as by
+    `snapshot_labels`. Each snapshot also has its `period` and `timestep`. Without
+    investment periods, every snapshot has `period` 0 and is its own timestep.
+    """
+    schema = record.schema
+    frame = time_relation(record, PYPSA_TIME).df()
+    if not has_periods(schema):
+        return frame.assign(period=0, timestep=frame["snapshot"])
+    frame = frame.assign(**pd.DataFrame(frame["snapshot"].tolist()))
+    frame["snapshot"] = snapshot_labels(schema, frame["snapshot"])
+    for name in time_aggregations(schema, PYPSA_TIME):
+        pairs = zip(frame["period"], frame[name], strict=True)
+        frame[name] = pd.Series(list(pairs), dtype=object).where(frame[name].notna())
+    return frame
+
+
+def series_frame(record: RecordLike, attribute: str) -> pd.DataFrame:
+    """Return the rows of `attribute` of `record`, labelled as by `snapshot_labels`."""
+    frame = record.attributes[attribute].df()
+    if "snapshot" not in frame:
+        return frame
+    return frame.assign(snapshot=snapshot_labels(record.schema, frame["snapshot"]))
+
+
+PYPSA_LABELS = TimeLabels(pypsa_time, snapshot_frame, snapshot_axis)
+"""How PyPSA labels the snapshots of a record, read as a frame and stored back."""
 
 
 def _network_snapshots(base: RecordLike, frame: pd.DataFrame) -> pd.Index:
@@ -64,7 +178,7 @@ def cluster_network(n: pypsa.Network, record: DataRecord, name: str) -> pypsa.Ne
     """
     base = revision(record)[1].record
     frame = _held_frame(n, base)
-    representatives = checked_clusters(frame, name)
+    representatives = checked_clusters(frame, name, pypsa_time(base.schema))
     snapshots = _network_snapshots(base, frame)
     positions = pd.Index(frame["snapshot"]).get_indexer(representatives)
     snapshot_map = pd.Series(list(snapshots[positions]), index=snapshots)
@@ -131,6 +245,19 @@ def _starts(
     return previous.melt(id_vars="snapshot", var_name="entity", value_name="previous")
 
 
+def _weighting(base: RecordLike, frame: pd.DataFrame, attribute: str) -> np.ndarray:
+    """Return the snapshot weighting `attribute` of `base` at each snapshot of `frame`.
+
+    It is read as PyPSA builds it: rows reach snapshots by the broadcast rule, and a
+    snapshot that none reaches weighs 1, PyPSA's default.
+    """
+    if attribute not in base.attributes:
+        return np.ones(len(frame))
+    rows = settled(base, attribute, PYPSA_TIME).df()
+    labelled = rows.assign(snapshot=snapshot_labels(base.schema, rows["snapshot"]))
+    return frame["snapshot"].map(labelled.set_index("snapshot")["value"]).fillna(1.0).to_numpy()
+
+
 def _series_of(base: RecordLike, attribute: str, ctype: str) -> DuckDBPyRelation:
     """Return the rows of input `attribute` over snapshots for the entities of component `ctype`.
 
@@ -141,7 +268,7 @@ def _series_of(base: RecordLike, attribute: str, ctype: str) -> DuckDBPyRelation
         return entities.filter("false").project(
             "entity, NULL AS snapshot, NULL AS scenario, NULL::DOUBLE AS value"
         )
-    rows = base.attributes[attribute].filter("snapshot IS NOT NULL")
+    rows = settled(base, attribute, PYPSA_TIME)
     return rows.join(entities, "entity").project("entity, snapshot, scenario, value")
 
 
@@ -184,15 +311,17 @@ def write_expanded_results(
     ws, rev = revision(record)
     base = rev.record
     frame = _held_frame(n_c, base)
-    checked_clusters(frame, name)
+    axis = pypsa_time(base.schema)
+    checked_clusters(frame, name, axis)
     leads = frame[cluster_starts(frame, name)]
     if not n_c.snapshots.equals(_network_snapshots(base, leads)):
         raise ValueError(f"The network is not clustered by snapshot.{name}")
     results = PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=base)
     weightings = ("snapshot_weighting_generators", "snapshot_weighting_stores")
-    members = snapshot_rows(
-        base.schema, ws.con, cluster_members(base, name, *weightings), ["snapshot", "rep"]
-    )
+    snapshots = snapshot_frame(base)
+    weight, progress = (_weighting(base, snapshots, attribute) for attribute in weightings)
+    clusters = cluster_members(snapshots, name, weight, progress, axis)
+    members = snapshot_rows(base.schema, ws.con, clusters, ["snapshot", "rep"])
     demand = _series_of(base, "p_set", "Load")
     profile = _series_of(base, "p_max_pu", "Generator")
     capacities = n_c.generators["p_nom_opt"].rename("value").rename_axis("entity")
@@ -211,10 +340,10 @@ def write_expanded_results(
         if attribute in STATES:
             previous = _starts(n_c, unsolved, attribute, leads, multi_investment_periods)
             starts = snapshot_rows(base.schema, ws.con, previous, ["snapshot"])
-            return interpolated(rel, members, starts)
+            return interpolated(rel, members, starts, axis)
         if attribute == "p":
-            return shaped(rel, members, demand, profile, capacity)
-        return held(rel, members)
+            return shaped(rel, members, demand, profile, capacity, axis)
+        return held(rel, members, axis)
 
     attributes = LazyRelations(tuple(results.attributes), expanded)
     child = rev.store.commit(Overlay(results, attributes=attributes), parent=rev)
