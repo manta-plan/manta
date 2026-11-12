@@ -1,9 +1,6 @@
 import { useSyncExternalStore } from "react";
 
 const accessTokenStorageKey = "manta.accessToken";
-// Project UUIDs are owned per user, so the cached default project must not
-// outlive the session that created it.
-const sessionScopedStorageKeys = ["manta.defaultProjectUuid"];
 
 export type TokenClaims = {
   sub: string;
@@ -74,7 +71,6 @@ export function startSession(accessToken: string, remember: boolean) {
 export function clearSession() {
   for (const storage of [window.sessionStorage, window.localStorage]) {
     storage.removeItem(accessTokenStorageKey);
-    sessionScopedStorageKeys.forEach((key) => storage.removeItem(key));
   }
   notifyListeners();
 }

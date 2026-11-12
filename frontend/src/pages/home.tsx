@@ -23,8 +23,11 @@ import {
 } from "../features/runs/api";
 import { RunsTable } from "../features/runs/components/runs-table";
 import { StatusFilter } from "../features/runs/components/status-filter";
+import { RunPlaybookDialog } from "../features/runs/components/run-playbook-dialog";
 import { normalizeRunStatus } from "../features/runs/status";
+import type { PlaybookConfig } from "../utils/playbookTypes";
 import type {
+  DataRecordChoice,
   DefaultProject,
   ExpandedRunState,
   GetRunResponse,
@@ -49,11 +52,14 @@ export function HomePage() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  // Shown inside the dialog, which stays open when the backend refuses a run.
+  const [createRunError, setCreateRunError] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
   const [searchRunId, setSearchRunId] = useState("");
   const [activeSearchRunId, setActiveSearchRunId] = useState("");
+  const [playbookDialog, setPlaybookDialog] = useState(false);
 
   useEffect(() => {
     const cachedProject = getCachedDefaultProject();
@@ -137,20 +143,32 @@ export function HomePage() {
     },
   ];
 
-  async function handleNewRun() {
+  async function handleDialogPlaybook() {
+    setCreateRunError(null);
+    setPlaybookDialog(true);
+  }
+
+  async function handleNewRun(
+    _name: string,
+    playbook: string,
+    config: PlaybookConfig,
+    dataRecord: DataRecordChoice,
+  ) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
+    setCreateRunError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project);
+      await createRun(project, { playbook, config, dataRecord });
+      setPlaybookDialog(false);
 
       setSearchRunId("");
       setActiveSearchRunId("");
       setRunsOffset(0);
       await refreshRunsPage(project, 0, selectedStatuses);
     } catch (error) {
-      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
+      setCreateRunError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
       setIsLoadingRuns(false);
     }
@@ -383,7 +401,7 @@ export function HomePage() {
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={isLoadingRuns}
-              onClick={handleNewRun}
+              onClick={handleDialogPlaybook}
             >
               {isLoadingRuns ? (
                 <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
@@ -408,6 +426,14 @@ export function HomePage() {
           </div>
         </div>
       </header>
+
+      <RunPlaybookDialog
+        error={createRunError}
+        isSubmitting={isLoadingRuns}
+        onOpenChange={setPlaybookDialog}
+        onSubmit={handleNewRun}
+        open={playbookDialog}
+      />
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6">
         {runCreationError ? (

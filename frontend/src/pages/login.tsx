@@ -1,6 +1,6 @@
 import type { SubmitEvent } from "react";
 import { useState } from "react";
-import { FiAlertCircle } from "react-icons/fi";
+import { FiAlertCircle, FiRefreshCw } from "react-icons/fi";
 import { ApiError } from "../api/manta";
 import { login } from "../features/auth/api";
 import { AuthButton } from "../features/auth/components/auth-button";
@@ -95,7 +95,17 @@ export function LoginPage() {
             </p>
           ) : null}
 
-          <AuthButton type="submit" variant="primary" disabled={isSigningIn} className="mt-2">
+          <AuthButton
+            type="submit"
+            variant="primary"
+            disabled={isSigningIn}
+            className="mt-2"
+            icon={
+              isSigningIn ? (
+                <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+              ) : undefined
+            }
+          >
             {isSigningIn ? "Signing in..." : "Log In"}
           </AuthButton>
         </form>
