@@ -22,9 +22,9 @@ from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.pypsa_helpers import nominal_attr, remove_unbuilt_cohorts, to_network
+from playbook_library.pypsa_time_aggregation import series_frame, snapshot_frame
 from playbook_library.rolling_horizon_dispatch import RollingHorizonDispatch
-from playbook_library.time_aggregation import series_frame, snapshot_frame
-from playbook_library.time_cluster import ClusterTime
+from playbook_library.time_partition import TimePartition
 
 pytestmark = pytest.mark.pypsa
 
@@ -50,7 +50,7 @@ def _stored(rev: Revision, name: str) -> pd.DataFrame:
 
 
 def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period):
-    result = _run(ClusterTime, CLUSTER, single_period)
+    result = _run(TimePartition, CLUSTER, single_period)
 
     assert result.store is single_period.store
     assert result.ancestry() == [single_period.id, result.id]
@@ -69,7 +69,7 @@ def test_clustering_names_stretches_of_time_and_keeps_every_snapshot(
     config, base_name, stretches, request
 ):
     rev = request.getfixturevalue(base_name)
-    result = _run(ClusterTime, {"name": "agg", **config}, rev)
+    result = _run(TimePartition, {"name": "agg", **config}, rev)
     frame = _snapshots(result)
 
     assert to_network(result).snapshots.equals(to_network(rev).snapshots)
@@ -77,8 +77,8 @@ def test_clustering_names_stretches_of_time_and_keeps_every_snapshot(
 
 
 def test_a_record_can_be_clustered_again_by_a_name_its_store_holds(single_period):
-    first = _run(ClusterTime, CLUSTER, single_period)
-    again = _run(ClusterTime, {"name": "agg_3h", "n_hours": 6}, single_period)
+    first = _run(TimePartition, CLUSTER, single_period)
+    again = _run(TimePartition, {"name": "agg_3h", "n_hours": 6}, single_period)
 
     frames = [_snapshots(r) for r in (first, again)]
     assert [f["agg_3h"].nunique() for f in frames] == [8, 4]
@@ -86,7 +86,7 @@ def test_a_record_can_be_clustered_again_by_a_name_its_store_holds(single_period
 
 def test_clustering_leaves_the_network_it_read_alone(single_period):
     before = _snapshots(single_period)
-    _run(ClusterTime, CLUSTER, single_period)
+    _run(TimePartition, CLUSTER, single_period)
     after = _snapshots(single_period)
 
     pd.testing.assert_frame_equal(after, before)
@@ -104,7 +104,7 @@ def test_clustering_leaves_the_network_it_read_alone(single_period):
 )
 def test_a_time_aggregation_is_named_and_made_one_way(config, match):
     with pytest.raises(Exception, match=match):
-        ClusterTime.merge_config(config, {})
+        TimePartition.merge_config(config, {})
 
 
 AGGREGATED = [
@@ -133,7 +133,7 @@ AGGREGATED = [
 def test_a_block_solving_by_a_time_aggregation_writes_results_at_every_snapshot(
     block_cls, config, base_name, solved, request
 ):
-    rev = _run(ClusterTime, CLUSTER, request.getfixturevalue(base_name))
+    rev = _run(TimePartition, CLUSTER, request.getfixturevalue(base_name))
 
     result = _run(block_cls, {**config, "time_aggregation": "agg_3h"}, rev)
 
@@ -155,7 +155,7 @@ def test_a_block_needs_the_time_aggregation_it_is_given(block_cls, config, base_
 
 @pytest.mark.parametrize("name", ["p", "marginal_price"])
 def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(name, multi_period):
-    rev = _run(ClusterTime, CLUSTER, multi_period)
+    rev = _run(TimePartition, CLUSTER, multi_period)
     solved = _run(PerfectCapacityExpansion, {}, rev)
     configs = [{"period": 2030}, {"period": 2030, "time_aggregation": "agg_3h"}]
     full, aggregated = (_run(OvernightCapacityExpansion, c, solved) for c in configs)
@@ -172,7 +172,7 @@ def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(name,
 
 
 def test_myopic_expansion_by_a_time_aggregation_keeps_each_period_it_expanded(multi_period):
-    rev = _run(ClusterTime, CLUSTER, multi_period)
+    rev = _run(TimePartition, CLUSTER, multi_period)
     result = _run(MyopicCapacityExpansion, {"time_aggregation": "agg_3h"}, rev)
     *_, first, _, last = result.ancestry()
 
@@ -440,7 +440,7 @@ def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
     n = to_network(request.getfixturevalue(base_name))
     n.generators["p_nom_extendable"] = False
     n.generators.loc[n.generators.index[0], "p_nom"] = 20.0
-    rev = _run(ClusterTime, CLUSTER, store_revision(n, "short"))
+    rev = _run(TimePartition, CLUSTER, store_revision(n, "short"))
     with pytest.raises(SolveError, match="could not solve every window"):
         _dispatch(rev, **config)
 
@@ -454,7 +454,7 @@ def _with_storage(rev: Revision, store_revision, component: str, **storage) -> R
     """Add `storage` of a `component` to the network of `rev`, and cluster it by `agg_3h`."""
     n = to_network(rev)
     n.add(component, "storage", bus="bus", **storage)
-    return _run(ClusterTime, CLUSTER, store_revision(n, "storage"))
+    return _run(TimePartition, CLUSTER, store_revision(n, "storage"))
 
 
 def test_dispatch_by_a_time_aggregation_starts_its_storage_at_its_initial_state(
@@ -509,6 +509,26 @@ def test_dispatch_by_a_time_aggregation_refuses_storage_each_window_cycles(
 def test_a_rolling_horizon_must_move_forward():
     with pytest.raises(Exception, match="overlap"):
         RollingHorizonDispatch.merge_config({"optimize_config": {"horizon": 4, "overlap": 4}}, {})
+
+
+@pytest.mark.parametrize(
+    "block_cls",
+    [
+        OvernightCapacityExpansion,
+        MyopicCapacityExpansion,
+        PerfectCapacityExpansion,
+        RollingHorizonDispatch,
+    ],
+)
+def test_a_time_aggregation_is_not_combined_with_chosen_snapshots(block_cls):
+    config = {"time_aggregation": "agg", "optimize_config": {"snapshots": [0]}}
+    with pytest.raises(Exception, match="snapshots"):
+        block_cls.merge_config(config, {})
+
+
+def test_dispatch_refuses_an_empty_list_of_periods():
+    with pytest.raises(Exception, match="periods"):
+        RollingHorizonDispatch.merge_config({"periods": []}, {})
 
 
 def test_a_wired_capacity_source_is_checked_like_any_other_setting():

@@ -28,14 +28,16 @@ from playbook_library.pypsa_helpers import (
     to_network,
     write_network,
 )
-from playbook_library.pypsa_time_aggregation import STATES, cluster_network, write_expanded_results
-from playbook_library.time_aggregation import (
-    cluster_starts,
+from playbook_library.pypsa_time_aggregation import (
+    PYPSA_TIME,
+    STATES,
+    cluster_network,
     series_frame,
-    shaped,
     snapshot_frame,
+    write_expanded_results,
 )
-from playbook_library.time_cluster import add_snapshot_property, resample_map, segment_map
+from playbook_library.time_aggregation import Overlay, cluster_starts, shaped
+from playbook_library.time_partition import add_snapshot_property, resample_map, segment_map
 
 pytestmark = pytest.mark.pypsa
 
@@ -66,6 +68,21 @@ def _clusters_per_period(rev: Revision, mapping: pd.Series) -> pd.DataFrame:
     assert starts[cluster_starts(frame, "period")].all()
     counts = frame.assign(start=starts).groupby("period")["start"]
     return counts.agg(clusters="sum", snapshots="size")
+
+
+def _sparse(rev: Revision, attribute: str) -> Revision:
+    """Store `attribute` of `rev` again, as each series' most common value and the rows apart.
+
+    The most common value is a row without a snapshot, which every other snapshot takes.
+    """
+    rel = rev.record.attributes[attribute]
+    keys = ", ".join(f'"{c}"' for c in rel.columns if c not in {"snapshot", "value"})
+    ranked = rel.project(f"*, mode(value) OVER (PARTITION BY {keys}) AS common")
+    unset = "CASE WHEN false THEN snapshot END AS snapshot, common AS value"
+    scalars = ranked.project(f"* EXCLUDE (common) REPLACE ({unset})").distinct()
+    apart = ranked.filter("value <> common").project("* EXCLUDE (common)")
+    attributes = {**rev.record.attributes, attribute: scalars.union(apart)}
+    return rev.store.commit(Overlay(rev.record, attributes=attributes), parent=rev)
 
 
 @pytest.mark.parametrize("base_name", RECORDS)
@@ -127,6 +144,12 @@ def test_segmenting_hourly_bel_makes_the_segments_of_pypsa_eur(bel_hourly, bel):
         pd.testing.assert_frame_equal(
             aggregated[name, attr], series, check_like=True, check_exact=False, rtol=rtol, atol=0
         )
+
+
+@pytest.mark.parametrize("attribute", ["p_set", "p_max_pu"])
+def test_segmenting_reads_sparse_series_as_the_dense_ones(attribute, storage):
+    sparse = _sparse(storage, attribute)
+    assert segment_map(sparse, 4).equals(segment_map(storage, 4))
 
 
 def test_segmenting_needs_a_series_that_varies(single_period):
@@ -245,8 +268,8 @@ def _solved(rev: Revision, name: str) -> pypsa.Network:
     return optimize_network(n, PyPSAOptimizeSchema(), multi_investment_periods=n.has_periods)
 
 
-def _frame(record: RecordLike, name: str) -> pd.DataFrame:
-    frame = series_frame(record, name)
+def _frame(rev: RecordLike, name: str) -> pd.DataFrame:
+    frame = series_frame(rev, name)
     if "connection" in frame:
         frame["entity"] = frame["connection"].str.get("entity")
         frame["bus"] = frame["connection"].str.get("bus")
@@ -454,7 +477,7 @@ def test_shaping_refuses_a_series_with_duplicate_rows(duplicated):
     members = con.sql("SELECT 0 AS rep, 0 AS snapshot, 1.0 AS weight")
     capacity = con.sql("SELECT 'g' AS entity, 1.0 AS value")
     with pytest.raises(duckdb.InvalidInputException, match="Map keys must be unique"):
-        shaped(rel, members, capacity=capacity, **series).fetchall()
+        shaped(rel, members, capacity=capacity, axis=PYPSA_TIME, **series).fetchall()
 
 
 def test_expansion_writes_one_layer(expanded):
@@ -470,6 +493,22 @@ def test_expanding_over_expanded_results_replaces_them(expanded):
     before = _stored(result, "p").drop(columns="connection").sort_values(keys, ignore_index=True)
     after = _stored(again, "p").drop(columns="connection").sort_values(keys, ignore_index=True)
     pd.testing.assert_frame_equal(after, before)
+
+
+@pytest.mark.parametrize(
+    "attribute",
+    ["p_set", "p_max_pu", "snapshot_weighting_stores", "snapshot_weighting_generators"],
+)
+def test_expanding_reads_sparse_inputs_as_the_dense_ones(attribute, expanded):
+    rev, n_c, result = expanded
+    sparse = write_expanded_results(n_c, n_c, _sparse(rev, attribute), "agg_3h", n_c.has_periods)
+
+    for name in ("p", "e", "state_of_charge"):
+        dense, read = (
+            _stored(r, name)[["entity", "snapshot", "value"]].sort_values(["entity", "snapshot"])
+            for r in (result, sparse)
+        )
+        pd.testing.assert_frame_equal(read.reset_index(drop=True), dense.reset_index(drop=True))
 
 
 @pytest.mark.parametrize("n_hours", [3, 24])

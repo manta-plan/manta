@@ -5,9 +5,8 @@
 import pypsa
 from datarecord import Revision
 from playbook.blocks.core import BlockDims, MantaBlock
-from pydantic import Field
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema, TimeAggregatedConfig
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
     investment_periods,
     optimize_network,
@@ -17,8 +16,7 @@ from playbook_library.pypsa_helpers import (
 )
 
 
-class OvernightCapacityExpansionConfig(TimeAggregatedConfig):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class OvernightCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
     period: int | None = None
     """The investment period to build for, in a model with investment periods.
 

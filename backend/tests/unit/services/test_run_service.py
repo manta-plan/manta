@@ -840,7 +840,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
     playbook_doc = {
         "name": "outer",
         "steps": [
-            {"name": "cluster", "block": "cluster_time"},
+            {"name": "cluster", "block": "time_partition"},
             {
                 "name": "inner",
                 "playbook": {
@@ -859,7 +859,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
     # Then the nested step is listed without a block, and without a status it
     # can't actually know
     assert [(step.name, step.block, step.status) for step in result.steps] == [
-        ("cluster", "cluster_time", "NOT_STARTED"),
+        ("cluster", "time_partition", "NOT_STARTED"),
         ("inner", None, "UNKNOWN"),
     ]
 
