@@ -16,7 +16,7 @@ The blocks — single units of work on a model:
 
 | Block | What it does |
 | --- | --- |
-| `cluster_time` | Group a model's time series into stretches, so later blocks can solve less |
+| `time_partition` | Group a model's time series into stretches, so later blocks can solve less |
 | `overnight_capacity_expansion` | Decide what to build, treating the whole model as one moment in time |
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
@@ -41,7 +41,7 @@ pixi.toml                       The environments blocks run in (names are the co
 src/playbook_library/
   __init__.py                   Registers the blocks by name, without importing them
   catalogue.json                Generated description of every block (see below)
-  time_cluster.py               ... one module per block ...
+  time_partition.py             ... one module per block ...
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   datarecord_helpers.py         Opening the datarecord revision a record points at
@@ -74,7 +74,7 @@ a minute on a laptop.
 To run a single block instead, without a playbook around it:
 
 ```bash
-pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
+pixi run -e pypsa python -m playbook.blocks.run_one time_partition \
     --source playbook_library --config '{"name": "agg_6h", "n_hours": 6}' \
     --record '{"url": "<store>", "uuid": "<revision>"}'
 ```
@@ -98,7 +98,7 @@ dependencies stay its own.
 
 1. Write it in its own module, as a `MantaBlock` subclass — see
    [the framework's README](../playbook/README.md#writing-a-block) for what a block
-   declares, and `time_cluster.py` for the shortest real example.
+   declares, and `time_partition.py` for the shortest real example.
 2. Register it in `__init__.py` with `register_lazy("your_block",
    "playbook_library.your_module:YourBlock")`. Registering the location rather than
    importing the class is what keeps this package importable without PyPSA.

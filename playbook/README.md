@@ -268,7 +268,7 @@ settings document can carry every branch of a condition.
 Where a block can be imported, its own settings model checks its settings. Where it
 cannot, its JSON schema from a [catalogue](#describing-every-block-at-once) does. The
 schema catches wrong types, missing settings and unknown ones. It cannot carry a rule a
-block writes in code, such as `cluster_time` needing exactly one of `n_hours` and
+block writes in code, such as `time_partition` needing exactly one of `n_hours` and
 `segments`. Where the block cannot be imported, that rule is only enforced when the
 block runs.
 
