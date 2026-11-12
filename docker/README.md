@@ -17,6 +17,19 @@ Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
 truth instead of two.
 
+To run the app itself in containers too, use one of the files layered on top:
+
+- `compose-dev-backend.yaml` — every service above plus the backend.
+- `compose-dev-fullstack.yaml` — everything in `compose-dev-backend.yaml`
+  plus the frontend.
+
+```bash
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --build
+```
+
+To run the backend or frontend on the host instead (`uv run manta`,
+`pnpm dev`), stop its container first: they share ports.
+
 ## Services
 
 - **postgres** — the app database. Also hosts Keycloak's and Prefect's own

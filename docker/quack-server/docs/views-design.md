@@ -55,8 +55,8 @@ For `BEL-pre-aggregated-perfect` (the 30 October records), revision `inputs`:
 
 - An attribute's view has its declared dims, then `attribute`, `breakpoint`
   and `value`. A row without a snapshot holds for every snapshot.
-- Attributes without rows have no view: datarecord leaves them out of
-  `record.attributes`.
+- Attributes without rows have no view, although `record.attributes`
+  holds every declared attribute.
 - One_of dims (`ctype`, `role`) are views in `dims` like any other, although
   the store has no `dims/` files for them (DEP 24).
 
