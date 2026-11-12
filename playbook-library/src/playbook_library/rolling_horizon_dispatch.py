@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import threading
 
 import pandas as pd
 import pypsa
@@ -28,20 +29,21 @@ from playbook_library.pypsa_time_aggregation import STATES
 
 
 class FailedWindows(logging.Handler):
-    """A log handler that collects the windows of a rolling horizon that PyPSA could not solve.
+    """A log handler that raises `SolveError` at the first window PyPSA could not solve.
 
     A rolling horizon solves the snapshots one window at a time. PyPSA logs a message for
-    a window that does not solve, and moves on to the next.
+    a window that does not solve, and moves on to the next. Only messages logged by the
+    thread that created the handler count.
     """
 
     def __init__(self) -> None:
         super().__init__(logging.WARNING)
-        self.failures: list[str] = []
+        self.thread = threading.get_ident()
 
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
-        if message.startswith("Optimization failed"):
-            self.failures.append(message)
+        if record.thread == self.thread and message.startswith("Optimization failed"):
+            raise SolveError(f"PyPSA could not solve a window: {message}")
 
 
 class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
@@ -99,10 +101,10 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     def solved_periods(record: DataRecord) -> list[int]:
         """Return the investment periods that `record` has results for, without building a network.
 
-        A record without the result `p` has none.
+        A record without the result `p` or without investment periods has none.
         """
         _, rev = revision(record)
-        if "p" not in rev.record.attributes:
+        if "p" not in rev.record.attributes or "period" not in rev.record.dims:
             return []
         solved = rev.record.attributes["p"].filter("snapshot IS NOT NULL")
         held = solved.project("snapshot.period").distinct()
@@ -214,8 +216,8 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
 
         Each result series then spans every snapshot. PyPSA keeps a series it writes whole
         on each window, such as `Bus.v_ang`, at the last window alone, so the windows before
-        it are missing values. Raises `SolveError` if any window does not solve, which PyPSA
-        itself only logs.
+        it are missing values. Raises `SolveError` at the first window that does not solve,
+        which PyPSA itself only logs.
         """
         logger = logging.getLogger("pypsa.optimization.abstract")
         failed = FailedWindows()
@@ -227,8 +229,6 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         finally:
             logger.removeHandler(failed)
             logger.setLevel(level)
-        if failed.failures:
-            raise SolveError(f"PyPSA could not solve every window: {failed.failures}")
         for c in n.components:
             for attr, series in c.dynamic.items():
                 c.dynamic[attr] = series.reindex(n.snapshots)

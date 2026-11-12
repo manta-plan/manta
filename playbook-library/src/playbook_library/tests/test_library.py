@@ -448,7 +448,7 @@ def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
     n.generators["p_nom_extendable"] = False
     n.generators.loc[n.generators.index[0], "p_nom"] = 20.0
     record = _run(TimePartition, CLUSTER, store_record(n, "short"))
-    with pytest.raises(SolveError, match="could not solve every window"):
+    with pytest.raises(SolveError, match="could not solve a window"):
         _dispatch(record, **config)
 
     result = _dispatch(record, load_shedding={}, **config)
