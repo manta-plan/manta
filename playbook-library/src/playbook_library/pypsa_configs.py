@@ -46,24 +46,16 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # TODO: dynamically generate this schema from the PyPSA optimize function
     # signature, so that we don't have to maintain it manually.
     snapshots: Sequence | None = None
-    """A list of snapshots to optimise, must be a subset of n.snapshots, defaults to n.snapshots"""
+    """Snapshots to solve, a subset of the model's snapshots. None solves all of them."""
 
     multi_investment_periods: bool = False
-    """Whether to optimise as a single investment period or to optimise in multiple investment
-    periods.
-
-    If multiple investment periods requested, the `period` dimension must exist in the
-    model data.
-    """
+    """Solve all investment periods together. Needs a model with a `period` dimension."""
 
     transmission_losses: _PyPSAOptimizeTransmissionLossesSchema | None = None
-    """Include piecewise linear approximation of transmission losses for passive branches
-
-    See `https://go.pypsa.org/transmission-losses` for details.
-    """
+    """Approximate transmission losses on passive branches (go.pypsa.org/transmission-losses)."""
 
     linearized_unit_commitment: bool = False
-    """Whether to optimise using the linearised unit commitment formulation or not."""
+    """Use the linearised unit commitment formulation."""
 
     model_kwargs: linopy_configs.LinopyModelSchema = Field(
         default_factory=linopy_configs.LinopyModelSchema
@@ -73,8 +65,7 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # extra_functionality: Callable | None = None # we do not allow this in blocks
 
     assign_all_duals: bool = False
-    """Whether to assign all dual values or only those that already have a designated place in the
-    network."""
+    """Keep every dual value, not only those the network has a place for."""
 
     solver_name: Literal["highs"] = "highs"
     """Name of the solver to use."""
@@ -84,28 +75,16 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # compute_infeasibilities: bool = False # we do not allow this in MVP blocks
 
     include_objective_constant: bool = True
-    """Whether to include the objective constant (capital costs of existing infrastructure) as a
-    variable in the objective function.
-
-    Setting to False improves LP numerical conditioning, but the objective then leaves out the
-    capital costs of what already exists."""
+    """Include the capital cost of existing assets in the objective."""
 
     committable_big_m: float | None = None
-    """Big-M value for committable+extendable constraints.
-
-    If None, PyPSA infers a scale from the network (e.g. peak load).
-    Otherwise this numeric bound is used when no component-specific limit (p_nom_max) is available.
-    """
+    """Big-M for committable, extendable assets without `p_nom_max`. None lets PyPSA infer it."""
 
     meshed_thresholds: Sequence[int] = Field(default_factory=lambda: [30, 100, 400])
-    """Thresholds for splitting buses into nodal-balance constraint groups by bus connectivity
-    count."""
+    """Bus connectivity thresholds that group the nodal balance constraints."""
 
     piecewise_options: list[PiecewiseOptions] = Field(default_factory=list)
-    """Options to override defaults in piecewise constraint formulation.
-
-    Each operator is interpreted as ``y operator f(x)``.
-    """
+    """Overrides for piecewise constraints, each read as `y operator f(x)`."""
 
     @computed_field
     def solver_options(self) -> linopy_configs.HighsOptions:
@@ -121,10 +100,7 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
     """Number of snapshots to consider in each iteration."""
 
     overlap: int = 0
-    """Number of snapshots to overlap between two iterations.
-
-    Results of overlapping snapshots will be superseded by those provided by the next
-    iteration(s)."""
+    """Snapshots shared by two windows. The later window's results replace the earlier ones."""
 
     @model_validator(mode="after")
     def overlap_must_be_shorter_than_horizon(self: Self) -> Self:
@@ -135,57 +111,19 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
 
 class Aggregation(ConfigSchema):
     snapshot: str | None = Field(None, json_schema_extra={"x-uses-property": "snapshot"})
-    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
-
-    A time aggregation groups the snapshots into clusters, and the block solves one
-    snapshot per cluster. The results cover every snapshot, spread over the cluster each
-    falls in. A model without that time aggregation is refused. None solves every snapshot.
-    A time aggregation cannot be combined with `optimize_config.snapshots`.
-    """
+    """Time aggregation to solve by: the `name` of an earlier `time_partition` step."""
 
     bus: str | None = Field(None, json_schema_extra={"x-uses-property": "bus"})
-    """The bus property to merge buses by, such as `country`.
-
-    Buses with the same value merge into the first of them. Lines between the same merged
-    buses merge, span the distance between those buses and take the impedances of their
-    type. Land-use limits at buses that merge add up. The results of each bus are those of
-    the bus it merged into. None keeps every bus.
-    """
+    """Bus property to merge buses by, such as `country`."""
 
     entity: str | None = Field(None, json_schema_extra={"x-uses-property": "entity"})
-    """The entity property to merge assets by, such as `carrier`.
-
-    Assets merge where they share this value, their component and every bus they connect
-    to. Candidates, by the entity property `asset_status`, merge only with the same build
-    year and lifetime. Other assets merge across build years with those active in the same
-    investment periods, as PyPSA-Eur merges power plants, and retire with the first of
-    them. An asset without a value is kept apart or left out, as
-    `ungrouped` says. Capacities and dispatch are split back over the assets by their
-    largest possible capacity if extendable candidates, or their capacity if not, or
-    equally where one of them has no limit. None keeps every asset.
-    """
+    """Entity property to merge assets by, such as `carrier`."""
 
     ungrouped: Literal["keep", "drop"] = "keep"
-    """What to do with a generator, load, storage unit or store without a value of the
-    `entity` property.
-
-    `keep` solves it apart from the others, at its merged bus. `drop` leaves it out of the
-    solve, and it keeps its capacity and carries no flow, so a dropped load takes its
-    demand out of the solve. Links and lines without a value are always kept. `drop`
-    needs `entity` to be set.
-    """
+    """What to do with an asset that has no `entity` value: solve it alone, or leave it out."""
 
     clip_p_max_pu: float | None = Field(None, ge=0.0)
-    """The threshold at or below which time-varying availabilities are set to 0, after
-    every other aggregation, as PyPSA-Eur's `solving.options.clip_p_max_pu` sets them.
-
-    It applies to the `p_max_pu` and `p_min_pu` series of generators and links, and the
-    `inflow` series of storage units, by their absolute value. Static values are left as
-    they are. It applies with or without any other aggregation. Results split back over
-    the assets are judged against their unclipped values, so a dispatch may fall below
-    an unclipped `p_min_pu` by up to the threshold. PyPSA-Eur sets 0.01. None
-    leaves every value as it is.
-    """
+    """Set availability values at or below this threshold to 0, as PyPSA-Eur does."""
 
     @model_validator(mode="after")
     def drop_needs_entity(self: Self) -> Self:
@@ -197,12 +135,7 @@ class Aggregation(ConfigSchema):
 class PyPSAOptimizeBlockConfig(ConfigSchema):
     optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
     aggregation: Aggregation = Field(default_factory=Aggregation)
-    """What to merge before solving: snapshots, buses or assets, each by a property of the
-    model.
-
-    Buses merge first, then assets, then snapshots. The results cover the model at full
-    resolution.
-    """
+    """Merge buses, assets and snapshots before solving. Results cover the full model."""
 
     @model_validator(mode="after")
     def snapshots_are_not_chosen_with_a_time_aggregation(self: Self) -> Self:
@@ -221,7 +154,4 @@ class LoadSheddingConfig(ConfigSchema):
     """The most load each bus can shed, in the unit `sign` sets."""
 
     sign: float = 1e-3
-    """The scale of shed load against the model's power unit.
-
-    With power in MW, 1e-3 counts shed load in kW.
-    """
+    """Scale of shed load against the model's power unit; 1e-3 turns MW into kW."""
