@@ -26,7 +26,14 @@ from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
 
 from playbook_library.datarecord_helpers import revision
-from playbook_library.time_aggregation import snapshot_frame, snapshot_relation, widened
+from playbook_library.time_aggregation import (
+    snapshot_axis,
+    snapshot_frame,
+    snapshot_relation,
+    snapshot_rows,
+    timestep_dim,
+    widened,
+)
 
 
 @dataclass(frozen=True)
@@ -56,22 +63,29 @@ RESERVED = frozenset({"period", "timestep"})
 def add_snapshot_property(record: DataRecord, name: str, values: pd.Series) -> DataRecord:
     """Add `snapshot.<name>` as a child revision of `record`, mapping each snapshot to another.
 
-    `values` has one snapshot label per snapshot label of `record`, indexed by them. The
-    child declares the property in its schema, and restates the `snapshot` axis in the
-    order of `record`. A name that the store declares, but this revision leaves unset, can
-    be set again. Raises `ValueError` if `name` is reserved or already set, or if `values`
-    has the wrong length.
+    `values` has one snapshot per snapshot of `record`, indexed by them, all labelled as
+    by `snapshot_labels`. The child declares the property in its schema, and restates the
+    `snapshot` axis in the order of `record`. A name that the store declares, but this
+    revision leaves unset, can be set again. Raises `ValueError` if `name` is reserved or
+    already set, if `values` has the wrong length, or maps a snapshot to one outside its
+    investment period.
     """
     ws, rev = revision(record)
     base = rev.record
-    frame = snapshot_relation(base).df()
+    frame = snapshot_frame(base)
     if name in RESERVED or (name in frame and frame[name].notna().any()):
         raise ValueError(f"snapshot.{name} is reserved or already declared")
     if len(values) != len(frame):
         raise ValueError(f"snapshot.{name} needs {len(frame)} values, got {len(values)}")
-    frame[name] = values.loc[frame["snapshot"]].to_numpy()
-    schema = widened(base.schema, {name: PropertySpec(one_of="snapshot")})
-    child = rev.store.commit(_SnapshotAxis(schema, ws.con.from_df(frame)), parent=rev)
+    representatives = values.loc[frame["snapshot"]].to_numpy()
+    positions = pd.Index(frame["snapshot"]).get_indexer(representatives)
+    periods = frame["period"].to_numpy()
+    if ((positions < 0) | (periods[positions] != periods)).any():
+        raise ValueError(f"snapshot.{name} maps a snapshot to one outside its investment period")
+    axis = frame[snapshot_relation(base).columns].assign(**{name: representatives})
+    schema = widened(base.schema, {name: PropertySpec(one_of=timestep_dim(base.schema))})
+    snapshots = snapshot_axis(schema, ws.con, axis)
+    child = rev.store.commit(_SnapshotAxis(schema, snapshots), parent=rev)
     return DataRecord(url=record.url, uuid=child.id)
 
 
@@ -82,9 +96,8 @@ def resample_map(record: DataRecord, n_hours: int) -> pd.Series:
     crosses from one period into the next.
     """
     frame = snapshot_frame(revision(record)[1].record)
-    timestep = frame.get("timestep", frame["snapshot"])
-    origin = timestep.groupby(frame["period"]).transform("min").dt.normalize()
-    blocks = [frame["period"], (timestep - origin) // pd.Timedelta(hours=n_hours)]
+    origin = frame["timestep"].groupby(frame["period"]).transform("min").dt.normalize()
+    blocks = [frame["period"], (frame["timestep"] - origin) // pd.Timedelta(hours=n_hours)]
     first = frame["snapshot"].groupby(blocks).transform("first")
     return pd.Series(first.to_numpy(), index=frame["snapshot"])
 
@@ -143,7 +156,8 @@ def _period_matrices(
     period, only the one with the first label is kept. Raises `ValueError` for a period
     without such a series.
     """
-    rows = con.from_df(frame[["snapshot", "period"]].assign(row=range(len(frame))))
+    positions = frame[["snapshot", "period"]].assign(row=range(len(frame)))
+    rows = snapshot_rows(base.schema, con, positions, ["snapshot"])
     profiles = [_profiles(base.attributes[name], name, rows) for name in attributes]
     distinct = reduce(DuckDBPyRelation.union, profiles).aggregate(
         "period, min(series) AS series, profile", "period, profile"
