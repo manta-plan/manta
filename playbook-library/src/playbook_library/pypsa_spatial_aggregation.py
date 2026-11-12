@@ -309,8 +309,9 @@ def _constraint_map(n: pypsa.Network, buses: pd.Series) -> pd.Series:
     Alike means equal in every input but `constant`. The merged constraint is named as the
     first, with its bus replaced by the merged bus where the name holds it as a word, as
     PyPSA-Eur names the land-use limits `land_use <carrier> <bus> <period>` of a clustered
-    network. A constraint at no bus maps to itself. Raises `NotImplementedError` naming the
-    constraints at buses that are not land-use limits, by type.
+    network. Where that gives one name to constraints that do not merge, each keeps the
+    name of its first. A constraint at no bus maps to itself. Raises `NotImplementedError`
+    naming the constraints at buses that are not land-use limits, by type.
     """
     c = n.components["GlobalConstraint"]
     static = c.static[c.static["bus"] != ""]
@@ -324,6 +325,8 @@ def _constraint_map(n: pypsa.Network, buses: pd.Series) -> pd.Series:
     at = static.loc[first.to_numpy(), "bus"]
     names = [_renamed(name, bus, buses[bus]) for name, bus in zip(first, at, strict=True)]
     renamed = pd.Series(names, first.index)
+    shared = renamed.groupby(renamed).transform(lambda s: first[s.index].nunique() > 1)
+    renamed = renamed.where(~shared, first)
     return renamed.combine_first(_identity(c.static.index)).reindex(c.static.index)
 
 
@@ -387,6 +390,13 @@ def spatial_maps(n: pypsa.Network, record: DataRecord, aggregation: Aggregation)
         buses, lines, flipped, groups, transformers, horizons, ungrouped, constraints
     )
     return replace(maps, entities=groups.drop(maps.dropped))
+
+
+def dropped_assets(n: pypsa.Network, record: DataRecord, aggregation: Aggregation) -> pd.Index:
+    """Return the assets of `n`, built from `record`, that `aggregation` leaves out of the solve."""
+    if aggregation.bus is None and aggregation.entity is None:
+        return NO_ASSETS
+    return spatial_maps(n, record, aggregation).dropped
 
 
 def _total(values: pd.Series) -> float:
@@ -585,8 +595,9 @@ def _aggregated(
     `_shares` gives, by which the results are split back: by capacity, as PyPSA weighs
     one-ports, for existing assets and those not extendable. Parallel lines span the
     distance between their buses and combine their impedances and cost as PyPSA does,
-    scaled by that over their own length. A custom attribute is the representative's, but
-    a line's is unset if text or a flag.
+    scaled by that over their own length. Where their buses have no distance between them,
+    such as without coordinates, they keep their own length and impedances. A custom
+    attribute is the representative's, but a line's is unset if text or a flag.
     """
     static = c.static.loc[groups.index]
     outputs = _outputs(c)
@@ -594,9 +605,10 @@ def _aggregated(
     scale = pd.Series(1.0, static.index)
     if c.name == "Line":
         strategies = {**LINE_STRATEGIES, **_unknown(static, custom)}
-        length = _span(n, static)
-        scale = (length / static["length"]).where(static["length"] > 0, length)
-        static["length"] = length
+        span = _span(n, static)
+        scale = (span / static["length"]).where(static["length"] > 0, span)
+        scale = scale.where(span > 0, 1.0)
+        static["length"] = span.where(span > 0, static["length"])
     else:
         strategies = {**ENTITY_STRATEGIES, **dict.fromkeys(custom, "first")}
     weights = _shares(static, c.name, groups, existing)
@@ -786,9 +798,10 @@ def _fractions(
 ) -> pd.DataFrame:
     """Return each member's share of its group's flow at each snapshot.
 
-    A load takes its share of the group's demand. A generator takes its share in
-    proportion to its share of capacity times its `p_max_pu`. Any other asset, or where
-    that is 0 across the group, takes its share of capacity.
+    A load takes its share of the group's demand, though `_expand_entities` gives its flow
+    `p` its own demand. A generator takes its share in proportion to its share of capacity
+    times its `p_max_pu`. Any other asset, or where that is 0 across the group, takes its
+    share of capacity.
     """
     flat = pd.DataFrame(
         np.tile(shares.to_numpy(), (len(n.snapshots), 1)), n.snapshots, shares.index
@@ -849,7 +862,12 @@ def _expand_entities(n_c: pypsa.Network, n_t: pypsa.Network, maps: SpatialMaps) 
         for attr, frame in source.dynamic.items():
             if attr in _outputs(source) and not frame.empty:
                 held = _at(frame, groups)
-                target.dynamic[attr] = held if _is_held(attr) else held * fractions[held.columns]
+                if target.name == "Load" and attr == "p":
+                    demand = n_t.get_switchable_as_dense("Load", "p_set", inds=held.columns)
+                    target.dynamic[attr] = demand
+                else:
+                    shared = held if _is_held(attr) else held * fractions[held.columns]
+                    target.dynamic[attr] = shared
         _expand_dropped(target, target.static.index.intersection(maps.dropped))
 
 
