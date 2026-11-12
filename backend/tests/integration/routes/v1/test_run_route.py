@@ -93,17 +93,15 @@ def _count_playbook_flow_runs(prefect_service: dict[str, str]) -> int:
 def _create_run(
     app_server: str,
     project_uuid: str,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
     headers: dict[str, str],
     config: dict | None = None,
 ) -> dict:
     payload = {
         "project_uuid": project_uuid,
-        "playbook": _LIBRARY_PLAYBOOK,
+        "playbook": {"name": _LIBRARY_PLAYBOOK, "config": config},
         **example_store(project_uuid),
     }
-    if config is not None:
-        payload["config"] = config
     response = httpx2.post(f"{app_server}/v1/runs", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
@@ -162,7 +160,7 @@ def _create_completed_runs(
     app_server: str,
     prefect_service: dict[str, str],
     project_uuid: str,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
     count: int,
     headers: dict[str, str],
 ) -> list[str]:
@@ -183,7 +181,7 @@ def test_create_and_run_a_playbook(
     kc_oidc_client: KeycloakOpenID,
     prefect_db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project, and the provisioner's deployment registered with the
     # Prefect server
@@ -232,12 +230,21 @@ def test_create_and_run_a_playbook(
         ran = step["status"] == "COMPLETED"
         assert (step["start_time"] is not None) == ran
         assert (step["end_time"] is not None) == ran
+        assert (step["output"] is not None) == ran
+        assert step["message"] is None
 
-    # And the run reports which playbook it ran, and the config it was started
-    # with — the library's own default_config, since none was supplied
+    # And the step that ran reports the new revision it wrote into the run's store
+    data_record = example_store(project_uuid)["data_record"]
+    output = steps[0]["output"]
+    assert output["store_url"] == data_record["store_url"]
+    assert output["revision_uuid"] != data_record["revision_uuid"]
+
+    # And the run reports which playbook it ran, the config it was started with —
+    # the library's own default_config, since none was supplied — and its record
     run_body = httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers).json()
     assert run_body["playbook"] == _LIBRARY_PLAYBOOK
     assert run_body["config"] == library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    assert run_body["data_record"] == data_record
 
     # And the Run row is persisted with the right linkage
     with db_connection.cursor() as cursor:
@@ -268,7 +275,7 @@ def test_create_and_run_a_playbook(
 def test_create_run_with_unknown_playbook_returns_404(
     app_server: str,
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -279,7 +286,7 @@ def test_create_run_with_unknown_playbook_returns_404(
         f"{app_server}/v1/runs",
         json={
             "project_uuid": project_uuid,
-            "playbook": "does-not-exist",
+            "playbook": {"name": "does-not-exist"},
             **example_store(project_uuid),
         },
         headers=headers,
@@ -289,11 +296,61 @@ def test_create_run_with_unknown_playbook_returns_404(
     assert response.status_code == 404
 
 
+def test_create_run_with_another_projects_store_returns_403(
+    app_server: str,
+    kc_oidc_client: KeycloakOpenID,
+    example_store: Callable[[str], dict[str, dict[str, str]]],
+) -> None:
+    # Given two projects of the same user, with a store in the first one
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    other_project_uuid = _create_project(app_server, headers)
+
+    # When a run in the second project is requested against that store
+    response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": other_project_uuid,
+            "playbook": {"name": _LIBRARY_PLAYBOOK},
+            **example_store(project_uuid),
+        },
+        headers=headers,
+    )
+
+    # Then it is refused, since the run would write into the other project's store
+    assert response.status_code == 403, response.text
+
+
+def test_create_run_with_unknown_revision_returns_404(
+    app_server: str,
+    kc_oidc_client: KeycloakOpenID,
+    example_store: Callable[[str], dict[str, dict[str, str]]],
+) -> None:
+    # Given a project with a store
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    data_record = example_store(project_uuid)["data_record"]
+
+    # When a run is requested from a revision that store doesn't have
+    response = httpx2.post(
+        f"{app_server}/v1/runs",
+        json={
+            "project_uuid": project_uuid,
+            "playbook": {"name": _LIBRARY_PLAYBOOK},
+            "data_record": {**data_record, "revision_uuid": str(uuid4())},
+        },
+        headers=headers,
+    )
+
+    # Then the API reports that the revision does not exist
+    assert response.status_code == 404, response.text
+
+
 def test_create_run_refuses_a_config_with_issues_with_a_422(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project, and the library's config switched to its myopic branch, whose
     # expansion needs a period dimension the playbook's data does not have
@@ -309,8 +366,7 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
         f"{app_server}/v1/runs",
         json={
             "project_uuid": project_uuid,
-            "playbook": _LIBRARY_PLAYBOOK,
-            "config": myopic_config,
+            "playbook": {"name": _LIBRARY_PLAYBOOK, "config": myopic_config},
             **example_store(project_uuid),
         },
         headers=headers,
@@ -336,7 +392,7 @@ def test_get_run_returns_the_config_it_was_started_with(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a run started with a config changed from the library's defaults
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -366,7 +422,7 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
     db_connection: psycopg.Connection,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project with a run against it
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -396,7 +452,7 @@ def test_list_runs_returns_project_runs_with_pagination_and_summary(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project with multiple completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -446,7 +502,7 @@ def test_list_runs_filters_project_runs_by_status(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project with completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -498,7 +554,7 @@ def test_get_run_summary_returns_project_counts(
     app_server: str,
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Given a project with completed runs
     headers = _auth_headers(app_server, kc_oidc_client)
@@ -573,9 +629,8 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
         f"{app_server}/v1/runs",
         json={
             "project_uuid": project_uuid,
-            "playbook": _LIBRARY_PLAYBOOK,
-            "data_record_url": "s3://unused/record",
-            "revision_uuid": str(uuid4()),
+            "playbook": {"name": _LIBRARY_PLAYBOOK},
+            "data_record": {"store_url": "s3://unused/record", "revision_uuid": str(uuid4())},
         },
     )
     assert create_response.status_code == 401
@@ -597,12 +652,6 @@ def test_run_endpoints_require_authentication(app_server: str) -> None:
     steps_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/steps")
     assert steps_response.status_code == 401
 
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs")
-    assert outputs_response.status_code == 401
-
-    output_response = httpx2.get(f"{app_server}/v1/runs/{run_uuid}/outputs/dispatch.nc")
-    assert output_response.status_code == 401
-
 
 def test_run_endpoints_reject_malformed_uuid(
     app_server: str, kc_oidc_client: KeycloakOpenID
@@ -615,9 +664,8 @@ def test_run_endpoints_reject_malformed_uuid(
         f"{app_server}/v1/runs",
         json={
             "project_uuid": "not-a-uuid",
-            "playbook": _LIBRARY_PLAYBOOK,
-            "data_record_url": "s3://unused/record",
-            "revision_uuid": str(uuid4()),
+            "playbook": {"name": _LIBRARY_PLAYBOOK},
+            "data_record": {"store_url": "s3://unused/record", "revision_uuid": str(uuid4())},
         },
         headers=headers,
     )
@@ -641,14 +689,6 @@ def test_run_endpoints_reject_malformed_uuid(
 
     steps_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/steps", headers=headers)
     assert steps_response.status_code == 422
-
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/not-a-uuid/outputs", headers=headers)
-    assert outputs_response.status_code == 422
-
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/not-a-uuid/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 422
 
 
 def test_list_runs_rejects_invalid_pagination_params(
@@ -689,8 +729,6 @@ def test_run_endpoints_return_404_for_unknown_ids(
     #   GET    /runs/{run_uuid}
     #   GET    /runs/{run_uuid}/logs
     #   GET    /runs/{run_uuid}/steps
-    #   GET    /runs/{run_uuid}/outputs
-    #   GET    /runs/{run_uuid}/outputs/{name}
     # (list_runs's equivalent is covered by test_list_runs_with_unknown_project_returns_404)
     headers = _auth_headers(app_server, kc_oidc_client)
     unknown_uuid = str(uuid4())
@@ -699,9 +737,8 @@ def test_run_endpoints_return_404_for_unknown_ids(
         f"{app_server}/v1/runs",
         json={
             "project_uuid": unknown_uuid,
-            "playbook": _LIBRARY_PLAYBOOK,
-            "data_record_url": "s3://unused/record",
-            "revision_uuid": str(uuid4()),
+            "playbook": {"name": _LIBRARY_PLAYBOOK},
+            "data_record": {"store_url": "s3://unused/record", "revision_uuid": str(uuid4())},
         },
         headers=headers,
     )
@@ -721,20 +758,12 @@ def test_run_endpoints_return_404_for_unknown_ids(
     steps_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/steps", headers=headers)
     assert steps_response.status_code == 404
 
-    outputs_response = httpx2.get(f"{app_server}/v1/runs/{unknown_uuid}/outputs", headers=headers)
-    assert outputs_response.status_code == 404
-
-    output_response = httpx2.get(
-        f"{app_server}/v1/runs/{unknown_uuid}/outputs/dispatch.nc", headers=headers
-    )
-    assert output_response.status_code == 404
-
 
 def test_get_run_rejects_non_owner(
     app_server: str,
     kc_oidc_client: KeycloakOpenID,
     second_user_headers: dict[str, str],
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # Ownership-denial logic itself is exhaustively unit-tested in
     # test_run_service.py; this single endpoint proves the real wiring —
@@ -759,7 +788,7 @@ def test_list_runs_does_not_leak_other_users_runs(
     prefect_service: dict[str, str],
     kc_oidc_client: KeycloakOpenID,
     second_user_headers: dict[str, str],
-    example_store: Callable[[str], dict[str, str]],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
 ) -> None:
     # This isn't testing the ownership gate (see test_get_run_rejects_non_owner
     # and the unit-level *_rejects_non_owner tests) — it's testing that the

@@ -81,6 +81,20 @@ class S3FileStorageService:
             content=self._stream_body(key, response["Body"]),
         )
 
+    def file_exists(self, project_uuid: UUID, filename: str) -> bool:
+        key = f"{project_uuid}/{filename}"
+
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+        except ClientError as e:
+            if e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                return False
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+        except BotoCoreError as e:
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+
+        return True
+
     def _stream_body(self, key: str, body: StreamingBody) -> Iterator[bytes]:
         try:
             yield from body.iter_chunks(_STREAM_CHUNK_SIZE)
