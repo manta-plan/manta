@@ -8,8 +8,9 @@ A time aggregation maps each snapshot to a representative snapshot, so a model s
 snapshots. The snapshots that share a representative form a cluster. A cluster is a
 contiguous stretch within one investment period, one of the years a model builds capacity
 in. Its first snapshot is its representative. A record keeps each time aggregation as a
-`snapshot.<name>` property. The functions here expand series over the representative
-snapshots back to every snapshot of their clusters.
+`snapshot.<name>` property, the timestep of each snapshot's representative. The functions
+here expand series over the representative snapshots back to every snapshot of their
+clusters.
 """
 
 from collections.abc import Sequence
@@ -18,6 +19,7 @@ import numpy as np
 import pandas as pd
 from datarecord import Flags, PropertySpec, RecordLike, Relations, Schema
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb.sqltypes import DuckDBPyType
 
 
 def snapshot_relation(record: RecordLike) -> DuckDBPyRelation:
@@ -26,13 +28,110 @@ def snapshot_relation(record: RecordLike) -> DuckDBPyRelation:
     return relations["snapshot"]
 
 
-def snapshot_frame(record: RecordLike) -> pd.DataFrame:
-    """Return every snapshot label of `record` with its properties, in axis order.
+def has_periods(schema: Schema) -> bool:
+    """Whether a record of `schema` has investment periods, so `snapshot` is a multi-dim."""
+    return "snapshot" in schema.multi_dims
 
-    Without investment periods, every snapshot has `period` 0.
+
+def timestep_dim(schema: Schema) -> str:
+    """Return the dim of the timesteps of `schema`, `timestep` with investment periods."""
+    return "timestep" if has_periods(schema) else "snapshot"
+
+
+def time_aggregations(schema: Schema) -> list[str]:
+    """Return the time aggregations of `schema`, the snapshot properties that refer to timesteps.
+
+    A record cannot refer to a snapshot of a multi-dim `snapshot`. So a time aggregation
+    stores the timestep of each representative, which is in the period of its snapshot.
     """
+    properties = schema.properties.get("snapshot", {})
+    return [name for name, spec in properties.items() if spec.one_of == timestep_dim(schema)]
+
+
+def snapshot_labels(schema: Schema, column: pd.Series) -> pd.Series:
+    """Return the snapshots in `column`, read from a record of `schema`, as PyPSA labels them.
+
+    A record with investment periods stores a snapshot as a struct, which PyPSA labels by
+    the tuple `(period, timestep)`. Any other snapshot is its timestep already.
+    """
+    if not has_periods(schema):
+        return column
+    return column.map(lambda s: (s["period"], s["timestep"]), na_action="ignore")
+
+
+def _typed(
+    con: DuckDBPyConnection, frame: pd.DataFrame, types: dict[str, DuckDBPyType]
+) -> DuckDBPyRelation:
+    """Return `frame` as a relation, with each column in `types` cast to its type."""
+    rel = con.from_df(frame)
+    casts = {c: f'CAST("{c}" AS {t}) AS "{c}"' for c, t in types.items()}
+    return rel.project(", ".join(casts.get(c, f'"{c}"') for c in rel.columns))
+
+
+def _packed(schema: Schema, frame: pd.DataFrame, labels: Sequence[str]) -> pd.DataFrame:
+    """Return `frame` with the snapshots in columns `labels` as structs, if `schema` has periods."""
+    if not has_periods(schema):
+        return frame
+    structs = {
+        c: frame[c].map(lambda s: {"period": s[0], "timestep": s[1]}, na_action="ignore")
+        for c in labels
+    }
+    return frame.assign(**structs)
+
+
+def snapshot_rows(
+    schema: Schema, con: DuckDBPyConnection, frame: pd.DataFrame, labels: Sequence[str]
+) -> DuckDBPyRelation:
+    """Return `frame` as a relation, with the snapshots in columns `labels` as `schema` has them.
+
+    It reverses `snapshot_labels`.
+    """
+    snapshot = schema.duck_type(schema.dimensions["snapshot"])
+    return _typed(con, _packed(schema, frame, labels), dict.fromkeys(labels, snapshot))
+
+
+def snapshot_axis(schema: Schema, con: DuckDBPyConnection, frame: pd.DataFrame) -> DuckDBPyRelation:
+    """Return `frame`, the snapshots and properties as `snapshot_frame` gives them, as stored.
+
+    It reverses `snapshot_frame` over the columns of the `snapshot` axis of `schema`.
+    """
+    aggregations = time_aggregations(schema)
+    if has_periods(schema):
+        frame = frame.assign(
+            **{n: frame[n].map(lambda s: s[1], na_action="ignore") for n in aggregations}
+        )
+    timestep = schema.duck_type(schema.dimensions[timestep_dim(schema)])
+    types = {"snapshot": schema.duck_type(schema.dimensions["snapshot"])}
+    return _typed(
+        con, _packed(schema, frame, ["snapshot"]), types | dict.fromkeys(aggregations, timestep)
+    )
+
+
+def snapshot_frame(record: RecordLike) -> pd.DataFrame:
+    """Return every snapshot of `record` with its properties, in axis order.
+
+    Snapshots, and the representatives of time aggregations, are labelled as by
+    `snapshot_labels`. Each snapshot also has its `period` and `timestep`. Without
+    investment periods, every snapshot has `period` 0 and is its own timestep.
+    """
+    schema = record.schema
     frame = snapshot_relation(record).df()
-    return frame if "period" in frame else frame.assign(period=0)
+    if not has_periods(schema):
+        return frame.assign(period=0, timestep=frame["snapshot"])
+    frame = frame.assign(**pd.DataFrame(frame["snapshot"].tolist()))
+    frame["snapshot"] = snapshot_labels(schema, frame["snapshot"])
+    for name in time_aggregations(schema):
+        pairs = zip(frame["period"], frame[name], strict=True)
+        frame[name] = pd.Series(list(pairs), dtype=object).where(frame[name].notna())
+    return frame
+
+
+def series_frame(record: RecordLike, attribute: str) -> pd.DataFrame:
+    """Return the rows of `attribute` of `record`, labelled as by `snapshot_labels`."""
+    frame = record.attributes[attribute].df()
+    if "snapshot" not in frame:
+        return frame
+    return frame.assign(snapshot=snapshot_labels(record.schema, frame["snapshot"]))
 
 
 def widened(schema: Schema, properties: dict[str, PropertySpec]) -> Schema:
@@ -78,10 +177,12 @@ def carry_snapshot_properties(
     carried = {name: spec for name, spec in declared.items() if name not in own}
     if not carried:
         return source
-    kept = snapshot_relation(base).df()[["snapshot", *carried]]
-    frame = snapshot_relation(source).df().merge(kept, on="snapshot", how="left")
-    properties = {**source.properties, "snapshot": con.from_df(frame)}
-    return Overlay(source, widened(source.schema, carried), properties=properties)
+    kept = snapshot_frame(base)[["snapshot", *carried]]
+    own_axis = snapshot_frame(source)[snapshot_relation(source).columns]
+    frame = own_axis.merge(kept, on="snapshot", how="left")
+    schema = widened(source.schema, carried)
+    properties = {**source.properties, "snapshot": snapshot_axis(schema, con, frame)}
+    return Overlay(source, schema, properties=properties)
 
 
 def cluster_starts(frame: pd.DataFrame, name: str) -> np.ndarray:
@@ -123,11 +224,12 @@ def cluster_members(base: RecordLike, name: str, weight: str, progress: str) -> 
 
     Each row also has the snapshot's `weight` and `progress`. The arguments `weight` and
     `progress` name snapshot weightings of `base`. A snapshot's `progress` is the share of
-    its cluster's total `progress` weighting reached by the end of that snapshot.
+    its cluster's total `progress` weighting reached by the end of that snapshot. Snapshots
+    are labelled as by `snapshot_labels`.
     """
     frame = snapshot_frame(base)[["snapshot", name]].set_axis(["snapshot", "rep"], axis=1)
     for column, attribute in {"weight": weight, "progress": progress}.items():
-        weightings = base.attributes[attribute].df().set_index("snapshot")["value"]
+        weightings = series_frame(base, attribute).set_index("snapshot")["value"]
         frame[column] = frame["snapshot"].map(weightings)
     clusters = frame.groupby("rep")["progress"]
     return frame.assign(progress=clusters.cumsum() / clusters.transform("sum"))
