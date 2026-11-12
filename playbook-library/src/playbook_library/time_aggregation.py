@@ -163,12 +163,19 @@ def cluster_members(
 
     Each row also has the step's `weight` and `progress`, two weightings in the order of
     `frame`. A step's `progress` is the share of its cluster's total `progress` weighting
-    reached by the end of that step.
+    reached by the end of that step. Raises `ValueError` if a cluster's total `progress`
+    weighting is 0.
     """
     members = frame[[axis.dim, name]].set_axis([axis.dim, "rep"], axis=1)
     members = members.assign(weight=weight, progress=progress)
     clusters = members.groupby("rep")["progress"]
-    return members.assign(progress=clusters.cumsum() / clusters.transform("sum"))
+    totals = clusters.transform("sum")
+    if (totals == 0).any():
+        empty = members.loc[totals == 0, "rep"].unique().tolist()
+        raise ValueError(
+            f"The clusters {empty} of {axis.dim}.{name} have a total progress weighting of 0"
+        )
+    return members.assign(progress=clusters.cumsum() / totals)
 
 
 def _restated(
