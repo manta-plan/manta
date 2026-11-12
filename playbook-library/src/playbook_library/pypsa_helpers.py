@@ -21,7 +21,11 @@ from playbook.blocks.core import DataRecord, DataRecordError, SolveError
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
-from playbook_library.pypsa_spatial_aggregation import aggregate_network, expand_network
+from playbook_library.pypsa_spatial_aggregation import (
+    aggregate_network,
+    dropped_assets,
+    expand_network,
+)
 from playbook_library.pypsa_time_aggregation import PYPSA_LABELS, write_expanded_results
 from playbook_library.time_aggregation import carry_time_properties
 
@@ -117,14 +121,16 @@ def write_aggregated_results(
 
     `n_c` is `n`, built from `record`, merged by `aggregation` and solved. It was solved
     over investment periods if `multi_investment_periods`. Buses and assets are expanded
-    first, by `expand_network`, then snapshots, by `write_expanded_results`. Returns `n_c`
+    first, by `expand_network`, then snapshots, by `write_expanded_results`, which holds the
+    results of the assets the aggregation left out. Returns `n_c`
     with its buses and assets expanded, and the new record.
     """
     expanded = expand_network(n_c, n, record, aggregation)
     if aggregation.snapshot is None:
         return expanded, write_network(expanded, record, results_only=True)
+    left_out = dropped_assets(n, record, aggregation)
     written = write_expanded_results(
-        expanded, n, record, aggregation.snapshot, multi_investment_periods
+        expanded, n, record, aggregation.snapshot, multi_investment_periods, left_out
     )
     return expanded, written
 

@@ -207,6 +207,20 @@ def test_merging_by_entity_merges_parallel_lines_and_leaves_bare_links(store_rec
     assert merged.lines.loc["ab", list(expected)].to_dict() == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("length", [100.0, 0.0])
+def test_parallel_lines_between_buses_without_coordinates_keep_their_impedances(
+    length, store_record
+):
+    n = new_parallel_network()
+    n.buses[["x", "y"]] = 0.0
+    n.lines.loc[["ab", "ab2"], "length"] = length
+    record = store_record(n, "uncoordinated")
+    merged = aggregate_network(to_network(record), record, CARRIERS)
+    expected = {"length": length, "x": 0.05, "r": 0.005}
+
+    assert merged.lines.loc["ab", list(expected)].to_dict() == pytest.approx(expected)
+
+
 LINE_TYPE = "Al/St 240/40 4-bundle 380.0"
 """A standard line type of PyPSA, of 0.03 ohm/km resistance and 0.246 ohm/km reactance."""
 
@@ -436,6 +450,24 @@ def test_one_ports_without_a_value_are_kept_apart_or_dropped(ungrouped, store_re
 def test_dropping_one_ports_without_a_value_needs_an_entity_aggregation():
     with pytest.raises(ValueError, match="`ungrouped: drop` needs `entity`"):
         Aggregation(bus="zone", ungrouped="drop")
+
+
+def test_dropped_one_ports_carry_no_flow_at_any_snapshot_of_a_time_aggregation(store_record):
+    n = new_parallel_network()
+    for ctype, members in UNTYPED_MEMBERS.items():
+        n.components[ctype].static.loc[members, "carrier"] = ""
+    n.stores.loc["st_c", "e_initial"] = 5.0
+    record = _run(TimePartition, {"name": "agg", "n_hours": 3}, store_record(n, "untyped_time"))
+    aggregation = {"snapshot": "agg", "bus": "zone", "entity": "carrier", "ungrouped": "drop"}
+    result = _run(OvernightCapacityExpansion, {"aggregation": aggregation}, record)
+    members = [member for names in UNTYPED_MEMBERS.values() for member in names]
+
+    for name in ["p", "e"]:
+        frame = series_frame(revision(result)[1].record, name)
+        entity = frame["connection"].str.get("entity") if "connection" in frame else frame["entity"]
+        dropped = frame[entity.isin(members)]
+        assert not dropped.empty
+        assert (dropped["value"] == 0).all()
 
 
 def test_parallel_line_flows_and_capacity_split_by_capacity(store_record):
@@ -978,6 +1010,18 @@ def test_merged_loads_draw_their_own_demand(solved):
     pd.testing.assert_frame_equal(n.loads_t.p[LOADS], demand, **UNTYPED)
 
 
+def test_merged_loads_whose_demand_cancels_draw_their_own_demand(store_record):
+    n = new_zoned_network()
+    n.loads.loc["load_b", "p_set"] = -20.0
+    record = store_record(n, "cancelling")
+    n = to_network(record)
+    n_c = optimize_network(aggregate_network(n, record, SPATIAL), PyPSAOptimizeSchema())
+    expanded, _ = write_aggregated_results(n_c, n, record, SPATIAL, False)
+    demand = expanded.get_switchable_as_dense("Load", "p_set")[LOADS]
+
+    pd.testing.assert_frame_equal(expanded.loads_t.p[LOADS], demand, **UNTYPED)
+
+
 LAND_USE = pd.DataFrame(
     {
         "bus": ["b", "a", "c", "d", ""],
@@ -1212,6 +1256,22 @@ def test_merging_by_bus_needs_a_rule_for_the_type_of_global_constraints_at_buses
 
     with expectation:
         spatial_maps(to_network(record), record, aggregation)
+
+
+def test_merged_constraints_of_different_periods_keep_names_of_their_own(store_record):
+    n = new_zoned_network()
+    n.add(
+        "GlobalConstraint",
+        ["limit a", "limit b"],
+        type="tech_capacity_expansion_limit",
+        bus=["a", "b"],
+        carrier_attribute="solar",
+        investment_period=[2030, 2040],
+    )
+    record = store_record(n, "period_limits")
+    maps = spatial_maps(to_network(record), record, ZONES)
+
+    assert maps.constraints[["limit a", "limit b"]].tolist() == ["limit a", "limit b"]
 
 
 def _keys(record: DataRecord, name: str) -> set[tuple]:
