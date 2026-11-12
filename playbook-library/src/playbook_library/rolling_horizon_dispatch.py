@@ -50,38 +50,16 @@ class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
     capacity_source: DataRecord | None = Field(default=None, title="Capacity data source")
-    """Where the capacities to dispatch against come from.
-
-    It is normally wired to a capacity-expansion block earlier in the playbook. Left
-    unset, the block dispatches against whatever capacities the model already has. Set,
-    it must have results for every period dispatched, and a capacity for every asset that
-    can be built in them. A cohort is an extendable asset of finite lifetime. When a
-    single period is dispatched, a cohort that only an earlier period could have built
-    may lack a capacity, and is left out.
-    """
+    """Results to take capacities from, such as an expansion step. None keeps the model's own."""
 
     periods: list[int] | None = Field(default=None, min_length=1)
-    """The investment periods to dispatch, in a model with investment periods.
-
-    An investment period is one of the years in which the model builds capacity. None
-    dispatches every one, and an empty list is refused.
-    """
+    """Investment periods to dispatch. None dispatches all of them."""
 
     load_shedding: LoadSheddingConfig | None = None
-    """Load each bus may shed at a cost, so demand the capacities cannot meet is shed.
-
-    None adds no load shedding, which leaves any to the model. Set, the block adds a
-    load-shedding generator at every bus before it dispatches.
-    """
+    """Let each bus shed load at a cost. None adds no load shedding."""
 
     aggregation: Aggregation = Field(default_factory=Aggregation)
-    """What to merge before dispatching: snapshots, buses or assets, each by a property of
-    the model.
-
-    With a time aggregation, `horizon` and `overlap` count clusters, not snapshots, and a
-    model with storage that each window cycles or starts afresh is refused. The results
-    cover the model at full resolution.
-    """
+    """Merge buses, assets and snapshots before dispatch. Results cover the full model."""
 
 
 class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
