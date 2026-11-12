@@ -36,9 +36,6 @@ function App() {
       <Route path="/project/:projectId">
         <ProjectPage />
       </Route>
-      <Route path="/playbook/:playbookId">
-        <HomePage />
-      </Route>
       {HOME_ROUTES.map((route) => (
         <Route key={route.id} path={route.path}>
           <HomePage />

@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Link } from "wouter";
 
 interface HomeSectionFrameProps {
   children: ReactNode;
@@ -23,21 +22,6 @@ export function HomeCard({ children, className = "" }: HomeCardProps) {
     <div className={`border-surface-700 bg-surface-800 rounded-lg border p-4 ${className}`}>
       {children}
     </div>
-  );
-}
-
-interface HomeCardLinkProps extends HomeCardProps {
-  href: string;
-}
-
-export function HomeCardLink({ children, href, className = "" }: HomeCardLinkProps) {
-  return (
-    <Link
-      href={href}
-      className={`border-surface-700 bg-surface-800 hover:border-accent-500 flex flex-col gap-3 rounded-lg border p-4 text-left transition-colors ${className}`}
-    >
-      {children}
-    </Link>
   );
 }
 
