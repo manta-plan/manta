@@ -24,10 +24,12 @@ from playbook_library.time_aggregation import (
     checked_clusters,
     cluster_members,
     cluster_starts,
+    has_periods,
     held,
     interpolated,
     shaped,
     snapshot_frame,
+    snapshot_rows,
 )
 
 
@@ -36,11 +38,9 @@ def _network_snapshots(base: RecordLike, frame: pd.DataFrame) -> pd.Index:
 
     With investment periods, the index has the levels `period` and `timestep`.
     """
-    timestep = frame.get("timestep", frame["snapshot"]).to_numpy()
-    if "period" not in base.dims:
-        return pd.Index(timestep, name="snapshot")
-    periods = frame["period"].to_numpy()
-    return pd.MultiIndex.from_arrays([periods, timestep], names=["period", "timestep"])
+    if not has_periods(base.schema):
+        return pd.Index(frame["timestep"], name="snapshot")
+    return pd.MultiIndex.from_frame(frame[["period", "timestep"]])
 
 
 def _held_frame(n: pypsa.Network, base: RecordLike) -> pd.DataFrame:
@@ -49,7 +49,7 @@ def _held_frame(n: pypsa.Network, base: RecordLike) -> pd.DataFrame:
     A network built from a `base` with investment periods may have only some of them.
     """
     frame = snapshot_frame(base)
-    if "period" not in base.dims:
+    if not has_periods(base.schema):
         return frame
     return frame[frame["period"].isin(n.snapshots.unique(level="period"))]
 
@@ -110,7 +110,7 @@ def _starts(
     ctype, *flags, initial_state = STATES[name]
     c = n_c.components[ctype]
     states = c.dynamic[name]
-    active = c.get_activity_mask(index=states.columns).to_numpy()
+    active = c.get_activity_mask(index=states.columns).to_numpy(bool)
     cyclic, cycles_per_period, starts_per_period = (
         c.static.loc[states.columns, flags].to_numpy(bool).T
     )
@@ -190,12 +190,14 @@ def write_expanded_results(
         raise ValueError(f"The network is not clustered by snapshot.{name}")
     results = PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=base)
     weightings = ("snapshot_weighting_generators", "snapshot_weighting_stores")
-    members = ws.con.from_df(cluster_members(base, name, *weightings))
+    members = snapshot_rows(
+        base.schema, ws.con, cluster_members(base, name, *weightings), ["snapshot", "rep"]
+    )
     demand = _series_of(base, "p_set", "Load")
     profile = _series_of(base, "p_max_pu", "Generator")
     capacities = n_c.generators["p_nom_opt"].rename("value").rename_axis("entity")
     capacity = ws.con.from_df(capacities.reset_index())
-    held_snapshots = ws.con.from_df(frame[["snapshot"]])
+    held_snapshots = snapshot_rows(base.schema, ws.con, frame[["snapshot"]], ["snapshot"])
 
     def expanded(attribute: str) -> DuckDBPyRelation:
         rel = results.attributes[attribute]
@@ -208,7 +210,8 @@ def write_expanded_results(
     def spread(attribute: str, rel: DuckDBPyRelation) -> DuckDBPyRelation:
         if attribute in STATES:
             previous = _starts(n_c, unsolved, attribute, leads, multi_investment_periods)
-            return interpolated(rel, members, ws.con.from_df(previous))
+            starts = snapshot_rows(base.schema, ws.con, previous, ["snapshot"])
+            return interpolated(rel, members, starts)
         if attribute == "p":
             return shaped(rel, members, demand, profile, capacity)
         return held(rel, members)

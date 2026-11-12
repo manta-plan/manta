@@ -16,8 +16,8 @@ pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA install
 import duckdb
 import numpy as np
 import pandas as pd
+from datarecord import RecordLike
 from datarecord.tools.pypsa import PyPSA
-from duckdb import DuckDBPyRelation
 from playbook.blocks.core import DataRecord
 
 from playbook_library.datarecord_helpers import revision
@@ -28,7 +28,12 @@ from playbook_library.pypsa_helpers import (
     write_network,
 )
 from playbook_library.pypsa_time_aggregation import STATES, cluster_network, write_expanded_results
-from playbook_library.time_aggregation import cluster_starts, shaped, snapshot_frame
+from playbook_library.time_aggregation import (
+    cluster_starts,
+    series_frame,
+    shaped,
+    snapshot_frame,
+)
 from playbook_library.time_cluster import add_snapshot_property, resample_map, segment_map
 
 pytestmark = pytest.mark.pypsa
@@ -238,8 +243,8 @@ def _solved(record: DataRecord, name: str) -> pypsa.Network:
     return optimize_network(n, PyPSAOptimizeSchema(), multi_investment_periods=n.has_periods)
 
 
-def _frame(rel: DuckDBPyRelation) -> pd.DataFrame:
-    frame = rel.df()
+def _frame(record: RecordLike, name: str) -> pd.DataFrame:
+    frame = series_frame(record, name)
     if "connection" in frame:
         frame["entity"] = frame["connection"].str.get("entity")
         frame["bus"] = frame["connection"].str.get("bus")
@@ -248,15 +253,13 @@ def _frame(rel: DuckDBPyRelation) -> pd.DataFrame:
 
 def _stored(record: DataRecord, name: str) -> pd.DataFrame:
     """Return an attribute of the revision `record` points at."""
-    return _frame(revision(record)[1].record.attributes[name])
+    return _frame(revision(record)[1].record, name)
 
 
 def _clustered(n_c: pypsa.Network, record: DataRecord, name: str) -> pd.DataFrame:
     """Return a result of `n_c` at its representative snapshots, labelled as in `record`."""
     ws, rev = revision(record)
-    return _frame(
-        PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=rev.record).attributes[name]
-    )
+    return _frame(PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=rev.record), name)
 
 
 def _by_cluster(record: DataRecord, frame: pd.DataFrame) -> pd.DataFrame:
@@ -294,20 +297,25 @@ def test_clustering_by_hours_matches_pypsa_resampling(storage_record):
             pd.testing.assert_frame_equal(aggregated, series, check_freq=False)
 
 
-@pytest.mark.parametrize("broken", ["split", "unled", "across_periods"])
+@pytest.mark.parametrize("broken", ["split", "unled"])
 def test_clustering_refuses_clusters_that_are_not_contiguous_runs(broken, multi_period_record):
     mapping = resample_map(multi_period_record, 3)
     labels = mapping.index
     if broken == "split":
-        mapping.iloc[4:6] = labels[0]
-    elif broken == "unled":
-        mapping.iloc[0:3] = labels[1]
+        mapping.iloc[1:2] = [labels[1]]
     else:
-        mapping.iloc[:] = labels[0]
+        mapping.iloc[0:3] = [labels[1]] * 3
     widened = add_snapshot_property(multi_period_record, "bad", mapping)
 
     with pytest.raises(ValueError, match="not contiguous clusters"):
         cluster_network(to_network(widened), widened, "bad")
+
+
+def test_a_time_aggregation_refuses_clusters_across_periods(multi_period_record):
+    mapping = resample_map(multi_period_record, 3)
+    mapping.iloc[:] = [mapping.index[0]] * len(mapping)
+    with pytest.raises(ValueError, match="outside its investment period"):
+        add_snapshot_property(multi_period_record, "bad", mapping)
 
 
 @pytest.mark.parametrize("name", ["p", "state_of_charge", "e", "marginal_price"])
@@ -492,12 +500,14 @@ def test_expanding_bel_covers_every_hour_and_keeps_the_energy_of_each_cluster(be
     clustered = PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=expanded)
     flows = expanded.attributes["p"].join(expanded.properties["snapshot"], "snapshot")
     per_cluster = flows.aggregate(
-        "connection, agg, sum(value) AS energy, count(*) AS size, count(DISTINCT snapshot) AS n",
-        "connection, agg",
+        "connection, snapshot.period AS period, agg, sum(value) AS energy, count(*) AS size, "
+        "count(DISTINCT snapshot) AS n",
+        "connection, snapshot.period, agg",
     ).set_alias("e")
     at = per_cluster.join(
         clustered.attributes["p"].set_alias("c"),
-        "e.connection = c.connection AND e.agg = c.snapshot",
+        "e.connection = c.connection AND e.period = c.snapshot.period "
+        "AND e.agg = c.snapshot.timestep",
     )
     keys = "e.connection.entity AS entity, e.connection.bus AS bus"
     frame = at.project(f"{keys}, energy, size, n, c.value").df()

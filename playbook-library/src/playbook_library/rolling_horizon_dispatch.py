@@ -25,7 +25,6 @@ from playbook_library.pypsa_helpers import (
     write_network,
 )
 from playbook_library.pypsa_time_aggregation import STATES
-from playbook_library.time_aggregation import snapshot_relation
 
 
 class FailedWindows(logging.Handler):
@@ -105,9 +104,9 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         _, rev = revision(record)
         if "p" not in rev.record.attributes:
             return []
-        solved = rev.record.attributes["p"].project("snapshot").distinct()
-        held = snapshot_relation(rev.record).join(solved, "snapshot")
-        return sorted(period for (period,) in held.project("period").distinct().fetchall())
+        solved = rev.record.attributes["p"].filter("snapshot IS NOT NULL")
+        held = solved.project("snapshot.period").distinct()
+        return sorted(period for (period,) in held.fetchall())
 
     @staticmethod
     def decided_capacities(record: DataRecord) -> pd.Series:
