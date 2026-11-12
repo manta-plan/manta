@@ -279,6 +279,7 @@ def write_expanded_results(
     rev: Revision,
     name: str,
     multi_investment_periods: bool,
+    left_out: Sequence[str] = (),
 ) -> Revision:
     """Store the results of `n_c` at every snapshot of `rev`, as one child revision of it.
 
@@ -298,6 +299,8 @@ def write_expanded_results(
       PyPSA starts it: wrapped, at the initial state or carried over. An inactive cluster
       keeps the state PyPSA reports there.
     - Any other series, flows and duals alike, is held over its cluster.
+    - An asset in `left_out`, which the solve left out, draws no demand and starts each
+      cluster empty, so it keeps the zero flows and states `n_c` gives it.
 
     Held flows and uncapped generation keep the weighted energy of each cluster. PyPSA
     averages `p_set` and `p_max_pu` unweighted. So only with uniform weightings within a
@@ -323,7 +326,8 @@ def write_expanded_results(
     weight, progress = (_weighting(base, snapshots, attribute) for attribute in weightings)
     clusters = cluster_members(snapshots, name, weight, progress, axis)
     members = snapshot_rows(base.schema, con, clusters, ["snapshot", "rep"])
-    demand = _series_of(base, "p_set", "Load")
+    dropped = con.from_df(pd.DataFrame({"entity": list(left_out)}, dtype=str))
+    demand = _series_of(base, "p_set", "Load").join(dropped, "entity", how="anti")
     profile = _series_of(base, "p_max_pu", "Generator")
     capacities = n_c.generators["p_nom_opt"].rename("value").rename_axis("entity")
     capacity = con.from_df(capacities.reset_index())
@@ -340,6 +344,7 @@ def write_expanded_results(
     def spread(attribute: str, rel: DuckDBPyRelation) -> DuckDBPyRelation:
         if attribute in STATES:
             previous = _starts(n_c, unsolved, attribute, leads, multi_investment_periods)
+            previous.loc[previous["entity"].isin(left_out), "previous"] = 0.0
             starts = snapshot_rows(base.schema, con, previous, ["snapshot"])
             return interpolated(rel, members, starts, axis)
         if attribute == "p":
