@@ -5,9 +5,8 @@
 import pypsa
 from datarecord import Revision
 from playbook.blocks.core import BlockDims, MantaBlock
-from pydantic import Field
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema, TimeAggregatedConfig
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
     BUILT_COMPONENTS,
     investment_periods,
@@ -19,8 +18,8 @@ from playbook_library.pypsa_helpers import (
 )
 
 
-class MyopicCapacityExpansionConfig(TimeAggregatedConfig):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class MyopicCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
+    pass
 
 
 class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):

@@ -5,14 +5,13 @@
 import pypsa
 from datarecord import Revision
 from playbook.blocks.core import BlockDims, MantaBlock
-from pydantic import Field
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema, TimeAggregatedConfig
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import optimize_network, solve_and_write, to_network
 
 
-class PerfectCapacityExpansionConfig(TimeAggregatedConfig):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class PerfectCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
+    pass
 
 
 class PerfectCapacityExpansion(MantaBlock[PerfectCapacityExpansionConfig]):
