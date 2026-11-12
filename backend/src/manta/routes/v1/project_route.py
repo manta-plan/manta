@@ -10,27 +10,23 @@ from manta.routes.v1.requests.project_request import (
     UpdateProjectRequest,
 )
 from manta.services.auth_service import authenticated_user
+from manta.services.project_changes import UpdateProjectChanges
 from manta.services.project_service import ProjectService
-from manta.services.results.project_result import (
-    CreateProjectResult,
-    GetProjectResult,
-    ListProjectsResult,
-    UpdateProjectResult,
-)
+from manta.services.results.project_result import ListProjectsResult, ProjectResult
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.post(
     "",
-    response_model=CreateProjectResult,
+    response_model=ProjectResult,
     status_code=status.HTTP_201_CREATED,
 )
 def create_project(
     request: CreateProjectRequest,
     service: ProjectService = Depends(),
     current_user: User = Security(authenticated_user),
-) -> CreateProjectResult:
+) -> ProjectResult:
     return service.create_project(
         name=request.name, description=request.description, owner=current_user
     )
@@ -57,24 +53,26 @@ def list_projects(
     )
 
 
-@router.get("/{project_uuid}", response_model=GetProjectResult)
+@router.get("/{project_uuid}", response_model=ProjectResult)
 def get_project(
     project_uuid: UUID,
     service: ProjectService = Depends(),
     current_user: User = Security(authenticated_user),
-) -> GetProjectResult:
+) -> ProjectResult:
     return service.get_project(project_uuid, user=current_user)
 
 
-@router.patch("/{project_uuid}", response_model=UpdateProjectResult)
+@router.patch("/{project_uuid}", response_model=ProjectResult)
 def update_project(
     project_uuid: UUID,
     request: UpdateProjectRequest,
     service: ProjectService = Depends(),
     current_user: User = Security(authenticated_user),
-) -> UpdateProjectResult:
+) -> ProjectResult:
     return service.update_project(
-        project_uuid, changes=request.model_dump(exclude_unset=True), user=current_user
+        project_uuid,
+        changes=UpdateProjectChanges(**request.model_dump(exclude_unset=True)),
+        user=current_user,
     )
 
 

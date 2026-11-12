@@ -10,6 +10,8 @@ from fastapi import Depends
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import get_s3_client, s3_bucket_name
+from manta.entities import Project, User
+from manta.services.project_access import ensure_project_owner
 from manta.services.results.s3_file_result import (
     GetS3FileContentResult,
     GetS3FileResult,
@@ -126,9 +128,12 @@ class S3FileStorageService:
 
         logger.info("Deleted %r", key)
 
-    def delete_project_files(self, project_uuid: UUID) -> None:
+    def delete_project_files(self, project: Project, user: User) -> None:
         """Deletes every object under the project's own prefix. Nothing to delete is
         not an error."""
+        ensure_project_owner(project, user)
+
+        project_uuid = project.uuid
         keys = [file.key for file in self.list_files(project_uuid)]
 
         try:
@@ -138,10 +143,14 @@ class S3FileStorageService:
                     Bucket=self.bucket,
                     Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
                 )
-                if response.get("Errors"):
+                if errors := response.get("Errors"):
+                    failures = ", ".join(
+                        f"{error.get('Key')!r} ({error.get('Code')}: {error.get('Message')})"
+                        for error in errors
+                    )
                     raise S3StorageError(
-                        f"Failed to delete {len(response['Errors'])} object(s) of project "
-                        f"{project_uuid} from bucket {self.bucket!r}"
+                        f"Failed to delete {len(errors)} object(s) of project "
+                        f"{project_uuid} from bucket {self.bucket!r}: {failures}"
                     )
         except (ClientError, BotoCoreError) as e:
             raise S3StorageError(

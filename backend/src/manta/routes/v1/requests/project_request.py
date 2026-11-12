@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 
 class CreateProjectRequest(BaseModel):
@@ -9,11 +10,19 @@ class CreateProjectRequest(BaseModel):
     description: str | None = None
 
 
+def _drop_default(schema: dict[str, Any]) -> None:
+    schema.pop("default", None)
+
+
 class UpdateProjectRequest(BaseModel):
     """A partial update: only the fields sent are changed. Sending
     `"description": null` clears the description; `name` can't be cleared."""
 
-    name: str | None = Field(default=None, min_length=3, max_length=128)
+    # `SkipJsonSchema[None]` keeps null out of the OpenAPI type and `_drop_default` keeps
+    # `default: null` out too: `name` is optional, but a null value is rejected by `_check_fields`.
+    name: Annotated[str, Field(min_length=3, max_length=128)] | SkipJsonSchema[None] = Field(
+        default=None, json_schema_extra=_drop_default
+    )
     description: str | None = None
 
     @model_validator(mode="after")

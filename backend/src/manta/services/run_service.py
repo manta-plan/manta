@@ -26,8 +26,8 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.entities import Project, Run, User
-from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
+from manta.services.project_access import ensure_project_owner, get_owned_project
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -103,24 +103,6 @@ def _read_flow_run_with_block_runs(flow_run_id: UUID) -> tuple[FlowRun, list[Flo
             )
         )
         return flow_run, block_runs
-
-
-def delete_flow_runs(flow_run_ids: list[UUID]) -> None:
-    """Deletes each playbook flow run together with the block flow runs dispatched
-    under it. A flow run that is already gone is skipped, so a retry after a partial
-    failure picks up where it stopped."""
-    if not flow_run_ids:
-        return
-    with get_client(sync_client=True) as client:
-        for flow_run_id in flow_run_ids:
-            block_runs = client.read_flow_runs(
-                flow_run_filter=FlowRunFilter(
-                    parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
-                )
-            )
-            for doomed_id in [*(block_run.id for block_run in block_runs), flow_run_id]:
-                with suppress(ObjectNotFound):
-                    client.delete_flow_run(doomed_id)
 
 
 def _flow_run_status(flow_run: FlowRun) -> str:
@@ -215,11 +197,7 @@ class RunService:
         revision_uuid: UUID,
         user: User,
     ) -> CreateRunResult:
-        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
+        project = get_owned_project(self.db, project_uuid, user)
 
         library_playbook = library_playbooks().get(playbook)
         if library_playbook is None:
@@ -279,11 +257,7 @@ class RunService:
         status_filters: list[str] | None,
         user: User,
     ) -> ListRunsResult:
-        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
+        project = get_owned_project(self.db, project_uuid, user)
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -306,15 +280,46 @@ class RunService:
         )
 
     def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
-        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
+        project = get_owned_project(self.db, project_uuid, user)
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
         return _build_run_summary(self._build_run_results(project.uuid, runs, flow_runs))
+
+    def ensure_no_active_runs(self, project: Project, user: User) -> None:
+        """Raises a 409 if any run of the project has not reached a final Prefect state.
+        A run in flight would write to S3 again after the project's cleanup. A run whose
+        state is unknown counts as active."""
+        ensure_project_owner(project, user)
+
+        runs = self._list_project_runs(project.id)
+        flow_runs = self._read_project_flow_runs(runs)
+        if any(
+            flow_run.state is None or not flow_run.state.is_final()
+            for flow_run in flow_runs.values()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Only projects without active runs can be deleted",
+            )
+
+    def delete_flow_runs(self, project: Project, user: User) -> None:
+        """Deletes the Prefect flow run of each of the project's runs, together with the
+        block flow runs dispatched under it. A flow run that is already gone is skipped,
+        so a retry after a partial failure picks up where it stopped."""
+        ensure_project_owner(project, user)
+
+        flow_run_ids = [run.prefect_flow_run_id for run in self._list_project_runs(project.id)]
+        with get_client(sync_client=True) as client:
+            for flow_run_id in flow_run_ids:
+                block_runs = client.read_flow_runs(
+                    flow_run_filter=FlowRunFilter(
+                        parent_flow_run_id=FlowRunFilterParentFlowRunId(any_=[flow_run_id])
+                    )
+                )
+                for doomed_id in [*(block_run.id for block_run in block_runs), flow_run_id]:
+                    with suppress(ObjectNotFound):
+                        client.delete_flow_run(doomed_id)
 
     def _list_project_runs(self, project_id: int) -> list[Run]:
         return (
@@ -350,8 +355,7 @@ class RunService:
         project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
+        ensure_project_owner(project, user)
 
         return run, project
 

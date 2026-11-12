@@ -1,21 +1,17 @@
 import logging
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.entities import Project, Run, User
-from manta.services.errors import AuthorizationError
-from manta.services.results.project_result import (
-    CreateProjectResult,
-    GetProjectResult,
-    ListProjectsResult,
-    UpdateProjectResult,
-)
-from manta.services.run_service import delete_flow_runs
+from manta.entities import Project, User
+from manta.services.project_access import get_owned_project
+from manta.services.project_changes import UNSET, UpdateProjectChanges
+from manta.services.results.project_result import ListProjectsResult, ProjectResult
+from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
 
 logger = logging.getLogger(__name__)
@@ -26,26 +22,20 @@ class ProjectService:
         self,
         db: Session = Depends(get_db_session),
         storage: S3FileStorageService = Depends(),
+        run_service: RunService = Depends(),
     ) -> None:
         self.db = db
         self.storage = storage
+        self.run_service = run_service
 
-    def create_project(
-        self, name: str, description: str | None, owner: User
-    ) -> CreateProjectResult:
+    def create_project(self, name: str, description: str | None, owner: User) -> ProjectResult:
         project = Project(name=name, description=description, owner_id=owner.id)
         self.db.add(project)
         self.db.commit()
 
         logger.info("Created project %r (uuid=%s)", project.name, project.uuid)
 
-        return CreateProjectResult(
-            uuid=project.uuid,
-            name=project.name,
-            description=project.description,
-            created_at=project.created_at,
-            updated_at=project.updated_at,
-        )
+        return _to_result(project)
 
     def list_projects(
         self,
@@ -89,57 +79,45 @@ class ProjectService:
         projects = query.order_by(direction, Project.id).offset(offset).limit(limit).all()
 
         return ListProjectsResult(
-            items=[_to_get_result(project) for project in projects],
+            items=[_to_result(project) for project in projects],
             total=total,
             limit=limit,
             offset=offset,
         )
 
-    def get_project(self, project_uuid: UUID, user: User) -> GetProjectResult:
-        return _to_get_result(self._get_owned_project(project_uuid, user))
+    def get_project(self, project_uuid: UUID, user: User) -> ProjectResult:
+        return _to_result(get_owned_project(self.db, project_uuid, user))
 
     def update_project(
-        self, project_uuid: UUID, changes: dict[str, Any], user: User
-    ) -> UpdateProjectResult:
-        """Applies `changes` (field name -> new value); fields not in it stay as they are."""
-        project = self._get_owned_project(project_uuid, user)
-        for field, value in changes.items():
-            setattr(project, field, value)
+        self, project_uuid: UUID, changes: UpdateProjectChanges, user: User
+    ) -> ProjectResult:
+        project = get_owned_project(self.db, project_uuid, user)
+        if changes.name is not UNSET:
+            project.name = changes.name
+        if changes.description is not UNSET:
+            project.description = changes.description
         self.db.commit()
 
         logger.info("Updated project %r (uuid=%s)", project.name, project.uuid)
 
-        return UpdateProjectResult(
-            uuid=project.uuid,
-            name=project.name,
-            description=project.description,
-            created_at=project.created_at,
-            updated_at=project.updated_at,
-        )
+        return _to_result(project)
 
     def delete_project(self, project_uuid: UUID, user: User) -> None:
         """Deletes the project and everything it owns: its runs' Prefect flow runs, its
         files in S3, then the project row (its runs' rows go with it, ON DELETE CASCADE).
+        Refused with a 409 while any of its runs is still active.
 
         The external cleanup runs first, so a failure there leaves the project in
         place and the delete can simply be retried.
         """
-        project = self._get_owned_project(project_uuid, user)
-        runs = self.db.query(Run).filter(Run.project_id == project.id).all()
-        delete_flow_runs([run.prefect_flow_run_id for run in runs])
-        self.storage.delete_project_files(project.uuid)
+        project = get_owned_project(self.db, project_uuid, user)
+        self.run_service.ensure_no_active_runs(project, user)
+        self.run_service.delete_flow_runs(project, user)
+        self.storage.delete_project_files(project, user)
         self.db.delete(project)
         self.db.commit()
 
         logger.info("Deleted project %r (uuid=%s)", project.name, project.uuid)
-
-    def _get_owned_project(self, project_uuid: UUID, user: User) -> Project:
-        project = self.db.query(Project).filter(Project.uuid == project_uuid).one_or_none()
-        if project is None:
-            raise HTTPException(status_code=404, detail=f"Project {project_uuid} not found")
-        if project.owner_id != user.id:
-            raise AuthorizationError(detail="not the project owner")
-        return project
 
 
 def _contains(term: str) -> str:
@@ -148,8 +126,8 @@ def _contains(term: str) -> str:
     return f"%{escaped}%"
 
 
-def _to_get_result(project: Project) -> GetProjectResult:
-    return GetProjectResult(
+def _to_result(project: Project) -> ProjectResult:
+    return ProjectResult(
         uuid=project.uuid,
         name=project.name,
         description=project.description,
