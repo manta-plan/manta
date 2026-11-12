@@ -114,7 +114,7 @@ def test_get_playbook_lists_a_nested_playbook_step_without_a_block() -> None:
         {
             "name": "outer",
             "steps": [
-                {"name": "cluster", "block": "cluster_time"},
+                {"name": "cluster", "block": "time_partition"},
                 {"name": "inner", "playbook": {"name": "inner", "steps": []}},
             ],
         }

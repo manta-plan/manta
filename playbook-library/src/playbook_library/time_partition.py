@@ -26,14 +26,13 @@ from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
 
 from playbook_library.datarecord_helpers import revision
-from playbook_library.time_aggregation import (
+from playbook_library.pypsa_time_aggregation import (
+    pypsa_time,
     snapshot_axis,
     snapshot_frame,
-    snapshot_relation,
     snapshot_rows,
-    timestep_dim,
-    widened,
 )
+from playbook_library.time_aggregation import settled, time_relation, widened
 
 
 @dataclass(frozen=True)
@@ -82,9 +81,10 @@ def add_snapshot_property(record: DataRecord, name: str, values: pd.Series) -> D
     periods = frame["period"].to_numpy()
     if ((positions < 0) | (periods[positions] != periods)).any():
         raise ValueError(f"snapshot.{name} maps a snapshot to one outside its investment period")
-    axis = frame[snapshot_relation(base).columns].assign(**{name: representatives})
-    schema = widened(base.schema, {name: PropertySpec(one_of=timestep_dim(base.schema))})
-    snapshots = snapshot_axis(schema, ws.con, axis)
+    axis = pypsa_time(base.schema)
+    stored = frame[time_relation(base, axis).columns].assign(**{name: representatives})
+    schema = widened(base.schema, axis, {name: PropertySpec(one_of=axis.step)})
+    snapshots = snapshot_axis(schema, ws.con, stored)
     child = rev.store.commit(_SnapshotAxis(schema, snapshots), parent=rev)
     return DataRecord(url=record.url, uuid=child.id)
 
@@ -158,7 +158,8 @@ def _period_matrices(
     """
     positions = frame[["snapshot", "period"]].assign(row=range(len(frame)))
     rows = snapshot_rows(base.schema, con, positions, ["snapshot"])
-    profiles = [_profiles(base.attributes[name], name, rows) for name in attributes]
+    axis = pypsa_time(base.schema)
+    profiles = [_profiles(settled(base, name, axis), name, rows) for name in attributes]
     distinct = reduce(DuckDBPyRelation.union, profiles).aggregate(
         "period, min(series) AS series, profile", "period, profile"
     )
@@ -209,7 +210,7 @@ def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
     return pd.Series(representatives, index=frame["snapshot"])
 
 
-class ClusterTimeConfig(ConfigSchema):
+class TimePartitionConfig(ConfigSchema):
     name: str
     """What to call the time aggregation, so later blocks can choose to solve by it.
 
@@ -241,7 +242,7 @@ class ClusterTimeConfig(ConfigSchema):
         return self
 
 
-class ClusterTime(MantaBlock[ClusterTimeConfig]):
+class TimePartition(MantaBlock[TimePartitionConfig]):
     """Group a model's snapshots into clusters, so later blocks can solve a smaller model.
 
     A cluster is a contiguous stretch of snapshots within one investment period. The
@@ -251,7 +252,7 @@ class ClusterTime(MantaBlock[ClusterTimeConfig]):
     """
 
     ENV = "pypsa"
-    CONFIG = ClusterTimeConfig
+    CONFIG = TimePartitionConfig
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
     def run(self, record: DataRecord) -> DataRecord:
