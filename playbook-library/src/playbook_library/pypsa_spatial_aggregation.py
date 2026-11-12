@@ -4,18 +4,39 @@
 
 """Bus, entity and time aggregation of PyPSA networks built from a datarecord.
 
-An aggregation names a property of a dim. Buses with the same value of a bus property
-merge into one, the first of them in axis order. Assets with the same value of an entity
-property merge into one too, but only those of one component, at the same buses and of
-the same resource class. An asset without a value stays apart, or a one-port without one is
-left out if the aggregation drops those. Candidate assets merge
-only within one cohort. Existing assets merge with those first and last active in the same
-investment periods, as PyPSA-Eur merges power plants, so that the existing capacity in each
-period stays as it was, and those active in none are dropped. Land-use limits at buses that
-merge combine into one, and every land-use limit is stated again from the merged candidates,
-as PyPSA-Eur states them. Snapshots merge by a time aggregation, as `pypsa_time_aggregation` does.
-`aggregate_network` merges buses, then assets, then snapshots, and `expand_network`
-spreads the results of the merged buses and assets back over every bus and asset.
+An aggregation names a property of a dim. `aggregate_network` merges buses, then assets,
+then snapshots, and `expand_network` spreads the results of the merged buses and assets
+back over every bus and asset.
+
+Buses with the same value of a bus property merge into the first of them in axis order.
+Lines between the same merged buses merge, span the distance between those buses and take
+the impedances of their type. Land-use limits at buses that merge combine into one, and
+every land-use limit is stated again from the merged candidates, as PyPSA-Eur states them.
+The results of each bus are those of the bus it merged into.
+
+Assets with the same value of an entity property merge into one, but only those of one
+component, at the same buses and of the same resource class. Candidate assets, by the
+entity property `asset_status`, merge only within one cohort of build year and lifetime.
+Existing assets merge with those first and last active in the same investment periods, as
+PyPSA-Eur merges power plants, so that the existing capacity in each period stays as it
+was, and those active in none are dropped. Capacities and dispatch are split back over the
+assets by their largest possible capacity if extendable candidates, or their capacity if
+not, or equally where one of them has no limit.
+
+An asset without a value of the entity property is solved apart, at its merged bus. With
+`ungrouped: drop`, which needs an entity property, a generator, load, storage unit or store
+without a value is left out of the solve instead: it keeps its capacity and carries no
+flow, so a dropped load takes its demand out of the solve. Links and lines without a value
+are always kept.
+
+`clip_p_max_pu` sets time-varying availabilities at or below it to 0 after every other
+aggregation, as PyPSA-Eur's `solving.options.clip_p_max_pu` does. It applies to the
+`p_max_pu` and `p_min_pu` series of generators and links and the `inflow` series of storage
+units, by their absolute value, and leaves static values as they are. Results split back
+over the assets are judged against their unclipped values, so a dispatch may fall below an
+unclipped `p_min_pu` by up to the threshold.
+
+Snapshots merge by a time aggregation, as `pypsa_time_aggregation` does.
 """
 
 import re
