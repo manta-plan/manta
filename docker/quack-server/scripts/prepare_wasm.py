@@ -11,7 +11,8 @@ is exactly the `v2.0.0` tag, but it was built without the tag. So:
 - The published Quack build predates "Do not start the heartbeat thread on
   single-threaded wasm" (duckdb-quack 438dfe3), so ATTACH fails in the
   single-threaded build. `--quack` takes a `wasm_eh` build of duckdb-quack's
-  main instead (see the README).
+  main instead (see the README). Without `--quack`, a Quack already in
+  `static/ext/` is kept.
 
 Only for the proof of concept, until duckdb-wasm publishes a v2.0.0 release
 and Quack republishes its Wasm builds.
@@ -28,8 +29,10 @@ from pathlib import Path
 STATIC = Path(__file__).parent.parent / "static"
 RELEASE, COMMIT = "v2.0.0", "d54cbbe3df"
 
-# Quack, and what it autoloads to attach.
-EXTENSIONS = ("quack", "httpfs")
+# Quack, what it autoloads to attach, and json: the client autoloads it for a
+# JSON column anywhere in the server's catalog (datarecord's own tables have
+# some), and without it ATTACH fails with "c is not a function".
+EXTENSIONS = ("quack", "httpfs", "json")
 PLATFORM = "wasm_eh"  # the single-threaded build with Wasm exceptions
 
 FIELD = 32
@@ -67,11 +70,15 @@ def main() -> None:
 
     for extension in EXTENSIONS:
         name = f"{extension}.duckdb_extension.wasm"
+        target = STATIC / "ext" / COMMIT / PLATFORM / name
         if extension == "quack" and args.quack:
             blob = args.quack.read_bytes()
+        elif extension == "quack" and target.is_file():
+            print(f"{target.relative_to(STATIC.parent)} (kept)")
+            continue
         else:
             blob = fetch(f"https://extensions.duckdb.org/{RELEASE}/{PLATFORM}/{name}")
-        write(STATIC / "ext" / COMMIT / PLATFORM / name, relabel(blob, RELEASE, COMMIT))
+        write(target, relabel(blob, RELEASE, COMMIT))
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import UUID
 
 import duckdb
 import httpx
@@ -30,8 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from . import quack
-from .scenarios import read_json
 from .stores import Catalogue, configure
+from .scenarios import BASE_NAME, layer_manifest, read_json
 
 log = logging.getLogger("uvicorn.error")
 
@@ -40,6 +39,9 @@ SERVER_ROOT = Path(__file__).resolve().parents[1]
 # remote stores; the AWS_* environment holds the endpoint and key). Every
 # store under it is a record.
 RECORDS_ROOT = os.environ.get("RECORDS_ROOT", str(SERVER_ROOT / "data/records"))
+# Where an `s3://` root's records are copied to when they open; default, a
+# fresh temporary folder. Set it to keep the copies across restarts.
+RECORDS_CACHE = os.environ.get("RECORDS_CACHE") or None
 # What a project that names no record opens; default: the first store.
 DEFAULT_RECORD = os.environ.get("DEFAULT_RECORD")
 QUACK_PORT = int(os.environ.get("QUACK_PORT", "9494"))
@@ -69,7 +71,7 @@ def open_in_background(catalogue: Catalogue, id: str) -> None:
 async def lifespan(app: FastAPI):
     ws = Workspace()
     configure(ws.con)
-    catalogue = Catalogue(ws, RECORDS_ROOT)
+    catalogue = Catalogue(ws, RECORDS_ROOT, RECORDS_CACHE)
     stores = catalogue.stores()
     app.state.catalogue = catalogue
     uri = quack.serve(ws.con, QUACK_PORT, QUACK_TOKEN)
@@ -132,22 +134,25 @@ def records(request: Request) -> dict:
 
 
 @app.post("/api/records/{id}/open", dependencies=[Depends(require_token)])
-def open_record(id: str, request: Request) -> dict:
+def open_record(id: str, request: Request, revision: str | None = None) -> dict:
     """Open a record if it isn't yet, then what a client needs to query it: its
-    scenarios' catalogs, views and manifest. The first open of a record takes
+    revisions' catalogs, views and manifest. The first open of a record takes
     a while (seconds to tens of seconds for a bucket); later ones answer at
-    once. A plain `def`: FastAPI runs it in a worker thread.
+    once. `?revision=` also attaches that run result's catalog, which opening
+    the record leaves out (a few seconds more, the first time). A plain `def`:
+    FastAPI runs it in a worker thread.
 
     A client that attached before the record opened doesn't see its catalogs
     as `r.<catalog>`: Quack's client reads the catalog list when it attaches.
     Queries through quack_query_by_name see them."""
     catalogue = catalogue_of(request)
     try:
-        opened = catalogue.open(id)
+        opened = catalogue.open_revision(id, revision) if revision else catalogue.open(id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"No record {id!r}") from None
+        what = f"revision {revision!r} in record {id!r}" if revision and catalogue.is_open(id) else f"record {id!r}"
+        raise HTTPException(status_code=404, detail=f"No {what}") from None
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=f"Record {id!r} failed to open: {e}") from None
+        raise HTTPException(status_code=503, detail=f"{f'{revision!r} of record' if revision else 'Record'} {id!r} failed to open: {e}") from None
     return opened.as_json()
 
 
@@ -161,13 +166,14 @@ def record_files(id: str, request: Request) -> dict:
     except KeyError:
         raise HTTPException(status_code=404, detail=f"No record {id!r}") from None
     if store.plain:
-        schema = catalogue.ws.at(store.uri).schema
+        manifest = read_json(catalogue.ws, f"{store.uri}/manifest.json")
     else:
-        names = read_json(catalogue.ws, f"{catalogue.root}/{store.id}.json")
-        schema = catalogue.ws.store(store.uri).revision(UUID(names[store.revisions[0]])).manifest.schema
+        # The default scenario's layer, as the open record serves it.
+        names = read_json(catalogue.ws, f"{store.uri}/revisions.json")
+        manifest = layer_manifest(catalogue.ws, store.uri, names.get(BASE_NAME) or next(iter(names.values())))
     return {
         "name": store.id,
-        "manifest": schema.model_dump(mode="json"),
+        "manifest": manifest,
         "files": [{"path": f.path, "size": f.size} for f in store.files],
     }
 

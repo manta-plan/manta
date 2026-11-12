@@ -1,13 +1,18 @@
 """A store's named revisions as scenarios and run results, and what each
 scenario changes: the `manta.revisions` and `manta.scenario_changes` tables.
 
-- **Names** come from the JSON file beside the store (`<store>.json`); unnamed
-  revisions aren't shown. `<store>.labels.json`, if present, gives a revision
-  a `name` and `description` to show, and can set its `kind`.
-- **Kind:** datarecord doesn't record which attributes a solve computes (only
-  the tool does), so a revision is a `result` when most of the attributes its
-  layer writes have no values in its parent: a solve adds `p_nom_opt`,
-  `marginal_price`, …, while a scenario edits values its parent has.
+- **Names** come from the store's `revisions.json` (name → revision id);
+  unnamed revisions aren't shown. `<store>.labels.json`, beside the store,
+  is optional: per revision a `name` and `description` to show, and a `kind`.
+- **Kind:** the label's `kind`, else the layer's `meta` `kind`, else a guess.
+  Nothing in the format says which attributes a solve computes, so the guess
+  is that a revision is a `result` when most of the attributes its layer
+  writes have no rows in its parent: a solve adds `p_nom_opt`,
+  `marginal_price`, …, while a scenario edits values its parent has. (A base
+  layer may write empty files for every result attribute, so it's rows that
+  count, not files.)
+- **A revision's parent** is in its layer's manifest
+  (`layers/<id>/manifest.json`), as are the attributes its layer writes.
 - **A change** is one attribute in a scenario's own layer whose value differs
   from the parent's, per subject (entity, bus, …). Rows a layer restates
   unchanged aren't changes. Built once, when the store opens: an open store
@@ -25,10 +30,9 @@ from typing import Any
 from uuid import UUID
 
 import duckdb
-from datarecord import Record, Store, Workspace
+from datarecord import Record, Workspace
 
 from .manta_views import SCHEMA, SUBJECTS
-from .record import has_rows
 
 BASE_NAME = "inputs"
 BASE_LABEL = "Base case"
@@ -44,8 +48,15 @@ class Revision:
     description: str
     # The revision's record, for building the change table.
     record: Record = field(repr=False)
-    # The catalog it's attached as, for a scenario; None for a run result.
+    # Its catalog's name (scenarios and run results alike), and whether it's
+    # attached yet: scenarios are, when the record opens; a run result is
+    # when first asked for (Catalogue.open_revision).
     catalog: str | None = None
+    open: bool = False
+    # A run result's result attributes: those its layer adds to its parent's.
+    results: list[str] = field(default_factory=list)
+    # The attributes its own layer writes.
+    written: list[str] = field(default_factory=list, repr=False)
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -56,6 +67,8 @@ class Revision:
             "label": self.label,
             "description": self.description,
             "catalog": self.catalog,
+            "open": self.open,
+            "results": self.results,
         }
 
 
@@ -66,19 +79,20 @@ def read_json(ws: Workspace, uri: str) -> Any:
     return json.loads(found)
 
 
-def _layer_attributes(ws: Workspace, store: str, revision_id: str) -> list[str]:
-    folder = f"{store}/layers/{revision_id}/attributes"
-    return sorted(name.removesuffix(".parquet") for name in ws.files(folder).list(folder) if name.endswith(".parquet"))
+def layer_manifest(ws: Workspace, store: str, revision_id: str) -> dict[str, Any]:
+    return read_json(ws, f"{store}/layers/{revision_id}/manifest.json")
 
 
-def _named_parent(store: Store, revision_id: str, names_by_id: dict[str, str]) -> str | None:
+def _named_parent(ws: Workspace, store: str, manifest: dict[str, Any], names_by_id: dict[str, str]) -> str | None:
     """The nearest named ancestor of a revision."""
-    ancestors = store.revision(UUID(revision_id)).ancestry()[:-1]
-    return next((names_by_id[str(id)] for id in reversed(ancestors) if str(id) in names_by_id), None)
+    parent = manifest.get("parent")
+    while parent and parent not in names_by_id:
+        parent = layer_manifest(ws, store, parent).get("parent")
+    return names_by_id.get(parent) if parent else None
 
 
 def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dict[str, dict[str, str]]) -> list[Revision]:
-    """The store's named revisions. `names` is `<store>.json` (name → id);
+    """The store's named revisions. `names` is `revisions.json` (name → id);
     `labels` is `<store>.labels.json`, or empty."""
     names_by_id = {revision_id: name for name, revision_id in names.items()}
     opened = ws.store(store)
@@ -86,14 +100,16 @@ def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dic
 
     revisions = []
     for name, revision_id in names.items():
-        parent = _named_parent(opened, revision_id, names_by_id)
+        manifest = layer_manifest(ws, store, revision_id)
+        parent = _named_parent(ws, store, manifest, names_by_id)
         label = labels.get(name, {})
-        kind = label.get("kind")
-        if kind is None:
-            written = _layer_attributes(ws, store, revision_id)
-            held = records[parent].attributes if parent is not None else {}
-            new = [a for a in written if a not in held or not has_rows(held[a])]
-            kind = "result" if parent is not None and len(new) * 2 > len(written) else "scenario"
+        written = sorted(manifest["files"].get("attributes", []))
+        new = [a for a in written if parent is None or not records[parent].attributes[a].limit(1).fetchall()]
+        kind = (
+            label.get("kind")
+            or manifest.get("meta", {}).get("kind")
+            or ("result" if parent is not None and len(new) * 2 > len(written) else "scenario")
+        )
         revisions.append(
             Revision(
                 name=name,
@@ -103,6 +119,8 @@ def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dic
                 label=label.get("name") or (BASE_LABEL if name == BASE_NAME else name),
                 description=label.get("description", ""),
                 record=records[name],
+                results=new if kind == "result" else [],
+                written=written,
             )
         )
     return revisions
@@ -154,32 +172,19 @@ def register_scenarios(con: duckdb.DuckDBPyConnection, ws: Workspace, store: str
 
     by_name = {r.name: r for r in revisions}
     selects = []
-    # Each relation must outlive the query that reads its SQL.
-    relations = []
     for r in revisions:
         if r.kind != "scenario" or r.parent is None:
             continue
-        parent = by_name[r.parent].record
-        for attribute in _layer_attributes(ws, store, r.id):
-            if attribute not in r.record.attributes:
-                continue
+        parent = by_name[r.parent]
+        for attribute in r.written:
             dims = list(r.record.schema.attributes[attribute].dims)
-            relations.append(r.record.attributes[attribute])
-            after = relations[-1].sql_query()
-            if attribute in parent.attributes:
-                relations.append(parent.attributes[attribute])
-                before = relations[-1].sql_query()
-            else:
-                # Nothing to compare with: every value is new.
-                before = f"SELECT * FROM ({after}) WHERE false"
-            selects.append(_change_select(r.name, attribute, dims, before, after))
+            view = f'attributes."{attribute}"'
+            selects.append(_change_select(r.name, attribute, dims, f"FROM {parent.catalog}.{view}", f"FROM {r.catalog}.{view}"))
     empty = (
         "SELECT NULL::VARCHAR AS scenario, NULL::VARCHAR AS attribute, NULL::VARCHAR AS dim, NULL::VARCHAR AS label, "
         "NULL::VARCHAR AS bus, NULL::VARCHAR AS before, NULL::VARCHAR AS after, 0::BIGINT AS series_rows, "
         "NULL::DOUBLE AS ratio WHERE false"
     )
-    # datarecord's SQL reads objects it registered in the default catalog, as
-    # CREATE TABLE … AS resolves unqualified names.
     con.execute(f"CREATE OR REPLACE TABLE {first}.{SCHEMA}.scenario_changes AS {' UNION ALL '.join(selects) or empty}")
     for catalog in catalogs[1:]:
         for table in ("revisions", "scenario_changes"):

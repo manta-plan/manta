@@ -324,9 +324,11 @@ function text(value, type) {
 }
 
 // Scenario → schema → view → column: each scenario of the record has its own
-// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions.
+// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions. A
+// run result's catalog is attached when the app first shows it: until then
+// it's left out.
 function catalogTree(columns, revisions) {
-  const databases = revisions.filter((r) => r.catalog).map((r) => ({
+  const databases = revisions.filter((r) => r.catalog && r.open).map((r) => ({
     id: `k:${r.catalog}`, label: r.label, kind: 'database', db: r.catalog,
     schemas: new Map(SCHEMAS.map((s) => [s, { id: `s:${r.catalog}.${s}`, label: s, kind: 'schema', children: [] }])),
   }))
@@ -570,7 +572,7 @@ document.addEventListener('alpine:init', () => {
         this.entry = null
         this.result = null
         this.log(`record ${id}: ${plural(stored.files.length, 'file')}`)
-        const catalogs = info.revisions.filter((r) => r.catalog).map((r) => `'${r.catalog}'`).join(', ')
+        const catalogs = info.revisions.filter((r) => r.catalog && r.open).map((r) => `'${r.catalog}'`).join(', ')
         const columns = await select(`FROM quack_query_by_name('r', $$
           SELECT database_name AS db, schema_name, table_name, column_name, data_type FROM duckdb_columns()
           WHERE database_name IN (${catalogs}) AND schema_name IN (${SCHEMAS.map((s) => `'${s}'`).join(', ')})
@@ -667,7 +669,7 @@ document.addEventListener('alpine:init', () => {
       // A dimension's table also holds its properties.
       const json = dir === 'dims' ? { dimension: entry ?? null, properties: m.properties?.[name] ?? null } : entry ?? null
       const views = [`${dir}.${name}`, `properties.${name}`].filter((key, i) => (i === 0 || dir === 'dims') && isView(key))
-      // An attribute without rows has no view.
+      // datarecord leaves attributes without rows out of the record.
       const empty = section && !views.length ? ' · no rows, so no view' : ''
       return {
         title: node.path,

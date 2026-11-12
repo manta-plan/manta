@@ -4,7 +4,7 @@
 
 ## Running in the dev stack
 
-1. **Records.** They are git-ignored and not in the image: put datarecord stores in `docker/quack-server/data/records` (a store is its folder plus `<store>.json`, optionally `<store>.labels.json`). For the current sample records:
+1. **Records.** They are git-ignored and not in the image: put datarecord stores in `docker/quack-server/data/records` (a store is a folder with `layers/` and `revisions.json`, optionally with `<store>.labels.json` beside it). For the current sample records:
 
    ```sh
    mkdir -p docker/quack-server/data/records
@@ -45,20 +45,20 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
                                                         └── /api/*                            └── in-process DuckDB: one view per record relation
 ```
 
-- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/`, and `<store>.json` beside it naming its revisions. A plain record (a folder with `manifest.json` and no revisions) is listed too, with one scenario, `inputs`.
+- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/` and `revisions.json`, which names its revisions. A plain record (a folder with `manifest.json` and no revisions) is listed too, with one scenario, `inputs`.
 - **A record opens on first use**: when a project (or the explorer) first asks for it, then stays open while the server runs. The default record opens in the background at start. The listing refreshes every minute, so a store uploaded to the root shows without a restart; replacing a store that's open needs one.
-- **datarecord resolves each scenario in Python.** `app/record.py` registers every relation as a view in the schemas `dims`, `properties` and `attributes`, for example `attributes.p_nom`. The browser never sees layers or parquet files.
-- **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_perfect__patch.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get no catalog yet. `docs/views-design.md` has the details.
+- **datarecord resolves each scenario.** `app/record.py` has the revision register its views (`datarecord.<catalog>.attributes.p_nom`), and puts a view over each in the scenario's catalog, in the schemas `dims`, `properties` and `attributes`, for example `attributes.p_nom`. The browser never sees layers or parquet files.
+- **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_incl_patches_incl_results__patch.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get a catalog too, attached when first asked for. `docs/views-design.md` has the details.
 - **FastAPI is in front because:**
   - Cloud Run exposes only one port.
   - Quack sends no CORS headers.
   - Writes (edits, scenarios as child revisions, solves) will become `/api/*` endpoints instead of raw SQL.
 - **Read-only access is enforced by an authorization macro** (`app/quack.py`). See "Lockdown" below.
 - **The app's own views live in a `manta` schema** (`app/manta_views.py`): plain SQL over the record views, holding what the app assumes about a record.
-  - `bus_location`, `locations`: buses grouped into locations; `EU`, PyPSA-Eur's copper plate, is virtual.
+  - `bus_location`, `locations`: buses grouped into locations (a bus with an empty `location`, as in PyPSA-Earth, is its own); `EU`, PyPSA-Eur's copper plate, is virtual.
   - `location_zones`: zones from the `busmap_*` attributes, if the record has any.
   - `branches`: input → output pairs of lines, links and transformers, scoped `within`, `between` or `virtual`.
-  - `attached`, `regions`: generators/loads/stores at their bus; Shape polygons as WKT.
+  - `attached`, `regions`: generators/loads/stores at their bus; region polygons as WKT (Shape entities, or the buses' `shape_onshore`/`shape_offshore`).
   - `revisions` and `scenario_changes` (tables built at start, `app/scenarios.py`): a store's named revisions as scenarios and run results, and per scenario each changed value against its parent. Names and descriptions come from `<store>.labels.json` beside the store, if present.
   - `attribute_summary` (a table built at start) and `ctype_attributes`: each attribute's constant value and series rows per entity, bus, carrier, …, so one query fills an item's attribute panel.
   - `uv run pytest` checks them against the sample record.
@@ -76,11 +76,11 @@ QUACK_TOKEN=devtoken uv run uvicorn app.main:app --port 8010
 
 Then open <http://localhost:8010/?token=devtoken>. Without `QUACK_TOKEN`, a random token is generated and the log prints the explorer's URL. Quack wants a token of at least 4 characters.
 
-`uv run --env-file .env uvicorn app.main:app --port 8010 --reload --reload-dir app` reads `QUACK_TOKEN` (the app's `VITE_RECORD_TOKEN`) and the bucket key from `server/.env`. The records stay local (`data/records`) unless `RECORDS_ROOT=s3://manta-records` is set too; far from the bucket's region, opening from it takes minutes.
+`uv run --env-file .env uvicorn app.main:app --port 8010 --reload --reload-dir app` reads `QUACK_TOKEN` (the app's `VITE_RECORD_TOKEN`) and the bucket key from `server/.env`. The records stay local (`data/records`) unless `RECORDS_ROOT=s3://manta-records` is set too; then each record is copied from the bucket when it opens (`RECORDS_CACHE=…` keeps the copies across restarts).
 
 The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks a record in its header (`?record=` keeps it) and has two tabs:
 
-- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes and the manifest; no data). Clicking a file or folder shows its manifest entry and links to the views it backs, in the base case's catalog. Attributes without rows have no view.
+- **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes and the manifest; no data). Clicking a file or folder shows its manifest entry and links to the views it backs, in the base case's catalog. Attributes without rows have no view: datarecord leaves them out.
 - **Views:** the views the browser sees through ATTACH, as scenario → schema → view → column, base case first. Clicking a view previews 200 rows and counts it on the server. The editor runs any SQL in DuckDB-Wasm, against `r.<catalog>.<schema>.<view>` (`r.bel_pre_aggregated_perfect__patch.attributes.p_nom`).
 
 **API.** `/api/*` takes the same token as Quack, as `Authorization: Bearer …`.
@@ -88,35 +88,32 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 | Endpoint | |
 |---|---|
 | `GET /api/records` | the catalogue: per record its `id`, `label`, `description`, named `revisions`, `size`, `modified`, `files`, and `open`/`error`; and the `default` record |
-| `POST /api/records/{id}/open` | what a client needs to query a record: `revisions` (with their catalogs), `defaultScenario`, `views`, `manifest`. Opens the record if it isn't yet: seconds for the first ask (about 17 s from the bucket on Cloud Run), at once after |
+| `POST /api/records/{id}/open` | what a client needs to query a record: `revisions` (with their catalogs), `defaultScenario`, `views`, `manifest`. Opens the record if it isn't yet: seconds for the first ask (about 17 s from the bucket on Cloud Run), at once after. `?revision=<name>` also attaches that run result (a few seconds, the first time); each revision says whether it's `open`, and a run result lists its `results` attributes |
 | `GET /api/records/{id}/files` | the explorer's Files tab |
 
 | Env | Default |
 |---|---|
 | `RECORDS_ROOT` | `data/records`: a folder of stores, or `s3://bucket[/prefix]` |
+| `RECORDS_CACHE` | a fresh temporary folder: where an `s3://` root's records are copied to when they open. A file already there with the same size isn't copied again |
 | `DEFAULT_RECORD` | the first store: what a project that names no record opens |
 | `AWS_ENDPOINT_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | for an `s3://` root. For GCS: `https://storage.googleapis.com`, `auto`, and a bucket-reader HMAC key (deployment.md). `uv run --env-file .env …` reads them from `server/.env` |
-| (file) `<store>.labels.json` | optional, beside the store: per revision name a `name` and `description` to show, and `kind` (`scenario` or `result`) where the guess is wrong; under `_store`, the record's own `name` and `description` |
+| (file) `<store>.labels.json` | optional, beside the store's folder: per revision name a `name` and `description` to show, and `kind` (`scenario` or `result`) where the guess is wrong; under `_store`, the record's own `name` and `description` |
 | `RECORD_TEST_ROOT` | tests only: also run the remote test against this `s3://` root |
 
-Local records live in `data/records` (git-ignored, never in the image): the modeller's 30 October records (the repo's `.idea/30-october-records`, see its README), as in the bucket (`gs://manta-records`). They are perfect foresight, myopic, overnight 2050, all three combined, and the plain input record, with our `.labels.json` beside each. The tests use `BEL-pre-aggregated-perfect`: its `inputs` revision is the base case (`results` is it solved), and `patch` a stress test. As shared, the stores hold files from the older layout that datarecord `1781cfb` refuses (`groups/`, `dims/ctype.parquet`, `dims/role.parquet`), and the plain record also holds undeclared attributes (`country`, `obj`), so the server reads a copy without them:
+Local records live in `data/records` (git-ignored, never in the image), as in the bucket (`gs://manta-records`): the modeller's 11 November combined store (the repo's `.idea/11-november-data`, see its README), copied as shipped. Its `inputs` revision is the base case and `patch` a stress test, each solved three ways (`perfect`, `myopic`, `overnight2050`, and `patch/…`). The tests use it.
 
 ```sh
 mkdir -p data/records
-cp -R ../.idea/30-october-records/BEL-pre-aggregated* data/records/
-find data/records \( -path '*/groups' -o -path '*/dims/ctype.parquet' -o -path '*/dims/role.parquet' \
-  -o -path 'data/records/BEL-pre-aggregated/attributes/country.parquet' -o -path 'data/records/BEL-pre-aggregated/attributes/obj.parquet' \) \
-  -prune -exec rm -rf {} +
+cp -R ../.idea/11-november-data/BEL-pre-aggregated-incl-patches-incl-results data/records/
 ```
 
-The Scenarios panel's names come from each store's `.labels.json` beside it, which isn't part of the shared records. `BEL-pre-aggregated-perfect.labels.json` holds, among others:
+Without a labels file, the Scenarios panel shows each revision by its name in `revisions.json` (`patch/myopic`), `inputs` as "Base case", and the record by its folder name. `<store>.labels.json` beside the folder, optional, gives nicer names without touching the store:
 
 ```json
 {
-  "inputs": { "name": "Base case", "description": "PyPSA-Eur Belgium in 5 regions, 2030–2050, as the solver receives it" },
-  "results": { "name": "Base case, solved" },
+  "_store": { "name": "Belgium, 5 regions: all run types", "description": "…" },
   "patch": { "name": "Wind and solar stress test", "description": "Offshore wind capital cost ×1.3, onshore wind potential ×0.5, solar availability ×0.9" },
-  "patch_results": { "name": "Wind and solar stress test, solved" }
+  "patch/myopic": { "name": "Wind and solar stress test, myopic" }
 }
 ```
 | `QUACK_TOKEN` | random |
@@ -135,7 +132,7 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 
 ## Findings (DuckDB 2.0.0, 2026-10-24)
 
-- **datarecord** comes from `energy-models/datarecord` `main`, pinned to commit `8889d62` (2026-11-10), where each layer carries its own manifest. A record written by another commit may not open, and the 30 October records, written before it, do not.
+- **datarecord** comes from `energy-models/datarecord` `main`, pinned to commit `8889d62` (2026-11-10): per-layer manifests (DEP 25) and registered views (DEP 34). A record written by another commit may not open; the 30 October records don't.
 - `quack_serve` runs fine inside the Python process. The views and the served catalog are the same database.
 - **Two guards make access read-only.** Without them, any client can `read_csv('/etc/passwd')` and `COPY` to any path. That was confirmed on 1.5.5.
   1. DuckDB's own settings: the HTTP file systems switched off (no reads of arbitrary URLs), no extension installs, and the configuration locked. `enable_external_access = false` (with `allowed_directories`) was stricter, but datarecord's SQL reads Python objects by name, which DuckDB only resolves with external access on, and it can't be switched back on: records couldn't open after the lockdown. Bucket reads go through a key that can only read `manta-records`. The local file system stays on, as DuckDB needs it for temp files, so local files are guarded by the macro alone.
@@ -163,7 +160,7 @@ uv run python scripts/prepare_wasm.py --quack <it>  # -> static/ext/…, static/
 
 The explorer uses that dev build. Confirmed 2026-10-25: Quack loads, ATTACH works, remote reads and joins work, and writes and file reads are refused.
 
-1. **Relabelled extensions.** `prepare_wasm.py` copies the v2.0.0 Wasm builds of `quack` and `httpfs` with their version field set to the commit. That voids the signature, so the explorer opens DuckDB with `allowUnsignedExtensions` and sets `custom_extension_repository` to this server's `/ext`.
+1. **Relabelled extensions.** `prepare_wasm.py` copies the v2.0.0 Wasm builds of `quack`, `httpfs` and `json` with their version field set to the commit. `json` is needed since datarecord's own tables have `JSON` columns: the client autoloads it while it reads the server's catalog, and without it ATTACH fails with `c is not a function`. Without `--quack`, a Quack already in `static/ext/` is kept. That voids the signature, so the explorer opens DuckDB with `allowUnsignedExtensions` and sets `custom_extension_repository` to this server's `/ext`.
 2. **Quack built from main.** The published Quack (2026-10-19) predates [duckdb-quack 438dfe3](https://github.com/duckdb/duckdb-quack/commit/438dfe3004) ("Do not start the heartbeat thread on single-threaded wasm"). With it, ATTACH fails with `thread constructor failed`. `build_quack_wasm.sh` builds `wasm_eh` from main the way Quack's CI does: Emscripten 3.1.71, plus vcpkg for OpenSSL. It also links with `-sWASM_BIGINT`. Without that, every 64-bit parameter is split into two `i32`s and loading fails with `LinkError: … imported function does not match the expected type`. The published builds pass them whole.
 3. **The threaded build doesn't help.** The published `wasm_threads` Quack fails to load into `1.33.1-dev110.0`'s threaded module, with an empty error. It also needs cross-origin isolation, so it was dropped.
 

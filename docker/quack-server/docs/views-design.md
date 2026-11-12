@@ -16,7 +16,7 @@ which parts come from datarecord and which are ours.
 <catalog>.<schema>.<view>
 
 catalog   the record and scenario: <record>__<scenario>,
-          e.g. bel_pre_aggregated_perfect__patch
+          e.g. bel_pre_aggregated_incl_patches_incl_results__patch
 schema    dims | properties | attributes   datarecord's relations, as is
           manta                            ours: app views over those three
 ```
@@ -29,9 +29,12 @@ schema    dims | properties | attributes   datarecord's relations, as is
 | `manta` | ours (`app/manta_views.py`, `app/scenarios.py`) | what the app assumes about a record (locations, branches, …) and the store's scenarios |
 
 **What's datarecord's:** the three groups of relations and their contents.
-Each view is `CREATE VIEW <schema>."<name>" AS <relation.sql_query()>`, so
-it holds datarecord's own resolved SQL. Nothing is copied or rewritten, and
-the parquet files are read lazily on query.
+The revision registers its views in datarecord's database
+(`record.register(<catalog>)`: `datarecord.<catalog>.dims.bus`, …), and each
+view here is `CREATE VIEW <schema>."<name>" AS FROM datarecord.<catalog>.<schema>."<name>"`.
+Nothing is copied or rewritten, and the parquet files are read lazily on
+query. The catalog adds one thing registration alone doesn't: one prefix per
+scenario for datarecord's views and our `manta` schema alike.
 
 **What's ours:** turning each group into a DuckDB schema and choosing its
 name, the `manta` schema, and the scenario catalogs. Datarecord defines no
@@ -41,7 +44,7 @@ the obvious match. Separate schemas also keep same-named relations apart:
 
 ## The datarecord schemas
 
-For `BEL-pre-aggregated-perfect` (the 30 October records), revision `inputs`:
+For the 30 October `BEL-pre-aggregated-perfect`, revision `inputs` (the 11 November records are alike, but a `snapshot` is a struct of `period` and `timestep`, with no `properties.snapshot`):
 
 | Schema | Views | Example | Columns |
 |---|---|---|---|
@@ -55,8 +58,8 @@ For `BEL-pre-aggregated-perfect` (the 30 October records), revision `inputs`:
 
 - An attribute's view has its declared dims, then `attribute`, `breakpoint`
   and `value`. A row without a snapshot holds for every snapshot.
-- Attributes without rows have no view, although `record.attributes`
-  holds every declared attribute.
+- Attributes without rows have no view: datarecord leaves them out of
+  `record.attributes`.
 - One_of dims (`ctype`, `role`) are views in `dims` like any other, although
   the store has no `dims/` files for them (DEP 24).
 
@@ -67,15 +70,15 @@ would work over any database holding those views.
 
 | Name | Kind | Columns | What for |
 |---|---|---|---|
-| `bus_location` | view | `bus, carrier, location, x, y, virtual` | every bus at its location; `EU` (PyPSA-Eur's copper plate) is virtual |
+| `bus_location` | view | `bus, carrier, location, x, y, virtual` | every bus at its location (the bus itself where `location` is empty, as in PyPSA-Earth); `EU` (PyPSA-Eur's copper plate) and the empty name are virtual |
 | `locations` | view | `location, x, y, buses, carriers` | real locations: what the map draws as points |
 | `location_zones` | view | `level, location, zone` | zones from `busmap_*` attributes, if any |
 | `branches` | view | `entity, ctype, carrier, bus0, bus1, location0, location1, scope` | input → output pairs of lines and links, from `properties.connection` roles; `scope` is `within`, `between` or `virtual` |
 | `attached` | view | `entity, ctype, carrier, bus, location, virtual` | generators, loads, stores and storage units at their bus |
-| `regions` | view | `entity, component, bus, location, wkt` | Shape polygons, if the record has them |
+| `regions` | view | `entity, component, bus, location, wkt` | region polygons as WKT, if the record has them: PyPSA's Shape entities, or the buses' `shape_onshore` and `shape_offshore` properties (`<bus> onshore` / `<bus> offshore`) |
 | `attribute_summary` | table | `attribute, dim, label, bus, constant, series_rows` | per attribute and subject (entity, bus, …): its constant value and how many series rows. Built at start, so one query fills an item's attribute list |
 | `ctype_attributes` | view | `ctype, attribute, entities` | which attributes each ctype stores; elsewhere, an absent value means the manifest default |
-| `revisions` | table | `name, id, parent, kind, label, description, catalog` | the store's named revisions (from `<store>.json`), as scenarios or run results |
+| `revisions` | table | `name, id, parent, kind, label, description, catalog` | the store's named revisions (from `revisions.json`), as scenarios or run results |
 | `scenario_changes` | table | `scenario, attribute, dim, label, bus, before, after, series_rows, ratio` | per scenario, each value its own layer changes against its parent |
 
 `revisions` and `scenario_changes` are about the whole store; every catalog of
@@ -84,35 +87,40 @@ the store holds the same copy.
 Some of this relies on PyPSA-Eur conventions rather than on anything
 datarecord records:
 
-- A bus's location is its `location` property.
-- `EU` is a virtual location.
+- A bus's location is its `location` property, or the bus itself where that's empty (PyPSA-Earth).
+- `EU` and the empty name are virtual locations.
 - A zone level is a `busmap_*` attribute.
 - A revision's kind (scenario or run result) is guessed from its layer: a
-  revision is a run result when most of the attributes it writes are new to
-  its parent. `<store>.labels.json` can override the guess.
+  revision is a run result when most of the attributes it writes have no rows
+  in its parent. `<store>.labels.json` (or a `kind` in the layer's `meta`) overrides
+  the guess.
 
 ## Records and scenario catalogs
 
 The server serves every store under one root (`RECORDS_ROOT`: a local folder,
 or `s3://manta-records` through datarecord's remote stores); each store is a
-record. Every revision of kind `scenario` of every record is attached as its
-own in-memory catalog, `<record>__<scenario>` (lowercased, other characters as
-`_`), with the same four schemas:
+record. Every scenario and run result of every record is its own in-memory
+catalog, `<record>__<revision>` (lowercased, other characters as `_`), with
+the same four schemas:
 
 ```sql
-FROM r.bel_pre_aggregated_perfect__inputs.attributes.capital_cost  -- Base case
-FROM r.bel_pre_aggregated_perfect__patch.attributes.capital_cost   -- Wind and solar stress test
+FROM r.bel_pre_aggregated_incl_patches_incl_results__inputs.attributes.capital_cost  -- Base case
+FROM r.bel_pre_aggregated_incl_patches_incl_results__patch.attributes.capital_cost   -- Wind and solar stress test
+FROM r.bel_pre_aggregated_incl_patches_incl_results__myopic.attributes.p_nom_opt     -- Base case, myopic
 ```
 
 - There is no record in the default catalog: a query always names one.
-- Run results (`results`, `patch_results`) get no catalog for now. They're
-  meant for a later Inspect page.
-- `manta.revisions.catalog` names each scenario's catalog (NULL for a run
-  result).
+- A record's scenarios are attached when it opens. A run result is attached
+  when first asked for (`POST /api/records/{id}/open?revision=<name>`): its
+  views take several times as long to build (datarecord folds its result
+  layer over the inputs), and a record can hold many. The open endpoint says
+  which are attached (`open`), and lists each run result's result attributes
+  (`results`): those its layer adds to its scenario's.
+- `manta.revisions.catalog` names each revision's catalog, attached or not.
 - **A record opens on first use** (a project asking for it), after the
-  server has locked down. datarecord's SQL reads Python objects by name
-  (`FROM u`), which DuckDB only resolves while external access is on, so the
-  lockdown leaves it on and switches off the HTTP file systems instead.
+  server has locked down. The lockdown leaves external access on and switches
+  off the HTTP file systems instead (`quack.py`). With registered views,
+  switching it off (with `allowed_directories`) now works too; not done yet.
 - A client attached before a record opened doesn't see its catalogs as
   `r.<catalog>`: Quack's client reads the catalog list when it attaches. The
   app runs every query on the server (`quack_query_by_name`), which sees
@@ -161,7 +169,7 @@ Two rules should hold whatever the names:
 4. **Revision kind:** could datarecord record whether a revision is a
    scenario or a run result, instead of our guess from the layer contents?
 5. **Catalog names:** `<record>__<scenario>` comes from the store's folder
-   name and the names in `<store>.json`. Are these meant to be stable enough
+   name and the names in `revisions.json`. Are these meant to be stable enough
    to appear in queries?
 6. **External access:** could datarecord register its intermediate relations
    with `con.register` instead of having DuckDB find Python variables? Then
