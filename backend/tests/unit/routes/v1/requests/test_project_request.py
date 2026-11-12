@@ -214,3 +214,13 @@ def test_list_projects_request_parses_iso_datetimes() -> None:
 
     # Then
     assert request.created_from == datetime(2026, 11, 6, 10, tzinfo=UTC)
+
+
+def test_update_project_request_schema_does_not_advertise_a_null_name() -> None:
+    # Given / When
+    properties = UpdateProjectRequest.model_json_schema()["properties"]
+
+    # Then
+    assert properties["name"]["type"] == "string"
+    assert "anyOf" not in properties["name"]
+    assert "default" not in properties["name"]

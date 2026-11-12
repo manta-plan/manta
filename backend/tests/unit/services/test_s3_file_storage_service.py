@@ -7,8 +7,19 @@ import pytest
 from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
+from manta.entities import Project, User
+from manta.services.errors import AuthorizationError
 from manta.services.results.s3_file_result import GetS3FileResult
 from manta.services.s3_file_storage_service import S3FileStorageService, S3StorageError
+
+
+def _project_and_owner(project_uuid=None, owner_id: int = 1) -> tuple[Project, User]:
+    project = Project(name="North Sea Wind", owner_id=owner_id)
+    project.id = 10
+    project.uuid = project_uuid if project_uuid is not None else uuid4()
+    owner = User(username="alice")
+    owner.id = 1
+    return project, owner
 
 
 def _client_error(status_code: int) -> ClientError:
@@ -325,7 +336,7 @@ def test_delete_project_files_deletes_everything_under_the_project_prefix(mock_s
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
 
     # When
-    service.delete_project_files(project_uuid)
+    service.delete_project_files(*_project_and_owner(project_uuid))
 
     # Then
     mock_s3_client.get_paginator.return_value.paginate.assert_called_once_with(
@@ -342,7 +353,7 @@ def test_delete_project_files_without_files_deletes_nothing(mock_s3_client) -> N
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
 
     # When
-    service.delete_project_files(uuid4())
+    service.delete_project_files(*_project_and_owner())
 
     # Then
     mock_s3_client.delete_objects.assert_not_called()
@@ -355,7 +366,7 @@ def test_delete_project_files_deletes_in_batches_of_1000(mock_s3_client) -> None
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
 
     # When
-    service.delete_project_files(project_uuid)
+    service.delete_project_files(*_project_and_owner(project_uuid))
 
     # Then
     batch_sizes = [
@@ -375,7 +386,7 @@ def test_delete_project_files_wraps_delete_objects_failures(mock_s3_client, erro
 
     # When / Then
     with pytest.raises(S3StorageError):
-        service.delete_project_files(project_uuid)
+        service.delete_project_files(*_project_and_owner(project_uuid))
 
 
 def test_delete_project_files_fails_when_s3_reports_per_object_errors(mock_s3_client) -> None:
@@ -383,10 +394,22 @@ def test_delete_project_files_fails_when_s3_reports_per_object_errors(mock_s3_cl
     project_uuid = uuid4()
     _listing(mock_s3_client, [f"{project_uuid}/a.nc"])
     mock_s3_client.delete_objects.return_value = {
-        "Errors": [{"Key": "a.nc", "Code": "AccessDenied"}]
+        "Errors": [{"Key": "a.nc", "Code": "AccessDenied", "Message": "Access Denied"}]
     }
     service = S3FileStorageService(client=mock_s3_client, bucket="manta")
 
-    # When / Then
-    with pytest.raises(S3StorageError):
-        service.delete_project_files(project_uuid)
+    # When / Then the message names the failing key and its error code
+    with pytest.raises(S3StorageError, match=r"'a.nc' \(AccessDenied: Access Denied\)"):
+        service.delete_project_files(*_project_and_owner(project_uuid))
+
+
+def test_delete_project_files_rejects_non_owner(mock_s3_client) -> None:
+    # Given a project owned by someone other than the requesting user
+    project, _ = _project_and_owner(owner_id=2)
+    service = S3FileStorageService(client=mock_s3_client, bucket="manta")
+
+    # When/Then nothing is listed or deleted
+    with pytest.raises(AuthorizationError):
+        service.delete_project_files(project, _project_and_owner()[1])
+    mock_s3_client.get_paginator.assert_not_called()
+    mock_s3_client.delete_objects.assert_not_called()

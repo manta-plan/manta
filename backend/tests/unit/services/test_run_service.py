@@ -936,43 +936,98 @@ def test_get_run_logs_rejects_non_owner(mock_db_class) -> None:
         service.get_run_logs(run_uuid=run.uuid, user=other_user)
 
 
-def test_delete_flow_runs_deletes_block_runs_then_the_playbook_run(monkeypatch) -> None:
+def test_delete_flow_runs_deletes_block_runs_then_the_playbook_run(
+    monkeypatch, mock_db_class
+) -> None:
     # Given
-    playbook_run_id, block_a, block_b = uuid4(), uuid4(), uuid4()
+    project = _existing_project()
+    run = _existing_run(project)
+    block_a, block_b = uuid4(), uuid4()
     client = MagicMock()
     client.read_flow_runs.return_value = [SimpleNamespace(id=block_a), SimpleNamespace(id=block_b)]
     _patch_get_client(monkeypatch, client)
+    service = RunService(db=mock_db_class(query_results={Run: [run]}))
 
     # When
-    run_service_module.delete_flow_runs([playbook_run_id])
+    service.delete_flow_runs(project, _existing_user())
 
     # Then
     deleted = [call.args[0] for call in client.delete_flow_run.call_args_list]
-    assert deleted == [block_a, block_b, playbook_run_id]
+    assert deleted == [block_a, block_b, run.prefect_flow_run_id]
 
 
-def test_delete_flow_runs_skips_flow_runs_that_are_already_gone(monkeypatch) -> None:
+def test_delete_flow_runs_skips_flow_runs_that_are_already_gone(monkeypatch, mock_db_class) -> None:
     # Given
-    first, second = uuid4(), uuid4()
+    project = _existing_project()
+    first, second = _existing_run(project), _existing_run(project)
     client = MagicMock()
     client.read_flow_runs.return_value = []
     client.delete_flow_run.side_effect = [run_service_module.ObjectNotFound(Exception()), None]
     _patch_get_client(monkeypatch, client)
+    service = RunService(db=mock_db_class(query_results={Run: [first, second]}))
 
     # When
-    run_service_module.delete_flow_runs([first, second])
+    service.delete_flow_runs(project, _existing_user())
 
     # Then
-    assert [call.args[0] for call in client.delete_flow_run.call_args_list] == [first, second]
+    assert [call.args[0] for call in client.delete_flow_run.call_args_list] == [
+        first.prefect_flow_run_id,
+        second.prefect_flow_run_id,
+    ]
 
 
-def test_delete_flow_runs_without_ids_does_not_call_prefect(monkeypatch) -> None:
-    # Given
+def test_delete_flow_runs_rejects_non_owner(monkeypatch) -> None:
+    # Given a project owned by someone other than the requesting user
     client = MagicMock()
     _patch_get_client(monkeypatch, client)
 
-    # When
-    run_service_module.delete_flow_runs([])
+    # When/Then nothing is touched in Prefect
+    with pytest.raises(AuthorizationError):
+        RunService(db=MagicMock()).delete_flow_runs(
+            _existing_project(owner_id=1), _existing_user(user_id=2)
+        )
+    client.delete_flow_run.assert_not_called()
 
-    # Then
-    client.read_flow_runs.assert_not_called()
+
+def _flow_run_in_state(is_final: bool | None):
+    state = None if is_final is None else SimpleNamespace(is_final=lambda: is_final)
+    return SimpleNamespace(state=state)
+
+
+@pytest.mark.parametrize("is_final", [None, False], ids=["unknown_state", "not_final"])
+def test_ensure_no_active_runs_rejects_an_active_run(monkeypatch, mock_db_class, is_final) -> None:
+    # Given
+    project = _existing_project()
+    done, active = _existing_run(project), _existing_run(project)
+    flow_runs = {
+        done.prefect_flow_run_id: _flow_run_in_state(True),
+        active.prefect_flow_run_id: _flow_run_in_state(is_final),
+    }
+    monkeypatch.setattr(run_service_module, "_read_flow_runs", lambda ids: flow_runs)
+    service = RunService(db=mock_db_class(query_results={Run: [done, active]}))
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.ensure_no_active_runs(project, _existing_user())
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Only projects without active runs can be deleted"
+
+
+def test_ensure_no_active_runs_accepts_finished_runs(monkeypatch, mock_db_class) -> None:
+    # Given
+    project = _existing_project()
+    run = _existing_run(project)
+    flow_runs = {run.prefect_flow_run_id: _flow_run_in_state(True)}
+    monkeypatch.setattr(run_service_module, "_read_flow_runs", lambda ids: flow_runs)
+    service = RunService(db=mock_db_class(query_results={Run: [run]}))
+
+    # When/Then
+    service.ensure_no_active_runs(project, _existing_user())
+
+
+def test_ensure_no_active_runs_rejects_non_owner() -> None:
+    # When/Then
+    with pytest.raises(AuthorizationError):
+        RunService(db=MagicMock()).ensure_no_active_runs(
+            _existing_project(owner_id=1), _existing_user(user_id=2)
+        )

@@ -6,8 +6,8 @@ import pytest
 from fastapi import HTTPException
 
 from manta.entities import Project, Run, User
-from manta.services import project_service as project_service_module
 from manta.services.errors import AuthorizationError
+from manta.services.project_changes import UpdateProjectChanges
 from manta.services.project_service import ProjectService
 from manta.services.s3_file_storage_service import S3StorageError
 
@@ -253,7 +253,9 @@ def test_update_project_changes_only_the_given_fields(mock_db_class) -> None:
     service = ProjectService(db=db)
 
     # When
-    result = service.update_project(project.uuid, changes={"name": "New name"}, user=_user())
+    result = service.update_project(
+        project.uuid, changes=UpdateProjectChanges(name="New name"), user=_user()
+    )
 
     # Then
     db.commit.assert_called_once()
@@ -267,7 +269,9 @@ def test_update_project_can_clear_the_description(mock_db_class) -> None:
     service = ProjectService(db=mock_db_class({Project: project}))
 
     # When
-    result = service.update_project(project.uuid, changes={"description": None}, user=_user())
+    result = service.update_project(
+        project.uuid, changes=UpdateProjectChanges(description=None), user=_user()
+    )
 
     # Then
     assert result.description is None
@@ -280,7 +284,7 @@ def test_update_project_that_does_not_exist_is_a_404(mock_db) -> None:
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
-        service.update_project(uuid4(), changes={"name": "New name"}, user=_user())
+        service.update_project(uuid4(), changes=UpdateProjectChanges(name="New name"), user=_user())
     assert exc_info.value.status_code == 404
     mock_db.commit.assert_not_called()
 
@@ -293,47 +297,62 @@ def test_update_project_of_another_owner_is_a_403(mock_db_class) -> None:
 
     # When/Then
     with pytest.raises(AuthorizationError):
-        service.update_project(project.uuid, changes={"name": "New name"}, user=_user(user_id=1))
+        service.update_project(
+            project.uuid, changes=UpdateProjectChanges(name="New name"), user=_user(user_id=1)
+        )
     assert project.name == "North Sea Wind"
     db.commit.assert_not_called()
 
 
-def test_delete_project(mock_db_class, monkeypatch) -> None:
+def test_delete_project(mock_db_class) -> None:
     # Given a project with two runs
     project = _project()
     runs = [Run(project_id=10, prefect_flow_run_id=uuid4(), playbook="expand") for _ in range(2)]
     db = mock_db_class({Project: project, Run: runs})
     storage = MagicMock()
-    deleted_flow_runs: list = []
-    monkeypatch.setattr(
-        project_service_module, "delete_flow_runs", lambda ids: deleted_flow_runs.extend(ids)
-    )
-    service = ProjectService(db=db, storage=storage)
+    run_service = MagicMock()
+    service = ProjectService(db=db, storage=storage, run_service=run_service)
+    user = _user()
 
     # When
-    service.delete_project(project.uuid, user=_user())
+    service.delete_project(project.uuid, user=user)
 
     # Then the runs' Prefect flow runs and the project's S3 files are cleaned up,
     # and the project row is deleted
-    assert deleted_flow_runs == [run.prefect_flow_run_id for run in runs]
-    storage.delete_project_files.assert_called_once_with(project.uuid)
+    run_service.ensure_no_active_runs.assert_called_once_with(project, user)
+    run_service.delete_flow_runs.assert_called_once_with(project, user)
+    storage.delete_project_files.assert_called_once_with(project, user)
     db.delete.assert_called_once_with(project)
     db.commit.assert_called_once()
 
 
-def test_delete_project_keeps_the_project_when_prefect_cleanup_fails(
-    mock_db_class, monkeypatch
-) -> None:
+def test_delete_project_with_active_runs_is_a_409_and_cleans_up_nothing(mock_db_class) -> None:
+    # Given
+    project = _project()
+    db = mock_db_class({Project: project})
+    storage = MagicMock()
+    run_service = MagicMock()
+    run_service.ensure_no_active_runs.side_effect = HTTPException(status_code=409)
+    service = ProjectService(db=db, storage=storage, run_service=run_service)
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        service.delete_project(project.uuid, user=_user())
+    assert exc_info.value.status_code == 409
+    run_service.delete_flow_runs.assert_not_called()
+    storage.delete_project_files.assert_not_called()
+    db.delete.assert_not_called()
+
+
+def test_delete_project_keeps_the_project_when_prefect_cleanup_fails(mock_db_class) -> None:
     # Given
     project = _project()
     db = mock_db_class({Project: project})
     storage = MagicMock()
 
-    def fail(_ids) -> None:
-        raise RuntimeError("prefect down")
-
-    monkeypatch.setattr(project_service_module, "delete_flow_runs", fail)
-    service = ProjectService(db=db, storage=storage)
+    run_service = MagicMock()
+    run_service.delete_flow_runs.side_effect = RuntimeError("prefect down")
+    service = ProjectService(db=db, storage=storage, run_service=run_service)
 
     # When / Then
     with pytest.raises(RuntimeError):
@@ -342,14 +361,13 @@ def test_delete_project_keeps_the_project_when_prefect_cleanup_fails(
     db.delete.assert_not_called()
 
 
-def test_delete_project_keeps_the_project_when_s3_cleanup_fails(mock_db_class, monkeypatch) -> None:
+def test_delete_project_keeps_the_project_when_s3_cleanup_fails(mock_db_class) -> None:
     # Given
     project = _project()
     db = mock_db_class({Project: project})
     storage = MagicMock()
     storage.delete_project_files.side_effect = S3StorageError("s3 down")
-    monkeypatch.setattr(project_service_module, "delete_flow_runs", lambda _ids: None)
-    service = ProjectService(db=db, storage=storage)
+    service = ProjectService(db=db, storage=storage, run_service=MagicMock())
 
     # When / Then
     with pytest.raises(S3StorageError):
