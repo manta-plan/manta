@@ -23,7 +23,7 @@ from playbook_library.overnight_capacity_expansion import OvernightCapacityExpan
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.pypsa_helpers import nominal_attr, remove_unbuilt_cohorts, to_network
 from playbook_library.rolling_horizon_dispatch import RollingHorizonDispatch
-from playbook_library.time_aggregation import snapshot_frame
+from playbook_library.time_aggregation import series_frame, snapshot_frame
 from playbook_library.time_cluster import ClusterTime
 
 pytestmark = pytest.mark.pypsa
@@ -43,7 +43,7 @@ def _snapshots(rev: Revision) -> pd.DataFrame:
 
 def _stored(rev: Revision, name: str) -> pd.DataFrame:
     """Return an attribute of `rev`, with each row's entity."""
-    frame = rev.record.attributes[name].df()
+    frame = series_frame(rev.record, name)
     if "connection" in frame:
         frame["entity"] = frame.pop("connection").str.get("entity")
     return frame
@@ -89,8 +89,7 @@ def test_clustering_leaves_the_network_it_read_alone(single_period):
     _run(ClusterTime, CLUSTER, single_period)
     after = _snapshots(single_period)
 
-    assert after["agg_3h"].isna().all()
-    pd.testing.assert_frame_equal(after.drop(columns="agg_3h"), before)
+    pd.testing.assert_frame_equal(after, before)
 
 
 @pytest.mark.parametrize(
