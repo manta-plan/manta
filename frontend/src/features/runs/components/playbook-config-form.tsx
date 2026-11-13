@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getIn } from "../../playbook-config/conditions";
 import { blockedSettings } from "../../playbook-config/exclusiveSettings";
 import { isObject, setIn, withKey } from "../../../utils/jsonObject";
@@ -268,8 +268,18 @@ function Field({
           className={inputClassName}
           disabled={isNull || isBlocked}
           id={id}
-          onChange={(event) => onChange(event.target.value === "" ? cleared : event.target.value)}
-          value={typeof value === "string" ? value : ""}
+          onChange={(event) =>
+            onChange(
+              event.target.value === ""
+                ? cleared
+                : (schema.enum ?? []).find((option) => String(option) === event.target.value),
+            )
+          }
+          value={
+            typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+              ? String(value)
+              : ""
+          }
         >
           <option value="">{placeholder === "" ? "—" : `Default (${placeholder})`}</option>
           {(schema.enum ?? []).map((option) => (
@@ -363,19 +373,31 @@ function ArrayField({ id, item, value, onChange }: ArrayFieldProps) {
     <div className="grid gap-2">
       {value.map((entry, index) => (
         <div className="flex items-center gap-2" key={index}>
-          <input
-            aria-label={`${item.label} ${index + 1}`}
-            className={inputClassName}
-            id={index === 0 ? id : undefined}
-            onChange={(event) => {
-              const raw = event.target.value;
-              const next = isNumber ? Number(raw) : raw;
-              onChange(value.map((current, i) => (i === index ? next : current)));
-            }}
-            step={item.kind === "integer" ? 1 : "any"}
-            type={isNumber ? "number" : "text"}
-            value={String(entry ?? "")}
-          />
+          {item.kind === "boolean" ? (
+            <input
+              aria-label={`${item.label} ${index + 1}`}
+              checked={entry === true}
+              id={index === 0 ? id : undefined}
+              onChange={(event) =>
+                onChange(value.map((current, i) => (i === index ? event.target.checked : current)))
+              }
+              type="checkbox"
+            />
+          ) : (
+            <input
+              aria-label={`${item.label} ${index + 1}`}
+              className={inputClassName}
+              id={index === 0 ? id : undefined}
+              onChange={(event) => {
+                const raw = event.target.value;
+                const next = isNumber ? Number(raw) : raw;
+                onChange(value.map((current, i) => (i === index ? next : current)));
+              }}
+              step={item.kind === "integer" ? 1 : "any"}
+              type={isNumber ? "number" : "text"}
+              value={String(entry ?? "")}
+            />
+          )}
           <button
             aria-label={`Remove ${item.label} ${index + 1}`}
             className="text-text-secondary hover:text-text text-sm"
@@ -473,10 +495,20 @@ function GroupSection({ context, group, groups, root, onChange }: GroupSectionPr
 // Free-form settings are typed as JSON; only a parsable value is passed on, so a
 // half-typed one never reaches the config.
 function JsonField({ id, value, cleared, onChange }: JsonFieldProps) {
-  const [text, setText] = useState(
-    value === undefined || value === null ? "" : JSON.stringify(value),
-  );
+  const external = value === undefined || value === null ? "" : JSON.stringify(value);
+  const [text, setText] = useState(external);
   const [isInvalid, setIsInvalid] = useState(false);
+  // What this field last passed on, so only a change from outside (a reset) replaces the
+  // text, never the user's own typing.
+  const lastSent = useRef(external);
+
+  useEffect(() => {
+    if (external !== lastSent.current) {
+      lastSent.current = external;
+      setText(external);
+      setIsInvalid(false);
+    }
+  }, [external]);
 
   return (
     <div className="grid gap-1">
@@ -490,12 +522,15 @@ function JsonField({ id, value, cleared, onChange }: JsonFieldProps) {
 
           if (nextText.trim() === "") {
             setIsInvalid(false);
+            lastSent.current = "";
             onChange(cleared);
             return;
           }
 
           try {
-            onChange(JSON.parse(nextText));
+            const parsed = JSON.parse(nextText);
+            lastSent.current = JSON.stringify(parsed);
+            onChange(parsed);
             setIsInvalid(false);
           } catch {
             setIsInvalid(true);

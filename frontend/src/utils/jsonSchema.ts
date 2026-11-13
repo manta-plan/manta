@@ -94,7 +94,17 @@ export function resolveSchema(
     }
   }
 
-  const type = Array.isArray(schema.type) ? undefined : schema.type;
+  let type = Array.isArray(schema.type) ? undefined : schema.type;
+
+  // `["string", "null"]` is a nullable string, the same as `anyOf: [string, null]`.
+  if (Array.isArray(schema.type)) {
+    const nonNullTypes = schema.type.filter((entry) => entry !== "null");
+
+    if (nonNullTypes.length === 1) {
+      type = nonNullTypes[0];
+      nullable = nullable || nonNullTypes.length < schema.type.length;
+    }
+  }
   let kind: SchemaKind;
 
   if (unsupported) {
