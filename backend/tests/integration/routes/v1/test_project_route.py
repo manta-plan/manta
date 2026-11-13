@@ -447,6 +447,9 @@ def test_list_projects_filters_by_updated_range(
         {"order": "sideways"},
         {"name": ""},
         {"created_from": "not-a-date"},
+        {"created_from": "2026-11-06T00:00:00"},
+        {"created_from": "2026-11-05T00:00:00Z", "created_to": "2026-11-06T00:00:00"},
+        {"updated_from": "2026-11-05T00:00:00Z", "updated_to": "2026-11-06T00:00:00"},
         {"created_from": "2026-11-06T00:00:00Z", "created_to": "2026-11-05T00:00:00Z"},
         {"updated_from": "2026-11-06T00:00:00Z", "updated_to": "2026-11-05T00:00:00Z"},
     ],
@@ -458,6 +461,9 @@ def test_list_projects_filters_by_updated_range(
         "unknown_order",
         "empty_name",
         "bad_date",
+        "naive_date",
+        "created_range_mixed_naive_aware",
+        "updated_range_mixed_naive_aware",
         "created_range_reversed",
         "updated_range_reversed",
     ],
@@ -697,6 +703,10 @@ def test_delete_project_removes_its_files_from_s3(
     assert left["KeyCount"] == 0
     kept = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"{other['uuid']}/")
     assert kept["KeyCount"] == 1
+
+
+# Deleting a project with active runs, and retrying a delete after a partial failure, are
+# tested in test_run_route.py, which has the helpers to run a playbook.
 
 
 def test_delete_project_that_does_not_exist_is_a_404(

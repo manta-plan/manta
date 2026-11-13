@@ -448,6 +448,71 @@ def test_run_is_cascade_deleted_when_project_is_deleted(
     assert response.status_code == 404
 
 
+def test_delete_project_with_an_active_run_is_a_409_until_the_run_finishes(
+    app_server: str,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    example_store: Callable[[str], dict[str, dict[str, str]]],
+) -> None:
+    # Given a project whose run has just been dispatched, so it is not in a final state
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    _wait_for_deployment_registered(prefect_service)
+    run_uuid = _create_run(app_server, project_uuid, example_store, headers)["uuid"]
+
+    # When the project is deleted
+    response = httpx2.delete(f"{app_server}/v1/projects/{project_uuid}", headers=headers)
+
+    # Then it is refused and the project and its run are untouched
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Only projects without active runs can be deleted"
+    assert (
+        httpx2.get(f"{app_server}/v1/projects/{project_uuid}", headers=headers).status_code == 200
+    )
+    assert httpx2.get(f"{app_server}/v1/runs/{run_uuid}", headers=headers).status_code == 200
+
+    # And once the run has finished, the delete goes through
+    _wait_for_terminal_status(app_server, run_uuid, headers)
+    response = httpx2.delete(f"{app_server}/v1/projects/{project_uuid}", headers=headers)
+    assert response.status_code == 204
+
+
+def test_delete_project_again_after_its_flow_runs_were_already_deleted_is_a_204(
+    app_server: str,
+    db_connection: psycopg.Connection,
+    prefect_service: dict[str, str],
+    kc_oidc_client: KeycloakOpenID,
+    example_store: Callable[[str], dict[str, dict[str, str]]],
+) -> None:
+    # Given a project with a finished run whose Prefect flow run is already gone, as
+    # after a first DELETE that cleaned up Prefect and then failed (for example in S3).
+    # The failure itself can't be injected into the app subprocess, so the half-done
+    # state is set up directly.
+    headers = _auth_headers(app_server, kc_oidc_client)
+    project_uuid = _create_project(app_server, headers)
+    _wait_for_deployment_registered(prefect_service)
+    run_uuid = _create_run(app_server, project_uuid, example_store, headers)["uuid"]
+    assert _wait_for_terminal_status(app_server, run_uuid, headers) == "COMPLETED"
+    with db_connection.cursor() as cursor:
+        cursor.execute("SELECT prefect_flow_run_id FROM runs WHERE uuid = %s", (run_uuid,))
+        [(flow_run_id,)] = cursor.fetchall()
+    api_url = f"http://{prefect_service['host']}:{prefect_service['port']}/api"
+    with SyncPrefectClient(api=api_url) as client:
+        client.delete_flow_run(flow_run_id)
+
+    # When the project is deleted
+    response = httpx2.delete(f"{app_server}/v1/projects/{project_uuid}", headers=headers)
+
+    # Then the missing flow run does not block it, and the project and its run are gone
+    assert response.status_code == 204
+    assert (
+        httpx2.get(f"{app_server}/v1/projects/{project_uuid}", headers=headers).status_code == 404
+    )
+    with db_connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM runs WHERE uuid = %s", (run_uuid,))
+        assert cursor.fetchone() is None
+
+
 def test_list_runs_returns_project_runs_with_pagination_and_summary(
     app_server: str,
     prefect_service: dict[str, str],
