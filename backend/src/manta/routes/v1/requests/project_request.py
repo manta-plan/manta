@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 
@@ -39,10 +38,10 @@ class ListProjectsRequest(BaseModel):
     offset: int = Field(default=0, ge=0)
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, min_length=1)
-    created_from: datetime | None = None
-    created_to: datetime | None = None
-    updated_from: datetime | None = None
-    updated_to: datetime | None = None
+    created_from: AwareDatetime | None = None
+    created_to: AwareDatetime | None = None
+    updated_from: AwareDatetime | None = None
+    updated_to: AwareDatetime | None = None
     order_by: Literal["name", "created_at", "updated_at"] = "created_at"
     order: Literal["asc", "desc"] = "desc"
 

@@ -216,6 +216,26 @@ def test_list_projects_request_parses_iso_datetimes() -> None:
     assert request.created_from == datetime(2026, 11, 6, 10, tzinfo=UTC)
 
 
+@pytest.mark.parametrize("field", ["created_from", "created_to", "updated_from", "updated_to"])
+def test_list_projects_request_rejects_a_naive_datetime(field) -> None:
+    # When/Then
+    with pytest.raises(ValidationError):
+        ListProjectsRequest(**{field: "2026-11-06T10:00:00"})
+
+
+@pytest.mark.parametrize("prefix", ["created", "updated"])
+def test_list_projects_request_rejects_a_range_that_mixes_naive_and_aware(prefix) -> None:
+    # Given one aware and one naive bound, which used to raise a TypeError in the range check
+    bounds = {
+        f"{prefix}_from": "2026-11-05T10:00:00Z",
+        f"{prefix}_to": "2026-11-06T10:00:00",
+    }
+
+    # When/Then a validation error (a 422), not a TypeError (a 500)
+    with pytest.raises(ValidationError):
+        ListProjectsRequest(**bounds)
+
+
 def test_update_project_request_schema_does_not_advertise_a_null_name() -> None:
     # Given / When
     properties = UpdateProjectRequest.model_json_schema()["properties"]
