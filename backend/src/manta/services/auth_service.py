@@ -17,7 +17,6 @@ from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
 from manta.services.results.login_result import LoginResult
-from manta.services.results.refresh_result import RefreshResult
 from manta.services.results.register_result import RegisterResult
 
 logger = logging.getLogger(__name__)
@@ -96,13 +95,13 @@ class AuthService:
             refresh_expires_in=token["refresh_expires_in"],
         )
 
-    def refresh(self, refresh_token: str) -> RefreshResult:
+    def refresh(self, refresh_token: str) -> LoginResult:
         with _translate_keycloak_errors():
             token = self.kc_client.refresh_token(refresh_token)
         # Keycloak issues a new refresh token on every refresh. Callers must
         # replace the one they hold: if the realm's "Revoke Refresh Token"
         # setting is turned on, the old one stops working after one use.
-        return RefreshResult(
+        return LoginResult(
             access_token=token["access_token"],
             expires_in=token["expires_in"],
             refresh_token=token["refresh_token"],
