@@ -7,9 +7,9 @@ from fastapi import HTTPException
 
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
-from manta.services.project_changes import UpdateProjectChanges
-from manta.services.project_service import ProjectService
+from manta.services.project_service import ProjectService, UpdateProjectChanges
 from manta.services.s3_file_storage_service import S3StorageError
+from manta.services.user_service import UserService
 
 
 @pytest.mark.parametrize(
@@ -19,7 +19,7 @@ from manta.services.s3_file_storage_service import S3StorageError
 )
 def test_create_project(description, mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
     owner = User(username="alice")
     owner.id = 1
 
@@ -54,7 +54,8 @@ def _user(user_id: int = 1) -> User:
 def test_list_projects_returns_the_users_projects(mock_db_class) -> None:
     # Given
     projects = [_project(name="First one"), _project(name="Second one")]
-    service = ProjectService(db=mock_db_class({Project: projects}))
+    db = mock_db_class({Project: projects})
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When
     result = service.list_projects(limit=10, offset=0, user=_user())
@@ -66,7 +67,7 @@ def test_list_projects_returns_the_users_projects(mock_db_class) -> None:
 
 def test_list_projects_returns_an_empty_page_without_projects(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     result = service.list_projects(limit=10, offset=0, user=_user())
@@ -82,7 +83,7 @@ def _clause_values(clause) -> list:
 
 def test_list_projects_without_filters_only_scopes_to_the_owner(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     service.list_projects(limit=10, offset=0, user=_user(user_id=7))
@@ -96,7 +97,7 @@ def test_list_projects_without_filters_only_scopes_to_the_owner(mock_db) -> None
 
 def test_list_projects_passes_limit_and_offset_to_the_query(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     result = service.list_projects(limit=5, offset=10, user=_user())
@@ -109,7 +110,7 @@ def test_list_projects_passes_limit_and_offset_to_the_query(mock_db) -> None:
 @pytest.mark.parametrize("field", ["name", "description"])
 def test_list_projects_filters_a_text_field_by_case_insensitive_substring(field, mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     service.list_projects(limit=10, offset=0, user=_user(), **{field: "Wind"})
@@ -124,7 +125,7 @@ def test_list_projects_filters_a_text_field_by_case_insensitive_substring(field,
 
 def test_list_projects_treats_like_wildcards_in_a_filter_literally(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     service.list_projects(limit=10, offset=0, user=_user(), name="50%_off\\")
@@ -144,7 +145,7 @@ def test_list_projects_treats_like_wildcards_in_a_filter_literally(mock_db) -> N
 )
 def test_list_projects_filters_by_an_inclusive_date_bound(bound, expected_sql, mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
     moment = datetime(2026, 11, 6, tzinfo=UTC)
 
     # When
@@ -159,7 +160,7 @@ def test_list_projects_filters_by_an_inclusive_date_bound(bound, expected_sql, m
 
 def test_list_projects_applies_every_filter_given(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
     moment = datetime(2026, 11, 6, tzinfo=UTC)
 
     # When
@@ -181,7 +182,7 @@ def test_list_projects_applies_every_filter_given(mock_db) -> None:
 
 def test_list_projects_orders_by_newest_first_by_default(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     service.list_projects(limit=10, offset=0, user=_user())
@@ -198,7 +199,7 @@ def test_list_projects_orders_by_the_requested_column_and_direction(
     order_by, order, mock_db
 ) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When
     service.list_projects(limit=10, offset=0, user=_user(), order_by=order_by, order=order)
@@ -212,7 +213,8 @@ def test_list_projects_orders_by_the_requested_column_and_direction(
 def test_get_project(mock_db_class) -> None:
     # Given
     project = _project(description="Offshore wind buildout scenario")
-    service = ProjectService(db=mock_db_class({Project: project}))
+    db = mock_db_class({Project: project})
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_project(project.uuid, user=_user())
@@ -227,7 +229,7 @@ def test_get_project(mock_db_class) -> None:
 
 def test_get_project_that_does_not_exist_is_a_404(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -238,7 +240,8 @@ def test_get_project_that_does_not_exist_is_a_404(mock_db) -> None:
 def test_get_project_of_another_owner_is_a_403(mock_db_class) -> None:
     # Given
     project = _project(owner_id=2)
-    service = ProjectService(db=mock_db_class({Project: project}))
+    db = mock_db_class({Project: project})
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError) as exc_info:
@@ -250,7 +253,7 @@ def test_update_project_changes_only_the_given_fields(mock_db_class) -> None:
     # Given
     project = _project(description="Old description")
     db = mock_db_class({Project: project})
-    service = ProjectService(db=db)
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When
     result = service.update_project(
@@ -266,7 +269,8 @@ def test_update_project_changes_only_the_given_fields(mock_db_class) -> None:
 def test_update_project_can_clear_the_description(mock_db_class) -> None:
     # Given
     project = _project(description="Old description")
-    service = ProjectService(db=mock_db_class({Project: project}))
+    db = mock_db_class({Project: project})
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When
     result = service.update_project(
@@ -280,7 +284,7 @@ def test_update_project_can_clear_the_description(mock_db_class) -> None:
 
 def test_update_project_that_does_not_exist_is_a_404(mock_db) -> None:
     # Given
-    service = ProjectService(db=mock_db)
+    service = ProjectService(db=mock_db, user_service=UserService(mock_db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -293,7 +297,7 @@ def test_update_project_of_another_owner_is_a_403(mock_db_class) -> None:
     # Given
     project = _project(owner_id=2)
     db = mock_db_class({Project: project})
-    service = ProjectService(db=db)
+    service = ProjectService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -311,7 +315,9 @@ def test_delete_project(mock_db_class) -> None:
     db = mock_db_class({Project: project, Run: runs})
     storage = MagicMock()
     run_service = MagicMock()
-    service = ProjectService(db=db, storage=storage, run_service=run_service)
+    service = ProjectService(
+        db=db, storage=storage, run_service=run_service, user_service=UserService(db)
+    )
     user = _user()
 
     # When
@@ -321,7 +327,7 @@ def test_delete_project(mock_db_class) -> None:
     # and the project row is deleted
     run_service.ensure_no_active_runs.assert_called_once_with(project, user)
     run_service.delete_flow_runs.assert_called_once_with(project, user)
-    storage.delete_project_files.assert_called_once_with(project, user)
+    storage.delete_project_files.assert_called_once_with(project.uuid, user)
     db.delete.assert_called_once_with(project)
     db.commit.assert_called_once()
 
@@ -333,7 +339,9 @@ def test_delete_project_with_active_runs_is_a_409_and_cleans_up_nothing(mock_db_
     storage = MagicMock()
     run_service = MagicMock()
     run_service.ensure_no_active_runs.side_effect = HTTPException(status_code=409)
-    service = ProjectService(db=db, storage=storage, run_service=run_service)
+    service = ProjectService(
+        db=db, storage=storage, run_service=run_service, user_service=UserService(db)
+    )
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -352,7 +360,9 @@ def test_delete_project_keeps_the_project_when_prefect_cleanup_fails(mock_db_cla
 
     run_service = MagicMock()
     run_service.delete_flow_runs.side_effect = RuntimeError("prefect down")
-    service = ProjectService(db=db, storage=storage, run_service=run_service)
+    service = ProjectService(
+        db=db, storage=storage, run_service=run_service, user_service=UserService(db)
+    )
 
     # When / Then
     with pytest.raises(RuntimeError):
@@ -367,7 +377,9 @@ def test_delete_project_keeps_the_project_when_s3_cleanup_fails(mock_db_class) -
     db = mock_db_class({Project: project})
     storage = MagicMock()
     storage.delete_project_files.side_effect = S3StorageError("s3 down")
-    service = ProjectService(db=db, storage=storage, run_service=MagicMock())
+    service = ProjectService(
+        db=db, storage=storage, run_service=MagicMock(), user_service=UserService(db)
+    )
 
     # When / Then
     with pytest.raises(S3StorageError):
@@ -379,7 +391,7 @@ def test_delete_project_keeps_the_project_when_s3_cleanup_fails(mock_db_class) -
 def test_delete_project_that_does_not_exist_is_a_404(mock_db) -> None:
     # Given
     storage = MagicMock()
-    service = ProjectService(db=mock_db, storage=storage)
+    service = ProjectService(db=mock_db, storage=storage, user_service=UserService(mock_db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -394,7 +406,7 @@ def test_delete_project_of_another_owner_is_a_403(mock_db_class) -> None:
     project = _project(owner_id=2)
     db = mock_db_class({Project: project})
     storage = MagicMock()
-    service = ProjectService(db=db, storage=storage)
+    service = ProjectService(db=db, storage=storage, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):

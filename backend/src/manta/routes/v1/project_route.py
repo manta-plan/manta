@@ -10,8 +10,7 @@ from manta.routes.v1.requests.project_request import (
     UpdateProjectRequest,
 )
 from manta.services.auth_service import authenticated_user
-from manta.services.project_changes import UpdateProjectChanges
-from manta.services.project_service import ProjectService
+from manta.services.project_service import ProjectService, UpdateProjectChanges
 from manta.services.results.project_result import ListProjectsResult, ProjectResult
 
 router = APIRouter(prefix="/projects", tags=["projects"])

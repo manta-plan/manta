@@ -39,7 +39,6 @@ from manta.config.database_config import get_db_session
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
-from manta.services.project_access import ensure_project_owner, get_owned_project
 from manta.services.results.run_result import (
     CreateRunResult,
     DataRecordResult,
@@ -51,6 +50,7 @@ from manta.services.results.run_result import (
     RunStepResult,
 )
 from manta.services.s3_file_storage_service import S3FileStorageService
+from manta.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,17 @@ def _read_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
         flow_runs = {}
         for flow_run_id in flow_run_ids:
             flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
+        return flow_runs
+
+
+def _read_existing_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
+    """Like `_read_flow_runs`, but leaves out a flow run Prefect no longer has. For the
+    deletion preflight only: an earlier, partly failed delete may have removed some."""
+    with get_client(sync_client=True) as client:
+        flow_runs = {}
+        for flow_run_id in flow_run_ids:
+            with suppress(ObjectNotFound):
+                flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
         return flow_runs
 
 
@@ -228,10 +239,12 @@ class RunService:
         db: Session = Depends(get_db_session),
         storage: S3FileStorageService = Depends(),
         playbook_service: PlaybookService = Depends(),
+        user_service: UserService = Depends(),
     ) -> None:
         self.db = db
         self.storage = storage
         self.playbook_service = playbook_service
+        self.user_service = user_service
 
     def create_run(
         self,
@@ -242,7 +255,7 @@ class RunService:
         revision_uuid: UUID,
         user: User,
     ) -> CreateRunResult:
-        project = get_owned_project(self.db, project_uuid, user)
+        project = self.user_service.get_owned_project(project_uuid, user)
 
         library_playbook = library_playbooks().get(playbook)
         if library_playbook is None:
@@ -325,7 +338,7 @@ class RunService:
         status_filters: list[str] | None,
         user: User,
     ) -> ListRunsResult:
-        project = get_owned_project(self.db, project_uuid, user)
+        project = self.user_service.get_owned_project(project_uuid, user)
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -348,7 +361,7 @@ class RunService:
         )
 
     def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
-        project = get_owned_project(self.db, project_uuid, user)
+        project = self.user_service.get_owned_project(project_uuid, user)
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
@@ -357,11 +370,12 @@ class RunService:
     def ensure_no_active_runs(self, project: Project, user: User) -> None:
         """Raises a 409 if any run of the project has not reached a final Prefect state.
         A run in flight would write to S3 again after the project's cleanup. A run whose
-        state is unknown counts as active."""
-        ensure_project_owner(project, user)
+        state is unknown counts as active. A flow run Prefect no longer has is skipped, so a
+        delete retried after a partial failure is not blocked by its own earlier cleanup."""
+        self.user_service.ensure_project_owner(project, user)
 
         runs = self._list_project_runs(project.id)
-        flow_runs = self._read_project_flow_runs(runs)
+        flow_runs = _read_existing_flow_runs([run.prefect_flow_run_id for run in runs])
         if any(
             flow_run.state is None or not flow_run.state.is_final()
             for flow_run in flow_runs.values()
@@ -375,7 +389,7 @@ class RunService:
         """Deletes the Prefect flow run of each of the project's runs, together with the
         block flow runs dispatched under it. A flow run that is already gone is skipped,
         so a retry after a partial failure picks up where it stopped."""
-        ensure_project_owner(project, user)
+        self.user_service.ensure_project_owner(project, user)
 
         flow_run_ids = [run.prefect_flow_run_id for run in self._list_project_runs(project.id)]
         with get_client(sync_client=True) as client:
@@ -424,7 +438,7 @@ class RunService:
         project = self.db.query(Project).filter(Project.id == run.project_id).one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail=f"Project {run.project_id} not found")
-        ensure_project_owner(project, user)
+        self.user_service.ensure_project_owner(project, user)
 
         return run, project
 

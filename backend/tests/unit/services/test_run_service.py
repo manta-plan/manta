@@ -18,6 +18,7 @@ from manta.services.playbook_service import PlaybookService
 from manta.services.results.run_result import DataRecordResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
+from manta.services.user_service import UserService
 
 _LIBRARY_PLAYBOOK = "expand"
 _BUCKET = "manta"
@@ -91,6 +92,7 @@ def _dispatching_service(db, mock_s3_client) -> RunService:
         db=db,
         storage=S3FileStorageService(client=mock_s3_client, bucket=_BUCKET),
         playbook_service=_library_playbook_service(),
+        user_service=UserService(db),
     )
 
 
@@ -219,7 +221,7 @@ def test_create_run_with_unknown_project_raises_404(
     # Given
     db = mock_db_class(query_results={Project: None})
     monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -242,7 +244,7 @@ def test_create_run_with_unknown_playbook_raises_404(
     db = mock_db_class(query_results={Project: project})
     dispatch = MagicMock()
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -270,7 +272,9 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
     mint_run_uuid = MagicMock(side_effect=uuid4)
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
     monkeypatch.setattr(run_service_module, "uuid4", mint_run_uuid)
-    service = RunService(db=db, playbook_service=_library_playbook_service())
+    service = RunService(
+        db=db, playbook_service=_library_playbook_service(), user_service=UserService(db)
+    )
     default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
     myopic_config = {**default_config, "globals": {"expansion_mode": "myopic"}}
 
@@ -378,7 +382,7 @@ def test_get_run_returns_dto_for_a_known_run(
         read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED", started_with_config))
     )
     _patch_get_client(monkeypatch, fake_client)
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run(run_uuid=run.uuid, user=user)
@@ -406,7 +410,7 @@ def test_get_run_returns_dto_with_non_completed_status(
     db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = MagicMock(read_flow_run=MagicMock(return_value=_fake_flow_run("CRASHED")))
     _patch_get_client(monkeypatch, fake_client)
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run(run_uuid=run.uuid, user=user)
@@ -418,7 +422,7 @@ def test_get_run_returns_dto_with_non_completed_status(
 def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -447,7 +451,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
             }
         ),
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.list_runs(
@@ -493,7 +497,7 @@ def test_list_runs_filters_project_runs_by_status(
             }
         ),
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.list_runs(
@@ -553,7 +557,7 @@ def test_get_run_summary_returns_project_status_counts(
             }
         ),
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_summary(project_uuid=project.uuid, user=_existing_user())
@@ -572,7 +576,7 @@ def test_get_run_summary_returns_project_status_counts(
 def test_get_run_summary_with_unknown_project_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Project: None})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -583,7 +587,7 @@ def test_get_run_summary_with_unknown_project_raises_404(mock_db_class) -> None:
 def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Project: None})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -658,7 +662,7 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
             ),
         ],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -694,7 +698,7 @@ def test_get_run_steps_decides_skipped_steps_from_the_runs_own_config(
         _fake_playbook_flow_run("PENDING", {"globals": {"expansion_mode": "myopic"}}),
         [],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -727,7 +731,7 @@ def test_get_run_steps_reports_the_latest_block_run_of_a_step_run_twice(
             _fake_block_run("expansion_overnight", "overnight_capacity_expansion", "FAILED", first),
         ],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -757,7 +761,7 @@ def test_get_run_steps_reports_the_output_record_each_block_run_published(
         [block_run],
         [_fake_output_artifact(block_run, {"url": _store_url(project), "uuid": str(output_uuid)})],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -786,7 +790,7 @@ def test_get_run_steps_reads_no_artifacts_before_any_block_has_run(
         _fake_playbook_flow_run("PENDING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
         [],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -817,7 +821,7 @@ def test_get_run_steps_reports_why_a_step_failed(
             ),
         ],
     )
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -847,7 +851,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
         ],
     }
     _patch_flow_runs(monkeypatch, _fake_playbook_flow_run("RUNNING", {}, playbook_doc), [])
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
@@ -863,7 +867,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
 def test_get_run_steps_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -877,7 +881,7 @@ def test_get_run_steps_rejects_non_owner(mock_db_class) -> None:
     run = _existing_run(project)
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Run: run, Project: project})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -900,7 +904,7 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
         ),
     )
     _patch_get_client(monkeypatch, fake_client)
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     result = service.get_run_logs(run_uuid=run.uuid, user=user)
@@ -914,7 +918,7 @@ def test_get_run_logs_returns_logs_and_status_for_a_known_run(
 def test_get_run_logs_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -928,7 +932,7 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Project: project})
     monkeypatch.setattr(run_service_module, "run_deployment", MagicMock())
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -947,7 +951,7 @@ def test_list_runs_rejects_non_owner(mock_db_class) -> None:
     project = _existing_project(owner_id=1)
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Project: project})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -961,7 +965,7 @@ def test_get_run_summary_rejects_non_owner(mock_db_class) -> None:
     project = _existing_project(owner_id=1)
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Project: project})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -974,7 +978,7 @@ def test_get_run_rejects_non_owner(mock_db_class) -> None:
     run = _existing_run(project)
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Run: run, Project: project})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -987,7 +991,7 @@ def test_get_run_logs_rejects_non_owner(mock_db_class) -> None:
     run = _existing_run(project)
     other_user = _existing_user(user_id=2, username="mallory")
     db = mock_db_class(query_results={Run: run, Project: project})
-    service = RunService(db=db)
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(AuthorizationError):
@@ -1004,7 +1008,8 @@ def test_delete_flow_runs_deletes_block_runs_then_the_playbook_run(
     client = MagicMock()
     client.read_flow_runs.return_value = [SimpleNamespace(id=block_a), SimpleNamespace(id=block_b)]
     _patch_get_client(monkeypatch, client)
-    service = RunService(db=mock_db_class(query_results={Run: [run]}))
+    db = mock_db_class(query_results={Run: [run]})
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     service.delete_flow_runs(project, _existing_user())
@@ -1022,7 +1027,8 @@ def test_delete_flow_runs_skips_flow_runs_that_are_already_gone(monkeypatch, moc
     client.read_flow_runs.return_value = []
     client.delete_flow_run.side_effect = [run_service_module.ObjectNotFound(Exception()), None]
     _patch_get_client(monkeypatch, client)
-    service = RunService(db=mock_db_class(query_results={Run: [first, second]}))
+    db = mock_db_class(query_results={Run: [first, second]})
+    service = RunService(db=db, user_service=UserService(db))
 
     # When
     service.delete_flow_runs(project, _existing_user())
@@ -1041,7 +1047,7 @@ def test_delete_flow_runs_rejects_non_owner(monkeypatch) -> None:
 
     # When/Then nothing is touched in Prefect
     with pytest.raises(AuthorizationError):
-        RunService(db=MagicMock()).delete_flow_runs(
+        RunService(db=MagicMock(), user_service=UserService(MagicMock())).delete_flow_runs(
             _existing_project(owner_id=1), _existing_user(user_id=2)
         )
     client.delete_flow_run.assert_not_called()
@@ -1061,8 +1067,9 @@ def test_ensure_no_active_runs_rejects_an_active_run(monkeypatch, mock_db_class,
         done.prefect_flow_run_id: _flow_run_in_state(True),
         active.prefect_flow_run_id: _flow_run_in_state(is_final),
     }
-    monkeypatch.setattr(run_service_module, "_read_flow_runs", lambda ids: flow_runs)
-    service = RunService(db=mock_db_class(query_results={Run: [done, active]}))
+    monkeypatch.setattr(run_service_module, "_read_existing_flow_runs", lambda ids: flow_runs)
+    db = mock_db_class(query_results={Run: [done, active]})
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -1076,16 +1083,85 @@ def test_ensure_no_active_runs_accepts_finished_runs(monkeypatch, mock_db_class)
     project = _existing_project()
     run = _existing_run(project)
     flow_runs = {run.prefect_flow_run_id: _flow_run_in_state(True)}
-    monkeypatch.setattr(run_service_module, "_read_flow_runs", lambda ids: flow_runs)
-    service = RunService(db=mock_db_class(query_results={Run: [run]}))
+    monkeypatch.setattr(run_service_module, "_read_existing_flow_runs", lambda ids: flow_runs)
+    db = mock_db_class(query_results={Run: [run]})
+    service = RunService(db=db, user_service=UserService(db))
 
     # When/Then
     service.ensure_no_active_runs(project, _existing_user())
 
 
+def _ensure_no_active_runs_with(monkeypatch, mock_db_class, flow_run_reads: dict):
+    """Runs the preflight for a project with one run per key of `flow_run_reads`; each value
+    is what reading that run's flow run from Prefect gives (a flow run, or an exception)."""
+    project = _existing_project()
+    runs = [_existing_run(project) for _ in flow_run_reads]
+    outcomes = {
+        run.prefect_flow_run_id: outcome
+        for run, outcome in zip(runs, flow_run_reads.values(), strict=True)
+    }
+
+    def read_flow_run(flow_run_id):
+        outcome = outcomes[flow_run_id]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    client = MagicMock()
+    client.read_flow_run.side_effect = read_flow_run
+    _patch_get_client(monkeypatch, client)
+    db = mock_db_class(query_results={Run: runs})
+    RunService(db=db, user_service=UserService(db)).ensure_no_active_runs(project, _existing_user())
+
+
+def _not_found() -> Exception:
+    return run_service_module.ObjectNotFound(Exception())
+
+
+def test_ensure_no_active_runs_skips_flow_runs_prefect_no_longer_has(
+    monkeypatch, mock_db_class
+) -> None:
+    # When/Then a retried delete is not blocked by flow runs its earlier attempt removed
+    _ensure_no_active_runs_with(
+        monkeypatch, mock_db_class, {"gone": _not_found(), "done": _flow_run_in_state(True)}
+    )
+
+
+def test_ensure_no_active_runs_still_rejects_an_active_run_next_to_a_missing_one(
+    monkeypatch, mock_db_class
+) -> None:
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_no_active_runs_with(
+            monkeypatch,
+            mock_db_class,
+            {"gone": _not_found(), "active": _flow_run_in_state(False)},
+        )
+    assert exc_info.value.status_code == 409
+
+
+def test_ensure_no_active_runs_rejects_a_run_with_an_unknown_state(
+    monkeypatch, mock_db_class
+) -> None:
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_no_active_runs_with(
+            monkeypatch, mock_db_class, {"unknown": _flow_run_in_state(None)}
+        )
+    assert exc_info.value.status_code == 409
+
+
+def test_ensure_no_active_runs_propagates_other_prefect_errors(monkeypatch, mock_db_class) -> None:
+    # When/Then an outage is not mistaken for "nothing active"
+    with pytest.raises(RuntimeError, match="prefect down"):
+        _ensure_no_active_runs_with(
+            monkeypatch, mock_db_class, {"broken": RuntimeError("prefect down")}
+        )
+
+
 def test_ensure_no_active_runs_rejects_non_owner() -> None:
     # When/Then
     with pytest.raises(AuthorizationError):
-        RunService(db=MagicMock()).ensure_no_active_runs(
+        RunService(db=MagicMock(), user_service=UserService(MagicMock())).ensure_no_active_runs(
             _existing_project(owner_id=1), _existing_user(user_id=2)
         )

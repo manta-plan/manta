@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -8,13 +9,25 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.entities import Project, User
-from manta.services.project_access import get_owned_project
-from manta.services.project_changes import UNSET, UpdateProjectChanges
 from manta.services.results.project_result import ListProjectsResult, ProjectResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
+from manta.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+
+
+class _Unset:
+    """Marks a field that was not sent, as opposed to `None`, which clears it."""
+
+
+UNSET = _Unset()
+
+
+@dataclass(frozen=True)
+class UpdateProjectChanges:
+    name: str | _Unset = UNSET
+    description: str | None | _Unset = UNSET
 
 
 class ProjectService:
@@ -23,10 +36,12 @@ class ProjectService:
         db: Session = Depends(get_db_session),
         storage: S3FileStorageService = Depends(),
         run_service: RunService = Depends(),
+        user_service: UserService = Depends(),
     ) -> None:
         self.db = db
         self.storage = storage
         self.run_service = run_service
+        self.user_service = user_service
 
     def create_project(self, name: str, description: str | None, owner: User) -> ProjectResult:
         project = Project(name=name, description=description, owner_id=owner.id)
@@ -86,12 +101,12 @@ class ProjectService:
         )
 
     def get_project(self, project_uuid: UUID, user: User) -> ProjectResult:
-        return _to_result(get_owned_project(self.db, project_uuid, user))
+        return _to_result(self.user_service.get_owned_project(project_uuid, user))
 
     def update_project(
         self, project_uuid: UUID, changes: UpdateProjectChanges, user: User
     ) -> ProjectResult:
-        project = get_owned_project(self.db, project_uuid, user)
+        project = self.user_service.get_owned_project(project_uuid, user)
         if changes.name is not UNSET:
             project.name = changes.name
         if changes.description is not UNSET:
@@ -110,10 +125,10 @@ class ProjectService:
         The external cleanup runs first, so a failure there leaves the project in
         place and the delete can simply be retried.
         """
-        project = get_owned_project(self.db, project_uuid, user)
+        project = self.user_service.get_owned_project(project_uuid, user)
         self.run_service.ensure_no_active_runs(project, user)
         self.run_service.delete_flow_runs(project, user)
-        self.storage.delete_project_files(project, user)
+        self.storage.delete_project_files(project_uuid, user)
         self.db.delete(project)
         self.db.commit()
 
