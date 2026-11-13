@@ -15,7 +15,7 @@ except ImportError as err:
     ) from err
 
 PUBLIC_BUCKET = "manta-public-test-data"
-PUBLIC_DATA_VERSION = "2026-11-11"
+PUBLIC_DATA_VERSION = "2026-11-13"
 
 
 def download_public_store(name: str, store_dir: Path) -> Path:

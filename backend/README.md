@@ -62,9 +62,10 @@ SeaweedFS up.
 With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
 
 1. Downloads the example datarecord stores listed in `EXAMPLE_DATA_STORES` (all
-   of them when empty) from the `2026-11-11` folder of the public `manta-public-test-data` bucket, into
+   of them when empty) from the `2026-11-13` folder of the public `manta-public-test-data` bucket, into
    `s3://manta/example-data/<store>`. That belongs to no project, so no run ever
-   writes to it. Stores already there are skipped, so
+   writes to it. A folder without `layers/` (a plain record) is skipped, because a run
+   needs a revision to start from. Stores already there are skipped, so
    only a clean SeaweedFS volume pays for the download. Without internet
    access, the app logs a warning and starts without them.
 2. Creates the `manta-admin` user, with its Keycloak id pinned in
@@ -79,21 +80,22 @@ user also gets an "Example project" of their own, with the same copies. A failed
 copy only logs a warning: the project is still created, just without the data.
 
 Projects get copies so their runs can write new revisions into them without
-touching anyone else's. The stores, sizes and `inputs` revisions:
+touching anyone else's. The stores, sizes and base input revisions:
 
-| Store | Size | `inputs` revision |
+| Store | Size | Base input revision |
 | --- | --- | --- |
 | `ac-dc-meshed` | 0.1 MB | `1bad4cfd-9f32-4675-aa4b-6cd71660cbc1` |
-| `model-energy` | 0.1 MB | `fc70f1c9-1082-46a9-8774-66bd5fad7297` |
+| `model-energy` | 0.3 MB | `fc70f1c9-1082-46a9-8774-66bd5fad7297` |
 | `BEL-pre-aggregated` | 0.5 MB | `8ff7a95a-8aed-42a3-9acb-a2e36906685f` |
 | `BEL-pre-aggregated-hourly` | 3.5 MB | `8b7175d6-f540-4aa0-98c0-2df460693ff1` |
 | `BEL-pre-aggregated-incl-patches-incl-results` | 13.2 MB | `9ec88f52-d2d7-4785-9cbb-0c9a1da9b827` |
 | `BEL-full-res` | 36.3 MB | `0921e11f-1998-4983-9992-9a2f923ed392` |
-| `europe-full-res-2030` | 124.4 MB | `2f276825-9deb-4abc-ad57-ceb08f57ea94` |
+| `europe-full-resolution` | 1376.6 MB | `dfff61bc-6bed-4d6f-8c45-815ba5dd5ce8` |
 
-Each store's `revisions.json` names its revisions, `inputs` being the one a run
-starts from. `europe-full-res-2030` is left out of `EXAMPLE_DATA_STORES` by
-default for its size. The integration tests download only `ac-dc-meshed`.
+Each store names its revisions in the `store.json` of its root folder. A run
+starts from the base input revision: the one without a parent.
+The default `EXAMPLE_DATA_STORES` leaves out `europe-full-resolution`, for its
+size. The integration tests download only `ac-dc-meshed`.
 
 Keycloak only imports the realm into a fresh database. If your Keycloak volume
 predates the pinned `manta-admin` id, recreate it once with
