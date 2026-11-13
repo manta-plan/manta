@@ -40,11 +40,21 @@ commits get squashed together:
 - CI enforces this on the PR title via
   [commitlint](https://commitlint.js.org/), configured in
   `commitlint.config.cjs`.
-
 - Open a PR against `main` for review before merging.
 - Style/formatting disputes are considered solved problems — defer to the
   linter/formatter for the language you're working in rather than debating it
   in review.
+
+### Commit Sign-off
+
+Every PR must contain one commit with a `Signed-off-by` trailer certifying you
+wrote it or otherwise have the right to submit it under this project's license
+(the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)
+text itself). Add the trailer at commit time with `git commit -s`, (or `git
+commit --amend -s` to update an existing commit) A [GitHub
+check](https://github.com/dcoapp/app) enforces this on every PR. You can add an
+empty commit with just the signature to an existing open PR.
+
 
 ## Backend (Python)
 
