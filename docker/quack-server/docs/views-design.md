@@ -78,7 +78,7 @@ would work over any database holding those views.
 | `regions` | view | `entity, component, bus, location, wkt` | region polygons as WKT, if the record has them: PyPSA's Shape entities, or the buses' `shape_onshore` and `shape_offshore` properties (`<bus> onshore` / `<bus> offshore`) |
 | `attribute_summary` | table | `attribute, dim, label, bus, constant, series_rows` | per attribute and subject (entity, bus, …): its constant value and how many series rows. Built at start, so one query fills an item's attribute list |
 | `ctype_attributes` | view | `ctype, attribute, entities` | which attributes each ctype stores; elsewhere, an absent value means the manifest default |
-| `revisions` | table | `name, id, parent, kind, label, description, catalog` | the store's named revisions (from `revisions.json`), as scenarios or run results |
+| `revisions` | table | `name, id, parent, kind, label, description, catalog` | the store's named revisions (from `store.json`), as scenarios or run results |
 | `scenario_changes` | table | `scenario, attribute, dim, label, bus, before, after, series_rows, ratio` | per scenario, each value its own layer changes against its parent |
 
 `revisions` and `scenario_changes` are about the whole store; every catalog of
@@ -90,10 +90,8 @@ datarecord records:
 - A bus's location is its `location` property, or the bus itself where that's empty (PyPSA-Earth).
 - `EU` and the empty name are virtual locations.
 - A zone level is a `busmap_*` attribute.
-- A revision's kind (scenario or run result) is guessed from its layer: a
-  revision is a run result when most of the attributes it writes have no rows
-  in its parent. `<store>.labels.json` (or a `kind` in the layer's `meta`) overrides
-  the guess.
+- A revision's kind is the `manta.kind` in its manifest's `meta`: `scenario`
+  or `result`. The base scenario is the scenario without a parent.
 
 ## Records and scenario catalogs
 
@@ -166,11 +164,11 @@ Two rules should hold whatever the names:
 3. **`manta`:** rename it (`app`, `views`, …)? Does any of it belong in
    datarecord instead? `attribute_summary` and `scenario_changes` are
    generic; `locations`, `branches` and `attached` are PyPSA-specific.
-4. **Revision kind:** could datarecord record whether a revision is a
-   scenario or a run result, instead of our guess from the layer contents?
-5. **Catalog names:** `<record>__<scenario>` comes from the store's folder
-   name and the names in `revisions.json`. Are these meant to be stable enough
-   to appear in queries?
+4. **Revision kind:** `manta.kind` in the manifest's `meta` gives it now.
+   Should datarecord have its own field for it?
+5. **Catalog names:** `<record>__<name>` comes from the store's folder name
+   and the names in `store.json`. Are these meant to be stable enough to
+   appear in queries?
 6. **External access:** could datarecord register its intermediate relations
    with `con.register` instead of having DuckDB find Python variables? Then
    the server could switch external access off entirely (with the records
