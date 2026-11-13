@@ -22,6 +22,7 @@ export type CreateRunResponse = {
 export type GetRunResponse = {
   uuid: string;
   project_uuid: string;
+  playbook: string;
   status: string;
   created_at: string;
 };

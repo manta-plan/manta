@@ -55,9 +55,7 @@ export function SelectField({
                   <Select.ItemIndicator className="text-primary">
                     <FiCheck className="size-4" aria-hidden="true" />
                   </Select.ItemIndicator>
-                  <Select.ItemText className="col-start-2">
-                    {item.label}
-                  </Select.ItemText>
+                  <Select.ItemText className="col-start-2">{item.label}</Select.ItemText>
                 </Select.Item>
               ))}
             </Select.List>

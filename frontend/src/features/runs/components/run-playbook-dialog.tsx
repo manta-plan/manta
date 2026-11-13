@@ -10,7 +10,7 @@ import {
   type Edge,
   type NodeProps,
 } from "@xyflow/react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { FiLoader, FiPlay, FiX } from "react-icons/fi";
 import "@xyflow/react/dist/style.css";
 import { getPlaybook, listPlaybooks, validatePlaybookConfig } from "../../playbooks/api";
@@ -36,6 +36,13 @@ import { humanize } from "../../../utils/jsonSchema";
 import { PlaybookConfigForm } from "./playbook-config-form";
 import { SelectField } from "./select-field";
 
+// How long an error message stays on screen.
+const messageVisibilityMs = 10_000;
+
+function capitalize(message: string): string {
+  return message.charAt(0).toUpperCase() + message.slice(1);
+}
+
 // Wide enough that a node (about 13rem) never touches its neighbour.
 const nodeSpacing = 300;
 const nodeTypes = { playbook: PlaybookNodeComponent };
@@ -59,7 +66,6 @@ export function RunPlaybookDialog({
   onOpenChange,
   onSubmit,
 }: RunPlaybookDialogProps) {
-  const [name, setName] = useState("My First Run");
   const [dataRecordName, setDataRecordName] = useState(exampleDataRecords[0].name);
   // null until the user picks one.
   const [playbook, setPlaybook] = useState<string | null>(null);
@@ -75,6 +81,35 @@ export function RunPlaybookDialog({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [issues, setIssues] = useState<PlaybookIssue[]>([]);
   const [isValidating, setIsValidating] = useState(false);
+  // Counts submissions; closing the dialog or changing the selection moves it on, so a
+  // validation still pending for the earlier selection never creates a run.
+  const submitAttempt = useRef(0);
+  // The backend's `error` comes from the parent, so hiding it is tracked here.
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+
+  // Messages stay visible for a limited time, then hide.
+  useEffect(() => {
+    if (validationError === null) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setValidationError(null);
+      setIssues([]);
+    }, messageVisibilityMs);
+
+    return () => clearTimeout(timer);
+  }, [validationError]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    const timer = setTimeout(() => setDismissedError(error), messageVisibilityMs);
+
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const selectedPlaybook = availablePlaybooks.find((item) => item.name === playbook) ?? null;
 
@@ -230,6 +265,10 @@ export function RunPlaybookDialog({
     };
   }, [open, playbook]);
 
+  useEffect(() => {
+    submitAttempt.current += 1;
+  }, [open, playbook, configValues, dataRecordName]);
+
   function handleOpenChange(nextOpen: boolean) {
     if (!isSubmitting) {
       onOpenChange(nextOpen);
@@ -239,7 +278,7 @@ export function RunPlaybookDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (name.trim().length === 0 || playbook === null || playbookDetail === null) {
+    if (playbook === null || playbookDetail === null) {
       setValidationError("Select a playbook before creating a run.");
       return;
     }
@@ -252,13 +291,16 @@ export function RunPlaybookDialog({
     }
 
     if (stepErrors.size > 0) {
-      setValidationError("Fix the highlighted settings first.");
+      setValidationError("Resolve the highlighted settings before creating the run.");
       return;
     }
 
     setValidationError(null);
+    setDismissedError(null);
     setIssues([]);
     setIsValidating(true);
+    submitAttempt.current += 1;
+    const attempt = submitAttempt.current;
 
     try {
       // The backend's own check, so every problem is shown here instead of the
@@ -268,21 +310,33 @@ export function RunPlaybookDialog({
         buildConfig(playbookDetail, configValues),
       );
 
+      if (attempt !== submitAttempt.current) {
+        return;
+      }
+
       if (!result.valid) {
         setIssues(result.issues);
-        setValidationError("This configuration can't run yet. Fix the following:");
+        setValidationError(
+          "This configuration cannot be run yet. Please resolve the following issues:",
+        );
         return;
       }
     } catch (validateError) {
+      if (attempt !== submitAttempt.current) {
+        return;
+      }
+
       setValidationError(
-        validateError instanceof Error ? validateError.message : "Failed to validate the config.",
+        validateError instanceof Error && validateError.message !== ""
+          ? capitalize(validateError.message)
+          : "Unable to validate the configuration. Please try again.",
       );
       return;
     } finally {
       setIsValidating(false);
     }
 
-    await onSubmit(name.trim(), playbook, buildConfig(playbookDetail, configValues), dataRecord);
+    await onSubmit(playbook, buildConfig(playbookDetail, configValues), dataRecord);
   }
 
   return (
@@ -309,19 +363,6 @@ export function RunPlaybookDialog({
             </div>
 
             <form className="mt-6 grid gap-5" onSubmit={handleSubmit}>
-              <div className="grid gap-2">
-                <label className="text-sm font-semibold" htmlFor="run-name">
-                  Name
-                </label>
-                <input
-                  className="border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 rounded-md border px-3 text-sm transition outline-none focus:ring-2"
-                  id="run-name"
-                  onChange={(event) => setName(event.target.value)}
-                  required
-                  value={name}
-                />
-              </div>
-
               <div className="grid gap-2">
                 <label className="text-sm font-semibold" htmlFor="run-data-record">
                   Data record
@@ -490,7 +531,7 @@ export function RunPlaybookDialog({
                             {[...issue.step_path, ...(issue.config_path ?? [])].join(" › ") ||
                               "playbook"}
                           </span>
-                          : {issue.message}
+                          : {capitalize(issue.message)}
                         </li>
                       ))}
                     </ul>
@@ -499,13 +540,20 @@ export function RunPlaybookDialog({
               ) : null}
 
               {/* Next to the Create button, so a refused run is seen where it was sent. */}
-              {error ? (
+              {error && error !== dismissedError ? (
                 <div
                   className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
                   role="alert"
                 >
-                  {error}
+                  {capitalize(error)}
                 </div>
+              ) : null}
+
+              {stepErrors.size > 0 ? (
+                <p className="text-sm text-red-700" role="alert">
+                  Resolve the settings of {[...stepErrors.keys()].map(humanize).join(", ")} before
+                  creating the run.
+                </p>
               ) : null}
 
               <div className="border-border flex justify-end gap-3 border-t pt-5">

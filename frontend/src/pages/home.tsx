@@ -149,7 +149,6 @@ export function HomePage() {
   }
 
   async function handleNewRun(
-    _name: string,
     playbook: string,
     config: PlaybookConfig,
     dataRecord: DataRecordChoice,
@@ -583,8 +582,8 @@ export function HomePage() {
 function toRunListItem(run: GetRunResponse, owner: string): RunListItem {
   return {
     id: run.uuid,
-    name: "Expand",
-    playbook: "expand",
+    name: run.playbook,
+    playbook: run.playbook,
     status: normalizeRunStatus(run.status),
     startedAt: run.created_at,
     durationSeconds: null,

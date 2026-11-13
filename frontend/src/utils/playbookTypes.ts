@@ -100,10 +100,7 @@ export type ValidatePlaybookConfigResponse = {
 
 // ── Dialog ──────────────────────────────────────────────────────────────────
 
-export type PlaybookCanvasNode = Node<
-  { label: string; block: string | null },
-  "playbook"
->;
+export type PlaybookCanvasNode = Node<{ label: string; block: string | null }, "playbook">;
 
 export type RunPlaybookDialogProps = {
   error: string | null;
@@ -111,7 +108,6 @@ export type RunPlaybookDialogProps = {
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (
-    name: string,
     playbook: string,
     config: PlaybookConfig,
     dataRecord: DataRecordChoice,
