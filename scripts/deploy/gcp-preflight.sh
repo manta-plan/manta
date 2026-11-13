@@ -11,10 +11,11 @@ set -euo pipefail
 : "${GCP_PROJECT:?}" "${GCP_LB_PROJECT:?}"
 
 # roles/compute.instanceAdmin.v1, roles/compute.publicIpAdmin,
-# roles/compute.securityAdmin, roles/compute.osAdminLogin and
-# roles/serviceusage.serviceUsageAdmin
+# roles/compute.securityAdmin and roles/compute.osAdminLogin.
+# serviceusage.services.enable is left out: it is only needed in a project
+# where the Compute Engine API is still off.
 HOSTING_PERMISSIONS=(
-  serviceusage.services.enable
+  compute.zones.get
   compute.instances.create
   compute.instances.get
   compute.instances.start

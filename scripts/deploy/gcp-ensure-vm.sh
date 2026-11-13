@@ -28,8 +28,18 @@ LB_SOURCE_RANGES=34.96.0.0/20,34.127.192.0/18
 
 g() { gcloud --project "$GCP_PROJECT" --quiet "$@"; }
 
-echo "==> Enabling the Compute Engine API in $GCP_PROJECT"
-g services enable compute.googleapis.com
+# Enabling an API needs roles/serviceusage.serviceUsageAdmin, so it is only
+# attempted where the API is off: a project that already uses Compute Engine
+# does not need that role.
+if probe=$(g compute zones describe "$GCP_ZONE" --format='value(name)' 2>&1); then
+  echo "==> The Compute Engine API is enabled in $GCP_PROJECT"
+elif grep -q 'has not been used in project .* or it is disabled' <<<"$probe"; then
+  echo "==> Enabling the Compute Engine API in $GCP_PROJECT"
+  g services enable compute.googleapis.com
+else
+  echo "$probe" >&2
+  exit 1
+fi
 
 # ensure_firewall_rule <name> <flags for `firewall-rules create`>...
 ensure_firewall_rule() {
