@@ -11,7 +11,8 @@ import {
   FiSearch,
   FiX,
 } from "react-icons/fi";
-import { clearSession, useSessionUser } from "../features/auth/session";
+import { logout } from "../features/auth/api";
+import { useSessionUser } from "../features/auth/session";
 import {
   createRun,
   getCachedDefaultProject,
@@ -402,7 +403,7 @@ export function ProjectPage() {
               <Button
                 aria-label="Sign out"
                 className="border-border bg-surface hover:bg-surface-alt focus-visible:outline-secondary text-text-secondary inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2"
-                onClick={clearSession}
+                onClick={() => void logout()}
               >
                 <FiLogOut className="size-4" aria-hidden="true" />
                 Sign out
