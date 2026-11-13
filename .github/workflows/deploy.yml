@@ -190,12 +190,14 @@ jobs:
         run: |
           url="https://$SITE_HOST/v1/health"
           for attempt in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)
+            # 000 means no HTTP answer at all: curl's own message then says
+            # whether it is the DNS record or the certificate.
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>curl-error.txt || true)
             if [ "$code" = "200" ]; then
               echo "$url is up"
               exit 0
             fi
-            echo "Got $code from $url (attempt $attempt of 60)"
+            echo "Got $code from $url (attempt $attempt of 60) $(head -n 1 curl-error.txt)"
             sleep 10
           done
           echo "::error::$url did not return 200 within 10 minutes. The instance is healthy on the VM itself, so look at the wildcard DNS record, the wildcard certificate and the load balancer."
