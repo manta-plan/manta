@@ -247,7 +247,7 @@
       </div>
     </template>
 
-    <!-- Files: the record as stored, and what its manifest says about each part. -->
+    <!-- Files: the record as stored, and what its layers' manifests say about each part. -->
     <template x-if="tab === 'files'">
       <div style="display: contents">
         <template x-if="entry">
@@ -256,13 +256,13 @@
             <p x-text="entry.subtitle"></p>
             <div class="actions" x-show="entry.views.length">
               <template x-for="view in entry.views">
-                <button class="btn link" @click="openView(view)" x-text="`Query ${view}`"></button>
+                <button class="btn link" @click="openView(view)" x-text="`Query ${view.db}.${view.schema}.${view.name}`"></button>
               </template>
             </div>
           </div>
         </template>
         <pre class="json" x-show="entry" x-html="entry ? highlight(entry.json) : ''"></pre>
-        <p class="empty" x-show="!entry" x-text="status === 'connected' ? 'Pick a file or folder to see its manifest entry.' : 'Connect to load the record.'"></p>
+        <p class="empty" x-show="!entry" x-text="status === 'connected' ? 'Pick a file or folder to see what its manifest says.' : 'Connect to load the record.'"></p>
       </div>
     </template>
   </main>
@@ -280,7 +280,7 @@
 // this server prepares (scripts/prepare_wasm.py). See the README.
 const DUCKDB_WASM = '1.33.1-dev110.0'
 const SCHEMAS = ['dims', 'properties', 'attributes', 'manta']
-// Folder in the record → its manifest section.
+// Folder in a layer → its schema section.
 const SECTIONS = { dims: 'dimensions', attributes: 'attributes' }
 const PREVIEW_ROWS = 200
 const MAX_ROWS = 1000
@@ -324,9 +324,11 @@ function text(value, type) {
 }
 
 // Scenario → schema → view → column: each scenario of the record has its own
-// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions.
+// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions. A
+// run result's catalog is attached when the app first shows it: until then
+// it's left out.
 function catalogTree(columns, revisions) {
-  const databases = revisions.filter((r) => r.catalog).map((r) => ({
+  const databases = revisions.filter((r) => r.catalog && r.open).map((r) => ({
     id: `k:${r.catalog}`, label: r.label, kind: 'database', db: r.catalog,
     schemas: new Map(SCHEMAS.map((s) => [s, { id: `s:${r.catalog}.${s}`, label: s, kind: 'schema', children: [] }])),
   }))
@@ -434,12 +436,16 @@ document.addEventListener('alpine:init', () => {
     views: [],
     filesRoot: [],
     files: [],
-    manifest: null,
+    // From /files: the schema (once), each layer's manifest without it, and
+    // the revision names (null for a plain record).
+    stored: null,
+    // The record's revisions as opened: name → catalog, if attached.
+    revisionCatalogs: {},
     records: [],
     quackUri: '',
     quackSecure: false,
     recordId: params.get('record') ?? '',
-    // The catalog of the record's default scenario: what the Files tab's views are.
+    // The catalog of the record's default scenario.
     defaultDb: '',
     entry: null,
     sql: '',
@@ -564,13 +570,14 @@ document.addEventListener('alpine:init', () => {
           const record = this.records.find((r) => r.id === id)
           if (record) record.open = true
         }
-        this.manifest = stored.manifest
+        this.stored = stored
+        this.revisionCatalogs = Object.fromEntries(info.revisions.filter((r) => r.open && r.catalog).map((r) => [r.name, r.catalog]))
         this.files = stored.files
         this.filesRoot = filesTree(stored.name, stored.files)
         this.entry = null
         this.result = null
         this.log(`record ${id}: ${plural(stored.files.length, 'file')}`)
-        const catalogs = info.revisions.filter((r) => r.catalog).map((r) => `'${r.catalog}'`).join(', ')
+        const catalogs = info.revisions.filter((r) => r.catalog && r.open).map((r) => `'${r.catalog}'`).join(', ')
         const columns = await select(`FROM quack_query_by_name('r', $$
           SELECT database_name AS db, schema_name, table_name, column_name, data_type FROM duckdb_columns()
           WHERE database_name IN (${catalogs}) AND schema_name IN (${SCHEMAS.map((s) => `'${s}'`).join(', ')})
@@ -625,10 +632,8 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // From the Files tab: shown in the default scenario's catalog.
-    openView(key) {
-      const [schema, name] = key.split(/\.(.*)/)
-      const db = this.defaultDb
+    // From the Files tab: a view in a revision's catalog.
+    openView({ db, schema, name }) {
       this.tab = 'catalog'
       this.open[`k:${db}`] = true
       this.open[`s:${db}.${schema}`] = true
@@ -636,42 +641,70 @@ document.addEventListener('alpine:init', () => {
       this.preview({ db, schema, name })
     },
 
-    // What the manifest says about a file or folder, and the views it backs.
+    // What the manifests say about a file or folder, and the views it backs.
+    // A store keeps one layer per revision, `layers/<id>/` (manifest.json,
+    // dims/, attributes/); a plain record is one layer at its root.
     describe(node) {
-      const m = this.manifest
-      const isView = (key) => this.views.some((v) => v.db === this.defaultDb && `${v.schema}.${v.name}` === key)
+      const { schema, layers, revisions } = this.stored
+      const names = revisions ?? {}
+      const plain = revisions === null
+      // The revision names a layer is, and the views of the first one attached.
+      const namesOf = (id) => (plain ? ['inputs'] : Object.keys(names).filter((name) => names[name] === id))
+      const dbOf = (id) => namesOf(id).map((name) => this.revisionCatalogs[name]).find(Boolean)
+      const isView = (db, key) => this.views.some((v) => v.db === db && `${v.schema}.${v.name}` === key)
+      const parts = node.path ? node.path.split('/') : []
+      const inLayer = plain || (parts[0] === 'layers' && parts.length > 1)
+      const id = plain ? '' : inLayer ? parts[1] : null
+      const rest = plain ? parts : inLayer ? parts.slice(2) : parts
+      const layer = id === null ? null : layers[id]
+      const sizes = Object.entries(SECTIONS).map(([dir, section]) => `${Object.keys(schema[section] ?? {}).length} ${section}`).join(', ')
+
       if (node.kind === 'root') {
-        const { dimensions, attributes, properties, ...rest } = m
-        const sections = { dimensions, attributes, properties }
         return {
           title: node.label,
-          subtitle: `${plural(this.files.length, 'file')} · ${Object.entries(sections).map(([k, v]) => `${Object.keys(v).length} ${k}`).join(', ')}`,
-          // The sections by name only; their folders show them in full.
-          json: { ...rest, ...Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, Object.keys(v)])) },
+          subtitle: `${plural(this.files.length, 'file')} · ${plain ? 'plain record' : plural(Object.keys(names).length, 'revision')} · ${sizes}`,
+          json: plain ? { schema: Object.keys(schema) } : { revisions: names, schema: Object.keys(schema) },
           views: [],
         }
       }
-      if (node.path === 'manifest.json') return { title: node.path, subtitle: bytes(node.size), json: m, views: [] }
-      const [dir, file] = node.path.split('/')
-      const section = SECTIONS[dir]
-      if (node.kind === 'dir') {
+      if (!plain && node.path === 'revisions.json') return { title: node.path, subtitle: `${bytes(node.size)} · revision name → layer`, json: names, views: [] }
+      if (!plain && node.path === 'layers') {
         return {
-          title: `${node.path}/`,
-          subtitle: section ? `manifest.${section} · ${plural(Object.keys(m[section]).length, 'entry', 'entries')}` : 'No manifest section',
-          json: section ? m[section] : null,
+          title: 'layers/',
+          subtitle: `${plural(Object.keys(layers).length, 'layer')}, one per revision`,
+          json: Object.fromEntries(Object.entries(layers).map(([layerId, m]) => [layerId, { names: namesOf(layerId), parent: m.parent, meta: m.meta }])),
           views: [],
         }
+      }
+      if (!layer) return { title: node.kind === 'dir' ? `${node.path}/` : node.path, subtitle: node.size === undefined ? '' : bytes(node.size), json: null, views: [] }
+
+      const named = namesOf(id)
+      const about = named.length ? `revision ${named.join(', ')}` : 'unnamed layer'
+      const [dir, file] = rest
+      const section = SECTIONS[dir]
+      if (!dir) {
+        // The layer's folder.
+        return { title: `${node.path}/`, subtitle: `${about} · parent ${layer.parent ?? 'none'}`, json: layer, views: [] }
+      }
+      if (dir === 'manifest.json') {
+        return { title: node.path, subtitle: `${bytes(node.size)} · ${about} · schema shown by section in dims/ and attributes/`, json: { ...layer, schema: Object.keys(schema) }, views: [] }
+      }
+      if (!section) return { title: node.kind === 'dir' ? `${node.path}/` : node.path, subtitle: `${node.size === undefined ? '' : `${bytes(node.size)} · `}${about}`, json: null, views: [] }
+      if (node.kind === 'dir') {
+        return { title: `${node.path}/`, subtitle: `${about} · ${plural((layer.files?.[dir] ?? []).length, 'file')} written by this layer`, json: layer.files?.[dir] ?? null, views: [] }
       }
       const name = file?.replace(/\.parquet$/, '')
-      const entry = section ? m[section]?.[name] : undefined
+      const entry = schema[section]?.[name]
       // A dimension's table also holds its properties.
-      const json = dir === 'dims' ? { dimension: entry ?? null, properties: m.properties?.[name] ?? null } : entry ?? null
-      const views = [`${dir}.${name}`, `properties.${name}`].filter((key, i) => (i === 0 || dir === 'dims') && isView(key))
-      // An attribute without rows has no view.
-      const empty = section && !views.length ? ' · no rows, so no view' : ''
+      const json = dir === 'dims' ? { dimension: entry ?? null, properties: schema.properties?.[name] ?? null } : entry ?? null
+      // The views read the whole revision (this layer over its parents), in its catalog if attached.
+      const db = dbOf(id)
+      const keys = dir === 'dims' ? [`dims.${name}`, `properties.${name}`] : [`attributes.${name}`]
+      const views = db ? keys.filter((key) => isView(db, key)).map((key) => { const [schemaName, viewName] = key.split(/\.(.*)/); return { db, schema: schemaName, name: viewName } }) : []
+      const unopened = named.length && !db ? ' · not attached yet (a run result is, once the app opens it)' : ''
       return {
         title: node.path,
-        subtitle: `${bytes(node.size)} · ${entry ? `manifest.${section}.${name}` : 'not in the manifest'}${empty}`,
+        subtitle: `${bytes(node.size)} · ${about} · ${entry ? `schema.${section}.${name}` : 'not in the schema'}${unopened}`,
         json,
         views,
       }
