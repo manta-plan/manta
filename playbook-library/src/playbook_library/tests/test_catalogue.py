@@ -32,7 +32,7 @@ def test_the_committed_catalogue_describes_exactly_the_registered_blocks():
 
 def test_the_committed_catalogue_loads_without_pypsa():
     # Nothing in this module imports PyPSA, and the catalogue still reads.
-    assert library_catalogue().blocks["cluster_time"].env == "pypsa"
+    assert library_catalogue().blocks["time_partition"].env == "pypsa"
 
 
 def test_the_committed_catalogue_carries_enough_to_offer_a_blocks_settings():

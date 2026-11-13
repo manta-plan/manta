@@ -3,21 +3,19 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
-from pydantic import Field
+from playbook.blocks.core import BlockDims, DataRecord, MantaBlock
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
     investment_periods,
     optimize_network,
     remove_unbuilt_cohorts,
+    solve_and_write,
     to_network,
-    write_network,
 )
 
 
-class OvernightCapacityExpansionConfig(ConfigSchema):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class OvernightCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
     period: int | None = None
     """The investment period to build for, in a model with investment periods.
 
@@ -36,9 +34,8 @@ class OvernightCapacityExpansion(MantaBlock[OvernightCapacityExpansionConfig]):
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
-        multi_investment_periods = not n.investment_periods.empty
         return optimize_network(
-            n, self.config.optimize_config, multi_investment_periods=multi_investment_periods
+            n, self.config.optimize_config, multi_investment_periods=n.has_periods
         )
 
     def run(self, record: DataRecord) -> DataRecord:
@@ -51,4 +48,6 @@ class OvernightCapacityExpansion(MantaBlock[OvernightCapacityExpansionConfig]):
             remove_unbuilt_cohorts(n)
         else:
             n = to_network(record)
-        return write_network(self.optimize(n), record, results_only=True)
+        return solve_and_write(
+            n, record, self.optimize, self.config.time_aggregation, n.has_periods
+        )[1]

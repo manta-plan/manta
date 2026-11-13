@@ -1,54 +1,5 @@
 {
   "blocks": {
-    "cluster_time": {
-      "config_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "n_hours": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "N Hours"
-          },
-          "segments": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Segments"
-          }
-        },
-        "title": "ClusterTimeConfig",
-        "type": "object"
-      },
-      "dims": {
-        "adds": [],
-        "removes": [],
-        "requires": [
-          "snapshot"
-        ]
-      },
-      "doc": "Shorten a model's time series, so later blocks have less to solve.",
-      "env": "pypsa",
-      "inputs": [],
-      "manifest": null,
-      "module": "playbook_library.time_cluster:ClusterTime",
-      "name": "cluster_time",
-      "outputs": [
-        "output"
-      ]
-    },
     "myopic_capacity_expansion": {
       "config_schema": {
         "$defs": {
@@ -235,6 +186,18 @@
         "properties": {
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
+          },
+          "time_aggregation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Aggregation"
           }
         },
         "title": "MyopicCapacityExpansionConfig",
@@ -456,6 +419,18 @@
             ],
             "default": null,
             "title": "Period"
+          },
+          "time_aggregation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Aggregation"
           }
         },
         "title": "OvernightCapacityExpansionConfig",
@@ -664,6 +639,18 @@
         "properties": {
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
+          },
+          "time_aggregation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Aggregation"
           }
         },
         "title": "PerfectCapacityExpansionConfig",
@@ -759,6 +746,28 @@
               }
             },
             "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "LoadSheddingConfig": {
+            "additionalProperties": false,
+            "properties": {
+              "marginal_cost": {
+                "default": 100.0,
+                "title": "Marginal Cost",
+                "type": "number"
+              },
+              "p_nom": {
+                "default": 1000000000.0,
+                "title": "P Nom",
+                "type": "number"
+              },
+              "sign": {
+                "default": 0.001,
+                "title": "Sign",
+                "type": "number"
+              }
+            },
+            "title": "LoadSheddingConfig",
             "type": "object"
           },
           "PyPSAOptimizeRollingHorizonConfig": {
@@ -914,8 +923,47 @@
             "title": "Capacity data source",
             "x-manta-input": true
           },
+          "load_shedding": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LoadSheddingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeRollingHorizonConfig"
+          },
+          "periods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Periods"
+          },
+          "time_aggregation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Aggregation"
           }
         },
         "title": "RollingHorizonDispatchConfig",
@@ -928,7 +976,7 @@
           "snapshot"
         ]
       },
-      "doc": "Decide how to run a system, a stretch of time at a time.",
+      "doc": "Decide how to run a system, one window of time at a time.",
       "env": "pypsa",
       "inputs": [
         "capacity_source"
@@ -936,6 +984,62 @@
       "manifest": null,
       "module": "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
       "name": "rolling_horizon_dispatch",
+      "outputs": [
+        "output"
+      ]
+    },
+    "time_partition": {
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "n_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "N Hours"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Segments"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TimePartitionConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Group a model's snapshots into clusters, so later blocks can solve a smaller model.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.time_partition:TimePartition",
+      "name": "time_partition",
       "outputs": [
         "output"
       ]

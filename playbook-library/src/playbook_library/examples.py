@@ -2,60 +2,45 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A tiny example network, and the example playbook run against it.
+"""Run the `expand` playbook on the Belgian test model from the public test data bucket.
 
-    pixi run -e full python -m playbook_library.examples [store url]
+    pixi run -e full python -m playbook_library.examples [directory]
 
-The network is one bus, one generator that can be built, and a day of demand - small
-enough that the whole playbook solves in seconds, but real enough that there is
-something to decide. The network is stored as the root revision of a datarecord store at
-the given URL, a local directory or an `s3://` URL; every step adds its result as a
-new revision to that store, so a finished run reads as a lineage of revisions.
-
-This stands in for real input data until Manta can be given some, and it is the
-quickest way to see a change to a block or to the playbook actually run. The test
-suite builds the same network, so what this demonstrates is what is tested.
+The script downloads the `BEL-pre-aggregated` datarecord store into the directory, or
+into a new temporary directory, because each block writes its result as a new revision
+into the store it reads and the bucket is read-only. The tests download the public
+stores with the same functions, which need the `public-data` extra.
 """
 
+import json
 import sys
 import tempfile
+from pathlib import Path
+from uuid import UUID
 
-import pandas as pd
-import pypsa
+from playbook.blocks.core import DataRecord
 from playbook.playbooks.yaml_io import playbook_from_doc
 
 from playbook_library.playbooks import library_playbooks
-from playbook_library.pypsa_helpers import store_network
+from playbook_library.public_data import download_public_store
 
+EXAMPLE_STORE = "BEL-pre-aggregated"
 EXAMPLE_PLAYBOOK = "expand"
 
 
-def build_example_network() -> pypsa.Network:
-    """One bus, one generator that can be built, and a day of demand."""
-    n = pypsa.Network()
-    n.set_snapshots(pd.date_range("2030-01-01", periods=24, freq="h"))
-    n.add("Bus", "bus")
-    n.add(
-        "Generator",
-        "gen",
-        bus="bus",
-        p_nom_extendable=True,
-        capital_cost=100.0,
-        marginal_cost=10.0,
-    )
-    n.add("Load", "load", bus="bus", p_set=50.0)
-    return n
+def inputs_record(store_dir: Path) -> DataRecord:
+    """Point a record at the `inputs` revision that `revisions.json` of a public store lists."""
+    revisions = json.loads((store_dir / "revisions.json").read_text())
+    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
 
 
 def main(argv: list[str]) -> int:
-    url = argv[0] if argv else tempfile.mkdtemp(prefix="playbook-example-")
+    root = Path(argv[0]) if argv else Path(tempfile.mkdtemp(prefix="playbook-example-"))
+    record = inputs_record(download_public_store(EXAMPLE_STORE, root / EXAMPLE_STORE))
 
     entry = library_playbooks()[EXAMPLE_PLAYBOOK]
-    playbook = playbook_from_doc(entry.doc)
-    record = store_network(build_example_network(), url)
-
     print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {record.uuid} of {record.url}")
-    result = playbook.run(record, entry.default_config)
+    result = playbook_from_doc(entry.doc).run(record, entry.default_config)
     print(f"Done. Final result: revision {result.uuid} of {result.url}")
     return 0
 
