@@ -46,8 +46,10 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
     return cachedProject;
   }
 
-  const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
+  // Taken before the request, so the project is filed under the user who asked for it
+  // even if someone else signs in while it is in flight.
   const key = defaultProjectStorageKey();
+  const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
 
   if (key !== null) {
     window.localStorage.setItem(key, project.uuid);
@@ -80,8 +82,33 @@ type CreateRunOptions = {
   dataRecord: DataRecordChoice;
 };
 
-// The bucket the backend stores projects in (S3_BUCKET in its env).
-const storageBucket = "manta";
+// The bucket the backend stores projects in (S3_BUCKET in its env). Set VITE_S3_BUCKET
+// when the backend uses another one.
+const storageBucket: string = import.meta.env.VITE_S3_BUCKET ?? "manta";
+
+const missingRevisionPattern = /^Revision (\S+) not found in '(.+)'$/;
+
+// The backend refuses a run whose data record revision is missing from the store. Turns that
+// into a message the user can act on; any other error is returned unchanged.
+export function toFriendlyRunError(error: unknown): unknown {
+  if (!(error instanceof ApiError) || error.status !== 404) {
+    return error;
+  }
+
+  const match = missingRevisionPattern.exec(error.message);
+
+  if (match === null) {
+    return error;
+  }
+
+  const [, revisionUuid, storeUrl] = match;
+  const storeName = storeUrl.split("/").filter(Boolean).pop() ?? storeUrl;
+
+  return new ApiError(
+    error.status,
+    `The data record "${storeName}" is not available in this project (revision ${revisionUuid}). Please select another data record.`,
+  );
+}
 
 export async function createRun(project: DefaultProject, options: CreateRunOptions) {
   try {
@@ -96,7 +123,7 @@ export async function createRun(project: DefaultProject, options: CreateRunOptio
   } catch (error) {
     forgetMissingProject(project, error);
 
-    throw error;
+    throw toFriendlyRunError(error);
   }
 }
 
