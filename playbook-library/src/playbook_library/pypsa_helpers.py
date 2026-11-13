@@ -20,12 +20,13 @@ from datarecord.tools.pypsa import PyPSA
 from playbook.blocks.core import DataRecord, DataRecordError, SolveError
 
 from playbook_library.datarecord_helpers import revision
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema
-from playbook_library.pypsa_time_aggregation import (
-    PYPSA_LABELS,
-    cluster_network,
-    write_expanded_results,
+from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
+from playbook_library.pypsa_spatial_aggregation import (
+    aggregate_network,
+    dropped_assets,
+    expand_network,
 )
+from playbook_library.pypsa_time_aggregation import PYPSA_LABELS, write_expanded_results
 from playbook_library.time_aggregation import carry_time_properties
 
 BUILT_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store", "Line", "Transformer"]
@@ -109,26 +110,46 @@ def optimize_network(
     return n
 
 
+def write_aggregated_results(
+    n_c: pypsa.Network,
+    n: pypsa.Network,
+    record: DataRecord,
+    aggregation: Aggregation,
+    multi_investment_periods: bool,
+) -> tuple[pypsa.Network, DataRecord]:
+    """Store the results of `n_c` at every label of `record`, as one child revision of it.
+
+    `n_c` is `n`, built from `record`, merged by `aggregation` and solved. It was solved
+    over investment periods if `multi_investment_periods`. Buses and assets are expanded
+    first, by `expand_network`, then snapshots, by `write_expanded_results`, which holds the
+    results of the assets the aggregation left out. Returns `n_c`
+    with its buses and assets expanded, and the new record.
+    """
+    expanded = expand_network(n_c, n, record, aggregation)
+    if aggregation.snapshot is None:
+        return expanded, write_network(expanded, record, results_only=True)
+    left_out = dropped_assets(n, record, aggregation)
+    written = write_expanded_results(
+        expanded, n, record, aggregation.snapshot, multi_investment_periods, left_out
+    )
+    return expanded, written
+
+
 def solve_and_write(
     n: pypsa.Network,
     record: DataRecord,
     optimize: Callable[[pypsa.Network], pypsa.Network],
-    time_aggregation: str | None,
+    aggregation: Aggregation,
     multi_investment_periods: bool,
 ) -> tuple[pypsa.Network, DataRecord]:
     """Solve `n`, built from `record`, with `optimize`, and store its results under `record`.
 
     The results form a child revision of `record`. Only the results are written, so the
-    inputs of `record` stay as they are. With a
-    `time_aggregation`, `optimize` solves `n` clustered by `snapshot.<time_aggregation>`
-    of `record`, and the results are expanded to every snapshot.
+    inputs of `record` stay as they are. `optimize` solves `n` merged by `aggregation`, and
+    the results are expanded to every bus, asset and snapshot of `record`.
     `multi_investment_periods` sets whether the expansion treats the solve as one over
-    investment periods. Without a time aggregation, `optimize` solves `n` as it is.
-    Returns the solved network and the new record.
+    investment periods. Without any aggregation, `optimize` solves `n` as it is. Returns
+    the solved network, with its buses and assets expanded, and the new record.
     """
-    if time_aggregation is None:
-        solved = optimize(n)
-        return solved, write_network(solved, record, results_only=True)
-    solved = optimize(cluster_network(n, record, time_aggregation))
-    written = write_expanded_results(solved, n, record, time_aggregation, multi_investment_periods)
-    return solved, written
+    solved = optimize(aggregate_network(n, record, aggregation))
+    return write_aggregated_results(solved, n, record, aggregation, multi_investment_periods)

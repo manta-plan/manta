@@ -3,6 +3,74 @@
     "myopic_capacity_expansion": {
       "config_schema": {
         "$defs": {
+          "Aggregation": {
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bus",
+                "x-uses-property": "bus"
+              },
+              "clip_p_max_pu": {
+                "anyOf": [
+                  {
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Clip P Max Pu"
+              },
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Entity",
+                "x-uses-property": "entity"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot",
+                "x-uses-property": "snapshot"
+              },
+              "ungrouped": {
+                "default": "keep",
+                "enum": [
+                  "keep",
+                  "drop"
+                ],
+                "title": "Ungrouped",
+                "type": "string"
+              }
+            },
+            "title": "Aggregation",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -184,20 +252,11 @@
         },
         "additionalProperties": false,
         "properties": {
+          "aggregation": {
+            "$ref": "#/$defs/Aggregation"
+          },
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
-          },
-          "time_aggregation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Time Aggregation"
           }
         },
         "title": "MyopicCapacityExpansionConfig",
@@ -224,6 +283,74 @@
     "overnight_capacity_expansion": {
       "config_schema": {
         "$defs": {
+          "Aggregation": {
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bus",
+                "x-uses-property": "bus"
+              },
+              "clip_p_max_pu": {
+                "anyOf": [
+                  {
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Clip P Max Pu"
+              },
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Entity",
+                "x-uses-property": "entity"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot",
+                "x-uses-property": "snapshot"
+              },
+              "ungrouped": {
+                "default": "keep",
+                "enum": [
+                  "keep",
+                  "drop"
+                ],
+                "title": "Ungrouped",
+                "type": "string"
+              }
+            },
+            "title": "Aggregation",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -405,6 +532,9 @@
         },
         "additionalProperties": false,
         "properties": {
+          "aggregation": {
+            "$ref": "#/$defs/Aggregation"
+          },
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
           },
@@ -419,18 +549,6 @@
             ],
             "default": null,
             "title": "Period"
-          },
-          "time_aggregation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Time Aggregation"
           }
         },
         "title": "OvernightCapacityExpansionConfig",
@@ -456,6 +574,74 @@
     "perfect_capacity_expansion": {
       "config_schema": {
         "$defs": {
+          "Aggregation": {
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bus",
+                "x-uses-property": "bus"
+              },
+              "clip_p_max_pu": {
+                "anyOf": [
+                  {
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Clip P Max Pu"
+              },
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Entity",
+                "x-uses-property": "entity"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot",
+                "x-uses-property": "snapshot"
+              },
+              "ungrouped": {
+                "default": "keep",
+                "enum": [
+                  "keep",
+                  "drop"
+                ],
+                "title": "Ungrouped",
+                "type": "string"
+              }
+            },
+            "title": "Aggregation",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -637,20 +823,11 @@
         },
         "additionalProperties": false,
         "properties": {
+          "aggregation": {
+            "$ref": "#/$defs/Aggregation"
+          },
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeSchema"
-          },
-          "time_aggregation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Time Aggregation"
           }
         },
         "title": "PerfectCapacityExpansionConfig",
@@ -677,6 +854,74 @@
     "rolling_horizon_dispatch": {
       "config_schema": {
         "$defs": {
+          "Aggregation": {
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bus",
+                "x-uses-property": "bus"
+              },
+              "clip_p_max_pu": {
+                "anyOf": [
+                  {
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Clip P Max Pu"
+              },
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Entity",
+                "x-uses-property": "entity"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot",
+                "x-uses-property": "snapshot"
+              },
+              "ungrouped": {
+                "default": "keep",
+                "enum": [
+                  "keep",
+                  "drop"
+                ],
+                "title": "Ungrouped",
+                "type": "string"
+              }
+            },
+            "title": "Aggregation",
+            "type": "object"
+          },
           "DataRecord": {
             "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL names a\ndatarecord store, either a local directory or an `s3://` address, and the uuid\nnames one revision in that store.",
             "properties": {
@@ -910,6 +1155,9 @@
         },
         "additionalProperties": false,
         "properties": {
+          "aggregation": {
+            "$ref": "#/$defs/Aggregation"
+          },
           "capacity_source": {
             "anyOf": [
               {
@@ -952,18 +1200,6 @@
             ],
             "default": null,
             "title": "Periods"
-          },
-          "time_aggregation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Time Aggregation"
           }
         },
         "title": "RollingHorizonDispatchConfig",
@@ -1053,5 +1289,5 @@
       "name": "pypsa"
     }
   },
-  "generated_in_env": "pypsa"
+  "generated_in_env": "full"
 }
