@@ -667,7 +667,7 @@ document.addEventListener('alpine:init', () => {
       // A dimension's table also holds its properties.
       const json = dir === 'dims' ? { dimension: entry ?? null, properties: m.properties?.[name] ?? null } : entry ?? null
       const views = [`${dir}.${name}`, `properties.${name}`].filter((key, i) => (i === 0 || dir === 'dims') && isView(key))
-      // datarecord leaves attributes without rows out of the record.
+      // An attribute without rows has no view.
       const empty = section && !views.length ? ' · no rows, so no view' : ''
       return {
         title: node.path,

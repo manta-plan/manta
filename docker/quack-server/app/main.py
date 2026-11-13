@@ -12,13 +12,13 @@ Quack listens on localhost only. This app is what the browser talks to:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import UUID
 
 import duckdb
 import httpx
@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from . import quack
+from .scenarios import read_json
 from .stores import Catalogue, configure
 
 log = logging.getLogger("uvicorn.error")
@@ -159,10 +160,14 @@ def record_files(id: str, request: Request) -> dict:
         store = catalogue.get(id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"No record {id!r}") from None
-    manifest = json.loads(catalogue.ws.files(store.uri).read_text(f"{store.uri}/manifest.json")[0])
+    if store.plain:
+        schema = catalogue.ws.at(store.uri).schema
+    else:
+        names = read_json(catalogue.ws, f"{catalogue.root}/{store.id}.json")
+        schema = catalogue.ws.store(store.uri).revision(UUID(names[store.revisions[0]])).manifest.schema
     return {
         "name": store.id,
-        "manifest": manifest,
+        "manifest": schema.model_dump(mode="json"),
         "files": [{"path": f.path, "size": f.size} for f in store.files],
     }
 

@@ -10,13 +10,16 @@ from botocore.exceptions import BotoCoreError
 from manta.config.example_data_config import ADMIN_IDP_SUBJECT, ADMIN_USERNAME
 from manta.entities import User
 from manta.services import example_data_service
-from manta.services.example_data_service import PUBLIC_OBJECTS_URL, ExampleDataService
+from manta.services.example_data_service import (
+    PUBLIC_DATA_VERSION,
+    PUBLIC_OBJECTS_URL,
+    ExampleDataService,
+)
 
 ISSUER = "http://localhost:8080/realms/manta"
-INPUTS = "e5f2eacd-ba5c-463c-a663-3017ef904d1d"
+INPUTS = "00000000-0000-0000-0000-000000000000"
 
 FILES = {
-    "small/manifest.json": b"{}",
     "small/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
     "small/layers/a.parquet": b"data",
 }
@@ -25,8 +28,11 @@ FILES = {
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
     if str(request.url).startswith(PUBLIC_OBJECTS_URL):
         if request.url.params.get("delimiter") == "/":
-            return httpx2.Response(200, json={"prefixes": ["small/"]})
-        items = [{"name": name, "mediaLink": f"https://media/{name}"} for name in FILES]
+            return httpx2.Response(200, json={"prefixes": [f"{PUBLIC_DATA_VERSION}/small/"]})
+        items = [
+            {"name": f"{PUBLIC_DATA_VERSION}/{name}", "mediaLink": f"https://media/{name}"}
+            for name in FILES
+        ]
         return httpx2.Response(200, json={"items": items})
     return httpx2.Response(200, content=FILES[request.url.path.removeprefix("/")])
 
@@ -62,7 +68,7 @@ def test_seed_downloads_every_store_into_the_example_data(mock_db, s3_client, mo
     assert sorted(upload["Key"] for upload in uploads) == sorted(
         f"example-data/{name}" for name in FILES
     )
-    assert uploads[-1]["Key"] == "example-data/small/manifest.json"
+    assert uploads[-1]["Key"] == "example-data/small/revisions.json"
 
 
 def test_seed_does_not_raise_when_the_public_bucket_is_unreachable(
@@ -105,14 +111,14 @@ def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example
     )
     assert copies[-1]["CopySource"] == {
         "Bucket": "manta",
-        "Key": "example-data/small/manifest.json",
+        "Key": "example-data/small/revisions.json",
     }
 
 
 def test_copy_to_project_skips_stores_whose_download_was_cut_short(mock_db, s3_client) -> None:
     # Given
     s3_client.get_paginator.return_value.paginate.return_value = [
-        {"Contents": [{"Key": "example-data/small/revisions.json"}]}
+        {"Contents": [{"Key": "example-data/small/layers/a.parquet"}]}
     ]
 
     # When

@@ -310,7 +310,9 @@ class RunService:
             raise AuthorizationError(detail="data record store is not in the project's storage")
 
         store = url.path.removeprefix(project_prefix).rstrip("/")
-        if not self.storage.file_exists(project.uuid, f"{store}/revisions/{revision_uuid}.json"):
+        if not self.storage.file_exists(
+            project.uuid, f"{store}/layers/{revision_uuid}/manifest.json"
+        ):
             raise HTTPException(
                 status_code=404,
                 detail=f"Revision {revision_uuid} not found in {store_url!r}",
