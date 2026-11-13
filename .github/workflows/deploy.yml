@@ -1,0 +1,288 @@
+name: Deploy
+
+# Deploys a Manta instance to a VM on GCP and serves it at
+# https://<vm_name>.manta-plan.org. Manual trigger only: Actions > Deploy >
+# Run workflow. Setup and usage are in docs/deployment.md.
+#
+# Two refs are involved. The workflow and scripts/deploy/ come from the branch
+# picked under "Use workflow from"; the `ref` input is what gets deployed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      vm_name:
+        description: VM name, also the subdomain (<vm_name>.manta-plan.org)
+        required: true
+        type: string
+      gcp_project:
+        description: GCP project that hosts the VM
+        required: true
+        type: string
+      ref:
+        description: Branch, tag or SHA to deploy
+        required: true
+        default: main
+        type: string
+      reset_data:
+        description: Delete the instance's data (database, files, users) first
+        type: boolean
+        default: false
+      dry_run:
+        description: Only check the configuration, authentication and permissions
+        type: boolean
+        default: false
+  # TEMPORARY, remove before merging (with every other line marked TEMPORARY):
+  # runs the preflight job alone on the PR that adds this workflow, so the
+  # setup can be tested before the workflow is on the default branch.
+  pull_request:
+    paths:
+      - .github/workflows/deploy.yml
+      - scripts/deploy/**
+
+# TEMPORARY: the `||` fallbacks here and below stand in for the inputs a PR run lacks.
+run-name: >-
+  ${{ github.event_name == 'pull_request' && 'PR preflight:' || inputs.dry_run && 'Dry run:' || 'Deploy' }}
+  ${{ inputs.ref || github.head_ref }} to ${{ inputs.vm_name || 'pr-check' }}
+  (${{ inputs.gcp_project || vars.GCP_LB_PROJECT }})
+
+permissions:
+  contents: read
+  id-token: write # for Workload Identity Federation
+
+# One deployment per VM at a time; a second one waits rather than cancelling a
+# deployment halfway through.
+concurrency:
+  group: deploy-${{ inputs.vm_name || 'pr-check' }} # TEMPORARY fallback
+  cancel-in-progress: false
+
+# Inputs reach the scripts as environment variables, never interpolated into
+# shell code.
+env:
+  VM_NAME: ${{ inputs.vm_name || 'pr-check' }} # TEMPORARY fallback
+  SITE_HOST: ${{ inputs.vm_name || 'pr-check' }}.manta-plan.org # TEMPORARY fallback
+  # TEMPORARY fallback: a PR run checks the load balancer project as the host.
+  GCP_PROJECT: ${{ inputs.gcp_project || vars.GCP_LB_PROJECT }}
+  GCP_ZONE: ${{ vars.GCP_ZONE }}
+  GCP_MACHINE_TYPE: ${{ vars.GCP_MACHINE_TYPE }}
+  GCP_LB_PROJECT: ${{ vars.GCP_LB_PROJECT }}
+  GCP_URL_MAP: ${{ vars.GCP_URL_MAP }}
+
+jobs:
+  # Everything that can be checked without changing anything. With `dry_run`
+  # the workflow stops here.
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.ref.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check inputs and repository variables
+        env:
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          failed=0
+          for name in GCP_WIF_PROVIDER GCP_SERVICE_ACCOUNT GCP_ZONE GCP_MACHINE_TYPE GCP_LB_PROJECT GCP_URL_MAP; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository variable $name is not set (Settings > Secrets and variables > Actions > Variables)."
+              failed=1
+            fi
+          done
+          # Must be a VM name and a DNS label at once, and short enough for the
+          # resource names derived from it.
+          if ! [[ "$VM_NAME" =~ ^[a-z]([a-z0-9-]{0,28}[a-z0-9])?$ ]]; then
+            echo "::error::vm_name must be 1 to 30 characters: lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
+            failed=1
+          fi
+          if ! [[ "$GCP_PROJECT" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
+            echo "::error::gcp_project is not a valid GCP project ID."
+            failed=1
+          fi
+          exit "$failed"
+
+      - name: Resolve the ref to a commit
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref || github.head_ref }} # TEMPORARY fallback
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$REF" --jq .sha)
+          echo "Deploying $REF at $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Check permissions
+        run: bash scripts/deploy/gcp-preflight.sh
+
+  deploy:
+    name: Deploy
+    needs: preflight
+    # TEMPORARY: the event check keeps a PR run from ever deploying.
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # One environment per VM, so each has its own deployment history.
+    environment:
+      name: ${{ inputs.vm_name }}
+      url: https://${{ inputs.vm_name }}.manta-plan.org
+    outputs:
+      vm_created: ${{ steps.vm.outputs.created }}
+    env:
+      SHA: ${{ needs.preflight.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Prepare the project and the VM
+        id: vm
+        run: bash scripts/deploy/gcp-ensure-vm.sh
+
+      - name: Wait for SSH
+        run: |
+          for attempt in $(seq 1 30); do
+            if bash scripts/deploy/gcp-ssh.sh true </dev/null; then
+              exit 0
+            fi
+            echo "$VM_NAME does not accept SSH yet (attempt $attempt of 30)"
+            sleep 10
+          done
+          echo "::error::Could not SSH into $VM_NAME."
+          exit 1
+
+      - name: Set up the VM
+        run: bash scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
+
+      # Before the deployment itself, so the new host rule spreads across the
+      # load balancer while the images build.
+      - name: Register with the load balancer
+        env:
+          VM_IP: ${{ steps.vm.outputs.ip }}
+        run: bash scripts/deploy/gcp-register-lb.sh
+
+      - name: Deploy to the VM
+        env:
+          RESET_DATA: ${{ inputs.reset_data }}
+        run: |
+          args="--repo $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git --sha $SHA"
+          if [ "$RESET_DATA" = "true" ]; then
+            args="$args --reset-data"
+          fi
+          bash scripts/deploy/gcp-ssh.sh "sudo bash -s -- $args" < scripts/deploy/vm-deploy.sh
+
+      - name: Check the public URL
+        run: |
+          url="https://$SITE_HOST/v1/health"
+          for attempt in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)
+            if [ "$code" = "200" ]; then
+              echo "$url is up"
+              exit 0
+            fi
+            echo "Got $code from $url (attempt $attempt of 60)"
+            sleep 10
+          done
+          echo "::error::$url did not return 200 within 10 minutes. The instance is healthy on the VM itself, so look at the wildcard DNS record, the wildcard certificate and the load balancer."
+          exit 1
+
+      - name: Summary
+        env:
+          VM_CREATED: ${{ steps.vm.outputs.created }}
+        run: |
+          {
+            echo "### Deployed to https://$SITE_HOST"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Commit | \`$SHA\` |"
+            echo "| VM | \`$VM_NAME\` in \`$GCP_PROJECT\` |"
+            echo "| New VM | $VM_CREATED |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify:
+    name: Notify Discord
+    needs: [preflight, deploy]
+    # TEMPORARY: the event check.
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post the outcome
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # A failed preflight skips the deploy job: report the preflight then.
+          RESULT: ${{ needs.preflight.result == 'success' && needs.deploy.result || needs.preflight.result }}
+          SHA: ${{ needs.preflight.outputs.sha }}
+          VM_CREATED: ${{ needs.deploy.outputs.vm_created }}
+          REF: ${{ inputs.ref }}
+          RESET_DATA: ${{ inputs.reset_data }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::Secret DISCORD_WEBHOOK_URL is not set, so nothing was posted to Discord."
+            exit 0
+          fi
+
+          case "$RESULT" in
+            success) title="Deployed $VM_NAME" color=3066993 ;;
+            cancelled) title="Deployment of $VM_NAME was cancelled" color=9807270 ;;
+            *) title="Deployment of $VM_NAME failed" color=15158332 ;;
+          esac
+          case "$VM_CREATED" in
+            true) new_vm="yes" ;;
+            false) new_vm="no" ;;
+            *) new_vm="unknown" ;;
+          esac
+          if [ -n "$SHA" ]; then
+            commit="[\`${SHA:0:7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$SHA) ($REF)"
+          else
+            commit="$REF (not resolved)"
+          fi
+
+          payload=$(jq -n \
+            --arg title "$title" \
+            --argjson color "$color" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg site "https://$SITE_HOST" \
+            --arg vm "$VM_NAME" \
+            --arg project "$GCP_PROJECT" \
+            --arg commit "$commit" \
+            --arg actor "$ACTOR" \
+            --arg result "$RESULT" \
+            --arg new_vm "$new_vm" \
+            --arg reset_data "$RESET_DATA" \
+            '{
+              username: "Manta deploy",
+              embeds: [{
+                title: $title,
+                url: $run_url,
+                color: $color,
+                fields: [
+                  {name: "URL", value: $site},
+                  {name: "VM", value: $vm, inline: true},
+                  {name: "GCP project", value: $project, inline: true},
+                  {name: "Commit", value: $commit},
+                  {name: "Triggered by", value: $actor, inline: true},
+                  {name: "Result", value: $result, inline: true},
+                  {name: "New VM", value: $new_vm, inline: true},
+                  {name: "Data reset", value: $reset_data, inline: true}
+                ]
+              }]
+            }')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
