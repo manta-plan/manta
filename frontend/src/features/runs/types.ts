@@ -7,6 +7,12 @@ export type CreateProjectResponse = {
   created_at: string;
 };
 
+/** A data record to start a run from: a store's name within the project, and the revision. */
+export type DataRecordChoice = {
+  name: string;
+  revision_uuid: string;
+};
+
 export type CreateRunResponse = {
   uuid: string;
   project_uuid: string;
@@ -16,6 +22,7 @@ export type CreateRunResponse = {
 export type GetRunResponse = {
   uuid: string;
   project_uuid: string;
+  playbook: string;
   status: string;
   created_at: string;
 };
