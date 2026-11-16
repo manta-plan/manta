@@ -5,9 +5,6 @@ import type { RefreshResponse, TokenResponse } from "./types";
 // Access token, refresh token and their expiries live under one key so another
 // tab never sees a new access token paired with an old refresh token.
 const sessionStorageKey = "manta.session";
-// Project UUIDs are owned per user, so the cached default project must not
-// outlive the session that created it.
-const sessionScopedStorageKeys = ["manta.defaultProjectUuid"];
 // Refresh this long before the access token expires, so a request doesn't
 // leave with a token that expires in flight.
 const accessTokenRefreshLeewayMs = 30_000;
@@ -112,15 +109,15 @@ export function startSession(tokens: TokenResponse, remember: boolean) {
 export function clearSession() {
   for (const storage of [window.sessionStorage, window.localStorage]) {
     storage.removeItem(sessionStorageKey);
-    sessionScopedStorageKeys.forEach((key) => storage.removeItem(key));
   }
   notifyListeners();
 }
 
 // The user counts as signed in while the refresh token is live, even if the
 // access token has expired: the next request refreshes it. Returns the access
-// token only so useSessionUser can read the username from its claims.
-function getSignedInAccessToken() {
+// token only so callers can read the user from its claims; to send a request,
+// use getValidAccessToken.
+export function getSignedInAccessToken() {
   const stored = readStoredSession();
 
   if (stored === null || isRefreshTokenExpired(stored.session)) {
