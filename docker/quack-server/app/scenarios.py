@@ -4,7 +4,10 @@ scenario changes: the `manta.revisions` and `manta.scenario_changes` tables.
 - **Names** come from the `references` of the store's `store.json`: per name
   the `revision` it points to, a `label` and an optional `description`.
   A revision without a name isn't shown. A name is also the revision's name
-  here (`patch/myopic`), and its catalog is `<record>__<name>` as a slug.
+  here, and its catalog is `<record>__<name>` as a slug. By convention the
+  base scenario is `base`, another scenario is its label as a slug
+  (`wind_and_solar_stress_test`) and a run result is `<scenario>/<playbook>`
+  (`base/myopic`).
 - **Kind:** each named revision has a `manta.kind` in the flat `meta` of its
   layer's manifest (`layers/<id>/manifest.json`): `scenario` for inputs, the
   base inputs included, or `result` for the output of a solve.
@@ -33,7 +36,7 @@ from datarecord.store.manifest import Manifest
 
 from .manta_views import SCHEMA, SUBJECTS
 
-BASE_NAME = "inputs"
+BASE_NAME = "base"
 BASE_LABEL = "Base case"
 KIND = "manta.kind"
 

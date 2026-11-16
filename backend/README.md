@@ -251,7 +251,7 @@ one for the requests.
 
 6. Create a run in manta-admin's example project
    (`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, see [Example data](#example-data)),
-   from the `inputs` revision of its `BEL-pre-aggregated` store. Each step
+   from the `base` revision of its `BEL-pre-aggregated` store. Each step
    writes its output as a new revision into that same store. Leaving out `playbook.config`
    runs the playbook with its `default_config`. A config with issues is refused with a
    `422` listing the same issues the check above returns:

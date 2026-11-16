@@ -4,12 +4,12 @@
   a folder `<id>/` with `layers/` and `store.json`, which has the record's
   `label` and `description` and names its revisions (`scenarios.py`). Or a
   **plain record**, a folder with `manifest.json` and no `layers/`: one
-  scenario, `inputs`, shown by its folder name. Both are served as written:
+  scenario, `base`, shown by its folder name. Both are served as written:
   nothing is added to the folder.
 - **Listing** reads the root: names, sizes, dates. It's refreshed when a
   minute old, so a store uploaded to the root shows without a restart.
 - **Opening** a store creates one catalog per scenario,
-  `<record>__<revision>` (`bel_pre_aggregated__patch`), each with the
+  `<record>__<revision>` (`bel_pre_aggregated__base`), each with the
   same schemas: datarecord's three (`record.py`, views over the revision
   registered in datarecord's own database) and `manta`. A run result
   gets its catalog, alike, when first asked for (`open_revision`): its views

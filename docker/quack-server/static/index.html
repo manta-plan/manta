@@ -222,7 +222,7 @@
       <div class="editor">
         <textarea x-model="sql" spellcheck="false" aria-label="SQL"
                   @keydown.meta.enter.prevent="run()" @keydown.ctrl.enter.prevent="run()"
-                  placeholder="Pick a view, or write SQL against r.<catalog>.<schema>.<view>, one catalog per scenario (e.g. r.bel_pre_aggregated__patch.attributes.p_nom)"></textarea>
+                  placeholder="Pick a view, or write SQL against r.<catalog>.<schema>.<view>, one catalog per scenario (e.g. r.bel_pre_aggregated__base.attributes.p_nom)"></textarea>
         <div class="bar">
           <button class="btn primary" @click="run()" :disabled="status !== 'connected' || running" x-text="running ? 'Running…' : 'Run'"></button>
           <span><kbd>⌘</kbd> <kbd>↵</kbd></span>
@@ -324,7 +324,7 @@ function text(value, type) {
 }
 
 // Scenario → schema → view → column: each scenario of the record has its own
-// catalog (`bel_pre_aggregated__patch`), named in its revisions. A
+// catalog (`bel_pre_aggregated__base`), named in its revisions. A
 // run result's catalog is attached when the app first shows it: until then
 // it's left out.
 function catalogTree(columns, revisions) {
@@ -649,7 +649,7 @@ document.addEventListener('alpine:init', () => {
       const names = revisions ?? {}
       const plain = revisions === null
       // The revision names a layer is, and the views of the first one attached.
-      const namesOf = (id) => (plain ? ['inputs'] : Object.keys(names).filter((name) => names[name] === id))
+      const namesOf = (id) => (plain ? ['base'] : Object.keys(names).filter((name) => names[name] === id))
       const dbOf = (id) => namesOf(id).map((name) => this.revisionCatalogs[name]).find(Boolean)
       const isView = (db, key) => this.views.some((v) => v.db === db && `${v.schema}.${v.name}` === key)
       const parts = node.path ? node.path.split('/') : []

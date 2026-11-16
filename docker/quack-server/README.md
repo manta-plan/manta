@@ -45,10 +45,10 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
                                                         └── /api/*                            └── in-process DuckDB: one view per record relation
 ```
 
-- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/` and a `store.json`, which has the record's label and names its revisions (see "Scenarios and run results" below). A plain record (a folder with `manifest.json` and no `layers/`) is listed too, under its folder's name, with one scenario, `inputs` ("Base case").
+- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/` and a `store.json`, which has the record's label and names its revisions (see "Scenarios and run results" below). A plain record (a folder with `manifest.json` and no `layers/`) is listed too, under its folder's name, with one scenario, `base` ("Base case").
 - **A record opens on first use**: when a project (or the explorer) first asks for it, then stays open while the server runs. The default record opens in the background at start. The listing refreshes every minute, so a store uploaded to the root shows without a restart; replacing a store that's open needs one.
 - **datarecord resolves each scenario.** `app/record.py` has the revision register its views (`datarecord.<catalog>.attributes.p_nom`), and puts a view over each in the scenario's catalog, in the schemas `dims`, `properties` and `attributes`, for example `attributes.p_nom`. The browser never sees layers or parquet files.
-- **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_incl_patches_incl_results__patch.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get a catalog too, attached when first asked for. `docs/views-design.md` has the details.
+- **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_incl_patches_incl_results__base.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get a catalog too, attached when first asked for. `docs/views-design.md` has the details.
 - **FastAPI is in front because:**
   - Cloud Run exposes only one port.
   - Quack sends no CORS headers.
@@ -81,7 +81,7 @@ Then open <http://localhost:8010/?token=devtoken>. Without `QUACK_TOKEN`, a rand
 The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks a record in its header (`?record=` keeps it) and has two tabs:
 
 - **Files:** the record as stored, from `GET /api/records/{id}/files` (names, sizes, the revision names and each layer's manifest; no data). Clicking a file or folder under `layers/<id>/` shows what that layer's manifest and the schema say about it, and links to the views it backs in its revision's catalog, once that is attached.
-- **Views:** the views the browser sees through ATTACH, as scenario → schema → view → column, base case first. Clicking a view previews 200 rows and counts it on the server. The editor runs any SQL in DuckDB-Wasm, against `r.<catalog>.<schema>.<view>` (`r.bel_pre_aggregated_incl_patches_incl_results__patch.attributes.p_nom`).
+- **Views:** the views the browser sees through ATTACH, as scenario → schema → view → column, base case first. Clicking a view previews 200 rows and counts it on the server. The editor runs any SQL in DuckDB-Wasm, against `r.<catalog>.<schema>.<view>` (`r.bel_pre_aggregated_incl_patches_incl_results__base.attributes.p_nom`).
 
 **API.** `/api/*` takes the same token as Quack, as `Authorization: Bearer …`.
 
@@ -102,7 +102,7 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 | `QUACK_PORT` | `9494` (internal) |
 | `CORS_ORIGINS` | `http://localhost:5173` |
 
-Local records live in `data/records` (git-ignored, never in the image). The tests use the sample store `BEL-pre-aggregated-incl-patches-incl-results`. It holds the scenarios `inputs` and `patch`, each solved in three runs (`perfect`, `myopic` and `overnight2050`).
+Local records live in `data/records` (git-ignored, never in the image). The tests use the sample store `BEL-pre-aggregated-incl-patches-incl-results`. It holds the scenarios `base` and `wind_and_solar_stress_test`, each solved in three runs (`base/perfect`, `base/myopic` and `base/overnight2050`, and the same under `wind_and_solar_stress_test/`).
 
 ```sh
 mkdir -p data/records
@@ -120,11 +120,11 @@ A store names its revisions in `store.json`, in its root folder:
   "label": "Belgium, pre-aggregated, every solve",
   "description": "Inputs, one patch and six results.",
   "references": {
-    "inputs": {"revision": "9ec88f52-d2d7-4785-9cbb-0c9a1da9b827", "label": "Base case"},
-    "patch/myopic": {
+    "base": {"revision": "9ec88f52-d2d7-4785-9cbb-0c9a1da9b827", "label": "Base case"},
+    "wind_and_solar_stress_test/myopic": {
       "revision": "7b68a9ca-2097-4d19-a413-aee5cf659c2e",
-      "label": "Myopic, with patch",
-      "description": "Myopic solve of the patched inputs."
+      "label": "Wind and solar stress test: Myopic foresight",
+      "description": "One period solved after the other, with the capacity built in a period fixed in later ones"
     }
   }
 }
@@ -143,9 +143,10 @@ Each named revision also has a `manta.kind` in the flat top-level `meta` of its 
 
 The kind is `scenario` for inputs that a user may edit and run, the base inputs included, and `result` for the output of a solve. `manta.created_by` is optional: the block that wrote a run result. The server does not read it. The manifest's schema has its own nested `meta`, which the server ignores.
 
-- **A revision's name** is its key in `references` (`patch/myopic`). Its catalog is `<record>__<name>`, with the name in lower case and other characters as `_` (`…__patch_myopic`).
+- **A revision's name** is its key in `references` (`base/myopic`). Its catalog is `<record>__<name>`, with the name in lower case and other characters as `_` (`…__base_myopic`).
+- **Names follow a convention:** `base` for the base scenario, and `<scenario>/<playbook>` for a run result (`base/myopic`). Any other scenario has its label as a slug: `wind_and_solar_stress_test` for "Wind and solar stress test". The server does not check the convention.
 - **A revision's parent** is its nearest named ancestor, which the server finds from the parents in the manifests.
-- **The base scenario** is the scenario without a parent. Its name plays no part.
+- **The base scenario** is the scenario without a parent. The server does not find it by its name.
 
 A store that the server can't read this way is listed with the reason as its `error`, and fails to open. That happens when the store has no `store.json`, when a reference names a revision that the store doesn't have, or when a named revision has no `manta.kind`. After you fix a manifest on disk, restart the server, because datarecord keeps every manifest it has read.
 

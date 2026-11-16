@@ -16,7 +16,7 @@ which parts come from datarecord and which are ours.
 <catalog>.<schema>.<view>
 
 catalog   the record and scenario: <record>__<scenario>,
-          e.g. bel_pre_aggregated_incl_patches_incl_results__patch
+          e.g. bel_pre_aggregated_incl_patches_incl_results__base
 schema    dims | properties | attributes   datarecord's relations, as is
           manta                            ours: app views over those three
 ```
@@ -102,9 +102,9 @@ catalog, `<record>__<revision>` (lowercased, other characters as `_`), with
 the same four schemas:
 
 ```sql
-FROM r.bel_pre_aggregated_incl_patches_incl_results__inputs.attributes.capital_cost  -- Base case
-FROM r.bel_pre_aggregated_incl_patches_incl_results__patch.attributes.capital_cost   -- Wind and solar stress test
-FROM r.bel_pre_aggregated_incl_patches_incl_results__myopic.attributes.p_nom_opt     -- Base case, myopic
+FROM r.bel_pre_aggregated_incl_patches_incl_results__base.attributes.capital_cost                        -- Base case
+FROM r.bel_pre_aggregated_incl_patches_incl_results__wind_and_solar_stress_test.attributes.capital_cost  -- Wind and solar stress test
+FROM r.bel_pre_aggregated_incl_patches_incl_results__base_myopic.attributes.p_nom_opt                    -- Base case, myopic
 ```
 
 - There is no record in the default catalog: a query always names one.
