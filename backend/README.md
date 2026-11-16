@@ -166,6 +166,33 @@ they're still shown for any failing test:
 uv run pytest tests/integration -s
 ```
 
+## Authentication
+
+The backend proxies Keycloak's token calls. `manta-client` is a confidential
+client, so clients can't call Keycloak directly.
+
+### Refresh tokens
+
+- `POST /v1/auth/login` returns `access_token`, `expires_in`, `refresh_token`
+  and `refresh_expires_in`. Lifetimes are in seconds; in the dev realm, 300
+  and 1800.
+- `POST /v1/auth/refresh` with `{"refresh_token": ...}` returns the same
+  fields. No `Authorization` header.
+- Every refresh issues a new refresh token. Replace the stored one, as per the
+  [OAuth2 spec](https://datatracker.ietf.org/doc/html/rfc6749#section-6): the
+  old one keeps its original expiry, and stops working once the realm's
+  "Revoke Refresh Token" setting is on.
+- An invalid, expired or revoked refresh token returns `401`. Log in again.
+
+### Logout
+
+- `POST /v1/auth/logout` with `{"refresh_token": ...}` ends the Keycloak
+  session and returns `204`. No `Authorization` header.
+- The session's refresh tokens stop working. Access tokens already issued
+  stay valid until they expire, since they're verified by signature alone.
+- Logging out an already-ended session returns `204`. An invalid refresh
+  token returns `401`.
+
 ## Manually testing a run (temporary, will be removed)
 
 This section exists only until the frontend can create a run with real data

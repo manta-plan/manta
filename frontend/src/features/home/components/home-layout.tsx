@@ -3,7 +3,8 @@ import { Link, useLocation } from "wouter";
 import { LuLogOut, LuMoon, LuSun } from "react-icons/lu";
 import { FaFly } from "react-icons/fa";
 import { useAppStore } from "../store";
-import { clearSession, useSessionUser } from "../../auth/session";
+import { logout } from "../../auth/api";
+import { useSessionUser } from "../../auth/session";
 import { MantaLogo } from "./manta-logo";
 import { FeedbackButton } from "./feedback-dialog";
 import { GradientWashBackground } from "./gradient-wash-background";
@@ -56,7 +57,7 @@ export function HomeLayout({ children }: HomeLayoutProps) {
           </button>
           <FeedbackButton />
           <button
-            onClick={clearSession}
+            onClick={() => void logout()}
             className="text-surface-300 hover:bg-surface-700 hover:text-surface-50 flex h-7 items-center gap-1.5 rounded px-2 text-[12px] font-medium"
           >
             <LuLogOut size={14} />
