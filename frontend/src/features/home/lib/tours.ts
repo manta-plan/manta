@@ -28,7 +28,7 @@ export function startHomeTour() {
       popover: {
         title: "Welcome to MantaPlan",
         description:
-          "Everything outside a project lives here. Use this sidebar to move between your projects, data, playbooks, and compute.",
+          "Everything outside a project lives here. Use this sidebar to move between your projects and data.",
         side: "right",
         align: "start",
       },
@@ -49,25 +49,6 @@ export function startHomeTour() {
         title: "Projects",
         description:
           "Create a project from an imported package, then open it to edit scenarios, run them, and review the results.",
-        side: "right",
-        align: "center",
-      },
-    },
-    {
-      element: '[data-tour="home-nav-playbooks"]',
-      popover: {
-        title: "Playbooks",
-        description:
-          "Reusable run recipes. Browse them here, and use a compatible one to prefill a run inside a project.",
-        side: "right",
-        align: "center",
-      },
-    },
-    {
-      element: '[data-tour="home-nav-infrastructure"]',
-      popover: {
-        title: "Infrastructure",
-        description: "The cloud resources your runs execute on.",
         side: "right",
         align: "center",
       },

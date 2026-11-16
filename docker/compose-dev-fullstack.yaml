@@ -1,0 +1,26 @@
+# The whole app: the frontend (frontend/Dockerfile) on top of everything in
+# compose-dev-backend.yaml (the backend plus every service in
+# compose-dev-services.yaml).
+#
+# To run the frontend on the host instead (`pnpm dev`), stop its container
+# first: they share ports.
+#
+# Image name defaults to a local tag; deploys set MANTA_FRONTEND_IMAGE /
+# IMAGE_TAG to pull a prebuilt image from a registry instead.
+name: manta
+
+include:
+  - compose-dev-backend.yaml
+
+services:
+  frontend:
+    image: ${MANTA_FRONTEND_IMAGE:-manta-frontend}:${IMAGE_TAG:-latest}
+    build:
+      context: ../frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy

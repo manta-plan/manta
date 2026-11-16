@@ -1,6 +1,15 @@
+from collections.abc import Callable
+from uuid import UUID
+
 import httpx2
 import psycopg
 from keycloak.openid_connection import KeycloakOpenID
+
+from manta.config.example_data_config import (
+    ADMIN_EXAMPLE_PROJECT_UUID,
+    ADMIN_IDP_SUBJECT,
+    EXAMPLE_PROJECT_NAME,
+)
 
 
 def _idp_claims(kc_oidc_client: KeycloakOpenID) -> tuple[str, str]:
@@ -83,3 +92,56 @@ def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:
 
     # Then
     assert response.status_code == 401
+
+
+def test_admin_owns_the_example_project_seeded_on_startup(
+    app_server: str,
+    db_connection: psycopg.Connection,
+    kc_oidc_client: KeycloakOpenID,
+    example_store_exists: Callable[[str], bool],
+) -> None:
+    # Given
+    idp_subject, idp_source = _idp_claims(kc_oidc_client)
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/register",
+        json={"username": "manta-admin", "idp_subject": idp_subject, "idp_source": idp_source},
+    )
+
+    # Then
+    assert idp_subject == ADMIN_IDP_SUBJECT
+    with db_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT u.uuid FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.uuid = %s",
+            (ADMIN_EXAMPLE_PROJECT_UUID,),
+        )
+        row = cursor.fetchone()
+    assert row == (UUID(response.json()["uuid"]),)
+    assert example_store_exists(str(ADMIN_EXAMPLE_PROJECT_UUID))
+
+
+def test_register_creates_an_example_project_for_a_new_user(
+    second_user_headers: dict[str, str],
+    db_connection: psycopg.Connection,
+    kc_oidc_client: KeycloakOpenID,
+    example_store_exists: Callable[[str], bool],
+) -> None:
+    # Given - second_user_headers registered a brand-new user
+    token = second_user_headers["Authorization"].removeprefix("Bearer ")
+    idp_subject = kc_oidc_client.decode_token(token, validate=False)["sub"]
+
+    # When
+    with db_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT p.uuid FROM projects p JOIN users u ON u.id = p.owner_id
+            WHERE u.idp_subject = %s AND p.name = %s
+            """,
+            (idp_subject, EXAMPLE_PROJECT_NAME),
+        )
+        rows = cursor.fetchall()
+
+    # Then
+    assert len(rows) == 1
+    assert example_store_exists(str(rows[0][0]))

@@ -1,0 +1,17 @@
+# SITE_ADDRESS defaults to plain HTTP on :80. Set it to a domain name (e.g.
+# manta.example.org) and Caddy obtains and renews an HTTPS certificate for it.
+{$SITE_ADDRESS::80} {
+	# The app calls the API on its own origin (relative /v1 URLs), so forward
+	# those to the backend, as the Vite dev server's proxy does in development.
+	handle /v1/* {
+		reverse_proxy {$BACKEND_URL}
+	}
+
+	# Everything else is the static build; client-side routes fall back to the
+	# SPA shell.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
