@@ -18,10 +18,6 @@ dependencies = [
     "playbook",
     # Pinned to the Prefect server's version: this process talks to its API.
     "prefect==3.8.3",
-    # Prefect's result storage on the object store, which is how a block's output
-    # record travels from its container back to the orchestrator. Both sides need
-    # it: the block container writes, the orchestrator reads.
-    "prefect-aws>=0.5",
     "python-dotenv>=1.2.2",
 ]
 

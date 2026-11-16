@@ -24,10 +24,9 @@ function initials(name: string) {
 
 interface HomeLayoutProps {
   children: ReactNode;
-  isPlaybookDetail: boolean;
 }
 
-export function HomeLayout({ children, isPlaybookDetail }: HomeLayoutProps) {
+export function HomeLayout({ children }: HomeLayoutProps) {
   const [location] = useLocation();
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
@@ -70,8 +69,7 @@ export function HomeLayout({ children, isPlaybookDetail }: HomeLayoutProps) {
         <aside className="border-surface-600 bg-surface-800 flex w-56 shrink-0 flex-col border-r">
           <nav data-tour="home-nav" className="flex flex-col gap-0.5 p-2">
             {HOME_ROUTES.map((item) => {
-              const isActive =
-                location === item.path || (item.id === "playbooks" && isPlaybookDetail);
+              const isActive = location === item.path;
               const Icon = item.icon;
               return (
                 <Link
@@ -108,14 +106,8 @@ export function HomeLayout({ children, isPlaybookDetail }: HomeLayoutProps) {
             via translate-x-full when closed — overflow-auto on both axes would
             let that off-screen geometry count toward this element's scrollable
             width, putting a horizontal scrollbar on every page. */}
-        <main
-          className={
-            isPlaybookDetail
-              ? "relative flex-1 overflow-hidden"
-              : "relative flex-1 overflow-x-hidden overflow-y-auto"
-          }
-        >
-          {!isPlaybookDetail && <GradientWashBackground />}
+        <main className="relative flex-1 overflow-x-hidden overflow-y-auto">
+          <GradientWashBackground />
           <div className="relative h-full">{children}</div>
           <NewProjectDrawer />
           <RenameProjectDrawer />

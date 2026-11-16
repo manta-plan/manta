@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { useSessionUser } from "../../auth/session";
+import type { PlaybookConfig } from "../../../utils/playbookTypes";
 import {
   createRun,
   getCachedDefaultProject,
@@ -13,10 +14,12 @@ import {
   getRunSummary,
   listRuns,
 } from "../api";
+import { RunPlaybookDialog } from "./run-playbook-dialog";
 import { RunsTable } from "./runs-table";
 import { StatusFilter } from "./status-filter";
 import { normalizeRunStatus } from "../status";
 import type {
+  DataRecordChoice,
   DefaultProject,
   ExpandedRunState,
   GetRunResponse,
@@ -43,6 +46,9 @@ export function RunsView() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [isRefreshingRuns, setIsRefreshingRuns] = useState(false);
   const [runCreationError, setRunCreationError] = useState<string | null>(null);
+  // Shown inside the dialog, which stays open when the backend refuses a run.
+  const [createRunError, setCreateRunError] = useState<string | null>(null);
+  const [playbookDialog, setPlaybookDialog] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Record<string, ExpandedRunState>>({});
   const [selectedStatuses, setSelectedStatuses] = useState<RunStatus[]>([]);
@@ -131,20 +137,31 @@ export function RunsView() {
     },
   ];
 
-  async function handleNewRun() {
+  function handleDialogPlaybook() {
+    setCreateRunError(null);
+    setPlaybookDialog(true);
+  }
+
+  async function handleNewRun(
+    playbook: string,
+    config: PlaybookConfig,
+    dataRecord: DataRecordChoice,
+  ) {
     setIsLoadingRuns(true);
     setRunCreationError(null);
+    setCreateRunError(null);
 
     try {
       const project = await getOrCreateDefaultProject();
-      await createRun(project);
+      await createRun(project, { playbook, config, dataRecord });
+      setPlaybookDialog(false);
 
       setSearchRunId("");
       setActiveSearchRunId("");
       setRunsOffset(0);
       await refreshRunsPage(project, 0, selectedStatuses);
     } catch (error) {
-      setRunCreationError(error instanceof Error ? error.message : "Failed to create run.");
+      setCreateRunError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
       setIsLoadingRuns(false);
     }
@@ -370,7 +387,7 @@ export function RunsView() {
             <Button
               className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active focus-visible:outline-secondary shadow-primary/20 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={isLoadingRuns}
-              onClick={handleNewRun}
+              onClick={handleDialogPlaybook}
             >
               {isLoadingRuns ? (
                 <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
@@ -524,6 +541,14 @@ export function RunsView() {
           ) : null}
         </section>
       </section>
+
+      <RunPlaybookDialog
+        error={createRunError}
+        isSubmitting={isLoadingRuns}
+        onOpenChange={setPlaybookDialog}
+        onSubmit={handleNewRun}
+        open={playbookDialog}
+      />
     </div>
   );
 }
@@ -531,8 +556,8 @@ export function RunsView() {
 function toRunListItem(run: GetRunResponse, owner: string): RunListItem {
   return {
     id: run.uuid,
-    name: "Cluster expand dispatch",
-    playbook: "cluster-expand-dispatch",
+    name: run.playbook,
+    playbook: run.playbook,
     status: normalizeRunStatus(run.status),
     startedAt: run.created_at,
     durationSeconds: null,

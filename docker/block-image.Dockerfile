@@ -64,6 +64,10 @@ ENV PATH=/opt/manta/playbook-library/.pixi/envs/${ENV_NAME}/bin:${PATH}
 # Used by the block catalogue and error messages, not for dependency resolution.
 ENV MANTA_ENV=${ENV_NAME}
 
+# datarecord runs `INSTALL httpfs` for s3:// stores, which is a no-op once the
+# extension is cached here. Without it, every throwaway block container downloads it.
+RUN python -c "import duckdb; duckdb.execute('INSTALL httpfs')"
+
 FROM bare AS block-prefect-runtime
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.18 /uv /usr/local/bin/uv

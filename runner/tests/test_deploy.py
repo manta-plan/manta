@@ -17,7 +17,6 @@ def _stack_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PREFECT_API_URL": "http://prefect-server:4200/api",
         "S3_ACCESS_KEY": "key",
         "S3_SECRET_KEY": "secret",
-        "S3_BUCKET": "manta",
         "MANTA_BLOCK_LOGGERS": "playbook_library",
         "MANTA_BLOCK_SOURCES": "playbook_library",
     }.items():
@@ -53,8 +52,6 @@ def test_a_block_container_is_told_how_to_report_back_and_where_records_live() -
 
     # Then: the flow run reports its own state (no worker can do it for it)...
     assert env["PREFECT_API_URL"] == "http://prefect-server:4200/api"
-    # ...persists its result where the orchestrator can read it...
-    assert env["PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK"] == config.RESULT_STORAGE_BLOCK
     # ...ships the modelling framework's own logging, which Prefect would
     # otherwise ignore (it captures only its own loggers and what is printed)...
     assert env["PREFECT_LOGGING_EXTRA_LOGGERS"] == "playbook_library"
@@ -71,7 +68,6 @@ def test_a_block_container_is_told_nothing_else() -> None:
     # database, the identity provider, or anything else this stack holds.
     assert set(_defaults(deploy.docker_job_template())["env"]) == {
         "PREFECT_API_URL",
-        "PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK",
         "PREFECT_LOGGING_EXTRA_LOGGERS",
         "MANTA_BLOCK_SOURCES",
         "AWS_ACCESS_KEY_ID",

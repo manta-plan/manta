@@ -14,12 +14,6 @@ import os
 
 from dotenv import load_dotenv
 
-RESULT_STORAGE_BLOCK_NAME = "manta-results"
-"""The Prefect block naming where step results are stored, registered by deploy.py."""
-
-RESULT_STORAGE_BLOCK = f"s3-bucket/{RESULT_STORAGE_BLOCK_NAME}"
-"""What PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK is set to, on both sides."""
-
 
 class UnknownEnvironmentError(Exception):
     """Raised when a block needs an environment this installation has no image for."""
@@ -116,11 +110,6 @@ def s3_credentials() -> tuple[str, str]:
     return os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"]
 
 
-def s3_bucket() -> str:
-    load_dotenv()
-    return os.environ.get("S3_BUCKET", "manta")
-
-
 def prefect_api_url() -> str:
     """The Prefect API as a block container reaches it, to report its own state."""
     load_dotenv()
@@ -157,17 +146,15 @@ def job_environment() -> dict[str, str]:
     """The environment every block container is started with.
 
     How to reach the Prefect API (the flow run reports its own state and ships
-    its logs), which block library to import before looking anything up, how to
-    reach the object store (blocks read and write records through the standard
-    AWS_* variables), and where to persist the result record so the orchestrator
-    can read it back. Nothing else: a container that runs modelling code —
+    its logs), which block library to import before looking anything up, and how
+    to reach the object store (blocks read and write records through the standard
+    AWS_* variables). Nothing else: a container that runs modelling code —
     eventually third-party code — gets no route to the app database or the
     identity provider.
     """
     access_key, secret_key = s3_credentials()
     return {
         "PREFECT_API_URL": prefect_api_url(),
-        "PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK": RESULT_STORAGE_BLOCK,
         "PREFECT_LOGGING_EXTRA_LOGGERS": block_loggers(),
         "MANTA_BLOCK_SOURCES": block_sources(),
         "AWS_ACCESS_KEY_ID": access_key,

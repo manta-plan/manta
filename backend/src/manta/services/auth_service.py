@@ -9,9 +9,11 @@ from keycloak.openid_connection import KeycloakPostError
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
+from manta.config.example_data_config import example_project_for_new_users_enabled
 from manta.config.keycloak_config import get_keycloak_openid, well_known
 from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
+from manta.services.example_data_service import ExampleDataService
 from manta.services.results.login_result import LoginResult
 from manta.services.results.register_result import RegisterResult
 
@@ -72,9 +74,11 @@ class AuthService:
         self,
         db: Session = Depends(get_db_session),
         kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
+        example_data: ExampleDataService = Depends(),
     ) -> None:
         self.db = db
         self.kc_client = kc_client
+        self.example_data = example_data
 
     def login(self, username: str, password: str) -> LoginResult:
         # This doesn't currently update the user object if the Identity Provider
@@ -109,6 +113,9 @@ class AuthService:
             self.db.commit()
 
             logger.info("Registered new user %r (uuid=%s)", user.username, user.uuid)
+
+            if example_project_for_new_users_enabled():
+                self.example_data.create_project(owner=user)
         # else: registering an already-registered identity is a no-op, not an error.
 
         return RegisterResult(

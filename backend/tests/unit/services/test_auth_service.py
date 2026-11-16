@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -99,9 +100,10 @@ def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_k
         AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "manta-admin")
 
 
-def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
+def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
     # Given
-    service = AuthService(db=mock_db, kc_client=mock_kc_client)
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
 
     # When
     result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
@@ -110,8 +112,24 @@ def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
     assert result.username == "alice"
     assert result.idp_subject == "abc-123"
     assert result.idp_source == ISSUER
-    mock_db.add.assert_called_once()
+    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
     mock_db.commit.assert_called_once()
+    example_data.create_project.assert_called_once_with(owner=user)
+
+
+def test_register_creates_no_example_project_when_disabled(
+    mock_db, mock_kc_client, monkeypatch
+) -> None:
+    # Given
+    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
+
+    # When
+    service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+
+    # Then
+    example_data.create_project.assert_not_called()
 
 
 def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client) -> None:
@@ -121,7 +139,8 @@ def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client)
     existing_user.uuid = uuid4()
     existing_user.created_at = datetime.now(UTC)
     mock_db = mock_db_class(query_results={User: existing_user})
-    service = AuthService(db=mock_db, kc_client=mock_kc_client)
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
 
     # When
     result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
@@ -129,3 +148,4 @@ def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client)
     # Then
     assert result.username == existing_user.username
     mock_db.add.assert_not_called()
+    example_data.create_project.assert_not_called()
