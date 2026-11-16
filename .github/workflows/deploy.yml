@@ -31,19 +31,11 @@ on:
         description: Only check the configuration, authentication and permissions
         type: boolean
         default: false
-  # TEMPORARY, remove before merging (with every other line marked TEMPORARY):
-  # runs the preflight job alone on the PR that adds this workflow, so the
-  # setup can be tested before the workflow is on the default branch.
-  pull_request:
-    paths:
-      - .github/workflows/deploy.yml
-      - scripts/deploy/**
 
-# TEMPORARY: the `||` fallbacks here and below stand in for the inputs a PR run lacks.
 run-name: >-
-  ${{ github.event_name == 'pull_request' && 'PR preflight:' || inputs.dry_run && 'Dry run:' || 'Deploy' }}
-  ${{ inputs.ref || github.head_ref }} to ${{ inputs.vm_name || 'pr-check' }}
-  (${{ inputs.gcp_project || vars.GCP_LB_PROJECT }})
+  ${{ inputs.dry_run && 'Dry run:' || 'Deploy' }}
+  ${{ inputs.ref }} to ${{ inputs.vm_name }}
+  (${{ inputs.gcp_project }})
 
 permissions:
   contents: read
@@ -52,16 +44,15 @@ permissions:
 # One deployment per VM at a time; a second one waits rather than cancelling a
 # deployment halfway through.
 concurrency:
-  group: deploy-${{ inputs.vm_name || 'pr-check' }} # TEMPORARY fallback
+  group: deploy-${{ inputs.vm_name }}
   cancel-in-progress: false
 
 # Inputs reach the scripts as environment variables, never interpolated into
 # shell code.
 env:
-  VM_NAME: ${{ inputs.vm_name || 'pr-check' }} # TEMPORARY fallback
-  SITE_HOST: ${{ inputs.vm_name || 'pr-check' }}.manta-plan.org # TEMPORARY fallback
-  # TEMPORARY fallback: a PR run checks the load balancer project as the host.
-  GCP_PROJECT: ${{ inputs.gcp_project || vars.GCP_LB_PROJECT }}
+  VM_NAME: ${{ inputs.vm_name }}
+  SITE_HOST: ${{ inputs.vm_name }}.manta-plan.org
+  GCP_PROJECT: ${{ inputs.gcp_project }}
   GCP_ZONE: ${{ vars.GCP_ZONE }}
   GCP_MACHINE_TYPE: ${{ vars.GCP_MACHINE_TYPE }}
   GCP_LB_PROJECT: ${{ vars.GCP_LB_PROJECT }}
@@ -107,7 +98,7 @@ jobs:
         id: ref
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ inputs.ref || github.head_ref }} # TEMPORARY fallback
+          REF: ${{ inputs.ref }}
         run: |
           sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$REF" --jq .sha)
           echo "Deploying $REF at $sha"
@@ -127,8 +118,7 @@ jobs:
   deploy:
     name: Deploy
     needs: preflight
-    # TEMPORARY: the event check keeps a PR run from ever deploying.
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     # One environment per VM, so each has its own deployment history.
@@ -220,8 +210,7 @@ jobs:
   notify:
     name: Notify Discord
     needs: [preflight, deploy]
-    # TEMPORARY: the event check.
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    if: ${{ always() && !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
