@@ -111,8 +111,9 @@ def bel_store(tmp_path_factory) -> Path:
 def bel_record(tmp_path, bel_store) -> DataRecord:
     store_dir = tmp_path / "BEL"
     shutil.copytree(bel_store, store_dir)
-    revisions = json.loads((store_dir / "revisions.json").read_text())
-    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
+    manifests = [json.loads(path.read_text()) for path in store_dir.glob("layers/*/manifest.json")]
+    [base] = [m["id"] for m in manifests if m["parent"] is None]
+    return DataRecord(url=str(store_dir), uuid=UUID(base))
 
 
 BUILT_CARRIERS = [

@@ -21,6 +21,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from testcontainers.compose import DockerCompose
 
+from manta.config.example_data_config import EXAMPLE_DATA_PREFIX
 from manta.services.example_data_service import ExampleDataService
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -161,8 +162,8 @@ def example_store(
 ) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
     """Returns a function that copies the example datarecord store the app downloaded on
     startup under a project's own prefix (once per project), the same way new users'
-    example projects are filled, and returns the run payload fields for its `inputs`
-    revision — a real starting record for tests that run a playbook to completion."""
+    example projects are filled, and returns the run payload fields for its base scenario's
+    input revision — a real starting record for tests that run a playbook to completion."""
     env = dotenv_values(BACKEND_ENV_FILE)
     engine = create_engine(
         f"postgresql+psycopg://{env['POSTGRES_USER']}:{env['POSTGRES_PASSWORD']}"
@@ -183,12 +184,21 @@ def example_store(
 
 @pytest.fixture(scope="session")
 def example_store_exists(s3_client: S3Client) -> Callable[[str], bool]:
-    """Returns whether a project has the example datarecord store (see example_store)."""
+    """Returns whether a project has a full copy of the downloaded example datarecord store
+    (see example_store)."""
     bucket = dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"]
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    def names(prefix: str) -> set[str]:
+        return {
+            obj["Key"].removeprefix(prefix)
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix)
+            for obj in page.get("Contents", [])
+        }
 
     def exists(project_uuid: str) -> bool:
-        key = f"{project_uuid}/{EXAMPLE_STORE}/revisions.json"
-        return s3_client.list_objects_v2(Bucket=bucket, Prefix=key).get("KeyCount") == 1
+        downloaded = names(f"{EXAMPLE_DATA_PREFIX}/{EXAMPLE_STORE}/")
+        return bool(downloaded) and downloaded <= names(f"{project_uuid}/{EXAMPLE_STORE}/")
 
     return exists
 

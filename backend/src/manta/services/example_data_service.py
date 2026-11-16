@@ -10,6 +10,7 @@ worth it. The resulting duplication of key building and error handling is accept
 
 import json
 import logging
+import re
 from collections.abc import Callable, Collection
 from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID
@@ -39,12 +40,12 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 """The public bucket of example datarecord stores (the same ones playbook-library's
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
-PUBLIC_DATA_VERSION = "2026-11-11"
+PUBLIC_DATA_VERSION = "2026-11-13"
 """The bucket folder holding the stores written with the pinned datarecord version."""
 
 _PUBLIC_PREFIX = f"{PUBLIC_DATA_VERSION}/"
 
-_MARKER = "revisions.json"
+_LAYER = re.compile(r"^(?:.*?/)?layers/[^/]+/")
 # boto3's own connection pool size: any more and it discards connections, with a warning.
 _CONCURRENT_COPIES = 10
 _DESCRIPTION = "Example datarecord stores to start runs from."
@@ -56,14 +57,25 @@ def _http_client() -> httpx2.Client:
     return httpx2.Client(timeout=60)
 
 
-def _copy_store(store: str, names: Collection[str], copy: Callable[[str], object]) -> None:
-    """Copies a store's files concurrently, `revisions.json` only once everything else is in,
-    so a store with a `revisions.json` is complete."""
-    marker = f"{store}/{_MARKER}"
+def _manifests(names: Collection[str]) -> set[str]:
+    """The `manifest.json` of every layer folder the names have files in."""
+    return {f"{match.group()}manifest.json" for name in names if (match := _LAYER.match(name))}
+
+
+def _is_complete(names: Collection[str]) -> bool:
+    """Whether every layer folder has its `manifest.json`: datarecord treats a layer without
+    one as not written, and _copy_store() copies them last."""
+    manifests = _manifests(names)
+    return bool(manifests) and manifests <= set(names)
+
+
+def _copy_store(names: Collection[str], copy: Callable[[str], object]) -> None:
+    """Copies a store's files concurrently, its layers' manifests only once everything else
+    is in, so a store is complete as soon as it has them all (see _is_complete())."""
+    manifests = _manifests(names) & set(names)
     with ThreadPoolExecutor(_CONCURRENT_COPIES) as pool:
-        list(pool.map(copy, [name for name in names if name != marker]))
-    if marker in names:
-        copy(marker)
+        list(pool.map(copy, [name for name in names if name not in manifests]))
+        list(pool.map(copy, manifests))
 
 
 class ExampleDataService:
@@ -91,7 +103,7 @@ class ExampleDataService:
         try:
             with _http_client() as http:
                 for store in stores or self._public_stores(http):
-                    if self._exists(f"{EXAMPLE_DATA_PREFIX}/{store}/{_MARKER}"):
+                    if _is_complete(self._names(f"{EXAMPLE_DATA_PREFIX}/{store}/")):
                         logger.info("Example store %r already downloaded, skipping", store)
                         continue
                     logger.info("Downloading example store %r...", store)
@@ -144,14 +156,13 @@ class ExampleDataService:
         """Copies the given stores (all downloaded ones when none are given), skipping those
         already in the project."""
         for store, names in self._downloaded_stores().items():
-            # Without a revisions.json, its download was cut short (see _copy_store()).
-            if (stores and store not in stores) or f"{store}/{_MARKER}" not in names:
+            if (stores and store not in stores) or not _is_complete(names):
                 continue
-            if self._exists(f"{project_uuid}/{store}/{_MARKER}"):
+            copied = {f"{store}/{name}" for name in self._names(f"{project_uuid}/{store}/")}
+            if _manifests(names) <= copied:
                 continue
             logger.info("Copying example store %r into project %s...", store, project_uuid)
             _copy_store(
-                store,
                 names,
                 lambda name: self.client.copy_object(
                     Bucket=self.bucket,
@@ -161,14 +172,13 @@ class ExampleDataService:
             )
 
     def data_record(self, project_uuid: UUID, store: str) -> DataRecordResult:
-        """The record a run on one of the project's copied stores starts from: its
-        `inputs` revision."""
+        """The record a run on one of the project's copied stores starts from: the base
+        scenario's input revision, the one revision without a parent."""
         prefix = f"{project_uuid}/{store}"
-        revisions = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_MARKER}")
-        return DataRecordResult(
-            store_url=f"s3://{self.bucket}/{prefix}",
-            revision_uuid=json.loads(revisions["Body"].read())["inputs"],
-        )
+        names = self._names(f"{prefix}/")
+        manifests = [self._read_json(f"{prefix}/{name}") for name in _manifests(names) & set(names)]
+        [base] = [manifest["id"] for manifest in manifests if manifest["parent"] is None]
+        return DataRecordResult(store_url=f"s3://{self.bucket}/{prefix}", revision_uuid=base)
 
     def _fill_project(self, project_uuid: UUID) -> None:
         # The project is usable without it, just empty, so this must not fail its creation.
@@ -179,17 +189,23 @@ class ExampleDataService:
                 "Failed to copy example data into project %s", project_uuid, exc_info=True
             )
 
-    def _exists(self, key: str) -> bool:
-        return self.client.list_objects_v2(Bucket=self.bucket, Prefix=key)["KeyCount"] > 0
+    def _read_json(self, key: str) -> dict:
+        return json.loads(self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read())
+
+    def _names(self, prefix: str) -> list[str]:
+        """The names of the files under a prefix, relative to it."""
+        paginator = self.client.get_paginator("list_objects_v2")
+        return [
+            obj["Key"].removeprefix(prefix)
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            for obj in page.get("Contents", [])
+        ]
 
     def _downloaded_stores(self) -> dict[str, list[str]]:
         """Each downloaded store's file names, relative to EXAMPLE_DATA_PREFIX."""
         stores: dict[str, list[str]] = {}
-        paginator = self.client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=f"{EXAMPLE_DATA_PREFIX}/"):
-            for obj in page.get("Contents", []):
-                name = obj["Key"].removeprefix(f"{EXAMPLE_DATA_PREFIX}/")
-                stores.setdefault(name.split("/", 1)[0], []).append(name)
+        for name in self._names(f"{EXAMPLE_DATA_PREFIX}/"):
+            stores.setdefault(name.split("/", 1)[0], []).append(name)
         return stores
 
     def _public_stores(self, http: httpx2.Client) -> list[str]:
@@ -204,6 +220,9 @@ class ExampleDataService:
             item["name"].removeprefix(_PUBLIC_PREFIX): item["mediaLink"]
             for item in self._public_objects(http, store)
         }
+        if not _manifests(links):
+            logger.info("Example store %r has no layers, skipping", store)
+            return
 
         def download(name: str) -> None:
             content = http.get(links[name]).raise_for_status().content
@@ -211,7 +230,7 @@ class ExampleDataService:
                 Bucket=self.bucket, Key=f"{EXAMPLE_DATA_PREFIX}/{name}", Body=content
             )
 
-        _copy_store(store, links, download)
+        _copy_store(links, download)
 
     def _public_objects(self, http: httpx2.Client, store: str) -> list[dict]:
         objects: list[dict] = []

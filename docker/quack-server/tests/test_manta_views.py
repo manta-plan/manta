@@ -1,8 +1,9 @@
-"""The record catalogue and the `manta` views against the 11 November
-BEL-pre-aggregated combined store (inputs, the stress test, and three run
-types solved for each), in `data/records` (the server's local root; see the
-README). The store opens as the server opens it: on demand,
-after the lockdown. Counts and changes as the modeller describes them.
+"""The record catalogue and the `manta` views against the sample store
+BEL-pre-aggregated-incl-patches-incl-results (the inputs, a patch,
+and three runs solved for each), in `data/records` (the
+server's local root; see the README). The store opens as the server opens it:
+on demand, after the lockdown. Counts and changes as its README describes
+them.
 
 `RECORD_TEST_ROOT=s3://…` also runs the remote test against that root, with
 the AWS_* environment (server/.env)."""
@@ -14,6 +15,7 @@ import json
 import os
 import shutil
 import threading
+import uuid
 from pathlib import Path
 
 import pytest
@@ -21,18 +23,34 @@ from datarecord import Workspace
 
 from app import stores
 from app.quack import DISABLED_FILESYSTEMS
+from app.scenarios import KIND
 from app.stores import Catalogue, configure
 
 ROOT = Path(__file__).resolve().parents[1] / "data/records"
 # A plain record (a folder with manifest.json, no revisions), if present.
-PLAIN = Path(__file__).resolve().parents[1] / "data/records/BEL-pre-aggregated-plain"
+PLAIN = Path(__file__).resolve().parents[1] / "data/records/ac-dc-meshed-plain-record"
 STORE = "BEL-pre-aggregated-incl-patches-incl-results"
-BASE = "bel_pre_aggregated_incl_patches_incl_results__inputs"
-PATCH = "bel_pre_aggregated_incl_patches_incl_results__patch"
-RESULTS = "bel_pre_aggregated_incl_patches_incl_results__myopic"
-RESULT_NAMES = ["perfect", "patch/perfect", "myopic", "patch/myopic", "overnight2050", "patch/overnight2050"]
+PREFIX = "bel_pre_aggregated_incl_patches_incl_results"
+PATCH_NAME = "wind_and_solar_stress_test"
+SCENARIOS = ["base", PATCH_NAME]
+RUNS = ["perfect", "myopic", "overnight2050"]
+RESULT_NAMES = [f"{scenario}/{run}" for scenario in SCENARIOS for run in RUNS]
+BASE = f"{PREFIX}__base"
+PATCH = f"{PREFIX}__{PATCH_NAME}"
+RESULTS = f"{PREFIX}__base_myopic"
 
 pytestmark = pytest.mark.skipif(not (ROOT / STORE).is_dir(), reason="sample record not present")
+
+
+def named() -> dict:
+    """The sample store's `store.json`."""
+    return json.loads((ROOT / STORE / "store.json").read_text())
+
+
+def manifests() -> dict[str, dict]:
+    """The sample store's layer manifests, by reference name."""
+    layers = ROOT / STORE / "layers"
+    return {name: json.loads((layers / r["revision"] / "manifest.json").read_text()) for name, r in named()["references"].items()}
 
 
 def open_catalogue(root: str) -> tuple[Workspace, Catalogue]:
@@ -81,25 +99,25 @@ def test_summary(opened):
     _, catalogue = opened
     assert STORE in catalogue.stores()
     listed = catalogue.get(STORE).as_json()
-    # No labels file: the store's own name.
-    assert listed["label"] == STORE
-    assert listed["revisions"] == ["inputs", "patch", *RESULT_NAMES]
+    references = named()["references"]
+    assert (listed["label"], listed["description"]) == (named()["label"], named()["description"])
+    assert listed["revisions"][0] == references["base"]["label"]
+    assert sorted(listed["revisions"]) == sorted(r["label"] for r in references.values())
     assert listed["files"] > 400 and listed["size"] > 10_000_000
 
 
 def test_open(opened):
     _, catalogue = opened
     record = catalogue.open(STORE).as_json()
-    assert record["defaultScenario"] == "inputs"
+    assert record["defaultScenario"] == "base"
     # Every revision has a catalog; only scenarios are attached on opening.
     assert {r["name"]: (r["catalog"], r["open"]) for r in record["revisions"]} == {
-        "inputs": (BASE, True),
-        "patch": (PATCH, True),
-        **{name: (f"bel_pre_aggregated_incl_patches_incl_results__{name.replace('/', '_')}", False) for name in RESULT_NAMES},
+        **{name: (f"{PREFIX}__{name}", True) for name in SCENARIOS},
+        **{name: (f"{PREFIX}__{name.replace('/', '_')}", False) for name in RESULT_NAMES},
     }
     results = {r["name"]: r["results"] for r in record["revisions"]}
-    assert results["inputs"] == [] and results["patch"] == []
-    assert {"p", "p_nom_opt", "marginal_price"} <= set(results["myopic"])
+    assert all(results[name] == [] for name in SCENARIOS)
+    assert {"p", "p_nom_opt", "marginal_price"} <= set(results["base/myopic"])
     assert "p_max_pu" in record["views"]["attributes"]
     with pytest.raises(KeyError):
         catalogue.open("nope")
@@ -161,14 +179,14 @@ def test_attribute_summary(con):
 
 
 def test_revisions(con):
-    revisions = rows(con, f"SELECT name, parent, kind, label FROM {BASE}.manta.revisions WHERE name IN ('inputs', 'patch', 'myopic', 'patch/myopic') ORDER BY name")
-    assert revisions == [
-        ("inputs", None, "scenario", "Base case"),
-        ("myopic", "inputs", "result", "myopic"),
-        ("patch", "inputs", "scenario", "patch"),
-        ("patch/myopic", "patch", "result", "patch/myopic"),
-    ]
-    assert rows(con, f"SELECT kind, count(*) FROM {BASE}.manta.revisions GROUP BY ALL ORDER BY 1") == [("result", 6), ("scenario", 2)]
+    revisions = rows(con, f"SELECT name, parent, kind, label, description FROM {BASE}.manta.revisions")
+    references = named()["references"]
+    parents = {"base": None, PATCH_NAME: "base", **{name: name.split("/")[0] for name in RESULT_NAMES}}
+    kinds = {name: "scenario" if name in SCENARIOS else "result" for name in parents}
+    assert [name for name, *_ in revisions[:2]] == SCENARIOS
+    assert sorted(revisions) == sorted(
+        (name, parents[name], kinds[name], r["label"], r.get("description", "")) for name, r in references.items()
+    )
     # The same table in every catalog of the record.
     assert rows(con, f"FROM {PATCH}.manta.revisions EXCEPT FROM {BASE}.manta.revisions") == []
 
@@ -177,7 +195,7 @@ def test_scenario_changes(con):
     changes = rows(
         con,
         f"""SELECT attribute, dim, count(*), sum(series_rows), round(median(ratio), 2) FROM {BASE}.manta.scenario_changes
-            WHERE scenario = 'patch' GROUP BY ALL ORDER BY 1""",
+            WHERE scenario = '{PATCH_NAME}' GROUP BY ALL ORDER BY 1""",
     )
     # As the store's README says: offshore wind cost ×1.3, onshore wind
     # potential ×0.5 (generators' p_nom_max and the land-use limits'
@@ -191,18 +209,18 @@ def test_scenario_changes(con):
     assert rows(con, f"""SELECT DISTINCT e.ctype FROM {BASE}.manta.scenario_changes c
                          JOIN {BASE}.properties.entity e ON e.entity = c.label WHERE c.attribute = 'constant'""") == [("GlobalConstraint",)]
     # The base case changes nothing: it has no parent.
-    assert rows(con, f"SELECT count(*) FROM {BASE}.manta.scenario_changes WHERE scenario = 'inputs'") == [(0,)]
+    assert rows(con, f"SELECT count(*) FROM {BASE}.manta.scenario_changes WHERE scenario = 'base'") == [(0,)]
 
 
 def test_each_catalog_reads_its_own_values(con):
-    # Each catalog's summary is its own revision's: offshore wind ×1.3 in patch.
+    # Each catalog's summary is its own revision's: offshore wind ×1.3 in the stress test.
     ratio = rows(con, f"""
         SELECT count(*), round(median(TRY_CAST(p.constant AS DOUBLE) / TRY_CAST(b.constant AS DOUBLE)), 2)
         FROM {PATCH}.manta.attribute_summary p JOIN {BASE}.manta.attribute_summary b
           ON (b.attribute, b.dim, b.label) = (p.attribute, p.dim, p.label) AND b.bus IS NOT DISTINCT FROM p.bus
         WHERE p.attribute = 'capital_cost' AND p.constant IS DISTINCT FROM b.constant""")
     assert ratio == [(13, 1.3)]
-    # Views too: p_max_pu's series is lower in patch.
+    # Views too: p_max_pu's series is lower in the stress test.
     assert rows(con, f"SELECT sum(TRY_CAST(value AS DOUBLE)) < (SELECT sum(TRY_CAST(value AS DOUBLE)) FROM {BASE}.attributes.p_max_pu) "
                      f"FROM {PATCH}.attributes.p_max_pu") == [(True,)]
 
@@ -210,14 +228,14 @@ def test_each_catalog_reads_its_own_values(con):
 def test_open_run_result(opened):
     con, catalogue = opened
     assert rows(con, f"SELECT count(*) FROM duckdb_databases() WHERE database_name = '{RESULTS}'") == [(0,)]
-    store = catalogue.open_revision(STORE, "myopic")
-    assert next(r for r in store.revisions if r.name == "myopic").open
+    store = catalogue.open_revision(STORE, "base/myopic")
+    assert next(r for r in store.revisions if r.name == "base/myopic").open
     # Its catalog is like a scenario's, with the result attributes too.
     assert rows(con, f"SELECT count(*) FROM {RESULTS}.manta.attribute_summary WHERE attribute = 'p_nom_opt'") != [(0,)]
     assert rows(con, f"SELECT count(*) FROM {RESULTS}.manta.locations") == [(5,)]
     assert rows(con, f"FROM {RESULTS}.manta.revisions EXCEPT FROM {BASE}.manta.revisions") == []
     assert rows(con, f"SELECT count(*) FROM {RESULTS}.attributes.p") == [(492750,)]
-    assert catalogue.open_revision(STORE, "myopic") is store
+    assert catalogue.open_revision(STORE, "base/myopic") is store
     with pytest.raises(KeyError):
         catalogue.open_revision(STORE, "nope")
 
@@ -238,51 +256,73 @@ def test_opens_once(tmp_path):
         for thread in threads:
             thread.join()
         assert len(results) == 3 and all(r is results[0] for r in results)
-        assert rows(ws.con, "SELECT count(*) FROM duckdb_databases() WHERE database_name LIKE 'bel_pre_aggregated_incl_patches_incl_results__%'") == [(2,)]
+        assert rows(ws.con, f"SELECT count(*) FROM duckdb_databases() WHERE database_name LIKE '{PREFIX}__%'") == [(2,)]
     finally:
         ws.close()
 
 
-def test_labels_are_optional(opened):
-    _, catalogue = opened
-    labels = {r.name: r.label for r in catalogue.open(STORE).revisions}
-    assert labels == {"inputs": "Base case", "patch": "patch", **{name: name for name in RESULT_NAMES}}
-
-
-def test_labels_beside_the_store(tmp_path):
-    link_store(tmp_path)
-    (tmp_path / f"{STORE}.labels.json").write_text(json.dumps({
-        "_store": {"name": "Belgium, 5 regions"},
-        "patch": {"name": "Wind and solar stress test"},
-        "patch/myopic": {"name": "Stress test, myopic", "kind": "result"},
-    }))
-    ws, catalogue = open_catalogue(str(tmp_path))
-    try:
-        assert catalogue.get(STORE).label == "Belgium, 5 regions"
-        labels = {r.name: r.label for r in catalogue.open(STORE).revisions}
-        assert labels["patch"] == "Wind and solar stress test" and labels["patch/myopic"] == "Stress test, myopic"
-        assert labels["myopic"] == "myopic"
-    finally:
-        ws.close()
+def add_layer(root: Path, parent: str, meta: dict[str, str], name: str | None = None) -> str:
+    """The sample store under `root`, its layers linked, with a new input
+    layer over `parent` that restates the patch's layer; named `name` in
+    `store.json`, with a description, or left without a name."""
+    layers = root / STORE / "layers"
+    if not layers.is_dir():
+        layers.mkdir(parents=True)
+        for layer in (ROOT / STORE / "layers").iterdir():
+            (layers / layer.name).symlink_to(layer, target_is_directory=True)
+        shutil.copy(ROOT / STORE / "store.json", root / STORE)
+    patch = manifests()[PATCH_NAME]
+    id = str(uuid.uuid4())
+    shutil.copytree(ROOT / STORE / "layers" / patch["id"], layers / id)
+    (layers / id / "manifest.json").write_text(json.dumps({**patch, "id": id, "parent": parent, "meta": meta}))
+    if name is not None:
+        store = json.loads((root / STORE / "store.json").read_text())
+        store["references"][name] = {"revision": id, "label": name, "description": f"About {name}"}
+        (root / STORE / "store.json").write_text(json.dumps(store))
+    return id
 
 
 def test_scenario_on_a_run_result(tmp_path):
-    # `patch/overnight2050` relabelled a scenario: its parent, `patch`, is
-    # relabelled a run result. Its changes are read against that result,
-    # whose catalog is attached when the store opens, as the scenarios' are.
-    link_store(tmp_path)
-    (tmp_path / f"{STORE}.labels.json").write_text(json.dumps({
-        "patch": {"kind": "result"},
-        "patch/overnight2050": {"kind": "scenario"},
-    }))
+    # A scenario built on a revision without a name, itself built on a run
+    # result: the revision without a name isn't shown, and the scenario's
+    # changes are read against that result, whose catalog is attached when
+    # the store opens, as the scenarios' are.
+    unnamed = add_layer(tmp_path, manifests()["base/perfect"]["id"], {KIND: "scenario"})
+    add_layer(tmp_path, unnamed, {KIND: "scenario"}, name="after")
     ws, catalogue = open_catalogue(str(tmp_path))
     try:
         record = catalogue.open(STORE)
-        opened = {r.name for r in record.revisions if r.open}
-        assert opened == {"inputs", "patch", "patch/overnight2050"}
-        changed = rows(ws.con, f"SELECT DISTINCT scenario FROM {BASE}.manta.scenario_changes ORDER BY 1")
-        assert changed == [("patch/overnight2050",)]
-        assert rows(ws.con, f"SELECT count(*) > 0 FROM {BASE}.manta.scenario_changes") == [(True,)]
+        assert unnamed not in {r.id for r in record.revisions}
+        assert {r.name: r.parent for r in record.revisions if r.open} == {
+            "base": None,
+            PATCH_NAME: "base",
+            "after": "base/perfect",
+            "base/perfect": "base",
+        }
+        assert rows(ws.con, f"SELECT description FROM {BASE}.manta.revisions WHERE name = 'after'") == [("About after",)]
+        changed = rows(ws.con, f"SELECT scenario, count(*) > 0 FROM {BASE}.manta.scenario_changes GROUP BY ALL ORDER BY 1")
+        assert changed == [("after", True), (PATCH_NAME, True)]
+    finally:
+        ws.close()
+
+
+@pytest.mark.parametrize(
+    ("meta", "named_in", "error"),
+    [({}, "store.json", f"have no {KIND}"), ({KIND: "scenario"}, "names.json", "store.json")],
+    ids=["no kind", "no store.json"],
+)
+def test_store_without_names(tmp_path, meta, named_in, error):
+    # A named layer without a kind, or a store without `store.json`:
+    # listed with its error, and fails to open; the store beside it opens.
+    add_layer(tmp_path, manifests()["base"]["id"], meta, name="after")
+    (tmp_path / STORE / "store.json").rename(tmp_path / STORE / named_in)
+    (tmp_path / "healthy").symlink_to(ROOT / STORE, target_is_directory=True)
+    ws, catalogue = open_catalogue(str(tmp_path))
+    try:
+        assert catalogue.get(STORE).as_json()["revisions"] == [] and error in catalogue.failed[STORE]
+        with pytest.raises(RuntimeError, match=error):
+            catalogue.open(STORE)
+        assert catalogue.open("healthy").default_scenario == "base" and "healthy" not in catalogue.failed
     finally:
         ws.close()
 
@@ -295,13 +335,14 @@ def test_files_endpoint(opened):
     _, catalogue = opened
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(catalogue=catalogue)))
     found = record_files(STORE, request)
-    names = json.loads((ROOT / STORE / "revisions.json").read_text())
-    assert found["revisions"] == names
-    assert set(found["layers"]) == set(names.values())
+    names = found["revisions"]
+    assert list(names)[:2] == SCENARIOS and set(names) == {*SCENARIOS, *RESULT_NAMES}
+    assert set(found["layers"]) == set(names.values()) == {m["id"] for m in manifests().values()}
     assert all("schema" not in m and "files" in m for m in found["layers"].values())
     assert "p_nom_opt" in found["schema"]["attributes"]
-    perfect = found["layers"][names["perfect"]]
-    assert perfect["parent"] == names["inputs"] and "p_nom_opt" in perfect["files"]["attributes"]
+    perfect = found["layers"][names["base/perfect"]]
+    assert perfect["parent"] == names["base"] and "p_nom_opt" in perfect["files"]["attributes"]
+    assert perfect["meta"][KIND] == "result"
 
 
 @pytest.mark.skipif(not PLAIN.is_dir(), reason="plain record not present")
@@ -310,13 +351,13 @@ def test_plain_record(tmp_path):
     ws, catalogue = open_catalogue(str(tmp_path))
     try:
         summary = catalogue.get(PLAIN.name)
-        assert summary.plain and summary.revisions == ["inputs"]
+        assert summary.plain and summary.as_json()["revisions"] == ["Base case"]
         record = catalogue.open(PLAIN.name)
         assert [(r.name, r.parent, r.kind, r.catalog) for r in record.revisions] == [
-            ("inputs", None, "scenario", "bel_pre_aggregated__inputs")
+            ("base", None, "scenario", "ac_dc_meshed_plain_record__base")
         ]
-        assert rows(ws.con, "SELECT count(*), sum(buses) FROM bel_pre_aggregated__inputs.manta.locations") == [(5, 10)]
-        assert rows(ws.con, "SELECT count(*) FROM bel_pre_aggregated__inputs.manta.scenario_changes") == [(0,)]
+        assert rows(ws.con, "SELECT count(*), sum(buses) FROM ac_dc_meshed_plain_record__base.manta.locations") == [(9, 9)]
+        assert rows(ws.con, "SELECT count(*) FROM ac_dc_meshed_plain_record__base.manta.scenario_changes") == [(0,)]
     finally:
         ws.close()
 
@@ -342,24 +383,24 @@ def test_copy_to_disk(tmp_path):
     try:
         record = catalogue.open(STORE)
         summary = catalogue.get(STORE)
-        # Layer data only of the layers the named revisions read (here, every
-        # layer is named); every layer's manifest, to find them.
-        named = set(json.loads((ROOT / STORE / "revisions.json").read_text()).values())
+        # Layer data only of the layers the shown revisions read (here, every
+        # layer is shown); every layer's manifest, to find them.
+        shown = [r.id for r in record.revisions]
         data = {f.split("/")[2] for f in s3.copied if f.split("/")[1] == "layers" and f.count("/") > 3}
-        assert data == named
+        assert data == set(shown)
         assert all((tmp_path / key).is_file() for key in s3.copied)
         # Opened from the copy, and its run results too.
-        assert record.default_scenario == "inputs"
-        assert rows(ws.con, f"SELECT count(*) FROM {PATCH}.manta.scenario_changes WHERE scenario = 'patch'") == [(83,)]
-        catalogue.open_revision(STORE, "myopic")
+        assert record.default_scenario == "base"
+        assert rows(ws.con, f"SELECT count(*) FROM {PATCH}.manta.scenario_changes WHERE scenario = '{PATCH_NAME}'") == [(83,)]
+        catalogue.open_revision(STORE, "base/myopic")
         assert rows(ws.con, f"SELECT count(*) > 0 FROM {RESULTS}.attributes.p_nom_opt") == [(True,)]
-        # Layer data copied once isn't copied again; the small files (names,
-        # manifests), which can change in place, are.
+        # Layer data copied once isn't copied again; the small files
+        # (manifests, READMEs), which can change in place, are.
         copied = len(s3.copied)
-        catalogue._download(summary, json.loads((ROOT / STORE / "revisions.json").read_text()))
+        catalogue._download(summary, shown)
         again = s3.copied[copied:]
         assert again and all(not (k.startswith(f"{STORE}/layers/") and k.count("/") > 3) for k in again)
-        assert f"{STORE}/revisions.json" in again
+        assert {f"{STORE}/layers/{id}/manifest.json" for id in shown} <= set(again)
     finally:
         ws.close()
 
@@ -373,7 +414,7 @@ def test_copy_stays_in_the_cache(tmp_path):
         summary = catalogue.get(STORE)
         planted = stores.StoreFile("../../escaped.json", 2, summary.files[0].modified)
         with pytest.raises(ValueError, match="outside the store"):
-            catalogue._download(dataclasses.replace(summary, files=[planted, *summary.files]), {})
+            catalogue._download(dataclasses.replace(summary, files=[planted, *summary.files]), [])
         assert not (tmp_path / "escaped.json").exists() and not s3.copied
     finally:
         ws.close()
@@ -385,10 +426,10 @@ def test_remote_root():
     try:
         assert STORE in catalogue.stores()
         record = catalogue.open(STORE)
-        assert record.default_scenario == "inputs"
-        assert rows(ws.con, f"SELECT count(*) FROM {BASE}.manta.scenario_changes WHERE scenario = 'patch'") == [(83,)]
+        assert record.default_scenario == "base"
+        assert rows(ws.con, f"SELECT count(*) FROM {BASE}.manta.scenario_changes WHERE scenario = '{PATCH_NAME}'") == [(83,)]
         # Opened from its copy on disk.
-        assert (catalogue.cache / STORE / "revisions.json").is_file()
-        catalogue.open_revision(STORE, "myopic")
+        assert (catalogue.cache / STORE / "layers").is_dir()
+        catalogue.open_revision(STORE, "base/myopic")
     finally:
         ws.close()

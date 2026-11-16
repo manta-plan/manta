@@ -17,7 +17,8 @@ package = false
 [tool.uv.sources]
 # Pinned by commit: the format changes often, and a record written by one
 # commit may not open with another. 8889d62 is `main` with per-layer manifests
-# and registered views, the layout the 11 November records use.
+# and registered views, the layout the 13 November 2026 records use (the
+# store's `store.json` names its revisions).
 datarecord = { git = "https://github.com/energy-models/datarecord.git", rev = "8889d623" }
 
 [dependency-groups]

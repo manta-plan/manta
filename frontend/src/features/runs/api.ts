@@ -26,7 +26,7 @@ const defaultRunPayload = {
   // exists, use that project instead of creating "My First Project" above (this
   // needs a backend endpoint listing the user's projects), and point runs at
   // one of its stores: store_url s3://manta/<project uuid>/<store>, revision_uuid
-  // that store's `inputs` revision (from its revisions.json).
+  // the base scenario's input revision (the one without a parent).
   data_record: {
     store_url: "s3://manta/placeholder/store",
     revision_uuid: "00000000-0000-0000-0000-000000000000",
