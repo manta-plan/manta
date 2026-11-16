@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "datarecord"
 version = "0.0.0"
-source = { git = "https://github.com/energy-models/datarecord.git?rev=8889d623865e3cab80d7a18681e48a6c2536741d#8889d623865e3cab80d7a18681e48a6c2536741d" }
+source = { git = "https://github.com/energy-models/datarecord.git?rev=8889d623#8889d623865e3cab80d7a18681e48a6c2536741d" }
 dependencies = [
     { name = "duckdb" },
     { name = "mathspec" },
@@ -304,7 +304,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "datarecord", extras = ["remote"], git = "https://github.com/energy-models/datarecord.git?rev=8889d623865e3cab80d7a18681e48a6c2536741d" },
+    { name = "datarecord", extras = ["remote"], git = "https://github.com/energy-models/datarecord.git?rev=8889d623" },
     { name = "duckdb", specifier = ">=2,<3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
