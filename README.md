@@ -5,6 +5,111 @@ energy models accessible to all.
 
 For more details on the vision and roadmap, see our website: https://manta-plan.org/
 
+> [!NOTE]
+> This repository and the instructions below are for **developers**. If you
+> want to use Manta or join as a beta tester, please wait for the MVP, which
+> will be available at a public URL in the near future.
+
+## Running Manta locally
+
+The quickest way to try Manta is to run the whole stack on your own machine:
+the supporting services in Docker, and the backend and frontend from source.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
+  (Docker Desktop includes it; on Linux, add the
+  [Compose plugin](https://docs.docker.com/compose/install/linux/))
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs
+  the right Python for you)
+- [Node.js](https://nodejs.org/en/download) and pnpm (run
+  `corepack enable pnpm` to get the version pinned in
+  [`frontend/package.json`](frontend/package.json), or see the
+  [pnpm docs](https://pnpm.io/installation))
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/manta-plan/manta.git
+cd manta
+```
+
+### 2. Start the services
+
+From the repo root:
+
+```bash
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up
+```
+
+This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak and the
+playbook workers, and builds the images playbook steps run in. The first run
+takes a while. Leave it running and wait until the logs settle. All
+configuration comes from [`backend/.env`](backend/.env), which already has
+working local defaults. Nothing needs to be filled in.
+
+### 3. Start the backend
+
+In a second terminal:
+
+```bash
+cd backend
+uv sync
+uv run manta
+```
+
+On startup the backend applies database migrations, creates the storage
+bucket and checks that Prefect is reachable, then serves the API on
+`localhost:8000`.
+
+### 4. Start the frontend
+
+In a third terminal:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The dev server proxies `/v1` requests to the backend on `localhost:8000`.
+
+### 5. Open Manta
+
+Go to `localhost:5173` and log in as `manta-admin`,
+password `manta-admin`.
+
+The services also have their own UIs, which help when you want to see what is
+happening under the hood:
+
+| Service   | URL                                       | Notes                          |
+| --------- | ----------------------------------------- | ------------------------------ |
+| Prefect   | localhost:4200  | playbook runs and their steps  |
+| SeaweedFS | localhost:23646 | buckets and stored files       |
+| Keycloak  | localhost:8080  | admin console, `admin`/`admin` |
+
+
+### Stopping
+
+To stop Docker containers, press
+`Ctrl+C` in their terminal, or run from the repo root:
+
+```bash
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down
+```
+
+This will not delete your local data (database, stored files, Keycloak state) so the next
+`up` command picks up where you left off.
+
+To wipe everything and start from scratch next time, add `-v` to also delete
+the data volumes:
+
+```bash
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down -v
+```
+
+See [docker/README.md](docker/README.md) for details on each service.
+
 ## Repository Structure
 
 This is a monorepo containing the backend, frontend, and local deployment
@@ -33,7 +138,12 @@ the package-level READMEs for setup instructions:
 - [playbook-library/README.md](playbook-library/README.md) for the blocks and playbooks Manta ships.
 - [docker/README.md](docker/README.md) for local services and Docker notes.
 
-## Deployment
+## Internal test deployment
+
+> [!IMPORTANT]
+> This section is for the Manta core team. It documents an ad-hoc prototype
+> instance on our own GCP project and is not a supported way to deploy Manta.
+> To try Manta yourself, see [Running Manta locally](#running-manta-locally).
 
 Currently a test instance is deployed for internal purposes, in `europe-north2`
 (Stockholm). Its container name is `manta-adhoc-2` (no points for creativity).
@@ -88,23 +198,25 @@ curl -fsSL https://get.pnpm.io/install.sh | sh -
 source ~/.bashrc # reload to get access to pnpm
 ```
 
-Build the frontend files
-
-```bash
-cd frontend
-pnpm install && pnpm build
-```
-
 Spin up the backend
 
 ```bash
-cd ../backend
+cd backend
 uv sync
 uv run uvicorn manta.main:app --host 0.0.0.0 --port 8000
 ```
 
-This runs in an attached mode, you can use `ctrl-z` to pause it and then `bg` to
-background the task, or use `nohup` / `disown` to detach it from your ssh process and let it live on. 
+Build and serve the frontend, which proxies `/v1` requests to the backend on
+port 8000
+
+```bash
+cd ../frontend
+pnpm install && pnpm build
+pnpm preview --host 0.0.0.0
+```
+
+Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to
+background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on. 
 
 ### Summary
 

@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from keycloak.exceptions import KeycloakError
+from keycloak.exceptions import KeycloakError, KeycloakPostError
 
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
@@ -73,9 +74,107 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
         _authenticate(mock_db, mock_kc_client, "some-token")
 
 
-def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
+def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a wrong username or password
+    mock_kc_client.token.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid user credentials"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "wrong")
+
+
+def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:
+    # Given - e.g. a misconfigured client secret
+    mock_kc_client.token.side_effect = KeycloakPostError(
+        error_message="unauthorized_client",
+        response_code=401,
+        response_body=b'{"error":"unauthorized_client"}',
+    )
+
+    # When / Then
+    with pytest.raises(BackendError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "manta-admin")
+
+
+def test_refresh_returns_new_tokens(mock_db, mock_kc_client) -> None:
     # Given
-    service = AuthService(db=mock_db, kc_client=mock_kc_client)
+    mock_kc_client.refresh_token.return_value = {
+        "access_token": "new-access",
+        "expires_in": 300,
+        "refresh_token": "new-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+
+    # When
+    result = AuthService(db=mock_db, kc_client=mock_kc_client).refresh("old-refresh")
+
+    # Then
+    mock_kc_client.refresh_token.assert_called_once_with("old-refresh")
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "new-refresh"  # noqa: S105 It's not a password
+    assert result.expires_in == 300
+    assert result.refresh_expires_in == 1800
+
+
+def test_refresh_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a garbage, expired or revoked refresh token
+    mock_kc_client.refresh_token.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid refresh token"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).refresh("bad-refresh")
+
+
+def test_refresh_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:
+    # Given - e.g. a misconfigured client secret
+    mock_kc_client.refresh_token.side_effect = KeycloakPostError(
+        error_message="invalid_client",
+        response_code=401,
+        response_body=b'{"error":"invalid_client"}',
+    )
+
+    # When / Then
+    with pytest.raises(BackendError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).refresh("some-refresh")
+
+
+def test_logout_ends_the_keycloak_session(mock_db, mock_kc_client) -> None:
+    # Given - python-keycloak turns Keycloak's `204 No Content` into {}
+    mock_kc_client.logout.return_value = {}
+
+    # When
+    AuthService(db=mock_db, kc_client=mock_kc_client).logout("some-refresh")
+
+    # Then
+    mock_kc_client.logout.assert_called_once_with("some-refresh")
+
+
+def test_logout_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
+    # Given - Keycloak's response to a garbage refresh token
+    mock_kc_client.logout.side_effect = KeycloakPostError(
+        error_message="invalid_grant",
+        response_code=400,
+        response_body=b'{"error":"invalid_grant","error_description":"Invalid refresh token"}',
+    )
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        AuthService(db=mock_db, kc_client=mock_kc_client).logout("bad-refresh")
+
+
+def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
+    # Given
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
 
     # When
     result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
@@ -84,8 +183,24 @@ def test_register_creates_new_user(mock_db, mock_kc_client) -> None:
     assert result.username == "alice"
     assert result.idp_subject == "abc-123"
     assert result.idp_source == ISSUER
-    mock_db.add.assert_called_once()
+    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
     mock_db.commit.assert_called_once()
+    example_data.create_project.assert_called_once_with(owner=user)
+
+
+def test_register_creates_no_example_project_when_disabled(
+    mock_db, mock_kc_client, monkeypatch
+) -> None:
+    # Given
+    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
+
+    # When
+    service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+
+    # Then
+    example_data.create_project.assert_not_called()
 
 
 def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client) -> None:
@@ -95,7 +210,8 @@ def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client)
     existing_user.uuid = uuid4()
     existing_user.created_at = datetime.now(UTC)
     mock_db = mock_db_class(query_results={User: existing_user})
-    service = AuthService(db=mock_db, kc_client=mock_kc_client)
+    example_data = MagicMock()
+    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
 
     # When
     result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
@@ -103,3 +219,4 @@ def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client)
     # Then
     assert result.username == existing_user.username
     mock_db.add.assert_not_called()
+    example_data.create_project.assert_not_called()

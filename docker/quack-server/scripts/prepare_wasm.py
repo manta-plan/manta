@@ -1,0 +1,102 @@
+"""Make a duckdb-wasm dev build of DuckDB v2.0.0 usable by the test page.
+
+The newest duckdb-wasm (1.33.1-dev110.0) runs DuckDB commit `d54cbbe3df`, which
+is exactly the `v2.0.0` tag, but it was built without the tag. So:
+
+- It looks for extensions under the commit, where none are published, and
+  refuses the release's builds by their version field. This copies the
+  release's builds with that field rewritten into `static/ext/`, the repository
+  the test page points the dev build at. Rewriting the field voids the
+  signature, so the page allows unsigned extensions.
+- The published Quack build predates "Do not start the heartbeat thread on
+  single-threaded wasm" (duckdb-quack 438dfe3), so ATTACH fails in the
+  single-threaded build. `--quack` takes a `wasm_eh` build of duckdb-quack's
+  main instead (see the README). Without `--quack`, a Quack already in
+  `static/ext/` is kept.
+
+Only for the proof of concept, until duckdb-wasm publishes a v2.0.0 release
+and Quack republishes its Wasm builds.
+
+    uv run python scripts/prepare_wasm.py [--quack path/to/quack.duckdb_extension.wasm]
+"""
+
+from __future__ import annotations
+
+import argparse
+import urllib.request
+from pathlib import Path
+
+STATIC = Path(__file__).parent.parent / "static"
+RELEASE, COMMIT = "v2.0.0", "d54cbbe3df"
+
+# Quack, what it autoloads to attach, and json: the client autoloads it for a
+# JSON column anywhere in the server's catalog (datarecord's own tables have
+# some), and without it ATTACH fails with "c is not a function".
+EXTENSIONS = ("quack", "httpfs", "json")
+PLATFORM = "wasm_eh"  # the single-threaded build with Wasm exceptions
+
+FIELD = 32
+FOOTER = 512
+VERSION_FIELD = 5  # fields: …, abi, extension version, duckdb version, platform, magic
+
+
+def fetch(url: str) -> bytes:
+    # The extension bucket answers urllib's default user agent with 403.
+    request = urllib.request.Request(url, headers={"User-Agent": "duckdb"})
+    with urllib.request.urlopen(request) as response:
+        return response.read()
+
+
+def relabel(blob: bytes, release: str, commit: str) -> bytes:
+    start = len(blob) - FOOTER + VERSION_FIELD * FIELD
+    found = blob[start : start + FIELD].rstrip(b"\0").decode()
+    # A local build carries `git describe` (v2.0.0-0-g<commit>), not the tag.
+    if found.split("-")[0] != release:
+        msg = f"expected DuckDB version {release!r} in the footer, found {found!r}"
+        raise ValueError(msg)
+    return blob[:start] + commit.encode().ljust(FIELD, b"\0") + blob[start + FIELD :]
+
+
+def relabelled(path: Path, commit: str) -> bool:
+    """Whether `path` is a whole extension this script relabelled: its
+    footer, at the end, carries `commit`."""
+    blob = path.read_bytes()
+    if len(blob) < FOOTER:
+        return False
+    start = len(blob) - FOOTER + VERSION_FIELD * FIELD
+    return blob[start : start + FIELD].rstrip(b"\0") == commit.encode()
+
+
+def write(path: Path, blob: bytes) -> None:
+    """Into place only once whole, so an interrupted run leaves no partial
+    extension behind to be kept."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.partial")
+    partial.write_bytes(blob)
+    partial.replace(path)
+    print(path.relative_to(STATIC.parent))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--quack", type=Path, help="local wasm_eh build of Quack")
+    args = parser.parse_args()
+
+    for extension in EXTENSIONS:
+        name = f"{extension}.duckdb_extension.wasm"
+        target = STATIC / "ext" / COMMIT / PLATFORM / name
+        if extension == "quack" and args.quack:
+            blob = args.quack.read_bytes()
+        elif extension == "quack" and target.is_file():
+            if not relabelled(target, COMMIT):
+                msg = f"{target} isn't a relabelled Quack build; build one and pass it with --quack"
+                raise SystemExit(msg)
+            print(f"{target.relative_to(STATIC.parent)} (kept)")
+            continue
+        else:
+            blob = fetch(f"https://extensions.duckdb.org/{RELEASE}/{PLATFORM}/{name}")
+        write(target, relabel(blob, RELEASE, COMMIT))
+
+
+if __name__ == "__main__":
+    main()

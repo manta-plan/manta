@@ -1,27 +1,61 @@
-export async function getJson<ResponseBody>(url: string) {
-  const response = await fetch(url);
+import { clearSession, getValidAccessToken, refreshAccessToken } from "../features/auth/session";
 
-  if (!response.ok) {
-    throw new ApiError(response.status, await getResponseErrorMessage(response));
-  }
-
-  return (await response.json()) as ResponseBody;
+export function getJson<ResponseBody>(url: string) {
+  return requestJson<ResponseBody>(url);
 }
 
-export async function postJson<ResponseBody>(url: string, body: unknown) {
-  const response = await fetch(url, {
+export function postJson<ResponseBody>(url: string, body: unknown) {
+  return requestJson<ResponseBody>(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   });
+}
+
+async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
+  const accessToken = await getValidAccessToken();
+  let response = await sendRequest(url, init, accessToken);
+
+  // The backend rejected a token we thought was valid (e.g. revoked, or the
+  // local clock is off). Refresh once and retry before giving up.
+  if (response.status === 401 && accessToken !== null) {
+    const refreshedAccessToken = await refreshAccessToken(accessToken);
+
+    if (refreshedAccessToken !== null) {
+      response = await sendRequest(url, init, refreshedAccessToken);
+    }
+  }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await getResponseErrorMessage(response));
+    const error = new ApiError(response.status, await getResponseErrorMessage(response));
+
+    // An authenticated request was still rejected after a refresh, so the
+    // user is no longer known to the backend. Clearing the session sends them
+    // back to the sign-in page.
+    if (response.status === 401 && accessToken !== null) {
+      clearSession();
+    }
+
+    throw error;
+  }
+
+  if (response.status === 204) {
+    return undefined as ResponseBody;
   }
 
   return (await response.json()) as ResponseBody;
+}
+
+function sendRequest(url: string, init: RequestInit, accessToken: string | null) {
+  const headers = new Headers(init.headers);
+
+  if (accessToken !== null) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  return fetch(url, { ...init, headers });
 }
 
 async function getResponseErrorMessage(response: Response) {

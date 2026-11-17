@@ -17,6 +17,19 @@ Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
 truth instead of two.
 
+To run the app itself in containers too, use one of the files layered on top:
+
+- `compose-dev-backend.yaml` — every service above plus the backend.
+- `compose-dev-fullstack.yaml` — everything in `compose-dev-backend.yaml`
+  plus the frontend.
+
+```bash
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --build
+```
+
+To run the backend or frontend on the host instead (`uv run manta`,
+`pnpm dev`), stop its container first: they share ports.
+
 ## Services
 
 - **postgres** — the app database. Also hosts Keycloak's and Prefect's own
@@ -35,6 +48,15 @@ truth instead of two.
   database (not SQLite). UI at [localhost:4200](http://localhost:4200).
 - **keycloak** - identity provider, you can access it with bootstrap credentials
   via [localhost:8080](http://localhost:8080)
+- **quack-server** — *temporary*, **opt-in** (compose profile
+  `temporary-quack-setup`: add `--profile temporary-quack-setup` to the `up`
+  command above, or name the service) record server that exposes a datarecord to the
+  browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
+  Inspect / Report tabs before datarecord is integrated into the backend. Copied
+  from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
+  Listens on `localhost:${QUACK_SERVER_PORT:-8010}`, token `${QUACK_TOKEN:-devtoken}`.
+  It reads records from `docker/quack-server/data/records` (git-ignored): put
+  datarecord stores there before starting, otherwise it serves nothing.
 
 ## Testing
 

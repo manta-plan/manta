@@ -1,7 +1,10 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
+import { decodeTokenClaims, getSignedInAccessToken } from "../auth/session";
+import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
   CreateProjectResponse,
   CreateRunResponse,
+  DataRecordChoice,
   DefaultProject,
   GetRunLogsResponse,
   GetRunResponse,
@@ -15,19 +18,19 @@ const defaultProjectPayload = {
   description: "Default project for guest user, first time visit.",
 };
 
-const defaultRunPayload = {
-  playbook: "cluster-expand-dispatch",
-  // TODO: there is no data-record creation in the frontend yet (file upload,
-  // or any other way to point a run at real data). This placeholder satisfies
-  // the API shape but doesn't resolve to anything real, so a run created this
-  // way won't complete — replace once that functionality exists.
-  data_record_url: "s3://manta/placeholder/input.nc",
-};
+// Kept in localStorage, per user (project UUIDs are owned by one user), and not wiped on
+// login or logout. The backend has no endpoint listing a user's projects, so forgetting it
+// would create a new, empty project (without the example data stores) every time.
+function defaultProjectStorageKey(): string | null {
+  const accessToken = getSignedInAccessToken();
+  const claims = accessToken === null ? null : decodeTokenClaims(accessToken);
 
-const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
+  return claims === null ? null : `manta.defaultProjectUuid.${claims.sub}`;
+}
 
 export function getCachedDefaultProject(): DefaultProject | null {
-  const cachedProjectUuid = window.sessionStorage.getItem(defaultProjectSessionStorageKey);
+  const key = defaultProjectStorageKey();
+  const cachedProjectUuid = key === null ? null : window.localStorage.getItem(key);
 
   if (cachedProjectUuid === null) {
     return null;
@@ -43,25 +46,84 @@ export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
     return cachedProject;
   }
 
+  // Taken before the request, so the project is filed under the user who asked for it
+  // even if someone else signs in while it is in flight.
+  const key = defaultProjectStorageKey();
   const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
-  window.sessionStorage.setItem(defaultProjectSessionStorageKey, project.uuid);
+
+  if (key !== null) {
+    window.localStorage.setItem(key, project.uuid);
+  }
 
   return { uuid: project.uuid, wasCached: false };
 }
 
-export async function createRun(project: DefaultProject) {
+// Forgets the cached project only when the backend says the project itself is gone. Other
+// 404s (e.g. "Revision ... not found") must keep it: forgetting it would create a new,
+// empty project on the next request.
+function forgetMissingProject(project: DefaultProject, error: unknown) {
+  if (
+    project.wasCached &&
+    error instanceof ApiError &&
+    error.status === 404 &&
+    error.message.startsWith(`Project ${project.uuid} `)
+  ) {
+    const key = defaultProjectStorageKey();
+
+    if (key !== null) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
+type CreateRunOptions = {
+  playbook: string;
+  config: PlaybookConfig;
+  dataRecord: DataRecordChoice;
+};
+
+// The bucket the backend stores projects in (S3_BUCKET in its env). Set VITE_S3_BUCKET
+// when the backend uses another one.
+const storageBucket: string = import.meta.env.VITE_S3_BUCKET ?? "manta";
+
+const missingRevisionPattern = /^Revision (\S+) not found in '(.+)'$/;
+
+// The backend refuses a run whose data record revision is missing from the store. Turns that
+// into a message the user can act on; any other error is returned unchanged.
+export function toFriendlyRunError(error: unknown): unknown {
+  if (!(error instanceof ApiError) || error.status !== 404) {
+    return error;
+  }
+
+  const match = missingRevisionPattern.exec(error.message);
+
+  if (match === null) {
+    return error;
+  }
+
+  const [, revisionUuid, storeUrl] = match;
+  const storeName = storeUrl.split("/").filter(Boolean).pop() ?? storeUrl;
+
+  return new ApiError(
+    error.status,
+    `The data record "${storeName}" is not available in this project (revision ${revisionUuid}). Please select another data record.`,
+  );
+}
+
+export async function createRun(project: DefaultProject, options: CreateRunOptions) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
       project_uuid: project.uuid,
-      playbook: defaultRunPayload.playbook,
-      data_record_url: defaultRunPayload.data_record_url,
+      playbook: { name: options.playbook, config: options.config },
+      data_record: {
+        store_url: `s3://${storageBucket}/${project.uuid}/${options.dataRecord.name}`,
+        revision_uuid: options.dataRecord.revision_uuid,
+      },
     });
   } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
+    forgetMissingProject(project, error);
 
-    throw error;
+    throw toFriendlyRunError(error);
   }
 }
 
@@ -83,9 +145,7 @@ export async function listRuns(project: DefaultProject, params: ListRunsParams) 
     });
     return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
   } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
+    forgetMissingProject(project, error);
 
     throw error;
   }
@@ -96,9 +156,7 @@ export async function getRunSummary(project: DefaultProject) {
     const searchParams = new URLSearchParams({ project_uuid: project.uuid });
     return await getJson<GetRunSummaryResponse>(`/v1/runs/summary?${searchParams.toString()}`);
   } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
+    forgetMissingProject(project, error);
 
     throw error;
   }

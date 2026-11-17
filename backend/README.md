@@ -14,11 +14,8 @@ uv sync
 
 ## Running
 
-You can access API endpoints without [building the
-frontend](../frontend/README.md#production-preview) first.
-
-The default url is `localhost:8000`, but the run command should automatically
-select a free port.
+The backend is served at `localhost:8000`, set by `APP_HOST` and `APP_PORT` in
+`backend/.env`.
 
 ```bash
 uv run manta
@@ -59,6 +56,49 @@ under the hood). Config lives in `backend/.env`, read by
 migrations, the target bucket is provisioned automatically on startup (see
 `ensure_bucket_exists()` in `main.py`) — nothing to run by hand, beyond having
 SeaweedFS up.
+
+### Example data
+
+With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
+
+1. Downloads the example datarecord stores listed in `EXAMPLE_DATA_STORES` (all
+   of them when empty) from the `2026-11-11` folder of the public `manta-public-test-data` bucket, into
+   `s3://manta/example-data/<store>`. That belongs to no project, so no run ever
+   writes to it. Stores already there are skipped, so
+   only a clean SeaweedFS volume pays for the download. Without internet
+   access, the app logs a warning and starts without them.
+2. Creates the `manta-admin` user, with its Keycloak id pinned in
+   [manta-realm.json](../docker/conf/manta-realm.json) (`0b7b2a6e-4c55-4b1e-9d0e-6f3c2a8e5d41`),
+   and its "Example project" `33b9abe3-2f25-4824-89e2-5a3d93671b6c`, unless they
+   exist.
+3. Copies every downloaded store into that project, under
+   `s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/<store>`, within S3 itself.
+
+With `EXAMPLE_PROJECT_FOR_NEW_USERS=true` (the default), every newly registered
+user also gets an "Example project" of their own, with the same copies. A failed
+copy only logs a warning: the project is still created, just without the data.
+
+Projects get copies so their runs can write new revisions into them without
+touching anyone else's. The stores, sizes and `inputs` revisions:
+
+| Store | Size | `inputs` revision |
+| --- | --- | --- |
+| `ac-dc-meshed` | 0.1 MB | `1bad4cfd-9f32-4675-aa4b-6cd71660cbc1` |
+| `model-energy` | 0.1 MB | `fc70f1c9-1082-46a9-8774-66bd5fad7297` |
+| `BEL-pre-aggregated` | 0.5 MB | `8ff7a95a-8aed-42a3-9acb-a2e36906685f` |
+| `BEL-pre-aggregated-hourly` | 3.5 MB | `8b7175d6-f540-4aa0-98c0-2df460693ff1` |
+| `BEL-pre-aggregated-incl-patches-incl-results` | 13.2 MB | `9ec88f52-d2d7-4785-9cbb-0c9a1da9b827` |
+| `BEL-full-res` | 36.3 MB | `0921e11f-1998-4983-9992-9a2f923ed392` |
+| `europe-full-res-2030` | 124.4 MB | `2f276825-9deb-4abc-ad57-ceb08f57ea94` |
+
+Each store's `revisions.json` names its revisions, `inputs` being the one a run
+starts from. `europe-full-res-2030` is left out of `EXAMPLE_DATA_STORES` by
+default for its size. The integration tests download only `ac-dc-meshed`.
+
+Keycloak only imports the realm into a fresh database. If your Keycloak volume
+predates the pinned `manta-admin` id, recreate it once with
+`docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v`
+(from `docker/`), or `manta-admin` won't own its example project.
 
 ## Linting & formatting
 
@@ -126,6 +166,33 @@ they're still shown for any failing test:
 uv run pytest tests/integration -s
 ```
 
+## Authentication
+
+The backend proxies Keycloak's token calls. `manta-client` is a confidential
+client, so clients can't call Keycloak directly.
+
+### Refresh tokens
+
+- `POST /v1/auth/login` returns `access_token`, `expires_in`, `refresh_token`
+  and `refresh_expires_in`. Lifetimes are in seconds; in the dev realm, 300
+  and 1800.
+- `POST /v1/auth/refresh` with `{"refresh_token": ...}` returns the same
+  fields. No `Authorization` header.
+- Every refresh issues a new refresh token. Replace the stored one, as per the
+  [OAuth2 spec](https://datatracker.ietf.org/doc/html/rfc6749#section-6): the
+  old one keeps its original expiry, and stops working once the realm's
+  "Revoke Refresh Token" setting is on.
+- An invalid, expired or revoked refresh token returns `401`. Log in again.
+
+### Logout
+
+- `POST /v1/auth/logout` with `{"refresh_token": ...}` ends the Keycloak
+  session and returns `204`. No `Authorization` header.
+- The session's refresh tokens stop working. Access tokens already issued
+  stay valid until they expire, since they're verified by signature alone.
+- Logging out an already-ended session returns `204`. An invalid refresh
+  token returns `401`.
+
 ## Manually testing a run (temporary, will be removed)
 
 This section exists only until the frontend can create a run with real data
@@ -141,7 +208,13 @@ one for the requests.
    docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
    ```
 
-   Wait until the logs settle before going on.
+   Wait until the logs settle before going on. Two dashboards are then up, for
+   following along in later steps:
+
+   - Prefect, at [localhost:4200](http://localhost:4200): each run, and the
+     flow run of each of its steps, with their logs.
+   - SeaweedFS, at [localhost:23646](http://localhost:23646): the `manta`
+     bucket's files, such as the example data and the revisions runs write.
 
 2. In the second terminal, start the backend (from `backend/`) and leave it
    running:
@@ -177,60 +250,51 @@ one for the requests.
    The token expires after 5 minutes. Repeat this step when a request returns
    `401`.
 
-4. Create a project:
-
-   ```bash
-   curl -s -X POST http://localhost:8000/v1/projects \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"name": "Manual test", "description": "Manual test project"}'
-   ```
-
-   Copy the returned `uuid` as `PROJECT_UUID`.
-
-5. Upload a starting network to S3 — `tests/integration/fixtures/example_network.nc`
-   works (from `backend/`):
-
-   ```bash
-   uv run python -c "
-   import boto3
-   from botocore.config import Config
-   client = boto3.client(
-       's3',
-       endpoint_url='http://localhost:8333',
-       aws_access_key_id='dev',
-       aws_secret_access_key='dev',
-       config=Config(s3={'addressing_style': 'path'}),
-   )
-   client.upload_file('tests/integration/fixtures/example_network.nc', 'manta', 'manual-test/input.nc')
-   "
-   ```
-
-6. List the playbooks you can run, then look at one in detail. The detail
+4. List the playbooks you can run, then look at one in detail. The detail
    shows each step's block, its settings schema, and the playbook's
    `default_config`:
 
    ```bash
    curl -s http://localhost:8000/v1/playbooks -H "Authorization: Bearer $TOKEN"
-   curl -s http://localhost:8000/v1/playbooks/cluster-expand-dispatch -H "Authorization: Bearer $TOKEN"
+   curl -s http://localhost:8000/v1/playbooks/expand -H "Authorization: Bearer $TOKEN"
    ```
 
-7. Create a run. Leaving out `config` runs the playbook with its
-   `default_config`:
+5. Check a config before running it. The answer lists every issue, each naming
+   its step and, where there is one, the setting at fault. This config switches
+   the playbook to its myopic branch, which needs a `period`
+   dimension the playbook's data does not have. The answer has `"valid": false`
+   and one `dims` issue on `expansion_myopic`:
+
+   ```bash
+   curl -s -X POST http://localhost:8000/v1/playbooks/expand/validate \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"config": {"globals": {"expansion_mode": "myopic"}}}'
+   ```
+
+   Sending `{}` instead checks the `default_config`, which has no issues.
+
+6. Create a run in manta-admin's example project
+   (`33b9abe3-2f25-4824-89e2-5a3d93671b6c`, see [Example data](#example-data)),
+   from the `inputs` revision of its `BEL-pre-aggregated` store. Each step
+   writes its output as a new revision into that same store. Leaving out `playbook.config`
+   runs the playbook with its `default_config`. A config with issues is refused with a
+   `422` listing the same issues the check above returns:
 
    ```bash
    curl -s -X POST http://localhost:8000/v1/runs \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"project_uuid": "PROJECT_UUID", "playbook": "cluster-expand-dispatch", "data_record_url": "s3://manta/manual-test/input.nc"}'
+     -d '{"project_uuid": "33b9abe3-2f25-4824-89e2-5a3d93671b6c", "playbook": {"name": "expand"}, "data_record": {"store_url": "s3://manta/33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated", "revision_uuid": "8ff7a95a-8aed-42a3-9acb-a2e36906685f"}}'
    ```
 
    Copy the returned `uuid` as `RUN_UUID`.
 
-8. Follow the run. The first request returns the run's overall `status` and the
-   `config` it was started with. The second returns each step's `status`:
+7. Follow the run. The first request returns the run's overall `status`, and the
+   `config` and `data_record` it was started with. The second returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
-   begins, and Prefect's own state from then on. The third returns the run's
+   begins, and Prefect's own state from then on, plus its `output` record once
+   it has completed, or the `message` with its error if it failed. The third returns the run's
    logs:
 
    ```bash
@@ -239,19 +303,20 @@ one for the requests.
    curl -s http://localhost:8000/v1/runs/RUN_UUID/logs -H "Authorization: Bearer $TOKEN"
    ```
 
-   Repeat them until the run's `status` is `COMPLETED`.
+   Repeat them until the run's `status` is `COMPLETED`. The Prefect dashboard
+   shows the same run as it goes, as a `run-playbook` flow run with a `run-block`
+   flow run for each step.
 
-9. List the run's output files, one per step that ran, then download one:
+8. Each step that ran wrote a new revision into the project's store, under
+   `33b9abe3-2f25-4824-89e2-5a3d93671b6c/BEL-pre-aggregated/layers/`, which
+   you can browse in the SeaweedFS dashboard. The steps response names it as the
+   step's `output` (`store_url` and `revision_uuid`). The last step that ran
+   holds the run's final record.
+
+9. Tear down (from `docker/`, in the third terminal). This also stops the
+   stack in the first terminal. Stop the backend in the second terminal with
+   `Ctrl+C`:
 
    ```bash
-   curl -s http://localhost:8000/v1/runs/RUN_UUID/outputs -H "Authorization: Bearer $TOKEN"
-   curl -s -o dispatch.nc http://localhost:8000/v1/runs/RUN_UUID/outputs/dispatch.nc -H "Authorization: Bearer $TOKEN"
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
    ```
-
-10. Tear down (from `docker/`, in the third terminal). This also stops the
-    stack in the first terminal. Stop the backend in the second terminal with
-    `Ctrl+C`:
-
-    ```bash
-    docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
-    ```

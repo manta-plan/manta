@@ -28,11 +28,6 @@ Nothing in this package imports Prefect, Docker, or Manta, and nothing ever shou
 that is what lets a modeller write and test a block without knowing anything about
 Manta's infrastructure, and what lets this package move to its own repository later.
 
-**Checking a playbook before running it.** Validation (are the steps wired to results
-that exist? does each block find the data it needs?) and drawing a playbook as a
-diagram are not part of this package yet. A playbook is taken as given when it runs.
-They are coming as a follow-up; this is the minimum that runs.
-
 ## Layout
 
 ```text
@@ -41,11 +36,11 @@ src/playbook/
     core.py        DataRecord, BlockDims, ConfigSchema, MantaBlock
     registry.py    Which blocks exist, and the catalogue that describes them
     environments.py  The environments blocks run in
-    storage.py     Where a record's bytes live (local files or S3)
     run_one.py     Running a single block from the command line
   playbooks/       Blocks chained together
     playbook.py    What a playbook is: steps, wiring, conditions
     yaml_io.py     Playbooks as documents: reading, writing, sending
+    validation.py  Checking a playbook and its settings before it runs
     execution.py   Running a playbook, in-process or through a pluggable BlockRunner
 ```
 
@@ -80,7 +75,7 @@ class Shrink(MantaBlock[ShrinkConfig]):
     CONFIG = ShrinkConfig
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
-    def run(self, record: DataRecord, output_base: str) -> DataRecord: ...
+    def run(self, record: DataRecord) -> DataRecord: ...
 ```
 
 What a block declares:
@@ -94,15 +89,19 @@ What a block declares:
 | `INPUTS` | settings that another block fills in, rather than the user |
 | `OUTPUTS` | the results it offers to later blocks |
 
-`run` receives the record to work on and `output_base`: where the caller wants the
-result produced, as a URL without an extension. The block writes its output there,
-appending whatever suffix fits its format, and returns a record pointing at the exact
-URL written. Records can point at local files or `s3://` URLs; `playbook.blocks.storage`
-handles both, configured purely through the standard `AWS_*` environment variables.
+`run` receives the record to work on, writes its result as a new revision in that
+record's own store, and returns a record pointing at that revision. A record's URL
+names a datarecord store, either a local directory or an `s3://` URL, and its uuid
+names one revision in that store.
 
 A block class is checked as soon as it is written: every name in `INPUTS` has to be a
 setting that can hold a `DataRecord` and has a default, so a block is always usable
 with nothing wired to it.
+
+A block refuses a setting it does not have, so a misspelt name is an error rather than
+a silent fall back to the default. The block's JSON schema says the same
+(`additionalProperties: false`), so a process that cannot import the block refuses the
+setting too.
 
 ### Making a block findable
 
@@ -127,46 +126,45 @@ indirection and use the `@register("name")` decorator on the class instead.
 ## Writing a playbook
 
 ```yaml
-name: cluster-expand-dispatch
+name: expand
 
 initial_data:
   dims: [snapshot]
 
 steps:
-  - name: cluster
-    block: cluster_time
-
   - name: expansion_overnight
     block: overnight_capacity_expansion
     when:
       config: globals.expansion_mode
       equals: overnight
 
-  - name: dispatch
-    block: rolling_horizon_dispatch
+  - name: expansion_myopic
+    block: myopic_capacity_expansion
     when:
       config: globals.expansion_mode
-      equals: overnight
-    inputs:
-      capacity_source: ${steps.expansion_overnight.output}
+      equals: myopic
+
+  - name: expansion_perfect
+    block: perfect_capacity_expansion
+    when:
+      config: globals.expansion_mode
+      equals: perfect
 ```
 
 Or the same thing in Python:
 
 ```python
-pb = Playbook(name="cluster-expand-dispatch", initial_dims=frozenset({"snapshot"}))
-pb.add("cluster", ClusterTime)
-overnight = pb.add(
-    "expansion_overnight",
-    OvernightCapacityExpansion,
-    when=When(config="globals.expansion_mode", equals="overnight"),
-)
-pb.add(
-    "dispatch",
-    RollingHorizonDispatch,
-    inputs={"capacity_source": overnight.output},
-    when=When(config="globals.expansion_mode", equals="overnight"),
-)
+pb = Playbook(name="expand", initial_dims=frozenset({"snapshot"}))
+for mode, block in [
+    ("overnight", OvernightCapacityExpansion),
+    ("myopic", MyopicCapacityExpansion),
+    ("perfect", PerfectCapacityExpansion),
+]:
+    pb.add(
+        f"expansion_{mode}",
+        block,
+        when=When(config="globals.expansion_mode", equals=mode),
+    )
 ```
 
 Settings live in a separate document, filed by step name plus a `globals` section
@@ -176,9 +174,17 @@ everything can see. Keeping them apart is what lets one playbook be run several 
 
 Every step is handed the record the previous step produced. On top of that, a step can
 reach back for a *particular* earlier step's result and put it into one of its settings
-(`${steps.<step>.<output>}`). Those are separate things: in the example above,
-`dispatch` receives the record from the step before it *and* the capacities that the
-expansion step specifically decided.
+(`${steps.<step>.<output>}`). Those are separate things: a `dispatch` step written as
+
+```yaml
+  - name: dispatch
+    block: rolling_horizon_dispatch
+    inputs:
+      capacity_source: ${steps.expansion_overnight.output}
+```
+
+receives the record from the step before it *and* the capacities that the expansion
+step specifically decided.
 
 ### Using a block more than once
 
@@ -189,7 +195,7 @@ Each step has its own name, so `overnight_capacity_expansion` can appear as both
 
 `when: {config: <dotted path>, equals: <value>}` switches a step on or off based on the
 settings alone, never on the data. So which steps will run is known before anything
-runs, which is what will make a playbook checkable and drawable up front.
+runs, which is what lets a playbook be [checked](#checking-a-playbook) up front.
 
 Which steps run is decided in exactly one place (`Playbook.active`), so what gets run
 can never disagree with what a reader of the playbook expects.
@@ -206,35 +212,95 @@ under its step's name, and it inherits the outer `globals` unless it has its own
 playbook that ends up containing itself is reported rather than followed until the
 process runs out of stack.
 
+## Checking a playbook
+
+Check a playbook against the settings it will run with before you run it. Every
+mistake is reported at once, with the step and the setting it is about:
+
+```python
+from playbook.playbooks import find_playbook_issues
+
+for issue in find_playbook_issues(playbook, config):
+    print(issue)
+```
+
+Run against the shipped `expand` playbook with
+`{"globals": {"expansion_mode": "myopic"}, "expansion_myopic": {"optimize_confg": {}}}`,
+that prints:
+
+```text
+[dims] step 'expansion_myopic': needs the 'period' dimension, which the data does not have at this point (it has: ['snapshot'])
+[config] step 'expansion_myopic', setting 'expansion_myopic.optimize_confg': there is no setting called 'optimize_confg'
+```
+
+`find_playbook_issues` returns a `list[PlaybookIssue]`, empty when nothing is wrong.
+`raise_for_playbook_issues` raises `PlaybookHasIssuesError` instead, carrying the same
+list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as methods.
+
+| Field | What it holds | Example |
+| --- | --- | --- |
+| `kind` | which check it failed (see below) | `"config"` |
+| `message` | what is wrong, in words | `"there is no setting called 'optimize_confg'"` |
+| `step_path` | the step, as names from the outermost playbook inwards; empty for the playbook as a whole | `("expansion_myopic",)` |
+| `config_path` | where in the settings, counted from the top of the settings document; `None` when no one setting is at fault | `("expansion_myopic", "optimize_confg")` |
+| `input` | the wired-in setting, for a problem with how a step is fed | `"capacity_source"` |
+
+A step inside a nested playbook has a longer `step_path`, such as
+`("regional", "dispatch")`. Its settings sit under the nesting step, so its
+`config_path` starts with `"regional"` too.
+
+The checks, by `kind`:
+
+| Kind | Reported when |
+| --- | --- |
+| `structure` | two steps share a name, a name is not a valid identifier or is `globals`, or a playbook contains itself |
+| `wiring` | a step is fed from a step that does not exist, comes later, or does not run with these settings; from a result that step does not offer; or into an input its block does not have |
+| `dims` | a step needs a dimension the data does not have when the step runs |
+| `config` | the settings name a step that does not exist, or do not fit what a step's block accepts |
+| `when` | a condition looks at a setting nobody set |
+| `environment` | two blocks describe the same environment differently |
+
+Without settings, `find_playbook_issues(playbook)` runs only the `structure` and
+`wiring` checks that hold whatever the settings are. With settings, it checks the steps
+that will actually run. Settings for a step that does not run are not checked, so one
+settings document can carry every branch of a condition.
+
+Where a block can be imported, its own settings model checks its settings. Where it
+cannot, its JSON schema from a [catalogue](#describing-every-block-at-once) does. The
+schema catches wrong types, missing settings and unknown ones. It cannot carry a rule a
+block writes in code, such as `cluster_time` needing exactly one of `n_hours` and
+`segments`. Where the block cannot be imported, that rule is only enforced when the
+block runs.
+
 ## Running a playbook
 
 ```python
-result = playbook.run(record, config, output_prefix="s3://bucket/some/run")
+result = playbook.run(record, config)
 ```
 
-Each step runs in turn. Step `cluster` writes its output to
-`<output_prefix>/cluster.<suffix>`; a step inside a nested playbook writes under its
-nesting step's name. A finished run is therefore a browsable folder of every step's
-output.
+`run` [checks](#checking-a-playbook) the playbook against `config` first. If anything
+is wrong, it raises `PlaybookHasIssuesError` before any step runs. Otherwise each step
+runs in turn on the record the previous step returned, so a finished run is a chain of
+revisions in the input record's store.
 
 By default every block runs in the current process, which is what tests and local use
 want. To run blocks anywhere else, pass a `BlockRunner`:
 
 ```python
 class BlockRunner(Protocol):
-    def run_block(self, block, *, step_name, config, record, inputs, output_base): ...
+    def run_block(self, block, *, step_name, config, record, inputs): ...
 ```
 
-`execute_playbook` walks the playbook, decides which steps run, wires inputs, and
-hands the runner one fully spelled-out block invocation at a time. Manta's runtime
-implements this protocol to run every block in its own container; this package never
-learns how.
+`execute_playbook` checks the playbook, walks it, decides which steps run, wires
+inputs, and hands the runner one fully spelled-out block invocation at a time. Manta's
+runtime implements this protocol to run every block in its own container; this package
+never learns how.
 
 ## Running one block
 
 ```bash
 python -m playbook.blocks.run_one <block> --source <your library> \
-    --record '{"url": "in.nc"}' --output-base out/cluster \
+    --record '{"url": "<store>", "uuid": "<revision>"}' \
     [--config '<json>'] [--inputs '<json>']
 ```
 
@@ -259,8 +325,8 @@ python -m playbook.blocks <your library> > catalogue.json
 Run once per environment, `merge_catalogues` combines the results into one description
 of every block in the system: names, settings as JSON schema, dimensions, and which
 settings are wired rather than typed in (marked `x-manta-input`). That is enough to
-offer a playbook's settings and check how it is wired, from a process that could not
-import a single one of the blocks it is describing.
+offer a playbook's settings and [check](#checking-a-playbook) a playbook against them
+without importing a single block.
 
 ## Testing your contribution
 

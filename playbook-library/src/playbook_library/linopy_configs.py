@@ -38,13 +38,9 @@ class LinopyModelSchema(ConfigSchema):
 class HighsOptions(ConfigSchema):
     # TODO: dynamically generate this schema from the given Highs version, so that we
     # don't have to maintain it manually.
-    threads: int = 1
-    solver: Literal["simplex", "ipm", "hipo"] = "ipm"
-    run_crossover: Literal["on", "off"] = "off"
-    small_matrix_value: float = 1.0e-06
-    large_matrix_value: float = 1000000000.0
+    solver: Literal["simplex", "ipm", "hipo"] = "hipo"
+    parallel: Literal["on", "off"] = "on"
     primal_feasibility_tolerance: float = 1.0e-05
     dual_feasibility_tolerance: float = 1.0e-05
-    ipm_optimality_tolerance: float = 0.0001
-    parallel: Literal["on", "off"] = "off"
     random_seed: int = 123
+    run_crossover: Literal["on", "off"] = "off"
