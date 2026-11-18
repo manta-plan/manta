@@ -45,7 +45,7 @@ src/playbook_library/
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   datarecord_helpers.py         Opening the datarecord revision a record points at
-  examples.py                   The example run: the `expand` playbook on the Belgian test model
+  examples.py                   The example run: `cluster-expand-dispatch` on the Belgian test model
   public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships, with default settings
 ```
@@ -57,8 +57,8 @@ pixi run -e dev test     # packaging, registration and the catalogue, without Py
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 
-To see a whole playbook run, run the `expand` playbook on the Belgian test model from the
-public `manta-public-test-data` bucket:
+To see a whole playbook run, run the `cluster-expand-dispatch` playbook on the
+full-resolution Belgian test model from the public `manta-public-test-data` bucket:
 
 ```bash
 pixi run -e full python -m playbook_library.examples [directory]
@@ -66,10 +66,12 @@ pixi run -e full python -m playbook_library.examples [directory]
 
 Each block writes its result as a new revision into the store it reads, and the bucket
 is read-only. So the script first copies the datarecord store into
-`<directory>/BEL-pre-aggregated/`, or into a new temporary directory if you give none.
-The `expand` playbook then solves an overnight capacity expansion with its default
-settings, and the script prints the record of the final revision. The run takes about
-a minute on a laptop.
+`<directory>/BEL-full-res/`, or into a new temporary directory if you give none.
+With its default settings, the playbook splits the year into 730 segments, then solves
+an overnight capacity expansion and a rolling horizon dispatch. Each solve merges the
+buses by `busmap_5` and the assets by `technology_group`, which gives the five regions
+of `BEL-pre-aggregated`, and spreads its results back over every bus and asset. The
+script prints the record of the final revision.
 
 To run a single block instead, without a playbook around it:
 
