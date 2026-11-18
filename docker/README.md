@@ -76,8 +76,11 @@ matters for reaching the server directly (e.g. with `pnpm dev`, where
   Inspect / Report tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
   Listens on `localhost:${QUACK_SERVER_PORT}`, token `${QUACK_TOKEN}` (both in `backend/.env`).
-  It reads records from `docker/quack-server/data/records` (git-ignored): put
-  datarecord stores there before starting, otherwise it serves nothing.
+  It reads the example stores the backend seeds into SeaweedFS
+  (`s3://${S3_BUCKET}/example-data`, `EXAMPLE_DATA_SEED=true`), so it serves
+  nothing until the backend has started once; it picks them up within a minute.
+  Set `QUACK_RECORDS_ROOT=/srv/data/records` to serve the git-ignored
+  `docker/quack-server/data/records` folder instead.
 
 ## Testing
 

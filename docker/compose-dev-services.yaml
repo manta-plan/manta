@@ -266,11 +266,29 @@ services:
     environment:
       QUACK_TOKEN: ${QUACK_TOKEN}
       CORS_ORIGINS: ${QUACK_CORS_ORIGINS:-http://localhost:5173}
-      RECORDS_ROOT: /srv/data/records
+      # Records are read from the dev object store (SeaweedFS), where the
+      # backend puts the example stores at startup (EXAMPLE_DATA_SEED, under
+      # `example-data/`). Override QUACK_RECORDS_ROOT with /srv/data/records
+      # to serve the local folder mounted below instead.
+      RECORDS_ROOT: ${QUACK_RECORDS_ROOT:-s3://${S3_BUCKET}/example-data}
+      # What a project opens when it names no record. Not the first store: that
+      # is the big BEL-full-res, which would be copied before anything else.
+      DEFAULT_RECORD: ${QUACK_DEFAULT_RECORD:-BEL-pre-aggregated-incl-patches-incl-results}
+      # A record is copied from the object store to local disk when it opens;
+      # the volume keeps those copies across restarts.
+      RECORDS_CACHE: /srv/cache
+      AWS_ENDPOINT_URL: ${MANTA_JOB_S3_ENDPOINT}
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
     ports:
       - "${QUACK_SERVER_PORT}:8080"
     volumes:
       - ./quack-server/data/records:/srv/data/records:ro
+      - quack-cache:/srv/cache
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -286,3 +304,4 @@ services:
 volumes:
   postgres-data:
   seaweedfs-data:
+  quack-cache:
