@@ -24,14 +24,14 @@ export type RecordCatalogue = {
   default: string | null;
 };
 
-type RecordServerConfig = {
+export type RecordServerConfig = {
   // host:port of the record server.
   server: string;
   // Shared dev token: it ships in the static bundle, so it is not a secret.
   token: string;
 };
 
-function recordServerConfig(): RecordServerConfig {
+export function recordServerConfig(): RecordServerConfig {
   const server = import.meta.env.VITE_RECORD_SERVER;
 
   // The Manta backend does not serve a record catalogue, so there is no
@@ -43,7 +43,7 @@ function recordServerConfig(): RecordServerConfig {
   return { server, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
 }
 
-function isSecure(server: string) {
+export function isSecure(server: string) {
   const host = server.split(":")[0];
   return window.location.protocol === "https:" || !["localhost", "127.0.0.1"].includes(host);
 }
