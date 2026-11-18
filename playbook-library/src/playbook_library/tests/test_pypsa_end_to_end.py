@@ -24,6 +24,7 @@ from playbook_library.overnight_capacity_expansion import OvernightCapacityExpan
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
+from playbook_library.tests.networks import new_zoned_network
 
 pytestmark = pytest.mark.pypsa
 
@@ -43,6 +44,17 @@ CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "expansion_overnight": {"aggregation": {"snapshot": "agg_3h"}},
     "expansion_myopic": {"aggregation": {"snapshot": "agg_3h"}},
     "dispatch": {"optimize_config": {"horizon": 4}},
+}
+ZONES_AND_CARRIERS = {"bus": "zone", "entity": "carrier"}
+ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG = {
+    **CLUSTER_EXPAND_DISPATCH_CONFIG,
+    "expansion_overnight": {"aggregation": {"snapshot": "agg_3h", **ZONES_AND_CARRIERS}},
+    "expansion_myopic": {"aggregation": {"snapshot": "agg_3h", **ZONES_AND_CARRIERS}},
+    "dispatch": {
+        "aggregation": ZONES_AND_CARRIERS,
+        "load_shedding": {},
+        "optimize_config": {"horizon": 4},
+    },
 }
 
 
@@ -73,6 +85,19 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, 
     n = to_network(result)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
+
+
+def test_a_playbook_of_chained_blocks_solves_merged_buses_and_assets(store_revision, workspace):
+    rev = store_revision(new_zoned_network(), "zoned")
+    ref = build_playbook("cluster-expand-dispatch").run(
+        RevisionRef.from_revision(rev), ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG
+    )
+
+    n = to_network(open_revision(workspace, ref))
+    assert list(n.buses.index) == ["a", "b", "c", "d"]
+    assert n.generators.p_nom_opt.notna().all()
+    assert n.generators_t.p.shape == (6, len(n.generators))
+    assert n.generators_t.p.notna().all().all()
 
 
 def test_the_network_the_playbook_started_from_is_left_alone(network):
