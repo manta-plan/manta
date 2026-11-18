@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuEllipsis, LuFolder, LuFolderPlus, LuPencil, LuTrash2 } from "react-icons/lu";
 import { Menu } from "@base-ui/react/menu";
 import { Link } from "wouter";
-import { useAppStore } from "../store";
+import { ApiError } from "../../../api/manta";
+import { deleteProject, listProjects } from "../api";
+import { isLocalProjectId, useAppStore } from "../store";
 import { HomeSectionFrame } from "../components/home-primitives";
 import { SectionHeader } from "../components/section-header";
 import { ConfirmDialog } from "../components/confirm-dialog";
@@ -13,7 +15,28 @@ export function ProjectsSection() {
   const openRenameProjectDrawer = useAppStore((s) => s.openRenameProjectDrawer);
   const removeProject = useAppStore((s) => s.removeProject);
   const setStatusMessage = useAppStore((s) => s.setStatusMessage);
+  const syncProjects = useAppStore((s) => s.syncProjects);
   const [removingProjectId, setRemovingProjectId] = useState<string | null>(null);
+
+  // The backend's list is the source of truth; the browser's copy shows until it answers.
+  useEffect(() => {
+    let cancelled = false;
+    listProjects()
+      .then((response) => {
+        if (!cancelled) syncProjects(response.items);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setStatusMessage(
+          error instanceof Error
+            ? `Couldn't load projects: ${error.message}`
+            : "Couldn't load projects.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [syncProjects, setStatusMessage]);
   const [projectToRemove, setProjectToRemove] = useState<{ id: string; name: string } | null>(null);
 
   const confirmRemoveProject = async () => {
@@ -21,6 +44,15 @@ export function ProjectsSection() {
     const { id: projectId, name: projectName } = projectToRemove;
     setRemovingProjectId(projectId);
     try {
+      // Projects made before the backend stored them only exist in this browser.
+      if (!isLocalProjectId(projectId)) {
+        try {
+          await deleteProject(projectId);
+        } catch (error) {
+          // A 404 means the backend no longer has it, so only the local copy is left to clear.
+          if (!(error instanceof ApiError && error.status === 404)) throw error;
+        }
+      }
       await removeProject(projectId);
       setStatusMessage(`${projectName} was removed.`);
       setProjectToRemove(null);
@@ -99,7 +131,11 @@ export function ProjectsSection() {
                     <Menu.Popup className="border-surface-600 bg-surface-800 text-surface-100 min-w-[200px] rounded-md border py-1 text-[13px] shadow-2xl shadow-black/50 outline-none">
                       <Menu.Item
                         onClick={() =>
-                          openRenameProjectDrawer({ id: project.id, name: project.name })
+                          openRenameProjectDrawer({
+                            id: project.id,
+                            name: project.name,
+                            description: project.description,
+                          })
                         }
                         className="data-[highlighted]:bg-accent-600 flex cursor-default items-center gap-2 px-3 py-1.5 outline-none data-[highlighted]:text-white"
                       >

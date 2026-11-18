@@ -1,3 +1,4 @@
+import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect } from "react";
 import { Redirect, Route, Switch } from "wouter";
 import { useSessionUser } from "./features/auth/session";
@@ -29,22 +30,24 @@ function App() {
   }
 
   return (
-    <Switch>
-      <Route path="/login">
-        <Redirect to="/" replace />
-      </Route>
-      <Route path="/project/:projectId">
-        <ProjectPage />
-      </Route>
-      {HOME_ROUTES.map((route) => (
-        <Route key={route.id} path={route.path}>
-          <HomePage />
+    <Tooltip.Provider delay={400} closeDelay={0}>
+      <Switch>
+        <Route path="/login">
+          <Redirect to="/" replace />
         </Route>
-      ))}
-      <Route>
-        <Redirect to="/" replace />
-      </Route>
-    </Switch>
+        <Route path="/project/:projectId/:tab?/:detailId?">
+          <ProjectPage />
+        </Route>
+        {HOME_ROUTES.map((route) => (
+          <Route key={route.id} path={route.path}>
+            <HomePage />
+          </Route>
+        ))}
+        <Route>
+          <Redirect to="/" replace />
+        </Route>
+      </Switch>
+    </Tooltip.Provider>
   );
 }
 
