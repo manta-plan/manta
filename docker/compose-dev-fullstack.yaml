@@ -17,8 +17,18 @@ services:
     image: ${MANTA_FRONTEND_IMAGE:-manta-frontend}:${IMAGE_TAG:-latest}
     build:
       context: ../frontend
+      # Baked into the bundle (see frontend/Dockerfile). By default the app
+      # reaches the temporary record server through this container's Caddy
+      # (same origin), so it needs `--profile temporary-quack-setup`; the
+      # token must match the server's QUACK_TOKEN. A deploy behind a domain
+      # sets VITE_RECORD_SERVER to that domain.
+      args:
+        VITE_RECORD_SERVER: ${VITE_RECORD_SERVER:-localhost:${FRONTEND_PORT:-5173}}
+        VITE_RECORD_TOKEN: ${VITE_RECORD_TOKEN:-${QUACK_TOKEN:-devtoken}}
     environment:
       BACKEND_URL: http://backend:8000
+      # Container port, not QUACK_SERVER_PORT (that's the host-published one).
+      QUACK_URL: http://quack-server:8080
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     depends_on:

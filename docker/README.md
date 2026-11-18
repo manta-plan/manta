@@ -30,6 +30,25 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --bui
 To run the backend or frontend on the host instead (`uv run manta`,
 `pnpm dev`), stop its container first: they share ports.
 
+The frontend's data catalogue reads from the temporary **quack-server** (see
+below), which only starts with its profile. Deploys therefore run:
+
+```bash
+cd docker
+
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
+  --profile temporary-quack-setup up --build
+```
+
+The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
+`quack-server:8080`, so the browser reaches it on the frontend's own origin.
+`VITE_RECORD_SERVER` (default `localhost:${FRONTEND_PORT:-5173}`) and
+`VITE_RECORD_TOKEN` (default `${QUACK_TOKEN:-devtoken}`) are build args baked
+into the bundle: behind a domain, set `VITE_RECORD_SERVER=manta.example.org`
+and rebuild. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken; it
+only matters for reaching the server directly (e.g. with `pnpm dev`, where
+`VITE_RECORD_SERVER=localhost:8010`).
+
 ## Services
 
 - **postgres** — the app database. Also hosts Keycloak's and Prefect's own
