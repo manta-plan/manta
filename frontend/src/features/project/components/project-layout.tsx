@@ -32,8 +32,8 @@ export function ProjectLayout({ children }: { children: ReactNode }) {
     <div className="bg-surface-900 flex h-svh w-full flex-col">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        {/* The model tree and the record's scenarios; the other tabs fill the page. */}
-        {activeTab === "model" && <Sidebar />}
+        {/* The model tree and the record's scenarios on Model, the runs and the playbooks to run on Run; the other tabs fill the page. */}
+        {(activeTab === "model" || activeTab === "run") && <Sidebar />}
         <main data-tour="run-main-section" className="relative flex-1 overflow-hidden">
           {children}
           <ModelItemDrawer />

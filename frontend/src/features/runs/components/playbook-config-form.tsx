@@ -23,7 +23,7 @@ import type {
 } from "../../../utils/playbookFormTypes";
 
 const inputClassName =
-  "border-border bg-surface text-text focus:border-primary focus:ring-primary/20 h-10 w-full rounded-md border px-3 text-sm transition outline-none focus:ring-2";
+  "border-surface-600 bg-surface-900 text-surface-50 focus:border-accent-500 focus:ring-accent-500/20 h-8 w-full rounded border px-2 text-[13px] transition outline-none focus:ring-2";
 
 /**
  * Renders a form for one step's settings, from its block's JSON schema: what you
@@ -53,7 +53,7 @@ export function PlaybookConfigForm({
   const properties = schema.properties ?? {};
 
   if (Object.keys(properties).length === 0) {
-    return <p className="text-text-secondary text-xs">This block has no settings to configure.</p>;
+    return <p className="text-surface-400 text-xs">This block has no settings to configure.</p>;
   }
 
   return (
@@ -101,7 +101,7 @@ function ObjectFields({
 
   if (entries.length === 0) {
     return flat ? null : (
-      <p className="text-text-secondary text-xs">This block has no settings to configure.</p>
+      <p className="text-surface-400 text-xs">This block has no settings to configure.</p>
     );
   }
 
@@ -159,7 +159,7 @@ function ReadOnlyField({ id, name, property, source }: ReadOnlyFieldProps) {
       </span>
       <span
         aria-labelledby={id}
-        className="border-border bg-surface-alt text-text-secondary inline-flex h-10 items-center rounded-md border px-3 text-sm"
+        className="border-surface-600 bg-surface-800 text-surface-400 inline-flex h-10 items-center rounded-md border px-3 text-sm"
       >
         {linked
           ? stepName
@@ -195,17 +195,17 @@ function Field({
     <div className="flex items-center justify-between gap-2">
       <label className="text-sm font-semibold" htmlFor={id}>
         {label}
-        <span className="text-text-secondary ml-2 text-xs font-normal">
+        <span className="text-surface-400 ml-2 text-xs font-normal">
           {nullable ? " optional" : isRequired && !resolved.hasDefault ? "required" : ""}
         </span>
         {isModified ? (
-          <span className="text-primary ml-2 text-xs font-normal">modified</span>
+          <span className="text-accent-400 ml-2 text-xs font-normal">modified</span>
         ) : null}
       </label>
       <div className="flex items-center gap-3">
         {nullable ? (
           <label
-            className="text-text-secondary flex items-center gap-1 text-xs"
+            className="text-surface-400 flex items-center gap-1 text-xs"
             htmlFor={`${id}.null`}
           >
             <input
@@ -220,7 +220,7 @@ function Field({
         ) : null}
         {value !== undefined ? (
           <button
-            className="text-text-secondary hover:text-text text-xs underline"
+            className="text-surface-400 hover:text-surface-50 text-xs underline"
             onClick={() => onChange(undefined)}
             type="button"
           >
@@ -232,13 +232,13 @@ function Field({
   );
   const footer = (
     <>
-      {description === null ? null : <p className="text-text-secondary text-xs">{description}</p>}
+      {description === null ? null : <p className="text-surface-400 text-xs">{description}</p>}
       {isBlocked ? (
-        <p className="text-text-secondary text-xs">
+        <p className="text-surface-400 text-xs">
           Unavailable while the other option is set. Reset it first.
         </p>
       ) : null}
-      {error === null ? null : <p className="text-xs text-red-700">{error}</p>}
+      {error === null ? null : <p className="text-xs text-red-300">{error}</p>}
     </>
   );
 
@@ -400,7 +400,7 @@ function ArrayField({ id, item, value, onChange }: ArrayFieldProps) {
           )}
           <button
             aria-label={`Remove ${item.label} ${index + 1}`}
-            className="text-text-secondary hover:text-text text-sm"
+            className="text-surface-400 hover:text-surface-50 text-sm"
             onClick={() => onChange(value.filter((_, i) => i !== index))}
             type="button"
           >
@@ -409,7 +409,7 @@ function ArrayField({ id, item, value, onChange }: ArrayFieldProps) {
         </div>
       ))}
       <button
-        className="text-primary w-fit text-sm font-semibold"
+        className="text-accent-400 w-fit text-sm font-semibold"
         onClick={() => onChange([...value, empty])}
         type="button"
       >
@@ -439,18 +439,16 @@ function GroupSection({ context, group, groups, root, onChange }: GroupSectionPr
 
   return (
     <details
-      className="border-border bg-surface rounded-md border p-3"
+      className="border-surface-600 bg-surface-900 rounded-md border p-3"
       open={isEnabled && !nullable}
     >
       <summary className="cursor-pointer text-sm font-semibold">
         {label}
-        <span className="text-text-secondary ml-2 text-xs font-normal">
-          ({humanize(group.key)})
-        </span>
+        <span className="text-surface-400 ml-2 text-xs font-normal">({humanize(group.key)})</span>
       </summary>
       <div className="mt-3 grid gap-4">
         {blocked ? (
-          <p className="text-text-secondary text-xs">Enable {groupLabel(parent.resolved)} first.</p>
+          <p className="text-surface-400 text-xs">Enable {groupLabel(parent.resolved)} first.</p>
         ) : linked ? (
           <ReadOnlyField
             id={id}
@@ -540,7 +538,7 @@ function JsonField({ id, value, cleared, onChange }: JsonFieldProps) {
         type="text"
         value={text}
       />
-      {isInvalid ? <p className="text-xs text-red-700">Not valid JSON yet.</p> : null}
+      {isInvalid ? <p className="text-xs text-red-300">Not valid JSON yet.</p> : null}
     </div>
   );
 }
