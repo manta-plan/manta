@@ -1,6 +1,6 @@
 # Record server (temporary)
 
-> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, default 8010; token `QUACK_TOKEN`, default `devtoken`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
+> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, 8010; token `QUACK_TOKEN`, `devtoken`; both set in `backend/.env`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
 
 ## Running in the dev stack
 
@@ -29,11 +29,11 @@
    curl -H 'Authorization: Bearer devtoken' localhost:8010/api/records
    ```
 
-| Compose env | Default |
+| Compose env | Value (`backend/.env` unless noted) |
 |---|---|
 | `QUACK_SERVER_PORT` | `8010` (host port; not 8000, which the backend uses) |
 | `QUACK_TOKEN` | `devtoken` |
-| `QUACK_CORS_ORIGINS` | `http://localhost:5173` |
+| `QUACK_CORS_ORIGINS` | `http://localhost:5173` (compose default, not in `backend/.env`) |
 
 To run without Docker, see "Run" below.
 
