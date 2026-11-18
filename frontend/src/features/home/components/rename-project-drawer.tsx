@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { LuFolderPen, LuX } from "react-icons/lu";
 import { updateProject } from "../api";
-import { isLocalProjectId, useAppStore } from "../store";
+import { useAppStore } from "../store";
 
 export function RenameProjectDrawer() {
   const project = useAppStore((s) => s.projectToRename);
@@ -22,10 +22,7 @@ export function RenameProjectDrawer() {
     if (!project || !canRename) return;
     setIsSaving(true);
     try {
-      // Projects made before the backend stored them only exist in this browser.
-      const saved = isLocalProjectId(project.id)
-        ? { name: name.trim(), description }
-        : await updateProject(project.id, name.trim(), description);
+      const saved = await updateProject(project.id, name.trim(), description);
       renameProject(project.id, saved.name, saved.description ?? "");
       setStatusMessage(`${saved.name} was renamed.`);
       closeRenameProjectDrawer();
