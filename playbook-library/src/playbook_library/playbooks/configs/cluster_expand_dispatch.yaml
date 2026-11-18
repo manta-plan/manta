@@ -25,6 +25,7 @@ dispatch:
   aggregation:
     bus: busmap_5
     entity: technology_group
+  load_shedding: {}
   optimize_config:
     horizon: 168
     overlap: 24

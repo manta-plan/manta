@@ -474,8 +474,10 @@ def aggregate_buses(n: pypsa.Network, maps: SpatialMaps) -> pypsa.Network:
     attributes add up. Land-use limits `maps.constraints` merges keep the constant of the
     first until `restate_land_use` states them again. Any other bus or line attribute PyPSA
     does not know is unset where buses or lines merge if text or a flag, and else the
-    representative's, as is the location.
+    representative's, as is the location. Time series of results of an earlier solve at
+    buses, lines and links are left out.
     """
+    n = _without_series_results(n, ["Bus", "Line", "Link"])
     buses, lines = n.c.buses.static, n.c.lines.static
     known = n.components["Bus"].defaults.index.union(list(DEFAULT_BUS_STRATEGIES))
     columns = buses.columns.difference(known)
@@ -510,6 +512,15 @@ def aggregate_buses(n: pypsa.Network, maps: SpatialMaps) -> pypsa.Network:
     looped = _mapped(links.loc[loops], maps.buses, _ports(n.components["Link"]))
     clustered.add("Link", loops, **{**looped, **series})
     return clustered
+
+
+def _without_series_results(n: pypsa.Network, names: list[str]) -> pypsa.Network:
+    """Return a copy of `n` whose components `names` hold no time series of results."""
+    n = n.copy()
+    for c in n.components[names]:
+        for attr in c.dynamic.keys() & set(_outputs(c)):
+            c.dynamic[attr] = c.dynamic[attr].iloc[:, :0]
+    return n
 
 
 def _split(sizes: pd.Series) -> pd.Series:
