@@ -28,12 +28,21 @@ from playbook_library.overnight_capacity_expansion import OvernightCapacityExpan
 from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
 from playbook_library.pypsa_helpers import optimize_network, to_network, write_aggregated_results
 from playbook_library.pypsa_spatial_aggregation import (
-    ENTITY_COMPONENTS,
     aggregate_network,
     expand_network,
     spatial_maps,
 )
 from playbook_library.pypsa_time_aggregation import series_frame, snapshot_frame
+from playbook_library.tests.networks import (
+    ASSETS,
+    BATTERIES,
+    GAS,
+    HYDRO,
+    LOADS,
+    SOLAR,
+    new_zoned_network,
+    set_status,
+)
 from playbook_library.time_partition import TimePartition
 
 pytestmark = pytest.mark.pypsa
@@ -41,98 +50,8 @@ pytestmark = pytest.mark.pypsa
 SPATIAL = Aggregation(bus="zone", entity="carrier")
 ZONES = Aggregation(bus="zone")
 CARRIERS = Aggregation(entity="carrier")
-SOLAR = ["solar_a", "solar_b"]
-GAS = ["gas_c", "gas_d"]
-HYDRO = ["hydro_a", "hydro_b"]
-BATTERIES = ["bat_a", "bat_b"]
-LOADS = ["load_a", "load_b"]
-ASSETS = [*ENTITY_COMPONENTS, "Line"]
 UNTYPED = {"check_names": False, "check_index_type": False, "check_column_type": False}
 """Compare frames by their labels and values, whatever type of index holds the labels."""
-
-
-def _set_status(n: pypsa.Network, status: str | None = None) -> pypsa.Network:
-    """Mark each asset of `n` as `status`, or a candidate if extendable and existing if not."""
-    for c in n.components[ASSETS]:
-        extendable = c.static.filter(like="nom_extendable").any(axis=1)
-        c.static["asset_status"] = status or np.where(extendable, "candidate", "existing")
-    return n
-
-
-def new_zoned_network() -> pypsa.Network:
-    """Build buses `a` and `b` in zone north, `c` and `d` in zone south, with assets to merge.
-
-    Line `db` runs south to north, against `ac`. Link `loop` stays within the north.
-    Extendable assets are candidates, and the others exist.
-    """
-    n = pypsa.Network()
-    n.set_snapshots(pd.date_range("2030-01-01", periods=6, freq="h"))
-    n.add("Carrier", ["AC", "solar", "hydro", "gas", "battery", "DC", "electricity"])
-    n.add("Bus", ["a", "b", "c", "d"], x=[0, 1, 0, 1], y=[1, 1, 0, 0], carrier="AC")
-    n.buses["zone"] = ["north", "north", "south", "south"]
-    n.add(
-        "Line",
-        ["ab", "ac", "db", "cd"],
-        bus0=["a", "a", "d", "c"],
-        bus1=["b", "c", "b", "d"],
-        s_nom=[100.0, 100.0, 300.0, 100.0],
-        x=0.1,
-        r=0.01,
-        carrier="AC",
-    )
-    profiles = pd.DataFrame(
-        {"solar_a": [0, 0.5, 1, 0.5, 0, 0.2], "solar_b": [0, 0.2, 0.8, 1, 0.4, 0]}, n.snapshots
-    )
-    n.add(
-        "Generator",
-        SOLAR,
-        bus=["a", "b"],
-        carrier="solar",
-        p_nom=[10.0, 30.0],
-        p_nom_max=[100.0, 300.0],
-        p_nom_extendable=True,
-        capital_cost=[10.0, 12.0],
-        p_max_pu=profiles,
-    )
-    n.add(
-        "Generator",
-        GAS,
-        bus=["c", "d"],
-        carrier="gas",
-        p_nom_extendable=True,
-        capital_cost=0.1,
-        marginal_cost=[10.0, 12.0],
-    )
-    n.add(
-        "Generator", HYDRO, bus=["a", "b"], carrier="hydro", p_nom=[10.0, 30.0], marginal_cost=5.0
-    )
-    n.add(
-        "Load", [*LOADS, "load_d"], bus=["a", "b", "d"], carrier="electricity", p_set=[20, 40, 60]
-    )
-    n.add(
-        "StorageUnit",
-        BATTERIES,
-        bus=["a", "b"],
-        carrier="battery",
-        p_nom=[5.0, 15.0],
-        p_nom_max=[50.0, 150.0],
-        p_nom_extendable=True,
-        capital_cost=10.0,
-        max_hours=2,
-        cyclic_state_of_charge=True,
-    )
-    n.add("Store", ["st_c", "st_d"], bus=["c", "d"], carrier="battery", e_nom_extendable=True)
-    n.add(
-        "Link",
-        ["dc", "loop"],
-        bus0="a",
-        bus1=["d", "b"],
-        carrier="DC",
-        p_nom=20.0,
-        length=[300.0, 50.0],
-        capital_cost=[30.0, 5.0],
-    )
-    return _set_status(n)
 
 
 @pytest.fixture
@@ -143,7 +62,7 @@ def zoned_record(store_record) -> DataRecord:
 @pytest.fixture
 def bel_status_record(bel_record, store_record) -> DataRecord:
     """Store BEL with each extendable asset a candidate and each other existing."""
-    return store_record(_set_status(to_network(bel_record)), "bel")
+    return store_record(set_status(to_network(bel_record)), "bel")
 
 
 def _run(block_cls, config: dict, record: DataRecord) -> DataRecord:
@@ -168,6 +87,12 @@ def test_merging_by_carrier_matches_pypsa_one_port_aggregation(ctype, zoned_reco
         pd.testing.assert_frame_equal(dense[frame.columns], frame, **UNTYPED)
 
 
+def test_merging_buses_leaves_out_the_flows_of_an_earlier_solve(zoned_record):
+    solved = _run(OvernightCapacityExpansion, {}, zoned_record)
+    merged = aggregate_network(to_network(solved), solved, ZONES)
+    assert all(frame.empty for frame in merged.c.lines.dynamic.values())
+
+
 def test_merged_averages_weigh_by_largest_capacity_not_by_capacity(store_record):
     """`p_nom` runs against `p_nom_max`, where PyPSA would weigh averages the other way."""
     n = new_zoned_network()
@@ -188,7 +113,7 @@ def new_parallel_network() -> pypsa.Network:
     n = new_zoned_network()
     n.add("Line", "ab2", bus0="a", bus1="b", s_nom=300.0, x=0.1, r=0.01, carrier="AC")
     n.add("Link", ["dc_bare", "dc2"], bus0="a", bus1="d", carrier=["", "DC"], p_nom=20.0)
-    return _set_status(n)
+    return set_status(n)
 
 
 def test_merging_by_entity_merges_parallel_lines_and_leaves_bare_links(store_record):
@@ -241,7 +166,7 @@ def _typed_network(other_type: str = LINE_TYPE) -> pypsa.Network:
     n.lines["tags"] = "line " + n.lines.index
     n.lines["underground"] = True
     n.buses["symbol"] = "bus " + n.buses.index
-    return _set_status(n)
+    return set_status(n)
 
 
 @pytest.fixture(scope="module")
@@ -329,7 +254,7 @@ def test_merged_lines_extend_by_the_largest_extension_of_their_members(
     n.lines.loc[members, "s_nom"] = [100.0, 300.0]
     n.lines.loc[members, "s_nom_max"] = s_nom_max
     n.lines.loc[members, "s_nom_extendable"] = extendable
-    record = store_record(_set_status(n), "extension")
+    record = store_record(set_status(n), "extension")
     merged = aggregate_network(to_network(record), record, aggregation)
 
     assert merged.lines.loc[members[0], "s_nom_max"] == expected
@@ -347,7 +272,7 @@ def test_merging_lines_above_their_s_nom_max_raises(aggregation, members, store_
     limits = [[100.0, 120.0, 150.0], [300.0, 390.0, 400.0]]
     n.lines.loc[members, ["s_nom", "s_nom_min", "s_nom_max"]] = limits
     n.lines.loc[members, "s_nom_extendable"] = True
-    record = store_record(_set_status(n), "above")
+    record = store_record(set_status(n), "above")
 
     with pytest.raises(ValueError, match=rf"`s_nom_max` into \['{members[0]}'\]"):
         aggregate_network(to_network(record), record, aggregation)
@@ -828,7 +753,7 @@ def _existing_keys(n: pypsa.Network, ctype: str) -> pd.DataFrame:
 
 def _existing_network() -> pypsa.Network:
     """Build the zoned network with every asset existing and hydro plants of two cohorts."""
-    n = _set_status(new_zoned_network(), "existing")
+    n = set_status(new_zoned_network(), "existing")
     n.generators.loc[HYDRO, "build_year"] = [2010, 2020]
     return n
 

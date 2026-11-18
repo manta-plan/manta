@@ -164,10 +164,14 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         """Add load shedding to the network of `record`, and store it as a child revision of it.
 
         The load-shedding generators are then part of the stored model, so a later
-        results-only write includes their results.
+        results-only write includes their results. They are `existing` assets, so that an
+        entity aggregation merges them.
         """
         n = to_network(record)
+        before = n.c.generators.static.index
         n.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
+        added = n.c.generators.static.index.difference(before)
+        n.c.generators.static.loc[added, "asset_status"] = "existing"
         return write_network(n, record)
 
     def refuse_restarting_storage(self, n: pypsa.Network) -> None:
