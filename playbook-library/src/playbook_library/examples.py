@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Run the `expand` playbook on the Belgian test model from the public test data bucket.
+"""Run `cluster-expand-dispatch` on the full-resolution Belgian model of the public bucket.
 
     pixi run -e full python -m playbook_library.examples [directory]
 
-The script downloads the `BEL-pre-aggregated` datarecord store into the directory, or
+The script downloads the `BEL-full-res` datarecord store into the directory, or
 into a new temporary directory, because each block writes its result as a new revision
 into the store it reads and the bucket is read-only. The tests download the public
 stores with the same functions, which need the `public-data` extra.
@@ -24,8 +24,8 @@ from playbook.playbooks.yaml_io import playbook_from_doc
 from playbook_library.playbooks import library_playbooks
 from playbook_library.public_data import download_public_store
 
-EXAMPLE_STORE = "BEL-pre-aggregated"
-EXAMPLE_PLAYBOOK = "expand"
+EXAMPLE_STORE = "BEL-full-res"
+EXAMPLE_PLAYBOOK = "cluster-expand-dispatch"
 
 
 def inputs_ref(store_dir: Path) -> RevisionRef:

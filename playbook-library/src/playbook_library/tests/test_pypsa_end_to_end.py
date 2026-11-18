@@ -19,7 +19,6 @@ from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
-from playbook_library.examples import EXAMPLE_PLAYBOOK
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
@@ -29,7 +28,7 @@ from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_ne
 pytestmark = pytest.mark.pypsa
 
 
-def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
+def build_playbook(name: str) -> Playbook:
     return playbook_from_doc(library_playbooks()[name].doc)
 
 
@@ -47,9 +46,9 @@ CLUSTER_EXPAND_DISPATCH_CONFIG = {
 }
 
 
-def test_the_example_playbook_runs_from_one_network_to_another(network, workspace):
-    ref = build_playbook().run(
-        RevisionRef.from_revision(network), library_playbooks()[EXAMPLE_PLAYBOOK].default_config
+def test_the_expand_playbook_runs_from_one_network_to_another(network, workspace):
+    ref = build_playbook("expand").run(
+        RevisionRef.from_revision(network), library_playbooks()["expand"].default_config
     )
     result = open_revision(workspace, ref)
 
