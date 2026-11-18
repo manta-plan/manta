@@ -81,6 +81,9 @@ def test_login_with_valid_credentials_returns_token(app_server: str) -> None:
     body = response.json()
     assert body["access_token"]
     assert body["token_type"] == "bearer"  # noqa: S105 It's not a password
+    assert body["refresh_token"]
+    assert body["expires_in"] > 0
+    assert body["refresh_expires_in"] > 0
 
 
 def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:
@@ -88,6 +91,92 @@ def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:
     response = httpx2.post(
         f"{app_server}/v1/auth/login",
         json={"username": "manta-admin", "password": "wrong-password"},
+    )
+
+    # Then
+    assert response.status_code == 401
+
+
+def test_refresh_with_valid_refresh_token_returns_new_tokens(app_server: str) -> None:
+    # Given
+    login = httpx2.post(
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "manta-admin"},
+    ).json()
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/refresh",
+        json={"refresh_token": login["refresh_token"]},
+    )
+
+    # Then
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_token"]
+    assert body["token_type"] == "bearer"  # noqa: S105 It's not a password
+    assert body["refresh_token"]
+    assert body["refresh_token"] != login["refresh_token"]
+    assert body["expires_in"] > 0
+    assert body["refresh_expires_in"] > 0
+
+
+def test_refresh_with_invalid_refresh_token_is_unauthorized(app_server: str) -> None:
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/refresh",
+        json={"refresh_token": "not-a-refresh-token"},
+    )
+
+    # Then
+    assert response.status_code == 401
+
+
+def test_logout_ends_the_session(app_server: str) -> None:
+    # Given
+    login = httpx2.post(
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "manta-admin"},
+    ).json()
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/logout",
+        json={"refresh_token": login["refresh_token"]},
+    )
+
+    # Then
+    assert response.status_code == 204
+    refresh = httpx2.post(
+        f"{app_server}/v1/auth/refresh",
+        json={"refresh_token": login["refresh_token"]},
+    )
+    assert refresh.status_code == 401
+
+
+def test_logout_twice_is_not_an_error(app_server: str) -> None:
+    # Given
+    login = httpx2.post(
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "manta-admin"},
+    ).json()
+    httpx2.post(f"{app_server}/v1/auth/logout", json={"refresh_token": login["refresh_token"]})
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/logout",
+        json={"refresh_token": login["refresh_token"]},
+    )
+
+    # Then
+    assert response.status_code == 204
+
+
+def test_logout_with_invalid_refresh_token_is_unauthorized(app_server: str) -> None:
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/logout",
+        json={"refresh_token": "not-a-refresh-token"},
     )
 
     # Then

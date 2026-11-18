@@ -1,5 +1,5 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
-import { decodeTokenClaims, getAccessToken } from "../auth/session";
+import { decodeTokenClaims, getSignedInAccessToken } from "../auth/session";
 import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
   CreateProjectResponse,
@@ -22,7 +22,7 @@ const defaultProjectPayload = {
 // login or logout. The backend has no endpoint listing a user's projects, so forgetting it
 // would create a new, empty project (without the example data stores) every time.
 function defaultProjectStorageKey(): string | null {
-  const accessToken = getAccessToken();
+  const accessToken = getSignedInAccessToken();
   const claims = accessToken === null ? null : decodeTokenClaims(accessToken);
 
   return claims === null ? null : `manta.defaultProjectUuid.${claims.sub}`;
