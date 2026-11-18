@@ -15,7 +15,7 @@ import type {
 } from "../lib/record-server/types";
 import type { Report, ReportCanvasPreset } from "../data/reports";
 import type { ReportWidget } from "../data/report-widgets";
-import type { Run, RunStatus } from "../data/runs";
+import type { Run } from "../data/runs";
 import type {
   Scenario,
   ScenarioDirectChange,
@@ -183,11 +183,8 @@ export interface ProjectState {
   updateRunNodeParams: (runId: string, nodeId: string, params: Record<string, string>) => void;
 
   isRunFilterDrawerOpen: boolean;
-  runStatusFilters: RunStatus[];
   openRunFilterDrawer: () => void;
   closeRunFilterDrawer: () => void;
-  toggleRunStatusFilter: (status: RunStatus) => void;
-  clearRunFilters: () => void;
 
   isInspectionFilterDrawerOpen: boolean;
   inspectionFilters: string[];

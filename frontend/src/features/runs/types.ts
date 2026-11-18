@@ -1,3 +1,5 @@
+import type { PlaybookConfig } from "../../utils/playbookTypes";
+
 export type RunStatus = string;
 
 export type CreateProjectResponse = {
@@ -25,6 +27,8 @@ export type GetRunResponse = {
   playbook: string;
   status: string;
   created_at: string;
+  /** The settings the run was started with. Read-only here; absent when the backend omits it. */
+  config?: PlaybookConfig | null;
 };
 
 export type ListRunsResponse = {
@@ -67,4 +71,22 @@ export type ExpandedRunState = {
 export type DefaultProject = {
   uuid: string;
   wasCached: boolean;
+};
+
+/**
+ * A run that has been set up but not started. The backend has no draft, so it
+ * lives in memory in the runs store only and is lost on reload; Start sends it as a run.
+ */
+export type RunDraft = {
+  id: string;
+  /** The project route it was created in. */
+  projectId: string;
+  playbook: string;
+  dataRecord: DataRecordChoice;
+  scenarioId: string | null;
+  scenarioLabel: string | null;
+  config: PlaybookConfig;
+  solverPreset: string;
+  horizon: string;
+  createdAt: string;
 };
