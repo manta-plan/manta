@@ -12,12 +12,19 @@ cluster:
 expansion_overnight:
   aggregation:
     snapshot: seg_730
+    bus: busmap_5
+    entity: technology_group
 
 expansion_myopic:
   aggregation:
     snapshot: seg_730
+    bus: busmap_5
+    entity: technology_group
 
 dispatch:
+  aggregation:
+    bus: busmap_5
+    entity: technology_group
   optimize_config:
     horizon: 168
     overlap: 24
