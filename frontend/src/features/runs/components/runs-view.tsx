@@ -4,23 +4,13 @@ import { useEffect, useState } from "react";
 import { FiChevronLeft, FiChevronRight, FiPlay, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { useSessionUser } from "../../auth/session";
 import type { PlaybookConfig } from "../../../utils/playbookTypes";
-import {
-  createRun,
-  getCachedDefaultProject,
-  getOrCreateDefaultProject,
-  getProjectRun,
-  getRun,
-  getRunLogs,
-  getRunSummary,
-  listRuns,
-} from "../api";
+import { createRun, getProjectRun, getRun, getRunLogs, getRunSummary, listRuns } from "../api";
 import { RunPlaybookDialog } from "./run-playbook-dialog";
 import { RunsTable } from "./runs-table";
 import { StatusFilter } from "./status-filter";
 import { normalizeRunStatus } from "../status";
 import type {
   DataRecordChoice,
-  DefaultProject,
   ExpandedRunState,
   GetRunResponse,
   GetRunSummaryResponse,
@@ -36,7 +26,7 @@ const emptyRunSummary: GetRunSummaryResponse = {
 
 // The runs of the project's workspace, shown in the Run tab: a summary, the
 // runs table with its search and status filter, and paging.
-export function RunsView() {
+export function RunsView({ projectId }: { projectId: string }) {
   // The router only renders this page for signed-in users.
   const owner = useSessionUser()?.username ?? "";
   const [runs, setRuns] = useState<RunListItem[]>([]);
@@ -56,21 +46,14 @@ export function RunsView() {
   const [activeSearchRunId, setActiveSearchRunId] = useState("");
 
   useEffect(() => {
-    const cachedProject = getCachedDefaultProject();
     let isActive = true;
-
-    if (cachedProject === null) {
-      return;
-    }
-
-    const project = cachedProject;
 
     async function loadInitialRuns() {
       setIsRefreshingRuns(true);
       setRunCreationError(null);
 
       try {
-        const fetchedRuns = await listRuns(project, {
+        const fetchedRuns = await listRuns(projectId, {
           limit: runsPageSize,
           offset: 0,
           statuses: [],
@@ -98,7 +81,7 @@ export function RunsView() {
     return () => {
       isActive = false;
     };
-  }, [owner]);
+  }, [projectId, owner]);
 
   const hasRuns = runs.length > 0;
   const hasProjectRuns = runSummary.total > 0;
@@ -152,14 +135,13 @@ export function RunsView() {
     setCreateRunError(null);
 
     try {
-      const project = await getOrCreateDefaultProject();
-      await createRun(project, { playbook, config, dataRecord });
+      await createRun(projectId, { playbook, config, dataRecord });
       setPlaybookDialog(false);
 
       setSearchRunId("");
       setActiveSearchRunId("");
       setRunsOffset(0);
-      await refreshRunsPage(project, 0, selectedStatuses);
+      await refreshRunsPage(0, selectedStatuses);
     } catch (error) {
       setCreateRunError(error instanceof Error ? error.message : "Failed to create run.");
     } finally {
@@ -167,21 +149,21 @@ export function RunsView() {
     }
   }
 
-  async function refreshRuns(project: DefaultProject) {
+  async function refreshRuns() {
     if (activeSearchRunId.length > 0) {
-      await refreshRunSearch(project, activeSearchRunId);
+      await refreshRunSearch(activeSearchRunId);
       return;
     }
 
-    await refreshRunsPage(project, runsOffset, selectedStatuses);
+    await refreshRunsPage(runsOffset, selectedStatuses);
   }
 
-  async function refreshRunsPage(project: DefaultProject, offset: number, statuses: RunStatus[]) {
+  async function refreshRunsPage(offset: number, statuses: RunStatus[]) {
     setIsRefreshingRuns(true);
     setRunCreationError(null);
 
     try {
-      const fetchedRuns = await listRuns(project, { limit: runsPageSize, offset, statuses });
+      const fetchedRuns = await listRuns(projectId, { limit: runsPageSize, offset, statuses });
       setRuns(fetchedRuns.items.map((run) => toRunListItem(run, owner)));
       setRunsTotal(fetchedRuns.total);
       setRunsOffset(fetchedRuns.offset);
@@ -205,11 +187,10 @@ export function RunsView() {
     }));
 
     try {
-      const cachedProject = getCachedDefaultProject();
       const [detail, logs, latestRunSummary] = await Promise.all([
         getRun(runId),
         getRunLogs(runId),
-        cachedProject === null ? Promise.resolve(null) : getRunSummary(cachedProject),
+        getRunSummary(projectId),
       ]);
       const runStatus = normalizeRunStatus(logs.run_status || detail.status);
 
@@ -227,9 +208,7 @@ export function RunsView() {
           logs,
         },
       }));
-      if (latestRunSummary !== null) {
-        setRunSummary(latestRunSummary);
-      }
+      setRunSummary(latestRunSummary);
     } catch (error) {
       setExpandedRuns((currentExpandedRuns) => ({
         ...currentExpandedRuns,
@@ -261,23 +240,17 @@ export function RunsView() {
   }
 
   async function handleRefreshRuns() {
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
-    await refreshRuns(cachedProject);
+    await refreshRuns();
   }
 
-  async function refreshRunSearch(project: DefaultProject, runId: string) {
+  async function refreshRunSearch(runId: string) {
     setIsRefreshingRuns(true);
     setRunCreationError(null);
 
     try {
       const [run, latestRunSummary] = await Promise.all([
-        getProjectRun(project, runId),
-        getRunSummary(project),
+        getProjectRun(projectId, runId),
+        getRunSummary(projectId),
       ]);
       setRuns(run === null ? [] : [toRunListItem(run, owner)]);
       setRunsTotal(run === null ? 0 : 1);
@@ -294,56 +267,31 @@ export function RunsView() {
     event.preventDefault();
 
     const runId = searchRunId.trim();
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
     if (runId.length === 0) {
       setActiveSearchRunId("");
       setRunsOffset(0);
-      await refreshRunsPage(cachedProject, 0, selectedStatuses);
+      await refreshRunsPage(0, selectedStatuses);
       return;
     }
 
     setSelectedStatuses([]);
     setActiveSearchRunId(runId);
-    await refreshRunSearch(cachedProject, runId);
+    await refreshRunSearch(runId);
   }
 
   async function handleClearRunSearch() {
     setSearchRunId("");
     setActiveSearchRunId("");
-
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
     setRunsOffset(0);
-    await refreshRunsPage(cachedProject, 0, selectedStatuses);
+    await refreshRunsPage(0, selectedStatuses);
   }
 
   async function handlePreviousRunsPage() {
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
-    await refreshRunsPage(cachedProject, Math.max(runsOffset - runsPageSize, 0), selectedStatuses);
+    await refreshRunsPage(Math.max(runsOffset - runsPageSize, 0), selectedStatuses);
   }
 
   async function handleNextRunsPage() {
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
-    await refreshRunsPage(cachedProject, runsOffset + runsPageSize, selectedStatuses);
+    await refreshRunsPage(runsOffset + runsPageSize, selectedStatuses);
   }
 
   async function handleSelectedStatusesChange(statuses: RunStatus[]) {
@@ -352,13 +300,7 @@ export function RunsView() {
     setActiveSearchRunId("");
     setRunsOffset(0);
 
-    const cachedProject = getCachedDefaultProject();
-
-    if (cachedProject === null) {
-      return;
-    }
-
-    await refreshRunsPage(cachedProject, 0, statuses);
+    await refreshRunsPage(0, statuses);
   }
 
   return (
