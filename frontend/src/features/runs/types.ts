@@ -63,8 +63,3 @@ export type ExpandedRunState = {
   detail: GetRunResponse | null;
   logs: GetRunLogsResponse | null;
 };
-
-export type DefaultProject = {
-  uuid: string;
-  wasCached: boolean;
-};

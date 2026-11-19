@@ -52,8 +52,14 @@ export function FormSelect({
         </Select.Icon>
       </Select.Trigger>
       <Select.Portal>
-        <Select.Positioner sideOffset={6} align="start" className="z-50">
-          <Select.Popup className="border-surface-600 bg-surface-800 min-w-[var(--anchor-width)] overflow-hidden rounded border p-1 shadow-xl outline-none">
+        <Select.Positioner
+          alignItemWithTrigger={false}
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          className="z-50"
+        >
+          <Select.Popup className="border-surface-600 bg-surface-800 w-[var(--anchor-width)] overflow-hidden rounded border p-1 shadow-xl outline-none">
             <Select.List>
               {options.map((option) => (
                 <Select.Item
