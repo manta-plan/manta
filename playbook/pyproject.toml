@@ -18,6 +18,8 @@ authors = [
     { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }
 ]
 dependencies = [
+    # Groups the validator and schema marker of a record-reference type (blocks/record_refs.py).
+    "annotated-types>=0.6",
     # Checks a block's settings against its catalogue description, where the block
     # itself cannot be imported (see playbook/playbooks/validation.py). 4.18 is the
     # first release resolving a schema's own `$defs` the way the validator does here.

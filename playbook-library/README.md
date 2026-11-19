@@ -44,6 +44,7 @@ src/playbook_library/
   time_partition.py             ... one module per block ...
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
+  datarecord_helpers.py         What block settings can name in a datarecord revision
   examples.py                   The example run: `cluster-expand-dispatch` on the Belgian test model
   public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships, with default settings

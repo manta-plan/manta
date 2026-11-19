@@ -15,6 +15,13 @@ from playbook.blocks.core import (
     SolveError,
 )
 from playbook.blocks.environments import EnvironmentConflictError, EnvironmentSpec, current_env
+from playbook.blocks.record_refs import (
+    CreatesProperty,
+    RecordContents,
+    RecordDimCoord,
+    RecordProperty,
+    record_schema,
+)
 from playbook.blocks.registry import (
     BlockDescription,
     BlockNotRegisteredError,
@@ -44,10 +51,14 @@ __all__ = [
     "BlockUnavailableError",
     "Catalogue",
     "ConfigSchema",
+    "CreatesProperty",
     "DataRecordError",
     "EnvironmentConflictError",
     "EnvironmentSpec",
     "MantaBlock",
+    "RecordContents",
+    "RecordDimCoord",
+    "RecordProperty",
     "RevisionRef",
     "SolveError",
     "available_blocks",
@@ -57,6 +68,7 @@ __all__ = [
     "get_block",
     "load_block_sources",
     "merge_catalogues",
+    "record_schema",
     "register",
     "register_lazy",
     "resolve_block",

@@ -22,7 +22,8 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from playbook.blocks import ConfigSchema, EnvironmentSpec
+from playbook.blocks import ConfigSchema, EnvironmentSpec, RecordContents, record_schema
+from playbook.blocks.record_refs import created_properties
 from playbook.playbooks.playbook import (
     BlockStep,
     NestedPlaybookStep,
@@ -85,11 +86,15 @@ class PlaybookHasIssuesError(Exception):
         super().__init__(f"{len(issues)} issue(s) found:\n{listed}")
 
 
-def find_playbook_issues(playbook: Playbook, config: dict | None = None) -> list[PlaybookIssue]:
+def find_playbook_issues(
+    playbook: Playbook, config: dict | None = None, record: RecordContents | None = None
+) -> list[PlaybookIssue]:
     """Every problem with `playbook`, returned rather than raised.
 
     Without `config`, only the checks that do not depend on settings are run. With it,
-    everything is checked, against the steps that would actually run with it.
+    everything is checked, against the steps that would actually run with it. With
+    `record` as well, settings that name part of the record have to name something the
+    record, or an earlier step, provides.
     """
     circular = _circular_nesting_issues(playbook, frozenset())
     if circular:
@@ -99,14 +104,16 @@ def find_playbook_issues(playbook: Playbook, config: dict | None = None) -> list
 
     issues = _settings_independent_issues(playbook)
     if config is not None:
-        issues.extend(_settings_dependent_issues(playbook, config))
+        issues.extend(_settings_dependent_issues(playbook, config, record))
         issues.extend(_environment_issues(playbook, config))
     return issues
 
 
-def raise_for_playbook_issues(playbook: Playbook, config: dict | None = None) -> None:
+def raise_for_playbook_issues(
+    playbook: Playbook, config: dict | None = None, record: RecordContents | None = None
+) -> None:
     """Raise `PlaybookHasIssuesError` if `find_playbook_issues` finds anything."""
-    issues = find_playbook_issues(playbook, config)
+    issues = find_playbook_issues(playbook, config, record)
     if issues:
         raise PlaybookHasIssuesError(issues)
 
@@ -120,20 +127,72 @@ def _settings_independent_issues(playbook: Playbook) -> list[PlaybookIssue]:
     return issues
 
 
-def _settings_dependent_issues(playbook: Playbook, config: dict) -> list[PlaybookIssue]:
-    """What is wrong with running a playbook with `config`, nested playbooks included."""
+def _settings_dependent_issues(
+    playbook: Playbook, config: dict, record: RecordContents | None
+) -> list[PlaybookIssue]:
+    """What is wrong with running a playbook with `config`, nested playbooks included.
+
+    Each step's settings are checked against `record` as that step will see it: with
+    the properties every earlier step adds.
+    """
     active = playbook.active(config)
+    records = {} if record is None else records_by_step(playbook, config, record)
     issues = [
         *_when_issues(playbook, config),
         *_skipped_step_wiring_issues(playbook, active),
         *_dims_issues(playbook, active, config),
-        *_config_issues(playbook, active, config),
+        *_unknown_step_config_issues(playbook, config),
     ]
     for step in active.steps:
-        if isinstance(step, NestedPlaybookStep):
-            inner = _settings_dependent_issues(step.playbook, child_config(config, step.name))
+        if isinstance(step, BlockStep):
+            issues.extend(
+                _block_config_issues(step, config.get(step.name, {}), records.get(step.name))
+            )
+        else:
+            inner = _settings_dependent_issues(
+                step.playbook, child_config(config, step.name), records.get(step.name)
+            )
             issues.extend(_from_nested_step(step.name, inner))
     return issues
+
+
+def records_by_step(
+    playbook: Playbook, config: dict, record: RecordContents
+) -> dict[str, RecordContents]:
+    """Get the record contents each playbook step will see when run with the given config.
+
+    A step sees the input record plus the properties added by earlier steps that run
+    (e.g., a time aggregation created by a time partition step).
+
+    Args:
+        playbook (Playbook): playbook whose top-level steps to walk, in order.
+        config (dict): playbook config, which sets the steps that run and the properties they add.
+        record (RecordContents): names in the input record.
+
+    Returns:
+        dict[str, RecordContents]:
+            record contents per step name.
+            Steps that do not run with `config` get what they would see in their place.
+    """
+    running = {step.name for step in playbook.active(config).steps}
+    records = {}
+    for step in playbook.steps:
+        records[step.name] = record
+        if step.name in running:
+            record = _record_after(step, config, record)
+    return records
+
+
+def _record_after(step: Step, config: dict, record: RecordContents) -> RecordContents:
+    """`record` with the properties that `step` adds when it runs with `config`."""
+    if isinstance(step, NestedPlaybookStep):
+        inner = child_config(config, step.name)
+        for inner_step in step.playbook.active(inner).steps:
+            record = _record_after(inner_step, inner, record)
+        return record
+    for dim, name in created_properties(step.block.config_schema, config.get(step.name, {})):
+        record = record.with_property(dim, name)
+    return record
 
 
 def _from_nested_step(step_name: str, issues: list[PlaybookIssue]) -> list[PlaybookIssue]:
@@ -329,8 +388,8 @@ def _dims_issues(playbook: Playbook, active: Playbook, config: dict) -> list[Pla
     return issues
 
 
-def _config_issues(playbook: Playbook, active: Playbook, config: dict) -> list[PlaybookIssue]:
-    """Settings have to belong to a step, and fit what that step accepts."""
+def _unknown_step_config_issues(playbook: Playbook, config: dict) -> list[PlaybookIssue]:
+    """Settings have to belong to a step."""
     issues = []
     # Checked against every step, not only the ones that run: one settings document
     # legitimately carries settings for each branch of a condition, including the
@@ -345,40 +404,49 @@ def _config_issues(playbook: Playbook, active: Playbook, config: dict) -> list[P
                     message=f"there is no step called {key!r}, and it is not 'globals'",
                 )
             )
-
-    for step in active.steps:
-        if isinstance(step, BlockStep):  # a nested playbook's are checked inside it
-            issues.extend(
-                PlaybookIssue(
-                    kind="config",
-                    step_path=(step.name,),
-                    config_path=(step.name, *where),
-                    message=message,
-                )
-                for where, message in _block_settings_problems(step, config.get(step.name, {}))
-            )
     return issues
 
 
-def _block_settings_problems(step: BlockStep, values: object) -> list[tuple[ConfigPath, str]]:
+def _block_config_issues(
+    step: BlockStep, values: object, record: RecordContents | None
+) -> list[PlaybookIssue]:
+    """Settings have to fit what the step's block accepts."""
+    return [
+        PlaybookIssue(
+            kind="config",
+            step_path=(step.name,),
+            config_path=(step.name, *where),
+            message=message,
+        )
+        for where, message in _block_settings_problems(step, values, record)
+    ]
+
+
+def _block_settings_problems(
+    step: BlockStep, values: object, record: RecordContents | None
+) -> list[tuple[ConfigPath, str]]:
     """Where `values` do not fit what the step's block accepts, and why.
 
     Where the block can be imported, its own settings model does the checking and
     catches everything. Where it cannot - because it belongs to another environment -
     the description of its settings is used instead, which catches wrong types,
-    missing and unknown settings, but not rules the block expresses in code.
+    missing and unknown settings, but not rules the block expresses in code. Either
+    way, a setting naming part of `record` has to name something in it.
     """
     model = step.block.config_model()
     if model is not None:
-        return _settings_model_problems(model, values)
-    return _settings_schema_problems(step.block.config_schema, values)
+        return _settings_model_problems(model, values, record)
+    schema = step.block.config_schema
+    return _settings_schema_problems(
+        schema if record is None else record_schema(schema, record), values
+    )
 
 
 def _settings_model_problems(
-    model: type[ConfigSchema], values: object
+    model: type[ConfigSchema], values: object, record: RecordContents | None
 ) -> list[tuple[ConfigPath, str]]:
     try:
-        model.model_validate(values)
+        model.model_validate(values, context=None if record is None else {"record": record})
     except ValidationError as exc:
         problems = []
         for error in exc.errors():

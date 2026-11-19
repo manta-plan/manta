@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 from collections.abc import Sequence
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from playbook.blocks.core import ConfigSchema
+from playbook.blocks import ConfigSchema, RecordProperty
 from pydantic import Field, computed_field, model_validator
 
 from playbook_library import linopy_configs
@@ -110,13 +110,13 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
 
 
 class Aggregation(ConfigSchema):
-    snapshot: str | None = Field(None, json_schema_extra={"x-uses-property": "snapshot"})
+    snapshot: Annotated[str, RecordProperty("snapshot")] | None = None
     """Time aggregation to solve by: the `name` of an earlier `time_partition` step."""
 
-    bus: str | None = Field(None, json_schema_extra={"x-uses-property": "bus"})
+    bus: Annotated[str, RecordProperty("bus")] | None = None
     """Bus property to merge buses by, such as `country`."""
 
-    entity: str | None = Field(None, json_schema_extra={"x-uses-property": "entity"})
+    entity: Annotated[str, RecordProperty("entity")] | None = None
     """Entity property to merge assets by, such as `carrier`."""
 
     ungrouped: Literal["keep", "drop"] = "keep"
