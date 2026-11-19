@@ -16,15 +16,15 @@ This page explains the problem Manta answers, the kind of application it is, and
 
 ## The usability barrier
 
-Open-source energy system models are fast, capable and free to use, yet few of the organisations that plan the energy transition use them.
+Open-source energy system models are fast, capable and free to use, yet few of the organisations that plan the energy transition rely on them.
 The main barrier is usability, not performance.
 To run these models today, you manage spreadsheets, write code in Python or Julia, and need to understand GitHub.
 
-The result is that many organisations do not move to open-source tools, and keep relying on tools that a company owns and licenses (proprietary tools).
+The result is that many organisations do not move to open-source tools, and keep relying on proprietary tools.
 These tools are often closed, so their users cannot see how a result was reached (black-box tools).
 A result that no one outside the vendor can inspect is hard to trust, however good it is.
 
-## An application, not a graphical front end
+## A full application, not just an interface
 
 Manta is a complete application that sits on top of existing open-source modelling tools.
 It is not a set of screens that fills in the input files for one tool (a graphical user interface, or GUI).
@@ -47,7 +47,7 @@ To use a tool for real decisions, these organisations need more than a GUI:
 
 The [Users and scope](scope.md) page sets out how these needs shape Manta's design.
 
-## A shared structure that others fill
+## A shared structure for the community to fill
 
 Manta does not aim to contain every model and analysis from the start.
 It provides the foundation, and a community of experts adds the parts that run on it.
