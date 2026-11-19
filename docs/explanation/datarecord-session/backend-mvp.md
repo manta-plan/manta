@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Design note: MVP backend without a revision index
 
 What the BE does in the MVP, in line with issue #283. It lists stores, revisions and references from DR and `store.json`. It adds no Postgres table for them. The Postgres revision index of the [backend note](backend.md) is the later step that this one prepares.
 
-Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md). This note describes the MVP step that comes before sections 1 and 2 of the [backend note](backend.md).
+Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md). This note describes the MVP step that comes before sections 1 and 2 of the [backend note](backend.md).
 
 In the MVP the BE keeps no copy of stores, revisions or references. It lists stores with one S3 listing per project. It lists revisions with DR's `Store.revisions()` and `Store.claims()`, and keeps the manifests in a DR workspace in its memory. Revision facts live in the commit `meta` under `manta.` keys. References live in `store.json`, which only the BE writes. The BE moves a reference by a conditional PUT of `store.json` with `If-Match`, which detects a concurrent commit. The fork point comes from `Revision.ancestry()` of both sides. Runs keep finding their revisions through Prefect, as today. The public routes, the response shapes, the `store.json` form and the `meta` keys are those of the later index. So `sync_store` can fill the index from what the MVP wrote, and the FE does not change. The MVP step is good for one owner per project, few revisions per store and one BE host. Move to the index on one of three triggers: several writers per project, a cold listing above its time budget, or queries across stores and projects.
 

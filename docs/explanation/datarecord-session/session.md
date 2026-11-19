@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Design note: session service
 
 The new service `datarecord-session`: its scope, components, internal API, the names it creates in DuckDB, working records, and the fate of today's `manta` objects.
 
-Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
+Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
 This note describes the session as a developer builds it. A session is a container per user and project. It holds one DuckDB connection with one DR workspace, attached as the catalog `manta`. A Quack server serves read-only SQL on that connection. An HTTP API, called only by the BE, registers revisions, diffs and later working records as DuckDB schemas `manta.<name>`, computes change summaries, and commits changesets. A diff and a change summary compare by default a reference's current revision with the fork point with its base reference. The BE resolves both to revision ids. The session holds nothing that the BE cannot rebuild, so it can stop at any time. [Replacing the manta objects](#5-replacing-the-manta-objects) lists today's `manta` objects of quack-server and what replaces each of them: view packs, the `static_<dtype>` views with the owner map, the BE's revision listing, and diff registrations.
 

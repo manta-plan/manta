@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Design note: storage access and commit
 
 How an edit becomes a revision: the commit flow, the claim, the two scoped S3 tokens with their policies, and the changeset format. Read with the S3 access control plan for runs (F25).
 
-Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
+Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
 This note covers the write path of the session. The [commit flow](#1-commit-flow) describes the commit exchange between FE, BE, the session and S3. [The two tokens](#2-the-two-tokens) describes the two S3 tokens and the requirements on the object store. The [changeset format](#3-changeset-format) describes the changeset that the FE sends.
 
@@ -586,7 +591,7 @@ The result is deterministic. It reads only the WR at that operation, which the p
 
 ### The same list in live editing
 
-Later the same `changeset` part is the body of `POST .../session/registrations/{name}/edits` for a registration of the kind `edit` ([working records](session.md#6-working-records), [flow 10](README.md#10-later-live-editing)). The differences:
+Later the same `changeset` part is the body of `POST .../session/registrations/{name}/edits` for a registration of the kind `edit` ([working records](session.md#6-working-records), [flow 10](index.md#10-later-live-editing)). The differences:
 
 - The body has no `commit` part. The WR already has its base revision, and nothing moves a reference.
 - The BE appends the request to the edit log: the `changeset` part in Postgres, the table parts in S3 under the session prefix. It then passes the request to the session.

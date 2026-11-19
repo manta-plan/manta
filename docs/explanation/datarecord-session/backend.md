@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Design note: backend
 
 What the BE gains: the session tables and routes, the launcher, the lifetime policy and the Quack relay. Later: the revision index in Postgres.
 
-Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
+Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
 This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack relay](#5-routes-and-quack-relay) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
 

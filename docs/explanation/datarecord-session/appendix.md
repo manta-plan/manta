@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Appendix
 
 Sections: [terms](#1-terms), [decisions](#2-decisions), [open next](#3-open-next), [phases](#4-phases), [known issues](#5-known-issues), [facts](#6-facts), [requests to datarecord](#7-requests-to-datarecord), [spikes and measurements](#8-spikes-and-measurements), [where the quack-server functions move](#9-where-the-quack-server-functions-move), [issues the plan does not cover](#10-issues-the-plan-does-not-cover), [plan items without an issue](#11-plan-items-without-an-issue).
 
-Reference material of the datarecord-session plan, draft 9 of 2026-11-17. Start with the [overview](README.md). Nothing here needs a first read; the overview and the design notes link into it.
+Reference material of the datarecord-session plan, draft 9 of 2026-11-17. Start with the [overview](index.md). Nothing here needs a first read; the overview and the design notes link into it.
 
 ## 1. Terms
 
@@ -329,7 +334,7 @@ Consequences:
 
 ## 10. Issues the plan does not cover
 
-Read with the table of [issues that the plan touches](README.md#11-issues-that-the-plan-touches).
+Read with the table of [issues that the plan touches](index.md#11-issues-that-the-plan-touches).
 
 - [#83](https://github.com/manta-plan/manta/issues/83) Authorization & RBAC and [#125](https://github.com/manta-plan/manta/issues/125) Users and roles: the plan checks project ownership only.
 - [#21](https://github.com/manta-plan/manta/issues/21) Collaborate analyzing results: sessions are per user, and sharing a project is out of scope.

@@ -1,8 +1,13 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Design note: data access for the frontend
 
 How the FE reads the data of a session: constant values and the owner map in place of a full scan, changes between revisions, and settling in SQL.
 
-Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
+Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
 This note covers three FE needs. [Constant values and the owner map](#2-constant-values-and-the-owner-map) is the component table, the drawers and the location graph: which attributes exist and which constant values they hold. [Changes between revisions](#3-changes-between-revisions) is the scenario panel and the change markers: what a scenario changes against the scenario it was made from. [Settling in the FE](#4-settling-in-the-fe) is how the FE turns raw rows into one value per coordinate.
 
