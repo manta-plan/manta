@@ -19,6 +19,7 @@ from playbook.playbooks.validation import (
     PlaybookIssueKind,
     find_playbook_issues,
     raise_for_playbook_issues,
+    records_by_step,
 )
 from playbook.playbooks.yaml_io import (
     FilePlaybookLoader,
@@ -60,4 +61,5 @@ __all__ = [
     "playbook_from_doc",
     "playbook_to_doc",
     "raise_for_playbook_issues",
+    "records_by_step",
 ]
