@@ -15,11 +15,14 @@ from typing import Any
 
 import numpy as np
 import pypsa
+from datarecord import RecordLike
 from datarecord.tools.base import UnsupportedRecordError
-from datarecord.tools.pypsa import PyPSA
+from datarecord.tools.pypsa import PyPSA, PyPSATool
 from playbook.blocks.core import DataRecord, DataRecordError, SolveError
 
 from playbook_library.datarecord_helpers import revision
+from playbook_library.ogschema.manifest import FORMAT as OGSCHEMA_FORMAT
+from playbook_library.ogschema.pypsa import OGSchema, OGSchemaTool
 from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
 from playbook_library.pypsa_spatial_aggregation import (
     aggregate_network,
@@ -38,6 +41,15 @@ def nominal_attr(component_name: str) -> str:
     return {"Store": "e_nom", "Line": "s_nom", "Transformer": "s_nom"}.get(component_name, "p_nom")
 
 
+def tool_for(record: RecordLike) -> PyPSATool | OGSchemaTool:
+    """Return the tool that reads `record` as a network, by the format its schema names.
+
+    A record whose schema follows OGSchema names it in `meta`. Any other record is in
+    PyPSA's own format.
+    """
+    return OGSchema if record.schema.meta.get("format") == OGSCHEMA_FORMAT else PyPSA
+
+
 def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pypsa.Network:
     """Build the network stored in the revision a record points at.
 
@@ -46,8 +58,9 @@ def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pyps
     single investment period.
     """
     _, rev = revision(record)
+    tool = tool_for(rev.record)
     try:
-        return PyPSA.build(rev.record.select(**select) if select else rev.record)
+        return tool.build(rev.record.select(**select) if select else rev.record)
     except UnsupportedRecordError as exc:
         raise DataRecordError(str(exc)) from exc
 
@@ -73,7 +86,8 @@ def write_network(
     `parent_record` that `n` does not declare, such as time aggregations.
     """
     ws, rev = revision(parent_record)
-    source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
+    tool = tool_for(rev.record)
+    source = tool.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
     source = carry_time_properties(source, rev.record, ws.con, PYPSA_LABELS)
     return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
 

@@ -44,6 +44,21 @@ def store_record(tmp_path: Path, store_network) -> Callable[["pypsa.Network", st
     return write
 
 
+@pytest.fixture(scope="session")
+def store_ogschema_network() -> Callable[["pypsa.Network", str], DataRecord]:
+    """Return a function that stores a network, typed for OGSchema, as the root of a new store."""
+    from datarecord import Workspace
+
+    from playbook_library.ogschema.pypsa import OGSchema
+
+    def store(n: "pypsa.Network", url: str) -> DataRecord:
+        ws = Workspace()
+        rev = ws.store(url).commit(OGSchema.to_datarecord(n, ws.con), parent=None)
+        return DataRecord(url=url, uuid=rev.id)
+
+    return store
+
+
 @pytest.fixture
 def ancestry() -> Callable[[DataRecord], list[UUID]]:
     """The revision ids from a record's store root down to the record, root first."""
