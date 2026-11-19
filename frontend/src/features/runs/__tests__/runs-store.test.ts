@@ -59,8 +59,6 @@ function newDraft(config = playbook.default_config) {
     scenarioId: "scenario-a",
     scenarioLabel: "Scenario A",
     config,
-    solverPreset: "Balanced",
-    horizon: "Full year",
   });
 }
 

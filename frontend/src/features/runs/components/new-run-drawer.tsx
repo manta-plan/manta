@@ -13,9 +13,6 @@ import { useProjectStore } from "../../project/store/project-store";
 import { listRecordScenarios } from "../list-record-scenarios";
 import { useRunsStore } from "../store/runs-store";
 
-// Kept on the draft for reference; not part of the run's payload yet.
-const solverPresets = ["Balanced", "Fast feasibility", "High accuracy"];
-const horizons = ["Full year", "Representative weeks", "Peak day"];
 const noScenario = "__none__";
 const labelClassName = "text-surface-400 text-[11px] font-medium";
 
@@ -80,8 +77,6 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
   const dataRecordName = chosenDataRecord ?? catalogue?.default ?? dataRecords[0]?.id ?? null;
   const [isResolvingRecord, setIsResolvingRecord] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [solverPreset, setSolverPreset] = useState(solverPresets[0]);
-  const [horizon, setHorizon] = useState(horizons[0]);
   // The global fields the user changed, by dotted path, on top of the playbook's defaults.
   const [globalEdits, setGlobalEdits] = useState<Record<string, unknown>>({});
 
@@ -155,8 +150,6 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
       scenarioId: scenario?.name ?? null,
       scenarioLabel: scenario?.label ?? null,
       config,
-      solverPreset,
-      horizon,
     });
 
     onClose();
@@ -261,26 +254,6 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
-
-        <div className="flex flex-col gap-1">
-          <span className={labelClassName}>Solver Preset</span>
-          <FormSelect
-            ariaLabel="Solver preset"
-            onValueChange={setSolverPreset}
-            options={solverPresets.map((preset) => ({ label: preset, value: preset }))}
-            value={solverPreset}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className={labelClassName}>Horizon</span>
-          <FormSelect
-            ariaLabel="Horizon"
-            onValueChange={setHorizon}
-            options={horizons.map((item) => ({ label: item, value: item }))}
-            value={horizon}
-          />
-        </div>
 
         <div className="border-surface-600 bg-surface-900 rounded border p-2">
           <div className={labelClassName}>Execution</div>

@@ -81,7 +81,5 @@ export type RunDraft = {
   scenarioId: string | null;
   scenarioLabel: string | null;
   config: PlaybookConfig;
-  solverPreset: string;
-  horizon: string;
   createdAt: string;
 };

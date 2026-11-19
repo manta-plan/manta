@@ -280,22 +280,15 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
                 <InputRow label="Scenario" value={draft.scenarioLabel ?? "None (base model)"} />
                 <InputRow label="Playbook" value={draft.playbook} />
                 <InputRow label="Data record" value={draft.dataRecord.name} />
-                <InputRow label="Solver" value={draft.solverPreset} />
-                <InputRow label="Horizon" value={draft.horizon} />
               </>
             ) : selected.kind === "run" ? (
               <>
-                {/* The backend keeps neither the scenario nor the solver and horizon of a run. */}
+                {/* The backend does not keep the scenario of a run. */}
                 <InputRow label="Scenario" value="Not recorded for started runs" />
                 <InputRow label="Playbook" value={selected.run.playbook} />
               </>
             ) : null}
           </dl>
-          {draft !== null ? (
-            <p className="text-surface-500 mt-2 text-[11px]">
-              Solver and horizon are kept for reference; they are not sent to the backend yet.
-            </p>
-          ) : null}
         </div>
       </div>
 

@@ -7,14 +7,7 @@ import type {
   PlaybookIssue,
   PlaybookSummary,
 } from "../../../utils/playbookTypes";
-import {
-  createRun,
-  getProjectRun,
-  getRun,
-  getRunLogs,
-  getRunSummary,
-  listRuns,
-} from "../api";
+import { createRun, getProjectRun, getRun, getRunLogs, getRunSummary, listRuns } from "../api";
 import { describeStepErrors, getStepErrors, toMessage } from "../run-draft";
 import { normalizeRunStatus } from "../status";
 import { splitStatusFilter } from "../status-groups";
@@ -40,8 +33,6 @@ export type NewDraftInput = {
   scenarioId: string | null;
   scenarioLabel: string | null;
   config: PlaybookConfig;
-  solverPreset: string;
-  horizon: string;
 };
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
