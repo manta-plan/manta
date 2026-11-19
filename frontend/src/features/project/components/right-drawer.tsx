@@ -117,8 +117,8 @@ export function RightDrawer() {
           just inside layer 1 when it's open, otherwise hugs the right edge. */}
       <aside
         className={clsx(
-          "absolute top-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
-          isUtilityOpen ? "right-72" : "right-0",
+          "absolute top-0 z-20 flex h-full w-96 max-w-full flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
+          isUtilityOpen ? "right-96" : "right-0",
           isMapLayersDrawerOpen
             ? "translate-x-0 pointer-events-auto"
             : "translate-x-full pointer-events-none",
@@ -144,8 +144,8 @@ export function RightDrawer() {
         aria-hidden={!isRunNodeOpen}
         aria-label="Block settings"
         className={clsx(
-          "absolute top-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
-          isUtilityOpen ? "right-72" : "right-0",
+          "absolute top-0 z-20 flex h-full w-96 max-w-full flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
+          isUtilityOpen ? "right-96" : "right-0",
           isRunNodeOpen
             ? "translate-x-0 pointer-events-auto"
             : "translate-x-full pointer-events-none",
@@ -172,7 +172,7 @@ export function RightDrawer() {
           right edge, independent of whether the detail layer is open. */}
       <aside
         className={clsx(
-          "absolute top-0 right-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-transform duration-200 ease-out",
+          "absolute top-0 right-0 z-20 flex h-full w-96 max-w-full flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-transform duration-200 ease-out",
           isUtilityOpen
             ? "translate-x-0 pointer-events-auto"
             : "translate-x-full pointer-events-none",

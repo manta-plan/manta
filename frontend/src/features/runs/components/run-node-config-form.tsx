@@ -74,7 +74,7 @@ export function RunNodeConfigForm() {
   const errors = draft === null ? undefined : getStepErrors(playbook, draft.config).get(step.name);
 
   return (
-    <div className="text-surface-100 flex flex-1 flex-col gap-3 overflow-y-auto p-3">
+    <div className="text-surface-100 flex min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-4 py-3">
       <div className="border-surface-600 bg-surface-900 rounded border p-2">
         <div className="text-surface-400 text-[11px] font-medium">
           {step.block ?? "Nested playbook"}
