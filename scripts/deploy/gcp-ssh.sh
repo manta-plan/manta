@@ -17,5 +17,6 @@ exec gcloud compute ssh "$VM_NAME" \
   --project "$GCP_PROJECT" \
   --zone "$GCP_ZONE" \
   --quiet \
+  --ssh-key-expire-after=2h \
   --ssh-flag="-o ServerAliveInterval=30" \
   --command "$1"

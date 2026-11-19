@@ -115,6 +115,11 @@ jobs:
       - name: Check permissions
         run: bash scripts/deploy/gcp-preflight.sh
 
+      # Before anything is created: a vm_name another project already uses
+      # would otherwise only fail after its VM and IP exist.
+      - name: Check that the subdomain is free
+        run: bash scripts/deploy/gcp-register-lb.sh --check-only
+
   deploy:
     name: Deploy
     needs: preflight

@@ -105,8 +105,10 @@ Each step skips whatever already exists, so re-running is always safe.
 
 1. **Preflight** ([`gcp-preflight.sh`](../scripts/deploy/gcp-preflight.sh)):
    checks the inputs, resolves `ref` to a commit, authenticates to GCP and
-   lists any permission the deploy service account is missing. With `dry_run`
-   the run stops here.
+   lists any permission the deploy service account is missing. It also checks
+   that the subdomain is free or already belongs to this VM
+   (`gcp-register-lb.sh --check-only`), so a taken `vm_name` fails before
+   anything is created. With `dry_run` the run stops here.
 2. **Project and VM** ([`gcp-ensure-vm.sh`](../scripts/deploy/gcp-ensure-vm.sh)):
    enables the Compute Engine API if it is off, creates the two firewall rules,
    and creates the VM with a static IP, or starts it if it was stopped.
@@ -116,7 +118,8 @@ Each step skips whatever already exists, so re-running is always safe.
 4. **Load balancer** ([`gcp-register-lb.sh`](../scripts/deploy/gcp-register-lb.sh)):
    in the load balancer's project, creates the endpoint group pointing at the
    VM's IP, the backend service on top of it, and the host rule for the
-   subdomain. Fails if the subdomain already belongs to another VM. A new host
+   subdomain. Checks again that the subdomain is free, in case it was taken
+   since preflight. A new host
    rule takes a few minutes to reach all of Google's front ends, which is why
    this runs before the images build.
 5. **Deploy** ([`vm-deploy.sh`](../scripts/deploy/vm-deploy.sh), on the VM):

@@ -8,9 +8,19 @@
 #
 # Every step skips what is already there. Fails when the subdomain is already
 # taken by something else (another project's VM, or a hand-made host rule).
+#
+# With --check-only, only checks that the subdomain is free or already ours,
+# and changes nothing. Preflight runs it that way, so a taken vm_name fails the
+# run before a VM and an IP are created for it.
 set -euo pipefail
 
-: "${GCP_LB_PROJECT:?}" "${GCP_URL_MAP:?}" "${GCP_PROJECT:?}" "${VM_NAME:?}" "${VM_IP:?}" "${SITE_HOST:?}"
+check_only=false
+if [ "${1:-}" = "--check-only" ]; then
+  check_only=true
+fi
+
+: "${GCP_LB_PROJECT:?}" "${GCP_URL_MAP:?}" "${GCP_PROJECT:?}" "${VM_NAME:?}" "${SITE_HOST:?}"
+$check_only || : "${VM_IP:?}"
 
 PORT=80
 NEG="manta-${VM_NAME}-neg"
@@ -39,6 +49,11 @@ if backend=$(lb compute backend-services describe "$BACKEND" --global --format=j
   fi
 else
   backend=""
+fi
+
+if $check_only; then
+  echo "$SITE_HOST is free or already belongs to $VM_NAME in $GCP_PROJECT."
+  exit 0
 fi
 
 # --- Internet NEG ------------------------------------------------------------
