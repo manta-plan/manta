@@ -31,7 +31,7 @@ from playbook.blocks import (
 )
 
 if TYPE_CHECKING:
-    from playbook.blocks import Catalogue
+    from playbook.blocks import Catalogue, RecordContents
     from playbook.playbooks.execution import BlockRunner
     from playbook.playbooks.validation import PlaybookIssue
 
@@ -270,17 +270,21 @@ class Playbook(BaseModel):
 
         return load_playbook(path, catalogue=catalogue)
 
-    def find_issues(self, config: dict | None = None) -> "list[PlaybookIssue]":
+    def find_issues(
+        self, config: dict | None = None, record: "RecordContents | None" = None
+    ) -> "list[PlaybookIssue]":
         """Everything wrong with this playbook, as a list (see `validation`)."""
         from playbook.playbooks.validation import find_playbook_issues
 
-        return find_playbook_issues(self, config)
+        return find_playbook_issues(self, config, record)
 
-    def raise_for_issues(self, config: dict | None = None) -> None:
+    def raise_for_issues(
+        self, config: dict | None = None, record: "RecordContents | None" = None
+    ) -> None:
         """Raise `PlaybookHasIssuesError` if anything is wrong with this playbook."""
         from playbook.playbooks.validation import raise_for_playbook_issues
 
-        raise_for_playbook_issues(self, config)
+        raise_for_playbook_issues(self, config, record)
 
     def to_doc(self):
         """This playbook as a document, ready to save as YAML or send to a browser."""
