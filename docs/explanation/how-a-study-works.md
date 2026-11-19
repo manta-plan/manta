@@ -14,7 +14,7 @@ This page explains each part of that path, and shows the kinds of analysis a pla
     This page describes the study path Manta is designed for.
     The [user guide](../user-guide/index.md#what-the-web-app-supports-today) lists what the web app supports today.
 
-## Projects
+## Projects contain everything
 
 A project holds everything about one study in one place.
 That includes the model it starts from, the scenarios it tests, every analysis run on them, and the results.
@@ -24,7 +24,7 @@ So anyone on the team can see how a result was reached, months after the study e
 A project can also be shared, and anyone with access to the same tools and data can reproduce it.
 When the tools and data are all open source, anyone can reproduce the complete study.
 
-## Models
+## Models describe the system
 
 A model is a description of an energy system.
 It contains the system's network; for example, its power plants and other technologies, their costs, and how demand and weather change over time.
@@ -38,7 +38,7 @@ Manta is also designed so that you can build a model in the app, from datasets t
     Building a model in the app is planned for 2027.
     Until then, a study starts from an existing model.
 
-## Scenarios
+## Scenarios are alternative models and futures
 
 A scenario is the model plus a set of changes you want to test.
 Examples are a government decision to double the carbon price by 2035, a new interconnector to a neighbouring country, or faster growth in electric heating.
@@ -46,7 +46,7 @@ Examples are a government decision to double the carbon price by 2035, a new int
 Manta stores each scenario as a set of changes on top of the model, rather than a full copy, so many scenarios take little extra space.
 You can compare scenarios side by side, and see exactly which changes each one makes, as well as the impacts on system outcomes.
 
-## Playbooks
+## Playbooks are analysis templates
 
 A playbook is a template for running an end-to-end analysis.
 It links tools that are pre-configured for the standard analysis, only asking for the necessary details of the specific study.
@@ -88,7 +88,7 @@ Testing how robust a result is:
 
 - Sensitivity analysis repeats any other analysis under a change, such as doubled gas prices, and compares the results.
 
-### What a playbook is made of
+### Blocks are steps of playbooks
 
 A playbook is made of blocks, run in order.
 A block is one step of an analysis, such as simulating how the system runs hour by hour.
@@ -113,9 +113,9 @@ Resource adequacy starts from a system that is already decided, and tests it in 
 Both playbooks use the same blocks to simulate operation and to measure reliability.
 So a better block for one step improves every playbook that uses it.
 
-## Settings
+### Playbooks and blocks are configurable
 
-Each playbook has settings that control how it runs, such as which years to plan for or how many weather years to test.
+Each playbook has configuration settings that control how it runs, such as which years to plan for or how many weather years to test.
 With different settings, one playbook can answer a different question, or the same question under different assumptions.
 
 Manta checks all the settings before a run starts, and lists problems at once.
