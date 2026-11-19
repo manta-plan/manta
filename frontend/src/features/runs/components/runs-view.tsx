@@ -20,8 +20,8 @@ export function RunsView() {
   const closeRunFilterDrawer = useProjectStore((s) => s.closeRunFilterDrawer);
 
   useEffect(() => {
-    void init(owner);
-  }, [owner, init]);
+    void init(projectId, owner);
+  }, [projectId, owner, init]);
 
   // The two left panels belong to this tab: leaving it should not carry them along.
   useEffect(

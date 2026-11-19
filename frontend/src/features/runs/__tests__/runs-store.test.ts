@@ -5,8 +5,6 @@ import type { GetRunResponse, ListRunsResponse } from "../types";
 
 vi.mock("../api", () => ({
   createRun: vi.fn(),
-  getCachedDefaultProject: vi.fn(),
-  getOrCreateDefaultProject: vi.fn(),
   getProjectRun: vi.fn(),
   getRun: vi.fn(),
   getRunLogs: vi.fn(),
@@ -24,13 +22,13 @@ import * as playbooksApi from "../../playbooks/api";
 import { runsPageSize, useRunsStore } from "../store/runs-store";
 
 const playbook = fixture as unknown as PlaybookDetail;
-const project = { uuid: "project-1", wasCached: true };
+const project = "project-1";
 const dataRecord = { name: "ac-dc-meshed", revision_uuid: "rev-1" };
 
 function run(uuid: string, status = "COMPLETED"): GetRunResponse {
   return {
     uuid,
-    project_uuid: project.uuid,
+    project_uuid: project,
     playbook: "cluster-expand-dispatch",
     status,
     created_at: "2026-11-01T10:00:00Z",
@@ -55,7 +53,7 @@ const initialState = useRunsStore.getState();
 
 function newDraft(config = playbook.default_config) {
   return useRunsStore.getState().createDraft({
-    projectId: "p",
+    projectId: project,
     playbook: playbook.name,
     dataRecord,
     scenarioId: "scenario-a",
@@ -68,9 +66,7 @@ function newDraft(config = playbook.default_config) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  useRunsStore.setState(initialState, true);
-  vi.mocked(runsApi.getCachedDefaultProject).mockReturnValue(project);
-  vi.mocked(runsApi.getOrCreateDefaultProject).mockResolvedValue(project);
+  useRunsStore.setState({ ...initialState, projectId: project }, true);
   vi.mocked(runsApi.getRunSummary).mockResolvedValue({ total: 0, statuses: {} });
 });
 
@@ -78,7 +74,7 @@ describe("loading runs", () => {
   it("loads the first page for the owner", async () => {
     vi.mocked(runsApi.listRuns).mockResolvedValue(page([run("a"), run("b")]));
 
-    await useRunsStore.getState().init("ada");
+    await useRunsStore.getState().init(project, "ada");
 
     const state = useRunsStore.getState();
     expect(state.runs.map((item) => item.id)).toEqual(["a", "b"]);
@@ -88,10 +84,9 @@ describe("loading runs", () => {
     expect(state.runsError).toBeNull();
   });
 
-  it("does nothing without a cached project", async () => {
-    vi.mocked(runsApi.getCachedDefaultProject).mockReturnValue(null);
-
-    await useRunsStore.getState().init("ada");
+  it("does nothing before a project is set", async () => {
+    useRunsStore.setState({ projectId: null });
+    await useRunsStore.getState().refresh();
 
     expect(runsApi.listRuns).not.toHaveBeenCalled();
   });
@@ -242,7 +237,7 @@ describe("startDraft", () => {
     vi.mocked(playbooksApi.validatePlaybookConfig).mockResolvedValue({ valid: true, issues: [] });
     vi.mocked(runsApi.createRun).mockResolvedValue({
       uuid: "run-1",
-      project_uuid: project.uuid,
+      project_uuid: project,
       created_at: "2026-11-01T10:00:00Z",
     });
     vi.mocked(runsApi.listRuns).mockResolvedValue(page([run("run-1", "SCHEDULED")]));

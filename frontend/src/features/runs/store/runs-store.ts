@@ -9,8 +9,6 @@ import type {
 } from "../../../utils/playbookTypes";
 import {
   createRun,
-  getCachedDefaultProject,
-  getOrCreateDefaultProject,
   getProjectRun,
   getRun,
   getRunLogs,
@@ -22,7 +20,6 @@ import { normalizeRunStatus } from "../status";
 import { splitStatusFilter } from "../status-groups";
 import type {
   DataRecordChoice,
-  DefaultProject,
   ExpandedRunState,
   GetRunResponse,
   GetRunSummaryResponse,
@@ -51,6 +48,8 @@ type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 export type RunsState = {
   /** Who started the runs listed; the backend does not say. */
+  /** The project the Run tab is open in; null until init. */
+  projectId: string | null;
   owner: string;
 
   // The backend page: the source of truth for runs. The sidebar, stats and table all read it.
@@ -88,7 +87,7 @@ export type RunsState = {
   startError: string | null;
   startIssues: PlaybookIssue[];
 
-  init: (owner: string) => Promise<void>;
+  init: (projectId: string, owner: string) => Promise<void>;
   refresh: () => Promise<void>;
   setSelectedStatuses: (statuses: RunStatus[]) => Promise<void>;
   setSearchRunId: (text: string) => void;
@@ -131,7 +130,7 @@ let latestListRequest = 0;
 const detailRequests = new Set<string>();
 
 export const useRunsStore = create<RunsState>((set, get) => {
-  async function loadPage(project: DefaultProject, offset: number, selected: RunStatus[]) {
+  async function loadPage(project: string, offset: number, selected: RunStatus[]) {
     const request = ++latestListRequest;
     const { serverStatuses, isDraftOnly } = splitStatusFilter(selected);
 
@@ -176,7 +175,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     }
   }
 
-  async function loadSearch(project: DefaultProject, runId: string) {
+  async function loadSearch(project: string, runId: string) {
     const request = ++latestListRequest;
 
     set({ isRefreshingRuns: true, runsError: null });
@@ -207,6 +206,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
   }
 
   return {
+    projectId: null,
     owner: "",
     runs: [],
     runsTotal: 0,
@@ -237,13 +237,13 @@ export const useRunsStore = create<RunsState>((set, get) => {
     startError: null,
     startIssues: [],
 
-    init: async (owner) => {
-      set({ owner });
+    init: async (projectId, owner) => {
+      set({ projectId, owner });
       await get().refresh();
     },
 
     refresh: async () => {
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project === null) {
         return;
@@ -262,7 +262,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     setSelectedStatuses: async (statuses) => {
       set({ selectedStatuses: statuses, searchRunId: "", activeSearchRunId: "", runsOffset: 0 });
 
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project !== null) {
         await loadPage(project, 0, statuses);
@@ -273,7 +273,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
 
     submitSearch: async () => {
       const runId = get().searchRunId.trim();
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project === null) {
         return;
@@ -292,7 +292,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     clearSearch: async () => {
       set({ searchRunId: "", activeSearchRunId: "", runsOffset: 0 });
 
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project !== null) {
         await loadPage(project, 0, get().selectedStatuses);
@@ -300,7 +300,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     },
 
     goToPreviousPage: async () => {
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project !== null) {
         const { runsOffset, selectedStatuses } = get();
@@ -310,7 +310,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     },
 
     goToNextPage: async () => {
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project !== null) {
         const { runsOffset, selectedStatuses } = get();
@@ -335,11 +335,11 @@ export const useRunsStore = create<RunsState>((set, get) => {
       }));
 
       try {
-        const cachedProject = getCachedDefaultProject();
+        const projectId = get().projectId;
         const [detail, logs, latestSummary] = await Promise.all([
           getRun(runId),
           getRunLogs(runId),
-          cachedProject === null ? Promise.resolve(null) : getRunSummary(cachedProject),
+          projectId === null ? Promise.resolve(null) : getRunSummary(projectId),
         ]);
         const status = normalizeRunStatus(logs.run_status || detail.status);
 
@@ -386,7 +386,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     },
 
     lookUpRun: async (runId) => {
-      const project = getCachedDefaultProject();
+      const project = get().projectId;
 
       if (project === null) {
         set({ lookedUpRun: { id: runId, run: null, error: "No project to look the run up in." } });
@@ -549,12 +549,10 @@ export const useRunsStore = create<RunsState>((set, get) => {
 
         set({ startPhase: "submitting" });
 
-        let project: DefaultProject;
         let created: Awaited<ReturnType<typeof createRun>>;
 
         try {
-          project = await getOrCreateDefaultProject();
-          created = await createRun(project, {
+          created = await createRun(draft.projectId, {
             playbook: draft.playbook,
             config,
             dataRecord: draft.dataRecord,
@@ -570,7 +568,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
           activeSearchRunId: "",
           runsOffset: 0,
         }));
-        await loadPage(project, 0, get().selectedStatuses);
+        await loadPage(draft.projectId, 0, get().selectedStatuses);
 
         return created.uuid;
       } finally {

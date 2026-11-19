@@ -48,10 +48,10 @@ export function isSecure(server: string) {
   return window.location.protocol === "https:" || !["localhost", "127.0.0.1"].includes(host);
 }
 
-export async function getRecordCatalogue(): Promise<RecordCatalogue> {
+async function recordServerGet<T>(path: string): Promise<T> {
   const config = recordServerConfig();
   const protocol = isSecure(config.server) ? "https" : "http";
-  const response = await fetch(`${protocol}://${config.server}/api/records`, {
+  const response = await fetch(`${protocol}://${config.server}${path}`, {
     headers: { Authorization: `Bearer ${config.token}` },
   });
 
@@ -60,8 +60,21 @@ export async function getRecordCatalogue(): Promise<RecordCatalogue> {
       throw new Error("The record server refused the token.");
     }
 
-    throw new Error(`GET /api/records: HTTP ${response.status}`);
+    throw new Error(`GET ${path}: HTTP ${response.status}`);
   }
 
-  return (await response.json()) as RecordCatalogue;
+  return (await response.json()) as T;
+}
+
+export function getRecordCatalogue(): Promise<RecordCatalogue> {
+  return recordServerGet<RecordCatalogue>("/api/records");
+}
+
+// A record's revision UUIDs by revision name, e.g. `{ inputs: "1bad4cfd-…" }`.
+export async function getRecordRevisions(id: string): Promise<Record<string, string>> {
+  const record = await recordServerGet<{ revisions: Record<string, string> | null }>(
+    `/api/records/${encodeURIComponent(id)}/files`,
+  );
+
+  return record.revisions ?? {};
 }

@@ -68,11 +68,6 @@ export type ExpandedRunState = {
   logs: GetRunLogsResponse | null;
 };
 
-export type DefaultProject = {
-  uuid: string;
-  wasCached: boolean;
-};
-
 /**
  * A run that has been set up but not started. The backend has no draft, so it
  * lives in memory in the runs store only and is lost on reload; Start sends it as a run.

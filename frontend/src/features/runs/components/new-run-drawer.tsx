@@ -5,10 +5,11 @@ import { useLocation, useParams } from "wouter";
 import { humanize } from "../../../utils/jsonSchema";
 import type { NewRunDrawerProps } from "../../../utils/playbookTypes";
 import { FormSelect } from "../../home/components/form-select";
+import { getRecordRevisions } from "../../home/lib/record-server";
+import { useRecordCatalogue } from "../../home/lib/use-record-catalogue";
 import { deriveGlobalFields, getIn, setAtPath } from "../../playbook-config/conditions";
 import { projectRunHref } from "../../project/lib/project-route";
 import { useProjectStore } from "../../project/store/project-store";
-import { exampleDataRecords } from "../exampleDataRecords";
 import { listRecordScenarios } from "../list-record-scenarios";
 import { useRunsStore } from "../store/runs-store";
 
@@ -72,7 +73,13 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
   const [playbook, setPlaybook] = useState<string | null>(
     () => useRunsStore.getState().selectedPlaybook,
   );
-  const [dataRecordName, setDataRecordName] = useState(exampleDataRecords[0].name);
+  const { catalogue, error: recordsError } = useRecordCatalogue();
+  const dataRecords = catalogue?.records ?? [];
+  // null until the user picks one: the server's default applies meanwhile.
+  const [chosenDataRecord, setChosenDataRecord] = useState<string | null>(null);
+  const dataRecordName = chosenDataRecord ?? catalogue?.default ?? dataRecords[0]?.id ?? null;
+  const [isResolvingRecord, setIsResolvingRecord] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [solverPreset, setSolverPreset] = useState(solverPresets[0]);
   const [horizon, setHorizon] = useState(horizons[0]);
   // The global fields the user changed, by dotted path, on top of the playbook's defaults.
@@ -108,16 +115,37 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
         ? "Loading the playbook..."
         : detail === undefined
           ? "The playbook could not be loaded."
-          : null;
+          : dataRecordName === null
+            ? "Select a data record to create the run."
+            : null;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const dataRecord = exampleDataRecords.find((item) => item.name === dataRecordName);
-
-    if (playbook === null || detail === undefined || dataRecord === undefined) {
+    if (playbook === null || detail === undefined || dataRecordName === null) {
       return;
     }
+
+    setSubmitError(null);
+    setIsResolvingRecord(true);
+    let revisionUuid: string | undefined;
+
+    try {
+      // The run starts from the record's `inputs` revision, which the record server names.
+      revisionUuid = (await getRecordRevisions(dataRecordName)).inputs;
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Failed to read the data record.");
+      return;
+    } finally {
+      setIsResolvingRecord(false);
+    }
+
+    if (revisionUuid === undefined) {
+      setSubmitError(`The data record "${dataRecordName}" has no inputs revision.`);
+      return;
+    }
+
+    const dataRecord = { name: dataRecordName, revision_uuid: revisionUuid };
 
     const scenario = scenarios.find((item) => item.name === scenarioName);
     const draft = createDraft({
@@ -194,8 +222,15 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
           <span className={labelClassName}>Data record</span>
           <FormSelect
             ariaLabel="Data record"
-            onValueChange={setDataRecordName}
-            options={exampleDataRecords.map((item) => ({ label: item.name, value: item.name }))}
+            onValueChange={setChosenDataRecord}
+            options={dataRecords.map((item) => ({ label: item.label, value: item.id }))}
+            placeholder={
+              recordsError
+                ? "Can't reach the record server"
+                : catalogue
+                  ? "No data records available"
+                  : "Loading data records..."
+            }
             value={dataRecordName}
           />
         </div>
@@ -257,6 +292,11 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="border-surface-600/60 flex shrink-0 flex-col gap-2 border-t p-3">
+        {submitError === null ? null : (
+          <p className="text-[12px] text-red-300" role="alert">
+            {submitError}
+          </p>
+        )}
         {blockedReason === null ? null : (
           <p className="text-surface-400 text-[11px]" id="new-run-blocked">
             {blockedReason}
@@ -273,10 +313,10 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
           <button
             aria-describedby={blockedReason === null ? undefined : "new-run-blocked"}
             className="bg-accent-600 hover:bg-accent-500 flex items-center gap-1.5 rounded px-3 py-1.5 text-[12px] font-medium text-white outline-none disabled:pointer-events-none disabled:opacity-50"
-            disabled={blockedReason !== null}
+            disabled={blockedReason !== null || isResolvingRecord}
             type="submit"
           >
-            {isLoadingDetail ? (
+            {isLoadingDetail || isResolvingRecord ? (
               <FiLoader className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
             ) : (
               <LuPlus size={13} aria-hidden="true" />
