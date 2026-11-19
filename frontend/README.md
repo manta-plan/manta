@@ -74,3 +74,13 @@ Build and serve the production output locally:
 pnpm build
 pnpm preview
 ```
+
+## Record server
+
+The data records (the New Project drawer, the Data Catalog and the data record of a run) come
+from the quack record server in `docker/quack-server`. Point the app at it in `.env.local` (copy `.env.example`):
+
+```bash
+VITE_RECORD_SERVER=localhost:8010
+VITE_RECORD_TOKEN=devtoken
+```

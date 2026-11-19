@@ -12,3 +12,6 @@ class Base(DeclarativeBase):
     # `uuid` is the stable, public-safe reference; `id` stays internal (joins/FKs).
     uuid: Mapped[UUID] = mapped_column(unique=True, default=uuid4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

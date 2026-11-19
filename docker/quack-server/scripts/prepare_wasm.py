@@ -11,7 +11,8 @@ is exactly the `v2.0.0` tag, but it was built without the tag. So:
 - The published Quack build predates "Do not start the heartbeat thread on
   single-threaded wasm" (duckdb-quack 438dfe3), so ATTACH fails in the
   single-threaded build. `--quack` takes a `wasm_eh` build of duckdb-quack's
-  main instead (see the README).
+  main instead (see the README). Without `--quack`, a Quack already in
+  `static/ext/` is kept.
 
 Only for the proof of concept, until duckdb-wasm publishes a v2.0.0 release
 and Quack republishes its Wasm builds.
@@ -28,8 +29,10 @@ from pathlib import Path
 STATIC = Path(__file__).parent.parent / "static"
 RELEASE, COMMIT = "v2.0.0", "d54cbbe3df"
 
-# Quack, and what it autoloads to attach.
-EXTENSIONS = ("quack", "httpfs")
+# Quack, what it autoloads to attach, and json: the client autoloads it for a
+# JSON column anywhere in the server's catalog (datarecord's own tables have
+# some), and without it ATTACH fails with "c is not a function".
+EXTENSIONS = ("quack", "httpfs", "json")
 PLATFORM = "wasm_eh"  # the single-threaded build with Wasm exceptions
 
 FIELD = 32
@@ -54,9 +57,23 @@ def relabel(blob: bytes, release: str, commit: str) -> bytes:
     return blob[:start] + commit.encode().ljust(FIELD, b"\0") + blob[start + FIELD :]
 
 
+def relabelled(path: Path, commit: str) -> bool:
+    """Whether `path` is a whole extension this script relabelled: its
+    footer, at the end, carries `commit`."""
+    blob = path.read_bytes()
+    if len(blob) < FOOTER:
+        return False
+    start = len(blob) - FOOTER + VERSION_FIELD * FIELD
+    return blob[start : start + FIELD].rstrip(b"\0") == commit.encode()
+
+
 def write(path: Path, blob: bytes) -> None:
+    """Into place only once whole, so an interrupted run leaves no partial
+    extension behind to be kept."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(blob)
+    partial = path.with_name(f".{path.name}.partial")
+    partial.write_bytes(blob)
+    partial.replace(path)
     print(path.relative_to(STATIC.parent))
 
 
@@ -67,11 +84,18 @@ def main() -> None:
 
     for extension in EXTENSIONS:
         name = f"{extension}.duckdb_extension.wasm"
+        target = STATIC / "ext" / COMMIT / PLATFORM / name
         if extension == "quack" and args.quack:
             blob = args.quack.read_bytes()
+        elif extension == "quack" and target.is_file():
+            if not relabelled(target, COMMIT):
+                msg = f"{target} isn't a relabelled Quack build; build one and pass it with --quack"
+                raise SystemExit(msg)
+            print(f"{target.relative_to(STATIC.parent)} (kept)")
+            continue
         else:
             blob = fetch(f"https://extensions.duckdb.org/{RELEASE}/{PLATFORM}/{name}")
-        write(STATIC / "ext" / COMMIT / PLATFORM / name, relabel(blob, RELEASE, COMMIT))
+        write(target, relabel(blob, RELEASE, COMMIT))
 
 
 if __name__ == "__main__":
