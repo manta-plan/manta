@@ -10,9 +10,10 @@ For exact interfaces, see the [reference pages](../reference/index.md).
 
 ## Why Manta exists
 
-This page is for anyone who wants to know what Manta is for, with no technical background needed.
+These pages are for anyone who wants to know what Manta is for, with no technical background needed.
 
 - [Manta's purpose](purpose.md): open it to see the problem Manta answers, and why it is built around a community.
+- [How a study works in Manta](how-a-study-works.md): open it to follow a study from model to results, and see the kinds of analysis a playbook runs.
 
 ## How Manta works
 
