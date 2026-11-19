@@ -34,17 +34,25 @@ cd manta
 From the repo root:
 
 ```bash
-docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env up --build
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup up --build
 ```
 
 This builds the backend and frontend images and starts them along with
-Postgres, SeaweedFS (S3 storage), Prefect, Keycloak and the playbook workers.
+Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the playbook workers and
+the temporary record server (`quack-server`), which serves the example data
+records: the list you pick from when creating a project, and the data the
+Model, Inspect and Report tabs read. The `--profile temporary-quack-setup`
+flag is what starts the record server; without it the frontend has no records
+to show.
+
 All configuration comes from [`backend/.env`](backend/.env), which already has
 working local defaults. Nothing needs to be filled in.
 
 The first run takes a while: besides building the images, the backend
-downloads the example data on its first boot. Wait until the `frontend`
-container has started.
+downloads the example data on its first boot and puts it in SeaweedFS. Wait
+until the `frontend` container has started. The record server picks the
+example data up within a minute after that.
 
 ### 3. Open Manta
 
@@ -54,11 +62,12 @@ password `manta-admin`.
 The services also have their own UIs, which help when you want to see what is
 happening under the hood:
 
-| Service   | URL             | Notes                          |
-| --------- | --------------- | ------------------------------ |
-| Prefect   | localhost:4200  | playbook runs and their steps  |
-| SeaweedFS | localhost:23646 | buckets and stored files       |
-| Keycloak  | localhost:8080  | admin console, `admin`/`admin` |
+| Service       | URL             | Notes                          |
+| ------------- | --------------- | ------------------------------ |
+| Prefect       | localhost:4200  | playbook runs and their steps  |
+| SeaweedFS     | localhost:23646 | buckets and stored files       |
+| Keycloak      | localhost:8080  | admin console, `admin`/`admin` |
+| Record server | localhost:8010  | catalogue API, token `devtoken` |
 
 ### Stopping
 
@@ -66,7 +75,8 @@ To stop the containers, press `Ctrl+C` in their terminal, or run from the repo
 root:
 
 ```bash
-docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env down
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down
 ```
 
 This does not delete your local data (database, stored files, Keycloak
@@ -76,7 +86,8 @@ To wipe everything and start from scratch next time, add `-v` to also delete
 the data volumes:
 
 ```bash
-docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env down -v
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down -v
 ```
 
 See [docker/README.md](docker/README.md) for details on each service.
@@ -106,12 +117,14 @@ In addition to Docker:
 From the repo root:
 
 ```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
+  --profile temporary-quack-setup up
 ```
 
-This starts everything except the backend and frontend. Leave it running and
-wait until the logs settle. Stop it the same way as above, using
-`compose-dev-services.yaml` in place of `compose-dev-fullstack.yaml`.
+This starts everything except the backend and frontend, including the record
+server. Leave it running and wait until the logs settle. Stop it the same way
+as above, using `compose-dev-services.yaml` in place of
+`compose-dev-fullstack.yaml`.
 
 #### 2. Start the backend
 
@@ -134,17 +147,20 @@ In a third terminal:
 ```bash
 cd frontend
 pnpm install
-pnpm dev
+VITE_RECORD_SERVER=localhost:8010 VITE_RECORD_TOKEN=devtoken pnpm dev
 ```
 
-The dev server proxies `/v1` requests to the backend on `localhost:8000`.
+The dev server proxies `/v1` requests to the backend on `localhost:8000`. The
+two `VITE_RECORD_*` variables point the frontend straight at the record server
+(`QUACK_SERVER_PORT` and `QUACK_TOKEN` in [`backend/.env`](backend/.env));
+without them the data catalogue reports `VITE_RECORD_SERVER is not set.`
 Open `localhost:5173` and log in as above.
 
 If you only work on the frontend, you can skip step 2 and start the services
-with `compose-dev-backend.yaml` instead, which runs the backend in Docker too.
-For more on each part, see
+with `compose-dev-backend.yaml` instead (same flags), which runs the backend
+in Docker too. For more on each part, see
 [backend/README.md](backend/README.md) and
-[frontend/README.md](frontend/README.md) for more.
+[frontend/README.md](frontend/README.md).
 
 ## Repository Structure
 
