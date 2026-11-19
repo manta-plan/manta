@@ -70,7 +70,8 @@ The work of every group upstream is already there to use.
 The structure matters as much as the parts.
 Every block describes its settings and its inputs in the same way, so a block from one author fits into a playbook from another.
 Without that shared shape, each contribution would be a one-off that only its author could connect.
-Manta ships with a first set of blocks and playbooks, and anyone can add their own.
+Manta ships with a first set of blocks and playbooks.
+Developers and tool creators can add new blocks, and analysts can build new playbooks from them.
 [Concepts](../user-guide/concepts.md) defines each of these terms.
 
 ## The modelling tools under Manta
