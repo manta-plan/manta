@@ -1,10 +1,12 @@
 # Record server (temporary)
 
-> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, default 8010; token `QUACK_TOKEN`, default `devtoken`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
+> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, 8010; token `QUACK_TOKEN`, `devtoken`; both set in `backend/.env`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
 
 ## Running in the dev stack
 
-1. **Records.** They are git-ignored and not in the image: put datarecord stores in `docker/quack-server/data/records` (a store is a folder with `layers/` and `revisions.json`, optionally with `<store>.labels.json` beside it). For the current sample records:
+1. **Records.** By default the server reads the example stores from the dev object store (SeaweedFS, `s3://${S3_BUCKET}/example-data`), where the backend puts them at startup when `EXAMPLE_DATA_SEED=true` (see `backend/README.md`, "Example data"). Nothing to copy by hand: start the backend once (with network access), and the stores appear in the server's listing within a minute. Until then it serves no records (and logs `Bucket 'manta' doesn't exist yet` if the backend hasn't created the bucket either). A record is copied to local disk when it first opens; the `quack-cache` volume keeps the copies across restarts.
+
+   To serve a local folder instead (stores in `docker/quack-server/data/records`, git-ignored; a store is a folder with `layers/` and `revisions.json`, optionally with `<store>.labels.json` beside it), set `QUACK_RECORDS_ROOT=/srv/data/records`, for example in your shell or `backend/.env`:
 
    ```sh
    mkdir -p docker/quack-server/data/records
@@ -29,11 +31,15 @@
    curl -H 'Authorization: Bearer devtoken' localhost:8010/api/records
    ```
 
-| Compose env | Default |
+| Compose env | Value (`backend/.env` unless noted) |
 |---|---|
 | `QUACK_SERVER_PORT` | `8010` (host port; not 8000, which the backend uses) |
 | `QUACK_TOKEN` | `devtoken` |
-| `QUACK_CORS_ORIGINS` | `http://localhost:5173` |
+| `QUACK_CORS_ORIGINS` | `http://localhost:5173` (compose default, not in `backend/.env`) |
+| `QUACK_RECORDS_ROOT` | `s3://${S3_BUCKET}/example-data` (compose default): the backend's example stores in SeaweedFS. `/srv/data/records` serves the local folder |
+| `QUACK_DEFAULT_RECORD` | `BEL-pre-aggregated-incl-patches-incl-results` (compose default): what a project that names no record opens. Not the first store (`BEL-full-res`, the biggest) |
+
+The server reaches SeaweedFS with the backend's own `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `MANTA_JOB_S3_ENDPOINT` from `backend/.env`.
 
 To run without Docker, see "Run" below.
 

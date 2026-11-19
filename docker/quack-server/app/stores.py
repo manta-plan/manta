@@ -165,8 +165,13 @@ class Catalogue:
             return found
         s3, bucket, prefix = self._s3()
         found = []
-        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
-            found += [StoreFile(o["Key"][len(prefix) :], o["Size"], o["LastModified"]) for o in page.get("Contents", [])]
+        try:
+            for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+                found += [StoreFile(o["Key"][len(prefix) :], o["Size"], o["LastModified"]) for o in page.get("Contents", [])]
+        except s3.exceptions.NoSuchBucket:
+            # Not created yet (the dev stack's backend makes it at its start):
+            # no records for now; the next listing looks again.
+            log.warning("Bucket %r doesn't exist yet: no records until it does", bucket)
         return found
 
     def _s3(self) -> tuple[Any, str, str]:

@@ -30,6 +30,27 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --bui
 To run the backend or frontend on the host instead (`uv run manta`,
 `pnpm dev`), stop its container first: they share ports.
 
+The frontend's data catalogue reads from the temporary **quack-server** (see
+below), which only starts with its profile. Deploys therefore run:
+
+```bash
+cd docker
+
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
+  --profile temporary-quack-setup up --build
+```
+
+The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
+`quack-server:8080`, so the browser reaches it on the frontend's own origin.
+Its settings live in [`backend/.env`](../backend/.env) with the rest:
+`QUACK_SERVER_PORT` (`8010`), `QUACK_TOKEN` (`devtoken`), and the frontend's
+build args `VITE_RECORD_SERVER` (`localhost:5173`) and `VITE_RECORD_TOKEN`
+(`devtoken`, must match `QUACK_TOKEN`). The build args are baked into the
+public bundle: behind a domain, set `VITE_RECORD_SERVER=manta.example.org` and
+rebuild. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken; it only
+matters for reaching the server directly (e.g. with `pnpm dev`, where
+`VITE_RECORD_SERVER=localhost:8010`).
+
 ## Services
 
 - **postgres** — the app database. Also hosts Keycloak's and Prefect's own
@@ -54,9 +75,12 @@ To run the backend or frontend on the host instead (`uv run manta`,
   browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
   Inspect / Report tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
-  Listens on `localhost:${QUACK_SERVER_PORT:-8010}`, token `${QUACK_TOKEN:-devtoken}`.
-  It reads records from `docker/quack-server/data/records` (git-ignored): put
-  datarecord stores there before starting, otherwise it serves nothing.
+  Listens on `localhost:${QUACK_SERVER_PORT}`, token `${QUACK_TOKEN}` (both in `backend/.env`).
+  It reads the example stores the backend seeds into SeaweedFS
+  (`s3://${S3_BUCKET}/example-data`, `EXAMPLE_DATA_SEED=true`), so it serves
+  nothing until the backend has started once; it picks them up within a minute.
+  Set `QUACK_RECORDS_ROOT=/srv/data/records` to serve the git-ignored
+  `docker/quack-server/data/records` folder instead.
 
 ## Testing
 

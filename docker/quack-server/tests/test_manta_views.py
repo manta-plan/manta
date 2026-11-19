@@ -392,3 +392,27 @@ def test_remote_root():
         catalogue.open_revision(STORE, "myopic")
     finally:
         ws.close()
+
+
+def test_missing_bucket_lists_nothing():
+    """A root whose bucket isn't created yet is an empty root, not a crash: the
+    dev stack's server may start before the backend makes the bucket."""
+
+    class NoSuchBucket(Exception):
+        pass
+
+    class Paginator:
+        def paginate(self, **_):
+            raise NoSuchBucket
+
+    class Client:
+        exceptions = type("Exceptions", (), {"NoSuchBucket": NoSuchBucket})
+
+        def get_paginator(self, _):
+            return Paginator()
+
+    catalogue = object.__new__(Catalogue)
+    catalogue.remote = True
+    catalogue.root = "s3://nowhere/example-data"
+    catalogue._s3 = lambda: (Client(), "nowhere", "example-data/")
+    assert catalogue._objects() == []
