@@ -6,7 +6,7 @@ Part of the datarecord-session plan, draft 9. Start with the [overview](README.m
 
 This note covers the write path of the session. The [commit flow](#1-commit-flow) describes the commit exchange between FE, BE, the session and S3. [The two tokens](#2-the-two-tokens) describes the two S3 tokens and the requirements on the object store. The [changeset format](#3-changeset-format) describes the changeset that the FE sends.
 
-In short: the session has no write access of its own. For each commit the BE claims a new revision with DR and mints a short-lived STS token that can write into that one layer. The BE then sends the claim, the token and the changeset to the session. The session applies the changeset to a WR on the parent and commits with the token. It returns the manifest, and the BE compares the manifest with its claim. The session reads with a second token for the project's folder. Both tokens are grants of the same form as the storage grants of runs (F25).
+In short: the session has no write access of its own. For each commit the BE claims a new revision with DR and mints a short-lived STS token that can write into that one layer. The BE then sends the claim, the token and the changeset to the session. The session applies the changeset to a WR on the parent and commits with the token. It returns the manifest, and the BE compares the manifest with its claim. The BE then moves the reference by a conditional write of `store.json`. The session reads with a second token for the project's folder. Both tokens are grants of the same form as the storage grants of runs (F25).
 
 ## 1. Commit flow
 
@@ -14,9 +14,10 @@ In short: the session has no write access of its own. For each commit the BE cla
 
 ```
 FE --changeset--> BE                                    S                        S3
-                  1. check ownership, parent committed
+                  1. check ownership, parent committed,
+                     read store.json + ETag, reference  <------------------------ store.json
+                     at the expected revision, else 409
                   2. Store.claim(parent, meta)  ------------------------------> layers/<id>/claim.json
-                     insert revision row, status=claimed
                   3. mint write token for layers/<id>/
                   4. POST /commits {claim, token, changeset} -->
                                                         5. WR(parent), apply ops
@@ -25,19 +26,23 @@ FE --changeset--> BE                                    S                       
                                                            ---> layers/<id>/dimensions, attributes, manifest.json
                   <-- {manifest} -------------------------
                   7. compare id, parent, meta of the manifest with the claim
-                     set status=committed
-                  8. move the reference named in the request
+                  8. read store.json + ETag  <---------------------------------- store.json
+                     check reference and kind, else 409
+                     PUT store.json, If-Match: ETag  ----------------------------> store.json
+                     on 412 read again (five tries, then 503)
 FE <--revision---
 ```
 
-1. The BE checks that the user owns the project and that the parent revision is committed.
-2. The BE calls `Store.claim(parent, meta)`. The claim's `meta` carries `manta.kind` and `manta.created_by`. DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE inserts the revision row with the status `claimed`.
+1. The BE checks that the user owns the project and that the parent revision is committed. The FE's request names the reference to move and the revision that the FE expects there. The BE reads `store.json` with its ETag. If the reference does not point to the expected revision, the BE answers 409 before it claims.
+2. The BE calls `Store.claim(parent, meta)`. The claim's `meta` carries `manta.kind` and `manta.created_by`. DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for the claim; `claim.json` is its record.
 3. The BE mints a write token for `layers/<id>/` (see [the two tokens](#2-the-two-tokens)).
-4. The BE sends `POST /commits` to the session. The request carries the claim, the write token and the changeset (see [changeset format](#3-changeset-format)). It also names the reference to move and the revision that the FE expects there.
+4. The BE sends `POST /commits` to the session. The request carries the claim, the write token and the changeset (see [changeset format](#3-changeset-format)).
 5. The session opens a WR on the parent and applies the operations in order. The WR does the restatement (F13).
 6. The session passes the write token to `Claim.commit(source, credentials=...)`. DR writes the Parquet files and `manifest.json` under `layers/<id>/`.
-7. The session returns the manifest in its answer. The BE compares id, parent and `meta` with its claim and sets the row to `committed`. The BE does not read `manifest.json` from S3 again.
-8. The BE moves the named reference at commit confirmation, by compare-and-set (see [revision index](backend.md#1-revision-index)).
+7. The session returns the manifest in its answer. The BE compares id, parent and `meta` with its claim. The BE does not read `manifest.json` from S3 again.
+8. The BE moves the named reference at commit confirmation, by a conditional write of `store.json`. It reads `store.json` again with its ETag. It checks that the reference still points to the expected revision, and that the new revision has the same `manta.kind` as that one. It writes the file with `PUT` and `If-Match: <ETag>`. On 412 another writer changed the file, so the BE reads again and repeats the check. After five tries it answers 503. Detail in [references in `store.json`](backend-mvp.md#6-references-in-storejson).
+
+Later, with the revision index, the BE also inserts a revision row with the status `claimed` at step 2 and sets it to `committed` at step 7. It then moves the reference by a compare-and-set in SQL and writes `store.json` after it ([revision index](backend.md#1-revision-index)).
 
 ### The claim across processes
 
@@ -54,7 +59,7 @@ The BE starts every commit exchange. The session never calls the BE. This holds 
 | One-shot commit | The FE sends the changeset to the BE. The BE claims, mints the token and calls the session. |
 | Commit of a live WR (see [working records](session.md#6-working-records)) | The FE asks the BE. The BE claims, mints the token and sends both with the name of the working record. |
 
-The BE never holds a `Record` and never folds. It works on claims and revisions only. It writes `claim.json` and receives the manifest, both small JSON objects. `Store.cleanup` runs in the BE only, under the backend key, never in the session.
+The BE never holds a `Record` and never folds. It works on claims and revisions only. It writes `claim.json` and `store.json` and receives the manifest, all small JSON objects. `Store.cleanup` runs in the BE only, under the backend key, never in the session.
 
 The session does the fold, the restatement and the commit. It holds no write right of its own. It writes only with the token that the BE sends for one claimed layer.
 
@@ -64,11 +69,11 @@ The playbook blocks of a run can use the same exchange later, when their permiss
 
 ### Failure and cleanup
 
-A claim without a commit stays as a `claimed` row and a `claim.json`. A BE task removes both: `Store.cleanup(older_than=...)` for the claim files, and the `claimed` rows in Postgres.
+A claim without a commit stays as a `claim.json`. A BE task runs `Store.cleanup(older_than=...)` on each store of every project and removes it. Later, with the revision index, the task also removes the `claimed` rows in Postgres.
 
 A commit that exceeds the 900 s of its token fails at its next write. The claim then stays pending until the cleanup.
 
-If the reference moved since the FE read it, the compare-and-set fails and the BE reports a conflict. The new revision exists, but no name points to it (see [revision index](backend.md#1-revision-index)).
+If the reference moved since the FE read it, the check of step 8 fails and the BE answers 409. The body names the new revision. It exists, but no name points to it. A 412 alone is no conflict: a change of another reference of the same store also changes the ETag ([two concurrent commits](backend-mvp.md#two-concurrent-commits-on-one-reference)).
 
 ## 2. The two tokens
 
@@ -135,7 +140,7 @@ Open, to agree with Kristijan: how the BE mints. It needs the minter key, or a m
 
 ### Residual risks
 
-- A compromised session could return one manifest and write another. The damage stays inside the user's own project, and `sync_store` repairs the mirror.
+- A compromised session could return one manifest and write another. The damage stays inside the user's own project. The BE lists the manifests that S3 holds, so no copy goes stale. Later, with the revision index, `sync_store` repairs the mirror.
 - Until the commit token expires, the session can overwrite data files of the layer it committed. The 900 s lifetime limits this.
 - Until the storage grants reach the session, it holds the global S3 credential. Code alone confines it to the project prefix (I1).
 
@@ -143,9 +148,13 @@ Open, to agree with Kristijan: how the BE mints. It needs the minter key, or a m
 
 SeaweedFS is the only target for now (F25, D11). AWS S3 and MinIO support the same flow. GCS does not.
 
-SeaweedFS in dev moves from 4.05 to 4.53 with the `s3-security` branch (F25). DR was tested there through the environment chain.
+SeaweedFS in dev moves from 4.05 to 4.53 with the `s3-security` branch (F25). DR was tested there through the environment chain. The MVP needs that move first: 4.05 is older than 4.18, DR's minimum for create-only writes.
+
+The BE moves a reference with `If-Match` on PutObject ([what the object store must support](backend-mvp.md#what-the-object-store-must-support)). A store without it loses updates silently.
 
 Not yet tested:
+
+- A conditional `If-Match` write of `store.json` under a race on SeaweedFS 4.53: two PUTs with the same ETag at once must give one 200 and one 412.
 
 - An STS token with a session token, passed as `S3Credentials`, for the workspace and for a commit (left-over of S6). DR tested both paths on SeaweedFS 4.52 with static keys only (F12).
 - The duration of a large commit against the 900 s token (left-over of S3).
@@ -186,5 +195,6 @@ The changeset is a pre-stage of LayerData, not LayerData itself. It is the sessi
 - How does the BE mint tokens: with the minter key, or with a minter of its own? Proposal: agree with Kristijan.
 - Which role do session tokens use? Proposal: a read-only role (`GetObject`, `ListBucket`), stricter than reuse of `manta-block-run`; to agree with Kristijan.
 - Does an STS token with a session token work as `S3Credentials` on SeaweedFS 4.53, for the workspace and for a commit? Proposal: run the left-over of S6.
+- Does SeaweedFS 4.53 honour `If-Match` on PutObject atomically? Proposal: the test in the [open points of the MVP backend note](backend-mvp.md#16-open-points).
 - Does a large commit finish within the 900 s token? Proposal: measure it in the rerun of S3 on the stack.
 - Does the changeset get a rule operation (D6)? Proposal: add it later, expanded by the session with SQL.

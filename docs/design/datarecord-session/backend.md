@@ -1,12 +1,16 @@
 # Design note: backend
 
-What the BE gains: the revision index in Postgres, the session tables and routes, the launcher, the lifetime policy and the Quack relay.
+What the BE gains: the session tables and routes, the launcher, the lifetime policy and the Quack relay. Later: the revision index in Postgres.
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers the BE side of the plan. The BE keeps an index of stores, revisions and references in Postgres. The index mirrors the manifests in S3, which stay the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
+This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack relay](#5-routes-and-quack-relay) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
+
+Two sections describe the step after the MVP: [revision index](#1-revision-index) and [runs and blocks](#2-runs-and-blocks). In that step the BE keeps an index of stores, revisions and references in Postgres. The index mirrors the manifests in S3, which stay the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. In the MVP the BE reads stores, revisions and references from DR and `store.json` instead ([MVP backend note](backend-mvp.md)).
 
 ## 1. Revision index
+
+This section describes the step after the MVP. The MVP step is in the [MVP backend note](backend-mvp.md). It reads stores, revisions and references from DR and `store.json`, with the same routes, response shapes, `store.json` and `manta.` keys. The index mirrors what the MVP step writes. The [triggers for the move](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) are listed there.
 
 ### Tables
 
@@ -53,7 +57,7 @@ Writers add `manta.committed_at` at commit. An import of a revision without it f
 
 **The fork point.** The default diff of a reference R with base B compares two revisions. `after` is the current revision of R. `before` is the *fork point*: the last revision that the histories of R and B share. The BE finds it through `parent_id` in `datarecord_revisions`. It walks the parents of both current revisions and takes the nearest common ancestor. The fork point stays the same when B moves later.
 
-**Change summaries.** A change summary belongs to a pair of revisions, not to a commit. The BE does not store it. For each request the BE resolves the baseline to two revision ids and passes them to the session (`POST /summaries` in the [session service](session.md#3-session-service)). The scenario panel is part of the record view, where the session runs anyway.
+**Change summaries.** A change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. An explicit compare of two references uses the current revisions of both. The BE does not store it. For each request the BE resolves the baseline to two revision ids and passes them to the session (`POST /summaries` in the [session service](session.md#3-session-service)). The scenario panel is part of the record view, where the session runs anyway.
 
 **Moving a reference.** A reference moves by compare-and-set:
 
@@ -159,6 +163,8 @@ A user edits `patch` and commits. Then:
 4. The fork point of `patch` with `inputs` stays `9ec88f52`. The default diff of `patch` therefore covers both of its layers, not only the new one.
 
 ## 2. Runs and blocks
+
+This section describes the step after the MVP. The MVP step is in the [MVP backend note](backend-mvp.md#8-results-of-runs). There the run pages keep the Prefect lookups, and the blocks write `manta.run` and `manta.step` into the commit `meta`. The [triggers for the move](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) are listed there.
 
 ### The reported revision
 
@@ -291,21 +297,25 @@ All routes are behind Keycloak auth and a project ownership check.
 
 | Route | Effect |
 |---|---|
-| `GET /v1/projects/{id}/stores` | From Postgres. |
-| `GET /v1/projects/{id}/stores/{store}/revisions` | From Postgres. |
-| `POST /v1/projects/{id}/stores/{store}/revisions` | The [commit flow](storage-commit.md#1-commit-flow). The request names the reference to move and the revision expected there. Optional `register_as`: a name under which the BE registers the new revision in the session at once, so the FE needs no second call. |
+| `GET /v1/projects/{id}/stores` | The project's stores, with name, label and description. In the MVP from an S3 listing and `store.json` ([stores of a project](backend-mvp.md#4-stores-of-a-project)). |
+| `GET /v1/projects/{id}/stores/{store}/revisions` | The store's revisions and references. In the MVP from DR (`Store.revisions()`, `Store.claims()`) and `store.json` ([revisions](backend-mvp.md#5-revisions)). |
+| `POST /v1/projects/{id}/stores/{store}/revisions` | The [commit flow](storage-commit.md#1-commit-flow). The request names the reference to move and the revision expected there. The BE moves the reference by a conditional write of `store.json`. Optional `register_as`: a name under which the BE registers the new revision in the session at once, so the FE needs no second call. |
+| `POST /v1/projects/{id}/stores/{store}/references` | Create a reference. The name must be free, and `base` names an existing reference. The new reference points to the current revision of its base. |
+| `PATCH`, `DELETE /v1/projects/{id}/stores/{store}/references/{name}` | Change the label or description, rename, or delete a reference. A rename updates the `base` of every reference that names the old name. A delete empties the `base` of its dependents. |
 | `POST /v1/projects/{id}/session` | Open the project's session: runs `ensure`. Returns `{status, generation, quack: {uri, token}}`. |
 | `DELETE /v1/projects/{id}/session` | Suspend now. |
 | `POST /v1/projects/{id}/session/heartbeat` | Presence. |
-| `GET`, `PUT`, `DELETE /v1/projects/{id}/session/registrations/{name}` | Write the row, then apply it to the session. |
-| `GET /v1/projects/{id}/session/changes` with `store`, `after`, optional `before` | The change summary of two revisions. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
+| `GET`, `PUT`, `DELETE /v1/projects/{id}/session/registrations/{name}` | Write the row, then apply it to the session. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
+| `GET /v1/projects/{id}/session/changes` with `store`, `after`, optional `before` | The change summary of the reference `after` against the fork point with its base reference. With `before`, an explicit compare. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
 | `POST /quack` (server root) | Quack relay, see below. |
+
+In the MVP the store, revision and reference routes read from DR and `store.json`. They change `store.json` by one read, one check and one conditional PUT ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). Later, with the revision index, they read from Postgres and write SQL first, then `store.json`. Only the source changes; the responses stay the same ([the shared contract](backend-mvp.md#3-the-shared-contract)).
 
 ### Diff registrations
 
-A registration of the kind `diff` takes `after` and `before`. Each names a reference or a revision id.
+A registration of the kind `diff` takes `after` and `before`. Each names a reference or a revision id. By default it compares the current revision of the `after` reference with the fork point with its base reference.
 
-- Without `before`, the BE uses the fork point of the `after` reference with its base ([revision index](#1-revision-index)). It refuses the request if `after` is not a reference with a base.
+- Without `before`, the BE uses the fork point of the `after` reference with its base. It refuses the request if `after` is not a reference with a base. In the MVP the BE takes the fork point from `Revision.ancestry()` of both sides ([fork point](backend-mvp.md#7-the-fork-point)). Later, with the revision index, it walks `parent_id`.
 - With two references, the diff compares their current revisions.
 - The BE resolves both sides to revision ids before it calls the session. The session receives revision ids only ([session service](session.md#3-session-service)).
 
@@ -319,7 +329,9 @@ A registration of the kind `diff` takes `after` and `before`. Each names a refer
 - `instance_ref`, `endpoint`
 - `started_at`, `last_used_at`, `last_seen_at`
 
-`datarecord_session_registrations`: `session_id`, `name`, `kind`, `store_id`, `revision_id`, `before_revision_id`, `packs`. A row of the kind `diff` holds its two resolved revisions: `revision_id` is `after`, `before_revision_id` is `before`. For the other kinds `before_revision_id` is empty.
+`datarecord_session_registrations`: `session_id`, `name`, `kind`, `store`, `revision_id`, `before_revision_id`, `packs`. A row of the kind `diff` holds its two resolved revisions: `revision_id` is `after`, `before_revision_id` is `before`. For the other kinds `before_revision_id` is empty.
+
+Both tables are part of the MVP. They hold runtime state, no scenario or revision context ([session management](backend-mvp.md#10-session-management)). The MVP has no store table, so `store` is the store's name. The revision columns hold DR revision ids.
 
 ### Quack relay
 

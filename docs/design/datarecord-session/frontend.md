@@ -8,7 +8,7 @@ This note covers three FE needs. [Constant values and the owner map](#2-constant
 
 Today quack-server prepares this data at open. It builds the table `attribute_summary` with one full scan over every attribute, and the view `ctype_attributes` over it. It builds the table `scenario_changes` for all scenarios at open. Nothing settles: the FE queries read raw rows and apply partial rules of their own, or none. [Replacing the manta objects](session.md#5-replacing-the-manta-objects) in the session note lists these objects (groups B and C).
 
-In the target no prepared table exists and no full scan runs beyond DR's fold. The FE reads which attributes exist from the owner map, which holds no values. It reads constant values from the session's `static_<dtype>` views, with a filter on the attributes it shows. A change summary belongs to a pair of revisions. The FE asks the BE for it, and the BE passes the request to the session. The values before and after a change come from a diff, a third kind of registration. The FE settles with its own TypeScript function that composes SQL; the session offers no settled view.
+In the target no prepared table exists and no full scan runs beyond DR's fold. The FE reads which attributes exist from the owner map, which holds no values. It reads constant values from the session's `static_<dtype>` views, with a filter on the attributes it shows. Changes are always those of a reference against its base: the reference's current revision is compared with the fork point, the last revision that both share. The FE asks the BE for the change summary of a reference. The BE finds the two revisions and passes the request to the session. The values before and after come from a diff registration of the same two revisions. The FE settles with its own TypeScript function that composes SQL; the session offers no settled view.
 
 ## 1. DR notions used in this note
 
@@ -158,7 +158,7 @@ The clustering of constants is a behaviour of the writer, not a guarantee. A WR 
 
 ## 3. Changes between revisions
 
-Today quack-server builds the table `scenario_changes` for all scenarios at open. Per scenario, attribute and subject it holds before, after, changed series rows and the median ratio. It is a FULL JOIN of each attribute in the revision and in its parent, keeping rows whose value differs. A value restated unchanged does not count. In the target the table goes away. A change list belongs to a pair of revisions, whether the revisions are registered or not.
+Today quack-server builds the table `scenario_changes` for all scenarios at open. Per scenario, attribute and subject it holds before, after, changed series rows and the median ratio. It is a FULL JOIN of each attribute in the revision and in its parent, keeping rows whose value differs. A value restated unchanged does not count. In the target the table goes away. A change list belongs to a reference: by default its current revision against the fork point with its base reference ([the baseline](#the-baseline)). The two revisions need not be registered.
 
 ### What the FE needs
 
@@ -174,7 +174,7 @@ C2 and C3 ask for the same rows: per changed coordinate, the value before and af
 
 A scenario is a reference: a named pointer that moves with every commit. A revision against its parent is therefore the wrong unit. After three commits, the newest revision's diff against its parent shows only the third commit. Figures per commit cannot be added up. So a diff compares references.
 
-Each reference records its *base*: the reference it was made from ([revision index](backend.md#1-revision-index)). For a scenario it is the scenario it was created from. For a result it is the scenario reference that was solved. The root scenario has none.
+Each reference records its *base*: the reference it was made from. `store.json` holds it ([the `store.json` form](backend-mvp.md#the-storejson-form)). For a scenario it is the scenario it was created from. For a result it is the scenario reference that was solved. The root scenario has none.
 
 The default baseline of a reference R with base B is the *fork point*: the last revision that the histories of R and B share. The default diff has two sides:
 
@@ -185,7 +185,7 @@ The default diff answers "what did this scenario change". It stays the same when
 
 An explicit compare of two references uses the current revisions of both. It answers "how do the two differ today". Later edits of the base then show as differences.
 
-An example with the store of the [revision index](backend.md#1-revision-index): `patch` has the base `inputs`. A user commits three edits to `patch`, and then one edit to `inputs`.
+An example with the store of the [example references](backend.md#example): `patch` has the base `inputs`. A user commits three edits to `patch`, and then one edit to `inputs`.
 
 - The fork point of `patch` with `inputs` stays `9ec88f52`, the revision that `patch` was made from.
 - The default diff of `patch` shows the changes of all its layers since `9ec88f52`. It does not show the edit of `inputs`.
@@ -195,7 +195,7 @@ A scenario does not see later edits of its base, because its parent chain is fix
 
 ### The change summary (C1)
 
-The change summary belongs to a pair of revisions, not to a commit. Per attribute it holds the number of changed subjects, the changed series rows and the median ratio. The scenario panel shows the summary of each scenario against its default baseline.
+The change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. Per attribute it holds the number of changed subjects, the changed series rows and the median ratio. The scenario panel shows the summary of each scenario against its default baseline.
 
 1. The FE asks the BE for the changes of a reference: `GET /v1/projects/{id}/session/changes` ([routes and Quack relay](backend.md#5-routes-and-quack-relay)).
 2. The BE resolves the baseline to two revision ids. Without an explicit `before`, this is the fork point with the base.
@@ -275,7 +275,7 @@ The `map_rows` view reads no values. The `static_<dtype>` view reads only the co
 
 The join and the filter run in the session, so only differing rows travel. For a scenario that scales a large profile, the FE receives an aggregate, not two copies of the series.
 
-A change summary is computed at each request. Its cost is not measured. Today's quack-server computes the same numbers for all scenarios at every open. If the cost is too high, the session keeps a cache keyed by the two revision ids. The fork point needs no session: the BE finds it from `parent_id` in Postgres.
+A change summary is computed at each request. Its cost is not measured. Today's quack-server computes the same numbers for all scenarios at every open. If the cost is too high, the session keeps a cache keyed by the two revision ids. The fork point needs no session: the BE finds it from the parent chains that DR reads from the manifests ([fork point](backend-mvp.md#7-the-fork-point)).
 
 ## 4. Settling in the FE
 

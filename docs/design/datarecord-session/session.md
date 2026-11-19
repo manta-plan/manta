@@ -4,7 +4,7 @@ The new service `datarecord-session`: its scope, components, internal API, the n
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](README.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note describes the session as a developer builds it. A session is a container per user and project. It holds one DuckDB connection with one DR workspace, attached as the catalog `manta`. A Quack server serves read-only SQL on that connection. An HTTP API, called only by the BE, registers revisions, diffs and later working records as DuckDB schemas `manta.<name>`, computes change summaries, and commits changesets. The session holds nothing that the BE cannot rebuild, so it can stop at any time. [Replacing the manta objects](#5-replacing-the-manta-objects) lists today's `manta` objects of quack-server and what replaces each of them: view packs, the `static_<dtype>` views with the owner map, the BE's revision index, and diff registrations.
+This note describes the session as a developer builds it. A session is a container per user and project. It holds one DuckDB connection with one DR workspace, attached as the catalog `manta`. A Quack server serves read-only SQL on that connection. An HTTP API, called only by the BE, registers revisions, diffs and later working records as DuckDB schemas `manta.<name>`, computes change summaries, and commits changesets. A diff and a change summary compare by default a reference's current revision with the fork point with its base reference. The BE resolves both to revision ids. The session holds nothing that the BE cannot rebuild, so it can stop at any time. [Replacing the manta objects](#5-replacing-the-manta-objects) lists today's `manta` objects of quack-server and what replaces each of them: view packs, the `static_<dtype>` views with the owner map, the BE's revision listing, and diff registrations.
 
 ## 1. Scope of a session
 
@@ -29,8 +29,10 @@ Browser                       BE (FastAPI)                            Session (o
 DuckDB-WASM --POST quack----> quack relay ---------------------------> Quack server
 session client --/v1/...----> session routes                           session API
                               SessionService -----------------------------^   |
-                               - Postgres: stores, revisions,                 | read-only credential,
-                                 sessions, session_registrations              | project prefix
+                               - Postgres: sessions,                          | read-only credential,
+                                 session_registrations                        | project prefix
+                               - DR, store.json: stores, revisions,           |
+                                 references                                   |
                                - SessionLauncher (Docker)                     v
                                - claims + scoped write tokens ---------> S3: <bucket>/<project_uuid>/<store>/
                                - idle and suspend policy
@@ -38,7 +40,7 @@ session client --/v1/...----> session routes                           session A
 
 The BE calls the session. The session never calls the BE. The session is therefore a plain server without BE credentials.
 
-The BE side (revision index, lifetime, launcher, routes) is in [revision index](backend.md#1-revision-index), [session lifetime](backend.md#3-session-lifetime), [launcher](backend.md#4-launcher) and [routes and Quack relay](backend.md#5-routes-and-quack-relay).
+The BE side (stores and revisions, lifetime, launcher, routes) is in the [MVP backend note](backend-mvp.md), [session lifetime](backend.md#3-session-lifetime), [launcher](backend.md#4-launcher) and [routes and Quack relay](backend.md#5-routes-and-quack-relay).
 
 ## 3. Session service
 
@@ -67,9 +69,9 @@ Only the BE calls this API.
 | Call | Body | Effect |
 |---|---|---|
 | `GET /health` | | Ready when Quack serves. |
-| `PUT /registrations/{name}` | `{kind: "view", store, revision, packs}` | Register the revision as the DuckDB schema `manta.<name>`. Add the `static_<dtype>` views to it and the requested view packs below it. Prewarm. Idempotent. |
-| `PUT /registrations/{name}` | `{kind: "diff", store, after, before}` | Expose the diff of two revisions as the DuckDB schema `manta.<name>` ([changes between revisions](frontend.md#3-changes-between-revisions)). `after` and `before` are revision ids, both required. The BE resolves references before the call ([routes and Quack relay](backend.md#5-routes-and-quack-relay)). Later `after` can name a registration of the kind `edit`, with its base revision as `before` ([working records](#6-working-records)). |
-| `POST /summaries` | `{store, after, before}` | Compute the change summary of two revisions and answer it as JSON ([changes between revisions](frontend.md#3-changes-between-revisions)). Registers nothing. |
+| `PUT /registrations/{name}` | `{kind: "view", store, revision, packs}` | Register the revision as the DuckDB schema `manta.<name>`. Add the `static_<dtype>` views to it and the requested view packs below it. Prewarm. Idempotent. Answers the SQL prefix of the registration, `manta.<name>`. |
+| `PUT /registrations/{name}` | `{kind: "diff", store, after, before}` | Expose the diff of two revisions as the DuckDB schema `manta.<name>` ([changes between revisions](frontend.md#3-changes-between-revisions)). By default `after` is a reference's current revision and `before` the fork point with its base reference. `after` and `before` are revision ids, both required. The BE resolves the reference and its fork point to them before the call ([routes and Quack relay](backend.md#5-routes-and-quack-relay)). Later `after` can name a registration of the kind `edit`, with its base revision as `before` ([working records](#6-working-records)). |
+| `POST /summaries` | `{store, after, before}` | Compute the change summary of two revision ids and answer it as JSON. By default `after` is a reference's current revision and `before` the fork point with its base reference; the BE resolves both ([changes between revisions](frontend.md#3-changes-between-revisions)). Registers nothing. |
 | `GET /registrations` | | The registered names. |
 | `GET /registrations/{name}` | | The manifest and view list of one registration. |
 | `DELETE /registrations/{name}` | | Unregister. |
@@ -155,7 +157,7 @@ What catalog functions and parsers report:
 
 Today the FE prefixes every view with the catalog of the active scenario: `serverName` in `client.ts:239-241`, and `at(catalog, ...)` in `entityPage.ts:48` and `componentPage.ts:204`. The catalog name comes from the server's open response (`revision.catalog`). A scenario switch only changes that prefix (`recordSlice.ts:31`). No query runs `USE`.
 
-In the target the prefix is `manta.<name>`. Group A views move from `manta.<view>` to `manta.<name>.<pack>.<view>`.
+In the target the prefix is `manta.<name>`. The FE takes it from the answer of the registration call and does not build it itself. Group A views move from `manta.<view>` to `<prefix>.<pack>.<view>`.
 
 ## 5. Replacing the manta objects
 
@@ -167,8 +169,8 @@ In the target there is one catalog and no DuckDB schema `manta`. The names of th
 |---|---|---|
 | A | six map and topology views | the view pack `pypsa-eur` |
 | B | `attribute_summary`, `ctype_attributes` | the `static_<dtype>` views and the owner map ([constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map)) |
-| C | `revisions` | the BE's revision index ([revision index](backend.md#1-revision-index)) |
-| C | `scenario_changes` | a change summary per pair of revisions, computed on request, and diff registrations ([changes between revisions](frontend.md#3-changes-between-revisions)) |
+| C | `revisions` | the BE's revision listing ([revisions](backend-mvp.md#5-revisions)) |
+| C | `scenario_changes` | a change summary of a reference against the fork point with its base reference, computed on request, and diff registrations of the same two revisions ([changes between revisions](frontend.md#3-changes-between-revisions)) |
 
 ### Group A: map and topology views
 
@@ -193,7 +195,7 @@ In the target, group A becomes view packs, named by convention set:
 - The code of the six views moves as is.
 - The FE cannot own the views cleanly. Two views need the attribute list, and every page would repeat the SQL.
 
-Open: who owns a convention set. It must match between the playbooks that write the data, the session and the FE. The conventions belong to PyPSA-Eur, so the proposed long-term owner is `playbook-library`. It could ship the templates as data.
+Open: who owns a convention set. It must match between the playbooks that write the data, the session and the FE.
 
 ### Group B: summary objects
 
@@ -213,7 +215,7 @@ In the target, group B is not a prepared table. No full scan runs beyond the fol
 
 In the target:
 
-- `revisions` moves to the BE's [revision index](backend.md#1-revision-index). It is gone from the session.
+- `revisions` moves to the BE. The BE lists revisions with DR and references from `store.json` ([revisions](backend-mvp.md#5-revisions)). It is gone from the session.
 - `scenario_changes` is not per registration and not per revision. Its unit is a pair of revisions. By default the pair is the current revision of a scenario and its fork point with the scenario's base ([changes between revisions](frontend.md#3-changes-between-revisions)).
 - `scenario_changes` becomes two things. The first is a change summary per pair. The session computes it at each request (`POST /summaries`); nothing stores it. The second is diff registrations of two revisions.
 
@@ -264,6 +266,6 @@ So that WRs fit later, these rules hold from the start:
 ## 7. Open points
 
 - Dots in registration names: should the session refuse `.`? Proposal: yes, refuse it.
-- Owner of a convention set (view pack): who owns it so that playbooks, session and FE match? Proposal: `playbook-library`, shipping the templates as data.
+- Owner of a convention set (view pack): who owns it so that playbooks, session and FE match? Proposal: none yet.
 - Layout facts on the DR stack: do they still hold on the pinned DR? Proposal: run `catalog-check` again on the pin.
 - Edit log size: what does a long log with large table payloads cost in storage? Proposal: watch it after WRs ship.

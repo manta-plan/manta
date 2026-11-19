@@ -11,9 +11,10 @@ Terms: **BE** = main FastAPI backend. **FE** = frontend (prototype in `baby-mant
 Words with one meaning in this document:
 
 - **Revision**: a committed state of a store, named by its UUID. Views, diffs and summaries are always about revisions.
-- **Base**: the reference that a reference was made from, fixed at creation ([revision index](backend.md#1-revision-index)).
+- **Reference**: a named pointer to one revision, like a branch in Git. It carries the name, label and description that the user sees, and moves with every commit. It lives in `store.json`, which only the BE writes ([references in `store.json`](backend-mvp.md#6-references-in-storejson)).
+- **Base**: the reference that a reference was made from, fixed at creation ([the `store.json` form](backend-mvp.md#the-storejson-form)).
 - **Fork point**: the last revision that the histories of a reference and its base share. It is the default *baseline* of a diff ([changes between revisions](frontend.md#3-changes-between-revisions)).
-- **Registration**: a revision (or a WR, or a diff of two revisions) that the session exposes under a name, as one DuckDB schema of that name in the session's one catalog ([names in DuckDB](session.md#4-names-in-duckdb)). The name is only how SQL addresses it.
+- **Registration**: a revision (or a WR, or a diff of two revisions, by default a reference's current revision and the fork point with its base) that the session exposes under a name, as one DuckDB schema of that name in the session's one catalog ([names in DuckDB](session.md#4-names-in-duckdb)). The name is only how SQL addresses it.
 - **Schema**: DR's schema, the declaration of dimensions and attributes in a manifest. Where a namespace inside DuckDB is meant, the text says "DuckDB schema".
 - **Map row**: DR's term (vocabulary of DR PR 144, branch `coordinate-vocabulary`). One row of the fold's owner map. Its index is the attribute's name plus the attribute's dimensions in `partial`. For PyPSA those are one entity, or one entity and bus (a connection), or one bus; the snapshot is not among them. The owner map assigns each map row to a layer. A map row can leave a dimension NULL, which covers every label of it.
 - Other DR words follow that PR: dimension (not dim), field (a named part of a multi-dimension's label, such as `bus` of `connection`), coordinate (one label on each dimension, never NULL).
@@ -24,13 +25,15 @@ Taken:
 
 | Topic | Result |
 |---|---|
+| MVP backend step | The BE keeps no Postgres table for stores, revisions or references. It reads them from DR and `store.json`, and moves a reference by a conditional write of `store.json` with `If-Match`. This follows #283. A revision index in Postgres is the later step. It mirrors what the MVP step writes, with the same routes, response shapes, `store.json` and `manta.` keys ([MVP backend note](backend-mvp.md)). |
+| Session tables in the MVP | `datarecord_sessions` and `datarecord_session_registrations` stay in the MVP. They hold runtime state, no scenario or revision context, so #283 does not cover them. A registration names its store by name ([session management](backend-mvp.md#10-session-management)). |
 | Launcher | Interface in the BE, Docker first, Kubernetes next year. Sub-process execution stays possible, not planned. |
-| Revision list | Central in the BE, in Postgres. |
-| Revision names and labels | References in Postgres (name, label, description, pointer), moved by compare-and-set. Not in the commit `meta`. `store.json` carries them for stores outside the BE. |
-| Reference base | Each reference records its base reference in the column `base`, set at creation and fixed. For a scenario it is the scenario it was created from; for a result, the scenario reference that was solved. The root scenario has none. `store.json` carries it ([revision index](backend.md#1-revision-index)). |
-| Diff baseline | The default diff of a reference compares its current revision with the fork point: the last revision that its history shares with that of its base. An explicit compare of two references uses the current revisions of both. A scenario does not see later edits of its base; the plan has no rebase ([changes between revisions](frontend.md#3-changes-between-revisions)). |
-| Change summary | Belongs to a pair of revisions, not to a commit. It is not in the commit `meta` and not stored in the BE. The BE resolves the two revisions and passes each request to the session ([changes between revisions](frontend.md#3-changes-between-revisions)). |
-| Revision kind, author | Commit `meta` (`manta.kind`, `manta.created_by`; every Manta key has the prefix `manta.`), mirrored in Postgres as `kind` and `created_by`. The base inputs have `kind = scenario`. `created_by` of a run is the name of the block; of a session commit, the user. |
+| Revision list | Central in the BE, read from DR with `Store.revisions()` and `Store.claims()`. The BE caches the manifests in memory ([revisions](backend-mvp.md#5-revisions)). Later in a Postgres index. |
+| Revision names and labels | References in `store.json` (name, label, description, pointer, base), written only by the BE and moved by a conditional write with `If-Match`. Not in the commit `meta`. Later mirrored in Postgres and moved by compare-and-set ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). |
+| Reference base | Each reference records its base reference as `base` in `store.json`, set at creation and fixed. For a scenario it is the scenario it was created from; for a result, the scenario reference that was solved. The root scenario has none ([the `store.json` form](backend-mvp.md#the-storejson-form)). |
+| Diff baseline | The default diff of a reference compares its current revision with the fork point: the last revision that its history shares with that of its base. The BE finds it from `Revision.ancestry()` of both sides ([fork point](backend-mvp.md#7-the-fork-point)). An explicit compare of two references uses the current revisions of both. A scenario does not see later edits of its base; the plan has no rebase ([changes between revisions](frontend.md#3-changes-between-revisions)). |
+| Change summary | Belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. An explicit compare of two references uses the current revisions of both. It is not in the commit `meta` and not stored in the BE. The BE resolves the two revisions and passes each request to the session ([changes between revisions](frontend.md#3-changes-between-revisions)). |
+| Revision kind, author | Commit `meta` (`manta.kind`, `manta.created_by`; every Manta key has the prefix `manta.`), read by the BE from the manifest. Later mirrored in Postgres as `kind` and `created_by`. The base inputs have `kind = scenario`. `created_by` of a run is the name of the block; of a session commit, the user. |
 | Write access | The session has none of its own. The BE claims and hands out a credential for one layer. |
 | Idle policy | Two stages. Keep-alive queries do not count as activity. |
 | Commit credential | Two credentials at once: read secret and a layer-scoped secret (R2). Commit token lifetime 900 s. No revocation. |
@@ -43,7 +46,7 @@ Taken:
 | Stored fold | Dropped (D17): no rule to materialise before an upload. Required instead: every store is written with the pinned DR, so each layer has `owner_map_rows.parquet` (F18). Materialising stays optional, for anyone. Commits through the session are not materialised. |
 | `static` views and DR shape changes | The views follow the shape of the pinned DR. Today that is the stack tip, without PRs 142 and 146 (D18, F31). |
 | DR version | A commit hash, the same for session, BE and blocks, moved together. Now: the stack tip, `468f69b0` (`perf/frozen-table-load`). Later: specific commits on DR `main`. Later: a released version (D19). |
-| User deletion | The `datarecord_*` tables of the [revision index](backend.md#1-revision-index) cascade from the project, as `runs` does (`projects.owner_id` cascades from the user). `user_id` is `ON DELETE SET NULL`. `manta.created_by` of a session commit is an opaque user id, never the username. |
+| User deletion | `manta.created_by` of a session commit is an opaque user id, never the username. After the user's deletion it points to nothing; the manifest cannot change. In the MVP a project has one owner and goes with it ([what `meta` cannot hold](backend-mvp.md#what-meta-cannot-hold)). Later the `datarecord_*` tables of the [revision index](backend.md#1-revision-index) cascade from the project, as `runs` does (`projects.owner_id` cascades from the user), and `user_id` is `ON DELETE SET NULL`. |
 | Commit time | Every writer adds `manta.committed_at` to the `meta` at commit (a flat string, no DR change). An import falls back to the claim time of `claim.json`. |
 | Nested `meta` (R13) | Not used by Manta for now. Every `manta.` key in `meta` is a flat value, and the change summary is not stored. No staged rollout: all readers and the writer move to the DR release with R13 at once. |
 | Settle | SQL only, composed by the FE in TypeScript. The FE decides per query where the statement runs ([settling in the FE](frontend.md#4-settling-in-the-fe)). |
@@ -52,7 +55,7 @@ Open:
 
 | # | Decision | Proposal |
 |---|---|---|
-| D4 | Closed. Group A: view packs by convention set. Group B: `static_<dtype>` views and the owner map ([constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map)). Changes: a change summary per pair of revisions, computed on request, and a diff of two revisions ([changes between revisions](frontend.md#3-changes-between-revisions)). |  |
+| D4 | Closed. Group A: view packs by convention set. Group B: `static_<dtype>` views and the owner map ([constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map)). Changes: a change summary of a reference against the fork point with its base reference, computed on request, and a diff registration of the same two revisions ([changes between revisions](frontend.md#3-changes-between-revisions)). |  |
 | D11 | Closed: SeaweedFS only, for now (F25). |  |
 
 Settling: the FE applies the broadcast rule, with its own port of DR's `settle`. DR offers no settled views. The session's views (`static`, diff) are raw. The FE port is checked against DR with shared test cases (R14).
@@ -73,7 +76,8 @@ In this order:
 4. Run the left-over of S6: an STS token as `S3Credentials`, for the workspace and for a commit, on SeaweedFS 4.53.
 5. Browser checks: the headers of the Quack secret in WASM (I3), the settle statement in WASM ([settling in the FE](frontend.md#4-settling-in-the-fe)).
 6. With Kristijan: how the BE mints tokens and which role sessions get ([the two tokens](storage-commit.md#2-the-two-tokens)); how a block authenticates to the BE ([runs and blocks](backend.md#2-runs-and-blocks)).
-7. Start phase 2, the BE revision index. Only its import step waits for step 2.
+7. Test a conditional `If-Match` write of `store.json` on SeaweedFS 4.53: two PUTs with the same ETag at once, many times, must give one 200 and one 412 each time. Move the dev setup from SeaweedFS 4.05 to 4.53 first, with the `s3-security` branch (F25). The MVP step depends on this ([open points of the MVP backend note](backend-mvp.md#16-open-points)).
+8. Start phase 2, the MVP backend step: store, revision and reference routes over DR and `store.json`. Only its import step waits for step 2.
 
 Open decisions: D6 (a rule operation in the changeset, [changeset format](storage-commit.md#3-changeset-format)) and the owner of a convention set ([replacing the manta objects](session.md#5-replacing-the-manta-objects)).
 
@@ -81,13 +85,13 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 
 0. **DR stack.** Review and merge of DR PR 144 and PRs 147 to 159, and a new export of all stores (F30). Manta pins the stack tip meanwhile (D19). Added with draft 9.
 1. **Spikes** S1, S2, S4, S6. Then S3. S2 and S3 run again on the stack ([what the DR stack changes](#83-what-the-dr-stack-changes)).
-2. **BE revision index.** First, alone: the example data import reads `store.json` instead of `revisions.json` and moves to folder `2026-11-13`. Then tables, `sync_store`, store and revision routes, run results upserted. The FE home page can drop `record-server.ts` here.
+2. **BE store routes over DR**, the MVP backend step ([MVP backend note](backend-mvp.md)). First, alone: the example data import reads `store.json` instead of `revisions.json` and moves to folder `2026-11-13`. Then the store, revision and reference routes answer from DR and `store.json`, and the BE moves references by a conditional write of `store.json`. No table. The FE home page can drop `record-server.ts` here.
 3. **Session service.** Package, Quack, guard, registration with `Record.register`, view packs. One fixed instance in compose in place of quack-server.
 4. **BE sessions.** Session tables, launcher (Docker), `ensure`, registration routes, Quack relay, lifetime policy.
 5. **FE.** Port `baby-manta`'s record client to the BE routes: session client, registration, presence call.
-6. **Commit path.** Claim, write credential, changeset format, verification. The DR side exists (PRs 151 to 153).
+6. **Commit path.** Claim, write credential, changeset format, verification, and the move of the reference by a conditional write of `store.json`. The DR side exists (PRs 151 to 153).
 7. **Remove** `docker/quack-server`. Move the WASM build scripts.
-8. **Later.** Working records ([working records](session.md#6-working-records)), Kubernetes launcher, blocks on the claim flow, shared sessions (S5).
+8. **Later.** Working records ([working records](session.md#6-working-records)), Kubernetes launcher, blocks on the claim flow, shared sessions (S5). The revision index in Postgres ([revision index](backend.md#1-revision-index)), filled by `sync_store` from what the MVP step wrote ([path to the index](backend-mvp.md#14-path-to-the-index)).
 
 ## 5. Known issues
 
@@ -102,7 +106,7 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 | I10 | Session containers share the compose network with SeaweedFS, whose internal ports take no credentials (F25). Reaching them from a user's SQL needs more than a bypass of the statement check: DuckDB's HTTP file systems are disabled and the configuration is locked (`quack.py:81-99`). Reads through the S3 file system are limited by the session's token. |
 | I4 | `Record.register` uses private DuckDB API, which pins `duckdb==2.0.0`. With DR PR 158 every attribute read also goes through the private `duckdb._relation._render`. The WASM side needs an unsigned, locally built Quack extension. Server and client versions move together. |
 | I5 | `POST /v1/auth/register` is unauthenticated and `aud` is not checked. With sessions, any registered identity can start containers. |
-| I6 | Block containers of runs write with the global key and bypass the claim flow. The BE indexes their revisions after the fact. |
+| I6 | Block containers of runs write with the global key and bypass the claim flow. The BE sees their revisions only after the fact, at the next listing. |
 | I11 | The DR stack is 14 open PRs without a review (F29). Until it merges, Manta builds on a branch head that can still change. `pytest` fails on Windows from PR 151 upward. |
 
 ## 6. Facts
@@ -309,11 +313,11 @@ Consequences:
 | Read-only SQL guard | `quack.py:54-99` | S | Two layers: DuckDB settings (HTTP file systems off, configuration locked) and a statement check as a SQL macro. The settings move as is. The macro moves and stays for now; `quack-oauth` was evaluated and does not fit today ([results of S7](#82-results-of-s7-quack-oauth)). |
 | `POST /quack` relay and CORS | `main.py:175-196` | BE | Same origin, so CORS goes away. |
 | Bearer auth on `/api/*` | `main.py:106` | BE | Keycloak. |
-| `GET /api/records` (store list) | `main.py:121-131` | BE | From Postgres. |
+| `GET /api/records` (store list) | `main.py:121-131` | BE | From an S3 listing and `store.json`. Later from Postgres. |
 | `POST /api/records/{id}/open` | `main.py:134-151`, `stores.py:215-304` | split | Revision list: BE. Registration: S. Manifest and view list: S, per registered revision. |
-| Revision list, parents (`manta.revisions`) | `scenarios.py:145-153` | BE | Postgres revision index. Not a table in each of today's scenario catalogs. |
-| Names, labels, descriptions (side files) | `scenarios.py:90-104` | BE reference table ([revision index](backend.md#1-revision-index)) | A store brought in from outside carries them in `store.json`, read at import. |
-| Kind `scenario` or `result` (heuristic) | `scenarios.py:91-96` | commit `meta`, mirrored in BE | A fact about the revision. The writer records it. Heuristic dropped. |
+| Revision list, parents (`manta.revisions`) | `scenarios.py:145-153` | BE | Read from DR ([revisions](backend-mvp.md#5-revisions)). Later the Postgres revision index. Not a table in each of today's scenario catalogs. |
+| Names, labels, descriptions (side files) | `scenarios.py:90-104` | BE, in `store.json` ([references in `store.json`](backend-mvp.md#6-references-in-storejson)) | Only the BE writes the file. Later a reference table mirrors it. |
+| Kind `scenario` or `result` (heuristic) | `scenarios.py:91-96` | commit `meta`, read by the BE | A fact about the revision. The writer records it. Heuristic dropped. |
 | Today one catalog per scenario (`ATTACH ':memory:' AS <record>__<scenario>`), each with the DuckDB schemas `dims`, `properties`, `attributes` and `manta` | `stores.py:290-299`, `record.py:24-45` | DR `Record.register(name)`: one DuckDB schema per registration in the session's one catalog ([names in DuckDB](session.md#4-names-in-duckdb)) | Any revision can be registered, results too. |
 | `manta` views and tables (today's DuckDB schema `manta` in each scenario catalog) | `manta_views.py`, `scenarios.py` | see [replacing the manta objects](session.md#5-replacing-the-manta-objects) | Decision D4. |
 | Parquet metadata prewarm | `stores.py:238-257` | S | At registration. |
@@ -331,20 +335,21 @@ Read with the table of [issues that the plan touches](README.md#11-issues-that-t
 - [#21](https://github.com/manta-plan/manta/issues/21) Collaborate analyzing results: sessions are per user, and sharing a project is out of scope.
 - [#222](https://github.com/manta-plan/manta/issues/222) Generate on-the-fly user accounts: every guest gets a container, and the plan sizes no capacity for the roughly 100 users of the launch hour that #284 expects.
 - [#210](https://github.com/manta-plan/manta/issues/210) Set run limits and rate limits: the plan has a global session cap, but no limit per user on sessions, commits or queries.
-- [#97](https://github.com/manta-plan/manta/issues/97) Load a premade model: the plan indexes a store once it is in S3, not the upload or conversion.
+- [#97](https://github.com/manta-plan/manta/issues/97) Load a premade model: the plan lists a store once it is in S3, not the upload or conversion.
 - [#3](https://github.com/manta-plan/manta/issues/3) Handle batches of scenarios: references are created one by one; no batch.
 - [#100](https://github.com/manta-plan/manta/issues/100) Export results in standard formats: `store.json` travels with an export, but no export flow is designed.
 
 ## 11. Plan items without an issue
 
 - Phase 0: review and merge of DR PR 144 and the stack (I11), and the new export of all stores into a new bucket folder (I9, F30).
-- Phase 2: the revision index itself (tables, `sync_store`, store and revision routes, run results upserted); #283 decided against it.
+- Phase 2: the store, revision and reference routes over DR and `store.json`, with the conditional write of `store.json`.
 - Phase 3: the `datarecord-session` package (Quack, guard, registration, view packs) as one fixed instance in compose.
 - Phase 4: session tables, Docker launcher, `ensure`, registration routes, Quack relay, idle and suspend policy.
 - Phase 5: port of `baby-manta`'s record client to the BE routes, with the presence call in place of `SELECT 1`.
 - Phase 6: implementation of the commit path; #267 is the design only.
 - The FE settle function, with `vitest`, a DuckDB for Node and a pinned copy of `settle_cases.json` in CI (F23).
 - Spikes: S2 and S3 again on the stack, the left-over of S6 (an STS token as `S3Credentials` on SeaweedFS).
+- The test of a conditional `If-Match` write of `store.json` on SeaweedFS 4.53, and the move of dev from SeaweedFS 4.05.
 - I3: browser check that the Quack secret's headers reach the BE from WASM, also after a token refresh.
 - I2 and I8: a test on DuckDB 2.0.0 that the SQL guard blocks the attack of upstream Quack issue 325.
 - I4: the pin `duckdb==2.0.0` and the locally built, unsigned Quack WASM extension, moved together.
@@ -354,4 +359,4 @@ Read with the table of [issues that the plan touches](README.md#11-issues-that-t
 - BE tasks: cleanup of stale claims and of orphan session containers.
 - D6: a rule operation in the changeset.
 - Owner of a convention set (view pack) and its preload list.
-- Phase 8: working records with the edit log, and the shared session per project (S5).
+- Phase 8: working records with the edit log, the shared session per project (S5), and the revision index (tables, `sync_store`, run results recorded per revision), which #283 names as the long-run target.
