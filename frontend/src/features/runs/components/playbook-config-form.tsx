@@ -188,29 +188,25 @@ function Field({
   // Clearing an input means "use the default", never null; null is the toggle's job.
   const cleared = undefined;
   const isNull = value === null;
-  const isModified = JSON.stringify(value) !== JSON.stringify(getIn(context.defaults, path));
   const error = context.errors.find((item) => item.path === path.join("/"))?.message ?? null;
 
   const heading = (
     <div className="flex items-center justify-between gap-2">
-      <label className="text-sm font-semibold" htmlFor={id}>
+      <label className="cursor-pointer text-sm font-semibold" htmlFor={id}>
         {label}
         <span className="text-surface-400 ml-2 text-xs font-normal">
           {nullable ? " optional" : isRequired && !resolved.hasDefault ? "required" : ""}
         </span>
-        {isModified ? (
-          <span className="text-accent-400 ml-2 text-xs font-normal">modified</span>
-        ) : null}
       </label>
       <div className="flex items-center gap-3">
         {nullable ? (
           <label
-            className="text-surface-400 flex items-center gap-1 text-xs"
+            className="text-surface-400 flex cursor-pointer items-center gap-1 text-xs"
             htmlFor={`${id}.null`}
           >
             <input
               checked={isNull}
-              className="accent-primary size-3.5"
+              className="accent-primary size-3.5 cursor-pointer"
               id={`${id}.null`}
               onChange={(event) => onChange(event.target.checked ? null : cleared)}
               type="checkbox"
@@ -245,16 +241,20 @@ function Field({
   if (kind === "boolean") {
     return (
       <div className="grid gap-1">
-        {heading}
-        <input
-          aria-label={label}
-          checked={typeof value === "boolean" ? value : resolved.defaultValue === true}
-          className="accent-primary size-4"
-          disabled={isNull || isBlocked}
-          id={id}
-          onChange={(event) => onChange(event.target.checked)}
-          type="checkbox"
-        />
+        {/* The checkbox sits left of its label, which toggles it too (htmlFor). */}
+        <div className="flex items-center justify-start gap-x-3">
+          {isNull ? null : (
+            <input
+              checked={typeof value === "boolean" ? value : resolved.defaultValue === true}
+              className="accent-primary size-4 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+              disabled={isBlocked}
+              id={id}
+              onChange={(event) => onChange(event.target.checked)}
+              type="checkbox"
+            />
+          )}
+          <div className="min-w-0 flex-1">{heading}</div>
+        </div>
         {footer}
       </div>
     );
@@ -264,30 +264,32 @@ function Field({
     return (
       <div className="grid gap-2">
         {heading}
-        <select
-          className={inputClassName}
-          disabled={isNull || isBlocked}
-          id={id}
-          onChange={(event) =>
-            onChange(
-              event.target.value === ""
-                ? cleared
-                : (schema.enum ?? []).find((option) => String(option) === event.target.value),
-            )
-          }
-          value={
-            typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-              ? String(value)
-              : ""
-          }
-        >
-          <option value="">{placeholder === "" ? "—" : `Default (${placeholder})`}</option>
-          {(schema.enum ?? []).map((option) => (
-            <option key={String(option)} value={String(option)}>
-              {String(option)}
-            </option>
-          ))}
-        </select>
+        {isNull ? null : (
+          <select
+            className={inputClassName}
+            disabled={isBlocked}
+            id={id}
+            onChange={(event) =>
+              onChange(
+                event.target.value === ""
+                  ? cleared
+                  : (schema.enum ?? []).find((option) => String(option) === event.target.value),
+              )
+            }
+            value={
+              typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+                ? String(value)
+                : ""
+            }
+          >
+            <option value="">{placeholder === "" ? "—" : `Default (${placeholder})`}</option>
+            {(schema.enum ?? []).map((option) => (
+              <option key={String(option)} value={String(option)}>
+                {String(option)}
+              </option>
+            ))}
+          </select>
+        )}
         {footer}
       </div>
     );
@@ -297,20 +299,22 @@ function Field({
     return (
       <div className="grid gap-2">
         {heading}
-        <input
-          className={inputClassName}
-          disabled={isNull || isBlocked}
-          id={id}
-          max={schema.maximum}
-          min={schema.minimum}
-          onChange={(event) =>
-            onChange(event.target.value === "" ? cleared : Number(event.target.value))
-          }
-          placeholder={placeholder}
-          step={kind === "integer" ? 1 : "any"}
-          type="number"
-          value={typeof value === "number" ? value : ""}
-        />
+        {isNull ? null : (
+          <input
+            className={inputClassName}
+            disabled={isBlocked}
+            id={id}
+            max={schema.maximum}
+            min={schema.minimum}
+            onChange={(event) =>
+              onChange(event.target.value === "" ? cleared : Number(event.target.value))
+            }
+            placeholder={placeholder}
+            step={kind === "integer" ? 1 : "any"}
+            type="number"
+            value={typeof value === "number" ? value : ""}
+          />
+        )}
         {footer}
       </div>
     );
@@ -320,15 +324,17 @@ function Field({
     return (
       <div className="grid gap-2">
         {heading}
-        <input
-          className={inputClassName}
-          disabled={isNull || isBlocked}
-          id={id}
-          onChange={(event) => onChange(event.target.value === "" ? cleared : event.target.value)}
-          placeholder={placeholder}
-          type="text"
-          value={typeof value === "string" ? value : ""}
-        />
+        {isNull ? null : (
+          <input
+            className={inputClassName}
+            disabled={isBlocked}
+            id={id}
+            onChange={(event) => onChange(event.target.value === "" ? cleared : event.target.value)}
+            placeholder={placeholder}
+            type="text"
+            value={typeof value === "string" ? value : ""}
+          />
+        )}
         {footer}
       </div>
     );
