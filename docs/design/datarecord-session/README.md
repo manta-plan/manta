@@ -179,7 +179,7 @@ Detail: [Changes between revisions](frontend.md#3-changes-between-revisions), [F
 
 The session can read the project's folder and nothing else. For each commit the BE reserves the new revision and creates a token that can write into that one layer.
 
-1. **The FE sends a changeset** to `POST /v1/projects/{id}/stores/{store}/revisions`. A changeset is an ordered list of operations: `set` (a value at coordinates, or a table of values), `add` (new labels with their properties) and `remove` (labels). It is one multipart request: a JSON part with the list, and one Parquet part per table.
+1. **The FE sends a changeset** to `POST /v1/projects/{id}/stores/{store}/revisions`. A changeset is an ordered list of operations: `set` (a value at coordinates, or a table of values), `add` (new labels with their properties) and `remove` (labels). It is one multipart request: a JSON part that names the reference to move, a JSON part with the list, and one Parquet part per table.
 2. **The BE checks.** The user must own the project, and the parent revision must be committed. The request names the reference to move and the revision that the FE expects there. The BE reads `store.json` and refuses at once if the reference points elsewhere.
 3. **The BE claims.** It calls DR's `Store.claim` with the parent and the `meta` (kind and author). DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for it.
 4. **The BE mints a write token.** It asks the object store for a short-lived token (`sts:AssumeRole`) with a policy that allows put, get and list under `layers/<id>/` only. The token lives 15 minutes.
@@ -202,7 +202,7 @@ A token cannot be taken back; it only expires. Until then the session could over
 
 If a commit fails, the claim stays as a `claim.json`. A task in the BE removes it after a time.
 
-The FE has an edit model today that nothing sends. A direct change (one value of one entity) becomes a `set` operation. A rule change ("multiply `p_nom_max` of all solar generators") needs one more operation type, which the session expands with SQL; this is proposed as a later addition.
+The FE has an edit model today that nothing sends. A direct change (one value of one entity) becomes a `set` operation. A rule change ("multiply `p_nom_max` of all solar generators") becomes `set` operations too: the FE has the current values and computes the new ones. One more operation type, which the session expands with SQL, is sketched as a later addition and is not decided.
 
 Detail: [Commit flow](storage-commit.md#1-commit-flow), [References in `store.json`](backend-mvp.md#6-references-in-storejson), [The two tokens](storage-commit.md#2-the-two-tokens), [Changeset format](storage-commit.md#3-changeset-format).
 
@@ -239,7 +239,7 @@ Planned after MVP. A WR registered for live editing lets the FE see its own unsa
 
 1. The FE opens a WR on a revision. The BE writes a registration row of the kind `edit`.
 2. The FE sends each edit to the BE as a list of the operations of flow 7.
-3. The BE appends the edit to an *edit log* of that WR, then passes it to the session. The session applies it. The registered views follow the edit.
+3. The BE appends the edit to an *edit log* of that WR, then passes it to the session. The session applies it. The registered views follow the edit. If the session refuses an edit, the BE drops it from the log.
 4. A diff with the WR on one side shows the unsaved changes (flow 6).
 5. To commit, the FE asks the BE. Flow 7 runs with the live WR in place of a fresh one. The log is cleared.
 6. After a restart (flow 8) the BE opens the WR again and replays the log.
