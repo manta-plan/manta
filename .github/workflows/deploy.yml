@@ -175,7 +175,7 @@ jobs:
         env:
           RESET_DATA: ${{ inputs.reset_data }}
         run: |
-          args="--repo $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git --sha $SHA"
+          args="--repo $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git --sha $SHA --site-host $SITE_HOST"
           if [ "$RESET_DATA" = "true" ]; then
             args="$args --reset-data"
           fi

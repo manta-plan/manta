@@ -125,7 +125,11 @@ Each step skips whatever already exists, so re-running is always safe.
 5. **Deploy** ([`vm-deploy.sh`](../scripts/deploy/vm-deploy.sh), on the VM):
    checks the commit out into `/opt/manta`, builds the images, restarts the
    stack from `docker/compose-dev-fullstack.yaml` with the frontend on port 80,
-   and waits for `/v1/health`.
+   and waits for `/v1/health`. The stack includes the temporary record server
+   (the `temporary-quack-setup` profile). The browser reaches it through the
+   frontend's Caddy at `https://<vm_name>.manta-plan.org` (`/api/*`, `/quack`,
+   `/ext/*`), so the frontend is built with `VITE_RECORD_SERVER` set to that
+   hostname. Its published port (8010) is not used and needs no CORS setup.
 6. **Public check**: waits up to ten minutes for
    `https://<vm_name>.manta-plan.org/v1/health`. This is the step that fails
    when the DNS record or the certificate is missing.

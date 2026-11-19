@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Runs on the VM as root: checks out a commit and (re)starts the whole stack
-# from docker/compose-dev-fullstack.yaml, with the frontend on port 80.
+# from docker/compose-dev-fullstack.yaml, with the frontend on port 80 and the
+# temporary record server (quack-server) behind it.
 #
-#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> [--reset-data]' \
+#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--reset-data]' \
 #     < scripts/deploy/vm-deploy.sh
+#
+# --site-host is the public hostname (<vm_name>.manta-plan.org). The frontend
+# reaches the record server through its own Caddy at that hostname (same
+# origin, HTTPS through the load balancer), never at the record server's
+# published port, so the frontend is built with VITE_RECORD_SERVER set to it.
 #
 # --reset-data also deletes the data volumes (database, stored files, Keycloak
 # users), so the instance starts from scratch.
@@ -15,9 +21,16 @@ set -euo pipefail
 APP_DIR=/opt/manta
 OVERRIDE=/opt/manta-compose-deploy.yaml
 PORT=80
+SITE_HOST=""
 
+# The temporary-quack-setup profile adds quack-server. Variables set here take
+# precedence over backend/.env, whose VITE_RECORD_SERVER (localhost:5173) is
+# only right for a local run.
 compose() {
-  FRONTEND_PORT=$PORT docker compose \
+  FRONTEND_PORT=$PORT \
+    COMPOSE_PROFILES=temporary-quack-setup \
+    VITE_RECORD_SERVER=$SITE_HOST \
+    docker compose \
     --env-file backend/.env \
     -f docker/compose-dev-fullstack.yaml \
     -f "$OVERRIDE" \
@@ -39,12 +52,13 @@ main() {
     case "$1" in
       --repo) repo=$2 && shift 2 ;;
       --sha) sha=$2 && shift 2 ;;
+      --site-host) SITE_HOST=$2 && shift 2 ;;
       --reset-data) reset_data=true && shift ;;
       *) echo "Unknown argument: $1" >&2 && exit 2 ;;
     esac
   done
-  if [ -z "$repo" ] || [ -z "$sha" ]; then
-    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> [--reset-data]" >&2
+  if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ]; then
+    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> [--reset-data]" >&2
     exit 2
   fi
 
@@ -77,6 +91,11 @@ services:
   backend: { restart: unless-stopped }
   frontend: { restart: unless-stopped }
 EOF
+  # Only in commits that have it: an override for a service that does not
+  # exist fails the whole compose file.
+  if grep -q '^  quack-server:' docker/compose-dev-services.yaml; then
+    echo "  quack-server: { restart: unless-stopped }" >>"$OVERRIDE"
+  fi
 
   # Build while the previous version keeps serving, so the downtime is the
   # restart alone and a broken build takes nothing down.
