@@ -93,9 +93,9 @@ def with_load_shedding(
     """Add load shedding by `config` to the network of `rev`, stored as a child revision.
 
     The load-shedding generators are then part of the stored model, so a later
-    results-only write includes their results. They are `existing` assets with their
-    carrier as the value of the `entity` property, so that an entity aggregation merges
-    them. Without `config`, `rev` is returned as it is.
+    results-only write includes their results. They are `existing` assets, and take their
+    carrier as the value of the entity property `entity`, so that an entity aggregation
+    merges them. Without `config`, `rev` is returned as it is.
     """
     if config is None:
         return rev
@@ -246,31 +246,35 @@ def fix_capacities(n: pypsa.Network, rev: Revision, periods: list[int]) -> None:
     refuse_undecided_capacities(n)
 
 
-def unscope_global_constraints(n: pypsa.Network, windowed: bool) -> None:
+def unscope_global_constraints(n: pypsa.Network) -> None:
     """Let the global constraints of the one investment period of `n` hold over every snapshot.
 
     PyPSA solves a network without investment periods only with global constraints of no
     period. Over one period, those of it hold over every snapshot, and those of another
     hold over none, so they are removed. A network of several periods is left as it is.
-
-    A `windowed` solve, such as a rolling horizon, holds each such constraint within each
-    window in full. That is the limit of the period only if it is 0, so raises `ValueError`
-    for a constraint of the period with another limit.
     """
     if len(n.investment_periods) != 1:
         return
     (period,) = n.investment_periods
     scoped = n.c.global_constraints.static["investment_period"]
     n.remove("GlobalConstraint", scoped.index[scoped.notna() & (scoped != period)])
+    n.c.global_constraints.static["investment_period"] = np.nan
+
+
+def refuse_split_global_constraints(n: pypsa.Network) -> None:
+    """Raise `ValueError` for a global constraint of `n` with a limit other than 0.
+
+    A windowed solve, such as a rolling horizon, holds each global constraint within each
+    window in full. That is the limit over its period, or over every snapshot if it has no
+    period, only if the limit is 0.
+    """
     static = n.c.global_constraints.static
-    own = static["investment_period"] == period
-    split = static.index[own & (static["constant"] != 0)]
-    if windowed and not split.empty:
+    split = static.index[static["constant"] != 0]
+    if not split.empty:
         raise ValueError(
-            f"The global constraints {split.tolist()} limit the period {period} as a whole, "
+            f"The global constraints {split.tolist()} limit their snapshots as a whole, "
             "which a rolling horizon would apply to each window in full."
         )
-    static.loc[own, "investment_period"] = np.nan
 
 
 def fixed_capacity_model(
@@ -280,14 +284,18 @@ def fixed_capacity_model(
 
     The network covers the `periods` of `config`, with the capacities a solve of `rev`
     decided. Not solved over investment periods, the global constraints of its one period
-    hold over every snapshot, as `unscope_global_constraints` sets out for `windowed`.
+    hold over every snapshot, as `unscope_global_constraints` sets out. A `windowed` solve
+    refuses global constraints with a limit other than 0, as
+    `refuse_split_global_constraints` sets out.
     """
     periods = selected_periods(rev, config.periods)
     model = with_load_shedding(rev, config.load_shedding, config.aggregation.entity)
     n = to_network(model, select={"period": periods}) if periods else to_network(model)
     fix_capacities(n, rev, periods)
     if not config.optimize_config.multi_investment_periods:
-        unscope_global_constraints(n, windowed)
+        unscope_global_constraints(n)
+    if windowed:
+        refuse_split_global_constraints(n)
     return model, n
 
 

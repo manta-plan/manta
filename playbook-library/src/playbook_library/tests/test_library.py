@@ -31,6 +31,7 @@ from playbook_library.pypsa_helpers import (
     to_network,
     write_network,
 )
+from playbook_library.pypsa_spatial_aggregation import ENTITY_COMPONENTS
 from playbook_library.pypsa_time_aggregation import series_frame, snapshot_frame
 from playbook_library.rolling_horizon_dispatch import RollingHorizonDispatch
 from playbook_library.tests.networks import ZONES_AND_CARRIERS, new_zoned_network, set_status
@@ -564,9 +565,14 @@ SHORT = {**FIXED, "solar_a": 10.0, "solar_b": 30.0, "gas_c": 0.0, "gas_d": 0.0}
 
 
 def _fixed_zoned(store_revision, capacities: dict[str, float]) -> Revision:
-    """Store the zoned network of `capacities`, partitioned into two-hour stretches `agg_2h`."""
+    """Store the zoned network of `capacities`, partitioned into two-hour stretches `agg_2h`.
+
+    Each asset has its carrier as its `group` too.
+    """
     n = new_zoned_network()
     apply_decided_capacities(n, pd.Series(capacities))
+    for c in n.components[ENTITY_COMPONENTS]:
+        c.static["group"] = c.static.carrier
     rev = store_revision(set_status(n), "fixed")
     return _run(TimePartition, {"name": "agg_2h", "n_hours": 2}, rev)
 
@@ -643,13 +649,18 @@ def test_a_water_value_over_investment_periods_refuses_stores_each_period_restar
 
 
 def test_a_water_value_of_one_period_leaves_the_others_alone(store_revision, multi_period_network):
-    multi_period_network.add("Store", "tank", bus="bus", carrier="battery", e_nom=10.0)
-    expanded = _run(OvernightCapacityExpansion, {}, store_revision(multi_period_network, "one"))
+    multi_period_network.add(
+        "Store", "tank", bus="bus", carrier="battery", e_nom=10.0, marginal_cost=7.0
+    )
+    expanded = _run(PerfectCapacityExpansion, {}, store_revision(multi_period_network, "one"))
+    first = _water_value(expanded, periods=[2040])
 
-    values = to_network(_water_value(expanded, periods=[2050])).stores_t.marginal_cost["tank"]
+    values = to_network(_water_value(first, periods=[2030])).stores_t.marginal_cost["tank"]
 
-    assert values.drop(2050).eq(0).all()
-    assert values.loc[2050].gt(0).all()
+    first_values = to_network(first).stores_t.marginal_cost["tank"]
+    pd.testing.assert_series_equal(values.loc[2040], first_values.loc[2040])
+    assert values.drop(2050).gt(0).all()
+    assert values.loc[2050].eq(7.0).all()
 
 
 def test_a_water_value_leaves_the_capacities_of_its_input_alone(
@@ -702,7 +713,13 @@ def test_water_values_let_a_rolling_horizon_store_energy_for_a_later_window(
 
 
 @pytest.mark.parametrize(
-    "aggregation", [{}, ZONES_AND_CARRIERS, {"snapshot": "agg_2h", **ZONES_AND_CARRIERS}]
+    "aggregation",
+    [
+        {},
+        ZONES_AND_CARRIERS,
+        {"snapshot": "agg_2h", **ZONES_AND_CARRIERS},
+        {"entity": "group", "ungrouped": "drop"},
+    ],
 )
 def test_a_water_value_prices_the_load_fixed_capacities_cannot_meet_at_its_shedding_cost(
     aggregation, store_revision
@@ -716,13 +733,21 @@ def test_a_water_value_prices_the_load_fixed_capacities_cannot_meet_at_its_shedd
     assert to_network(result).stores_t.marginal_cost.to_numpy() == pytest.approx(1e5)
 
 
-@pytest.mark.parametrize(("cap", "error"), [(0.0, SolveError), (400.0, ValueError)])
+@pytest.mark.parametrize(
+    ("cap", "period", "error", "match"),
+    [
+        (0.0, 2050, SolveError, None),
+        (400.0, 2050, ValueError, "\\['co2-2050'\\] limit their snapshots as a whole"),
+        (400.0, np.nan, ValueError, "\\['co2-2050'\\] limit their snapshots as a whole"),
+    ],
+)
 def test_one_period_solves_under_the_global_constraints_of_that_period(
-    cap, error, store_revision, multi_period_network
+    cap, period, error, match, store_revision, multi_period_network
 ):
     """The 2050 demand of 400 emits 400, so a cap below it cannot be met.
 
-    A rolling horizon would hold a cap other than 0 in full within each window.
+    A rolling horizon would hold a cap other than 0 in full within each window, whether
+    it is of the period or of no period.
     """
     n = multi_period_network
     n.add("Carrier", "gas", co2_emissions=1.0)
@@ -736,9 +761,18 @@ def test_one_period_solves_under_the_global_constraints_of_that_period(
         carrier_attribute="co2_emissions",
         sense="<=",
         constant=[0.0, cap],
-        investment_period=[2030, 2050],
+        investment_period=[2030, period],
     )
     config = {"periods": [2050], "optimize_config": {"horizon": 4}}
 
-    with pytest.raises(error):
+    with pytest.raises(error, match=match):
         _run(RollingHorizonDispatch, config, write_network(capped, expanded))
+
+
+def test_a_rolling_horizon_refuses_a_cap_on_a_model_without_investment_periods(
+    store_revision, new_single_period_network
+):
+    n = _fixed(new_single_period_network())
+    n.add("GlobalConstraint", "co2", type="primary_energy", sense="<=", constant=2000.0)
+    with pytest.raises(ValueError, match="\\['co2'\\] limit their snapshots as a whole"):
+        _dispatch(store_revision(n, "capped"))
