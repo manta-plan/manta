@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Run a playbook through the REST API
 
 This guide shows how to run a playbook on real model data on your own computer, through the REST API.
-The web app cannot start a run on real model data, so use these steps to check a change to the backend, the runner or a block from start to end.
+The web app cannot start a run on real model data, so use these steps to check a change to the backend, the runner, or a block from start to end.
 You need the local stack set up as [Installation: Full stack](../installation/full-stack.md) describes.
 
 ## Start a run and follow it

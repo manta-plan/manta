@@ -45,7 +45,7 @@ From the repo root:
 docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up
 ```
 
-This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak and the
+This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, and the
 playbook workers, and builds the images playbook steps run in. The first run
 takes a while. Leave it running and wait until the logs settle. All
 configuration comes from [`backend/.env`](https://github.com/manta-plan/manta/blob/main/backend/.env), which already has
@@ -62,7 +62,7 @@ uv run manta
 ```
 
 On startup the backend applies database migrations, creates the storage
-bucket and checks that Prefect is reachable, then serves the API on
+bucket, and checks that Prefect is reachable, then serves the API on
 `localhost:8000`.
 
 ### 4. Start the frontend

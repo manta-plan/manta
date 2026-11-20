@@ -52,7 +52,7 @@ src/playbook_library/
 <!-- --8<-- [start:docs-setup] -->
 
 ```bash
-pixi run -e dev test     # packaging, registration and the catalogue, without PyPSA
+pixi run -e dev test     # packaging, registration, and the catalogue, without PyPSA
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 

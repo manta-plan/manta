@@ -11,10 +11,10 @@ See the [table of stages](index.md#what-the-web-app-supports-today) for when to 
 
 Project
 :   A project is one energy system study.
-You attach a model to it, and its data record holds that model with the scenarios, runs and results of the study.
+You attach a model to it, and its data record holds that model with the scenarios, runs, and results of the study.
 
 Model
-:   A model is a description of an energy system that a solver can optimise: its network, technologies, costs and time series.
+:   A model is a description of an energy system that a solver can optimise: its network, technologies, costs, and time series.
 Manta currently represents models using the [PyPSA](https://pypsa.org) energy modelling framework terminology and can import PyPSA models.
 We aim to support models from several modelling frameworks and to represent the model in Manta using a common schema.
 
@@ -30,10 +30,10 @@ Block
 
 Run
 :   A run is one pass of a playbook over a model, with the settings you chose.
-Its status shows whether it is waiting, running, completed or failed.
+Its status shows whether it is waiting, running, completed, or failed.
 
 Data record
-:   A data record is the store that holds a project's model, scenarios and results as layers, each on top of the one before.
+:   A data record is the store that holds a project's model, scenarios, and results as layers, each on top of the one before.
 The input model is the first layer, each scenario adds patch layers, and each block in a run adds a result layer.
 Each stage also reads from the data record.
 The Model stage reads the input model and scenario layers, and each block in a run reads the layer the block before it added.
