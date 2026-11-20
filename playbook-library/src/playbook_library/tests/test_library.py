@@ -62,7 +62,7 @@ def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period_reco
     [
         ({"n_hours": 3}, "single_period_record", 8),
         ({"n_hours": 24}, "single_period_record", 1),
-        ({"segments": 2}, "multi_period_record", 6),
+        ({"n_hours": 2}, "multi_period_record", 6),
     ],
 )
 def test_clustering_names_stretches_of_time_and_keeps_every_snapshot(
