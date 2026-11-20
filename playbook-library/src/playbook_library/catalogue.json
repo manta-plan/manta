@@ -9,15 +9,18 @@
               "bus": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "bus",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Bus",
-                "x-uses-property": "bus"
+                "title": "Bus"
               },
               "clip_p_max_pu": {
                 "anyOf": [
@@ -35,28 +38,34 @@
               "entity": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "entity",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Entity",
-                "x-uses-property": "entity"
+                "title": "Entity"
               },
               "snapshot": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "snapshot",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Snapshot",
-                "x-uses-property": "snapshot"
+                "title": "Snapshot"
               },
               "ungrouped": {
                 "default": "keep",
@@ -289,15 +298,18 @@
               "bus": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "bus",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Bus",
-                "x-uses-property": "bus"
+                "title": "Bus"
               },
               "clip_p_max_pu": {
                 "anyOf": [
@@ -315,28 +327,34 @@
               "entity": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "entity",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Entity",
-                "x-uses-property": "entity"
+                "title": "Entity"
               },
               "snapshot": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "snapshot",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Snapshot",
-                "x-uses-property": "snapshot"
+                "title": "Snapshot"
               },
               "ungrouped": {
                 "default": "keep",
@@ -580,15 +598,18 @@
               "bus": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "bus",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Bus",
-                "x-uses-property": "bus"
+                "title": "Bus"
               },
               "clip_p_max_pu": {
                 "anyOf": [
@@ -606,28 +627,34 @@
               "entity": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "entity",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Entity",
-                "x-uses-property": "entity"
+                "title": "Entity"
               },
               "snapshot": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "snapshot",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Snapshot",
-                "x-uses-property": "snapshot"
+                "title": "Snapshot"
               },
               "ungrouped": {
                 "default": "keep",
@@ -860,15 +887,18 @@
               "bus": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "bus",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Bus",
-                "x-uses-property": "bus"
+                "title": "Bus"
               },
               "clip_p_max_pu": {
                 "anyOf": [
@@ -886,28 +916,34 @@
               "entity": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "entity",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Entity",
-                "x-uses-property": "entity"
+                "title": "Entity"
               },
               "snapshot": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "snapshot",
+                      "kind": "property"
+                    }
                   },
                   {
                     "type": "null"
                   }
                 ],
                 "default": null,
-                "title": "Snapshot",
-                "x-uses-property": "snapshot"
+                "title": "Snapshot"
               },
               "ungrouped": {
                 "default": "keep",
@@ -1242,7 +1278,11 @@
           },
           "name": {
             "title": "Name",
-            "type": "string"
+            "type": "string",
+            "x-manta-record": {
+              "dim": "snapshot",
+              "kind": "creates"
+            }
           },
           "segments": {
             "anyOf": [
@@ -1289,5 +1329,5 @@
       "name": "pypsa"
     }
   },
-  "generated_in_env": "full"
+  "generated_in_env": "pypsa"
 }

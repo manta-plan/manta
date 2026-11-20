@@ -12,9 +12,11 @@ name can only be claimed once per process, so registering them in two places wou
 clash.
 """
 
+from typing import Annotated
 from uuid import UUID, uuid5
 
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from playbook.blocks.record_refs import CreatesProperty, RecordDimCoord, RecordProperty
 from playbook.blocks.registry import BlockSpec, register
 
 STORE = "s3://bucket/store"
@@ -125,6 +127,33 @@ class FakeExplodes(FakeBlock):
 
     def run(self, record: DataRecord) -> DataRecord:
         raise AssertionError("this block should never have been run")
+
+
+class ReadsRecordConfig(ConfigSchema):
+    """Settings naming a bus property and carrier coordinates."""
+
+    by: Annotated[str, RecordProperty("bus")] | None = None
+    carriers: list[Annotated[str, RecordDimCoord("carrier")]] = []
+
+
+@register("fake_reads_record")
+class FakeReadsRecord(FakeBlock):
+    """Names a bus property and carrier coordinates, as an aggregation block does."""
+
+    CONFIG = ReadsRecordConfig
+
+
+class CreatesBusPropertyConfig(ConfigSchema):
+    """Settings naming the bus property a block adds."""
+
+    name: Annotated[str, CreatesProperty("bus")]
+
+
+@register("fake_creates_bus_property")
+class FakeCreatesBusProperty(FakeBlock):
+    """Adds a bus property under a name its settings give, as a partition block does."""
+
+    CONFIG = CreatesBusPropertyConfig
 
 
 class RecordingRunner:
