@@ -220,3 +220,96 @@ def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client)
     assert result.username == existing_user.username
     mock_db.add.assert_not_called()
     example_data.create_project.assert_not_called()
+
+
+def _guest_service(mock_db, mock_kc_client, kc_admin=None, example_data=None) -> AuthService:
+    mock_kc_client.token.return_value = {
+        "access_token": "guest-access",
+        "expires_in": 300,
+        "refresh_token": "guest-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+    if kc_admin is None:
+        kc_admin = MagicMock()
+        kc_admin.create_user.return_value = "kc-guest-id"
+    return AuthService(
+        db=mock_db,
+        kc_client=mock_kc_client,
+        example_data=example_data or MagicMock(),
+        kc_admin=kc_admin,
+    )
+
+
+def test_login_as_guest_creates_keycloak_and_manta_users_and_returns_tokens(
+    mock_db, mock_kc_client
+) -> None:
+    # Given
+    kc_admin = MagicMock()
+    kc_admin.create_user.return_value = "kc-guest-id"
+    example_data = MagicMock()
+    service = _guest_service(mock_db, mock_kc_client, kc_admin, example_data)
+
+    # When
+    result = service.login_as_guest()
+
+    # Then - the Keycloak user is logged in with the credentials it was created with
+    (payload,) = kc_admin.create_user.call_args.args
+    assert payload["username"].startswith("guest-")
+    assert payload["enabled"] is True
+    (credential,) = payload["credentials"]
+    mock_kc_client.token.assert_called_once_with(payload["username"], credential["value"])
+
+    # ...and a manta user is linked to that Keycloak identity
+    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
+    assert user.username == payload["username"]
+    assert user.idp_subject == "kc-guest-id"
+    assert user.idp_source == ISSUER
+    example_data.create_project.assert_called_once_with(owner=user)
+
+    assert result.access_token == "guest-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "guest-refresh"  # noqa: S105 It's not a password
+
+
+def test_login_as_guest_uses_a_new_identity_each_time(mock_db, mock_kc_client) -> None:
+    # Given
+    kc_admin = MagicMock()
+    kc_admin.create_user.return_value = "kc-guest-id"
+    service = _guest_service(mock_db, mock_kc_client, kc_admin)
+
+    # When
+    service.login_as_guest()
+    service.login_as_guest()
+
+    # Then
+    first, second = [call.args[0] for call in kc_admin.create_user.call_args_list]
+    assert first["username"] != second["username"]
+    assert first["credentials"][0]["value"] != second["credentials"][0]["value"]
+
+
+def test_login_as_guest_wraps_admin_api_errors_as_backend_error(mock_db, mock_kc_client) -> None:
+    # Given - e.g. manta's admin credentials are wrong
+    kc_admin = MagicMock()
+    kc_admin.create_user.side_effect = KeycloakError("401: invalid_grant", response_code=401)
+    service = _guest_service(mock_db, mock_kc_client, kc_admin)
+
+    # When / Then
+    with pytest.raises(BackendError):
+        service.login_as_guest()
+    mock_db.add.assert_not_called()
+
+
+def test_login_as_guest_deletes_keycloak_user_when_login_fails(mock_db, mock_kc_client) -> None:
+    # Given
+    kc_admin = MagicMock()
+    kc_admin.create_user.return_value = "kc-guest-id"
+    service = _guest_service(mock_db, mock_kc_client, kc_admin)
+    mock_kc_client.token.side_effect = KeycloakPostError(
+        error_message="unauthorized_client", response_code=401, response_body=b"{}"
+    )
+
+    # When / Then
+    with pytest.raises(BackendError):
+        service.login_as_guest()
+    kc_admin.delete_user.assert_called_once_with("kc-guest-id")
+    mock_db.add.assert_not_called()

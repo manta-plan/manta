@@ -1,10 +1,11 @@
 import logging
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
-from keycloak import KeycloakConnectionError, KeycloakOpenID
+from keycloak import KeycloakAdmin, KeycloakConnectionError, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 from keycloak.keycloak_openid import KeycloakAuthenticationError
 from keycloak.openid_connection import KeycloakPostError
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.config.example_data_config import example_project_for_new_users_enabled
-from manta.config.keycloak_config import get_keycloak_openid, well_known
+from manta.config.keycloak_config import get_keycloak_admin, get_keycloak_openid, well_known
 from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
@@ -22,6 +23,11 @@ from manta.services.results.register_result import RegisterResult
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="v1/auth/login")
+
+GUEST_USERNAME_PREFIX = "guest-"
+# Keycloak requires an email on our realm's user profile. `.invalid` is reserved
+# (RFC 2606), so no mail can ever be delivered to a guest's made-up address.
+GUEST_EMAIL_DOMAIN = "guest.manta.invalid"
 
 
 def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) -> User | None:
@@ -77,10 +83,12 @@ class AuthService:
         db: Session = Depends(get_db_session),
         kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
         example_data: ExampleDataService = Depends(),
+        kc_admin: KeycloakAdmin = Depends(get_keycloak_admin),
     ) -> None:
         self.db = db
         self.kc_client = kc_client
         self.example_data = example_data
+        self.kc_admin = kc_admin
 
     def login(self, username: str, password: str) -> LoginResult:
         # This doesn't currently update the user object if the Identity Provider
@@ -118,20 +126,56 @@ class AuthService:
         with _translate_keycloak_errors():
             self.kc_client.logout(refresh_token)
 
+    def login_as_guest(self) -> LoginResult:
+        """Creates a throwaway account and logs it in, so people can try manta
+        without signing up.
+
+        The guest is a real Keycloak user with a random username and password,
+        so its tokens are ordinary Keycloak tokens: refresh, logout and every
+        authenticated route work for it unchanged. The password is never shown
+        to anyone, so once the guest's session ends the account can't be
+        logged in to again.
+        """
+        username = f"{GUEST_USERNAME_PREFIX}{secrets.token_hex(8)}"
+        password = secrets.token_urlsafe(32)
+
+        with _translate_keycloak_admin_errors():
+            idp_subject = self.kc_admin.create_user(
+                {
+                    "username": username,
+                    "email": f"{username}@{GUEST_EMAIL_DOMAIN}",
+                    "emailVerified": True,
+                    "enabled": True,
+                    "credentials": [{"type": "password", "value": password, "temporary": False}],
+                }
+            )
+
+        try:
+            with _translate_keycloak_errors():
+                token = self.kc_client.token(username, password)
+                idp_source = well_known(self.kc_client)["issuer"]
+            user = self._add_user(username, idp_subject, idp_source)
+        except Exception:
+            # Don't leave behind a Keycloak account nobody can use.
+            self._delete_keycloak_user(idp_subject)
+            raise
+
+        self._create_example_project(user)
+
+        return LoginResult(
+            access_token=token["access_token"],
+            expires_in=token["expires_in"],
+            refresh_token=token["refresh_token"],
+            refresh_expires_in=token["refresh_expires_in"],
+        )
+
     def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
         user = _find_user_by_credentials(self.db, idp_subject, idp_source)
         if user is None:
             # manta offloads user management to the IdP entirely - any identity
             # with a validly-signed token is eligible to register, no separate
             # approval step.
-            user = User(username=username, idp_subject=idp_subject, idp_source=idp_source)
-            self.db.add(user)
-            self.db.commit()
-
-            logger.info("Registered new user %r (uuid=%s)", user.username, user.uuid)
-
-            if example_project_for_new_users_enabled():
-                self.example_data.create_project(owner=user)
+            user = self._create_user(username, idp_subject, idp_source)
         # else: registering an already-registered identity is a no-op, not an error.
 
         return RegisterResult(
@@ -141,6 +185,28 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
+
+    def _create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
+        user = self._add_user(username, idp_subject, idp_source)
+        self._create_example_project(user)
+        return user
+
+    def _add_user(self, username: str, idp_subject: str, idp_source: str) -> User:
+        user = User(username=username, idp_subject=idp_subject, idp_source=idp_source)
+        self.db.add(user)
+        self.db.commit()
+        logger.info("Registered new user %r (uuid=%s)", user.username, user.uuid)
+        return user
+
+    def _create_example_project(self, user: User) -> None:
+        if example_project_for_new_users_enabled():
+            self.example_data.create_project(owner=user)
+
+    def _delete_keycloak_user(self, idp_subject: str) -> None:
+        try:
+            self.kc_admin.delete_user(idp_subject)
+        except KeycloakError:
+            logger.exception("Could not delete orphaned guest %s from Keycloak", idp_subject)
 
 
 @contextmanager
@@ -164,6 +230,17 @@ def _translate_keycloak_errors() -> Iterator[None]:
         raise BackendError from transient_error
     except (TypeError, AttributeError) as config_error:  # configuration-based connection error
         raise BackendError from config_error
+
+
+@contextmanager
+def _translate_keycloak_admin_errors() -> Iterator[None]:
+    # Admin API calls are made with manta's own admin credentials, never the
+    # caller's, so any failure - including Keycloak rejecting those
+    # credentials - is a backend problem, not the caller's.
+    try:
+        yield
+    except (KeycloakError, TypeError, AttributeError) as error:
+        raise BackendError from error
 
 
 def _is_invalid_grant(error: KeycloakPostError) -> bool:
