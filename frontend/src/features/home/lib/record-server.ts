@@ -25,20 +25,17 @@ export type RecordCatalogue = {
 };
 
 export type RecordServerConfig = {
-  // host[:port] of the record server.
+  // host[:port] of the record server: the app's own origin.
   server: string;
   // Shared dev token: it ships in the static bundle, so it is not a secret.
   token: string;
 };
 
 export function recordServerConfig(): RecordServerConfig {
-  // Unset, the record server is on the app's own origin: the deployed
-  // frontend's Caddy proxies it there (frontend/Caddyfile), so one build
-  // works on any host, port or domain, with no CORS. Set it for a record
-  // server on another origin.
-  const server = import.meta.env.VITE_RECORD_SERVER || window.location.host;
-
-  return { server, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
+  // The record server is on the app's own origin: the deployed frontend's
+  // Caddy (frontend/Caddyfile) and the Vite dev server proxy it there, so one
+  // build works on any host, port or domain, with no CORS.
+  return { server: window.location.host, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
 }
 
 // The record server is reached over the page's own protocol: an https page

@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getRecordCatalogue, getRecordRevisions, isSecure, recordServerConfig } from "./record-server";
+import { getRecordCatalogue, getRecordRevisions, isSecure } from "./record-server";
 
 describe("record server", () => {
   beforeEach(() => {
-    vi.stubEnv("VITE_RECORD_SERVER", "localhost:8010");
     vi.stubEnv("VITE_RECORD_TOKEN", "devtoken");
     vi.stubGlobal("window", { location: { protocol: "http:", host: "34.51.179.198:8001" } });
   });
@@ -23,7 +22,7 @@ describe("record server", () => {
     const fetchMock = stubFetch({ ok: true, json: async () => ({ records: [], default: null }) });
 
     await expect(getRecordCatalogue()).resolves.toEqual({ records: [], default: null });
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8010/api/records", {
+    expect(fetchMock).toHaveBeenCalledWith("http://34.51.179.198:8001/api/records", {
       headers: { Authorization: "Bearer devtoken" },
     });
   });
@@ -35,7 +34,9 @@ describe("record server", () => {
     });
 
     await expect(getRecordRevisions("ac-dc-meshed")).resolves.toEqual({ inputs: "1bad4cfd" });
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8010/api/records/ac-dc-meshed/files");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://34.51.179.198:8001/api/records/ac-dc-meshed/files",
+    );
   });
 
   it("returns no revisions for a record without any", async () => {
@@ -51,26 +52,16 @@ describe("record server", () => {
   });
 
   describe("where the server is", () => {
-    it("is the page's own origin when no server is set", async () => {
-      vi.stubEnv("VITE_RECORD_SERVER", "");
+    it("is the page's own origin, over http on a plain-http page", async () => {
       const fetchMock = stubFetch({ ok: true, json: async () => ({ records: [], default: null }) });
 
-      expect(recordServerConfig().server).toBe("34.51.179.198:8001");
+      expect(isSecure()).toBe(false);
       await getRecordCatalogue();
       expect(fetchMock.mock.calls[0][0]).toBe("http://34.51.179.198:8001/api/records");
     });
 
-    it("calls a plain-http page's server over http, even on another host", async () => {
-      vi.stubEnv("VITE_RECORD_SERVER", "quack.example.org");
-      const fetchMock = stubFetch({ ok: true, json: async () => ({ records: [], default: null }) });
-
-      await getRecordCatalogue();
-      expect(fetchMock.mock.calls[0][0]).toBe("http://quack.example.org/api/records");
-    });
-
-    it("calls an https page's server over https", async () => {
+    it("is the page's own origin, over https on an https page", async () => {
       vi.stubGlobal("window", { location: { protocol: "https:", host: "manta.example.org" } });
-      vi.stubEnv("VITE_RECORD_SERVER", "");
       const fetchMock = stubFetch({ ok: true, json: async () => ({ records: [], default: null }) });
 
       expect(isSecure()).toBe(true);
