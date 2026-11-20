@@ -1076,6 +1076,13 @@ def test_land_use_limits_must_be_stated_by_the_rule_of_pypsa_eur(
         aggregate_network(n, land_use_record, aggregation)
 
 
+def test_land_use_limits_without_extendable_generators_are_dropped(land_use_record):
+    n = to_network(land_use_record)
+    n.generators["p_nom_extendable"] = False
+    n_c = aggregate_network(n, land_use_record, Aggregation(entity="carrier"))
+    assert n_c.global_constraints.index.tolist() == ["co2"]
+
+
 @pytest.mark.parametrize(
     ("member", "mu"),
     [

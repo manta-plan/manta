@@ -690,7 +690,8 @@ def aggregate_entities(n: pypsa.Network, maps: SpatialMaps) -> None:
 
 def _land_use_limits(n: pypsa.Network) -> pd.DataFrame:
     """Return the `constant` of each land-use limit of `n` and the one PyPSA-Eur's
-    `add_land_use_constraint` states for it, as `stated`.
+    `add_land_use_constraint` states for it, as `stated`, and whether any extendable
+    generator falls under it, as `bound`.
 
     That is the smallest finite `p_nom_max` of the extendable generators of its carrier at
     its bus built in its investment period, or NaN where there is none. Raises `ValueError`
@@ -715,14 +716,19 @@ def _land_use_limits(n: pypsa.Network) -> pd.DataFrame:
         raise NotImplementedError(f"No rule states land-use limits of generators {shared.tolist()}")
     potentials = candidates.groupby(LAND_USE_KEYS)["p_nom_max"].min()
     stated = potentials[np.isfinite(potentials)].reindex(keys)
-    return land_use[["constant"]].assign(stated=stated.to_numpy())
+    bound = keys.isin(potentials.index)
+    return land_use[["constant"]].assign(stated=stated.to_numpy(), bound=bound)
 
 
 def check_land_use(n: pypsa.Network) -> None:
     """Raise `ValueError` naming the land-use limits of `n` whose constant differs from the
-    one `_land_use_limits` states, which aggregation could not state again."""
+    one `_land_use_limits` states, which aggregation could not state again.
+
+    A limit that no extendable generator falls under, as where a dispatch fixes every
+    capacity, limits nothing, so its constant is not checked.
+    """
     limits = _land_use_limits(n)
-    differ = limits.index[~np.isclose(limits["constant"], limits["stated"])]
+    differ = limits.index[limits["bound"] & ~np.isclose(limits["constant"], limits["stated"])]
     if len(differ):
         raise ValueError(f"Land-use limits not set by PyPSA-Eur's rule: {differ.tolist()}")
 
