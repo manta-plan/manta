@@ -32,7 +32,7 @@ from playbook_library.pypsa_time_aggregation import (
     snapshot_frame,
     snapshot_rows,
 )
-from playbook_library.time_aggregation import settled, time_relation, widened
+from playbook_library.time_aggregation import settled_series, time_relation, widened
 
 
 @dataclass(frozen=True)
@@ -159,7 +159,7 @@ def _period_matrices(
     positions = frame[["snapshot", "period"]].assign(row=range(len(frame)))
     rows = snapshot_rows(base.schema, con, positions, ["snapshot"])
     axis = pypsa_time(base.schema)
-    profiles = [_profiles(settled(base, name, axis), name, rows) for name in attributes]
+    profiles = [_profiles(settled_series(base, name, axis), name, rows) for name in attributes]
     distinct = reduce(DuckDBPyRelation.union, profiles).aggregate(
         "period, min(series) AS series, profile", "period, profile"
     )
