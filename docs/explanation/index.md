@@ -6,12 +6,19 @@ SPDX-License-Identifier: CC-BY-4.0
 # Explanation
 
 These pages explain why we have built Manta in the way we have.
-They are aimed at a developer who wants to understand the system before changing it.
 For exact interfaces, see the [reference pages](../reference/index.md).
+
+## Why Manta exists
+
+These pages are for anyone who wants to know what Manta is for, with no technical background needed.
+
+- [Manta's purpose](purpose.md): open it to see the problem Manta answers, and why it is built around a community.
+- [How a study works in Manta](how-a-study-works.md): open it to follow a study from model to results, and see the kinds of analysis a playbook runs.
 
 ## How Manta works
 
 These pages describe Manta as it is in the code today.
+They are aimed at a developer who wants to understand the system before changing it.
 
 - [Users and scope](scope.md): open it to see who Manta is designed for, where it runs, and the constraints that shape its design.
 - [Architecture](architecture.md): open it to see how the packages and services fit together, and how one playbook run moves through them.
