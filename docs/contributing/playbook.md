@@ -15,8 +15,13 @@ Writing a block or a playbook is covered in the package READMEs, [playbook](http
 
 ## Testing playbook
 
+Run these commands from the `playbook` folder.
+
 --8<-- "playbook/README.md:docs-testing"
 
 ## Testing playbook-library
+
+Run these commands from the `playbook-library` folder.
+From `playbook` or the repository root, pixi uses the workspace at the root instead, which has no `dev` or `full` environment.
 
 --8<-- "playbook-library/README.md:docs-testing"

@@ -71,7 +71,7 @@ With `EXAMPLE_DATA_SEED=true` (the default in `backend/.env`), startup also:
    only a clean SeaweedFS volume pays for the download. Without internet
    access, the app logs a warning and starts without them.
 2. Creates the `manta-admin` user, with its Keycloak id pinned in
-   [manta-realm.json](../docker/conf/manta-realm.json) (`0b7b2a6e-4c55-4b1e-9d0e-6f3c2a8e5d41`),
+   [manta-realm.json](https://github.com/manta-plan/manta/blob/main/docker/conf/manta-realm.json) (`0b7b2a6e-4c55-4b1e-9d0e-6f3c2a8e5d41`),
    and its "Example project" `33b9abe3-2f25-4824-89e2-5a3d93671b6c`, unless they
    exist.
 3. Copies every downloaded store into that project, under

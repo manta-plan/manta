@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Run a playbook through the REST API
 
 This guide shows how to run a playbook on real model data on your own computer, through the REST API.
-The web app cannot start a run on real model data, so use these steps to check a change to the backend, the runner, or a block from start to end.
+Use these steps to check a change to the backend, the runner, or a block from start to end, without the web app.
 You need the local stack set up as [Installation: Full stack](../installation/full-stack.md) describes.
 
 ## Start a run and follow it
@@ -131,5 +131,16 @@ one for the requests.
    `Ctrl+C`:
 
    ```bash
-   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+   docker compose --env-file ../backend/.env -f compose-dev-services.yaml down
    ```
+
+   The stack's volumes keep the database, the stored files, and the
+   revisions this run wrote, so the next `up` starts where this one ended.
+
+!!! warning "Reset the stack"
+    To start again from empty volumes, add `-v`.
+    This deletes every project, user, run, and stored file of the local stack, and the backend downloads the example data again at its next start.
+
+    ```bash
+    docker compose --env-file ../backend/.env -f compose-dev-services.yaml down -v
+    ```

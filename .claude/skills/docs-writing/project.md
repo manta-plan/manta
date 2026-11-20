@@ -33,7 +33,7 @@ No figure exists yet. Assign the colours with the first one.
 
 ## Extra mechanics
 
-- In phase 1, `README.md`, `CONTRIBUTING.md` and the package READMEs are the source of every installation and contributing page. A page pulls a section in with a snippet between `<!-- --8<-- [start:name] -->` and `<!-- --8<-- [end:name] -->` markers. Edit the README, not the page.
+- In phase 1, `README.md`, `CONTRIBUTING.md` and the package READMEs are the source of every installation and contributing page. A page pulls a section in with a snippet between `<!-- --8<-- [start:name] -->` and `<!-- --8<-- [end:name] -->` markers. To change snippet text, edit the README, not the page. Prose written on the page itself, such as `docs/contributing/manual-run.md`, is edited on the page.
 - A GitHub alert (`> [!NOTE]`) in a pulled-in section renders as an admonition, through the `github-callouts` extension of `markdown-callouts`.
 
 ## Extra gates

@@ -19,6 +19,7 @@ Then open a second terminal in the `backend` folder for the steps below.
 
 ## Check the API
 
+The first start takes a few minutes, because the backend downloads the [example data](../contributing/backend.md#example-data) before it serves the API.
 Ask the backend for its health status:
 
 ```bash

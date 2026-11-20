@@ -32,7 +32,7 @@ def render(spec: dict) -> str:
 
 def main() -> None:
     spec = json.loads((FOLDER / "openapi.json").read_text())
-    (FOLDER / "rest-api.md").write_text(render(spec))
+    (FOLDER / "rest-api.md").write_text(render(spec), encoding="utf-8")
 
 
 if __name__ == "__main__":

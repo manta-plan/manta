@@ -45,18 +45,17 @@ commits get squashed together:
 - Style/formatting disputes are considered solved problems — defer to the
   linter/formatter for the language you're working in rather than debating it
   in review.
+
+### Commit sign-off
+
+Every PR must contain a commit with a `Signed-off-by` trailer, which certifies
+that you wrote it or otherwise have the right to submit it under this project's
+licence, as the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)
+states. Add the trailer when you commit with `git commit -s`, or add it to an
+existing commit with `git commit --amend -s`. A
+[GitHub check](https://github.com/dcoapp/app) enforces this on every PR. To
+sign off an open PR, you can add an empty commit with just the trailer.
 <!-- --8<-- [end:docs-general] -->
-
-### Commit Sign-off
-
-Every PR must contain one commit with a `Signed-off-by` trailer certifying you
-wrote it or otherwise have the right to submit it under this project's license
-(the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)
-text itself). Add the trailer at commit time with `git commit -s`, (or `git
-commit --amend -s` to update an existing commit) A [GitHub
-check](https://github.com/dcoapp/app) enforces this on every PR. You can add an
-empty commit with just the signature to an existing open PR.
-
 
 ## Backend (Python)
 <!-- --8<-- [start:docs-backend] -->

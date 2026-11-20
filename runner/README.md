@@ -150,6 +150,8 @@ without anything here being consulted again.
 
 ## Testing
 
+Run these from the `runner` folder:
+
 ```bash
 uv sync
 uv run pytest
