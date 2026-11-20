@@ -157,6 +157,12 @@ def _network_snapshots(base: RecordLike, frame: pd.DataFrame) -> pd.Index:
     return pd.MultiIndex.from_frame(frame[["period", "timestep"]])
 
 
+def record_snapshots(record: DataRecord) -> pd.Index:
+    """Return every snapshot of `record` as PyPSA indexes them in a network built from it."""
+    base = revision(record)[1].record
+    return _network_snapshots(base, snapshot_frame(base))
+
+
 def _held_frame(n: pypsa.Network, base: RecordLike) -> pd.DataFrame:
     """Return the snapshots of `base` in the investment periods `n` has, as `snapshot_frame` does.
 
