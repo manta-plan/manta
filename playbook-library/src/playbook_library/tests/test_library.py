@@ -431,11 +431,15 @@ def test_dispatch_refuses_an_asset_its_source_decided_no_capacity_of(single_peri
         )
 
 
+TECHNOLOGY_GROUPS = {"entity": "technology_group", "ungrouped": "drop"}
+
+
 @pytest.mark.parametrize(
     ("base_name", "config", "shed"),
     [
         ("single_period", {}, 720.0),
         ("single_period", {"aggregation": {"snapshot": "agg_3h"}}, 720.0),
+        ("single_period", {"aggregation": TECHNOLOGY_GROUPS}, 720.0),
         ("multi_period", {"periods": [2050]}, 320.0),
     ],
 )
@@ -445,6 +449,8 @@ def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
     n = to_network(request.getfixturevalue(base_name))
     n.generators["p_nom_extendable"] = False
     n.generators.loc[n.generators.index[0], "p_nom"] = 20.0
+    n.generators["technology_group"] = "supply"
+    n.loads["technology_group"] = "demand"
     rev = _run(TimePartition, CLUSTER, store_revision(n, "short"))
     with pytest.raises(SolveError, match="could not solve a window"):
         _dispatch(rev, **config)
