@@ -2,7 +2,7 @@ import type { SubmitEvent } from "react";
 import { useState } from "react";
 import { FiAlertCircle, FiRefreshCw } from "react-icons/fi";
 import { ApiError } from "../api/manta";
-import { login } from "../features/auth/api";
+import { login, loginAsGuest } from "../features/auth/api";
 import { AuthButton } from "../features/auth/components/auth-button";
 import { AuthTextField } from "../features/auth/components/auth-text-field";
 import { MantaLogo } from "../features/auth/components/manta-logo";
@@ -109,6 +109,17 @@ export function LoginPage() {
             {isSigningIn ? "Signing in..." : "Log In"}
           </AuthButton>
         </form>
+
+        {/* TEMPORARY: test-only guest login. Remove with loginAsGuest in features/auth/api.ts. */}
+        <button
+          type="button"
+          className="mt-3 w-full text-[12px] text-slate-500 underline"
+          onClick={() => {
+            loginAsGuest().catch(() => setSignInError("Guest login failed."));
+          }}
+        >
+          Continue as guest (test)
+        </button>
       </section>
     </main>
   );
