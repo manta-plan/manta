@@ -13,12 +13,11 @@ from pydantic import Field
 
 from playbook_library.pypsa_helpers import (
     fixed_capacity_model,
-    investment_periods,
     restarting_storage,
     write_series,
 )
 from playbook_library.pypsa_spatial_aggregation import aggregate_network, expand_network
-from playbook_library.pypsa_time_aggregation import snapshot_map
+from playbook_library.pypsa_time_aggregation import record_snapshots, snapshot_map
 from playbook_library.rolling_horizon_dispatch import (
     RollingHorizonDispatchConfig,
     optimize_rolling_horizon,
@@ -39,8 +38,9 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
     coarser, such as one-day snapshots in four-week windows that move on one week at a time.
     Each store of `carriers` then takes its water value as its `marginal_cost` at every
     snapshot, the one input this block writes. A rolling horizon dispatch of the result sees
-    what energy in the store is worth beyond each of its own windows. The values cover every
-    investment period, so `periods`, if set, must hold them all. Solved by an aggregation,
+    what energy in the store is worth beyond each of its own windows. The values cover the
+    snapshots of `periods`, and each store keeps its own `marginal_cost` at the other
+    snapshots. Solved by an aggregation,
     the prices of a merged bus apply to each of its buses, and those of a time cluster to
     each of its snapshots. With `load_shedding`, the solve sheds load as a dispatch of the
     same setting does, and the written revision holds the water values alone, without the
@@ -86,13 +86,10 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
         return prices.loc[representatives.to_numpy()].set_axis(representatives.index)
 
     def run(self, base: Revision) -> Revision:
-        periods = self.config.periods
-        missing = sorted(set(investment_periods(base)) - set(periods)) if periods else []
-        if missing:
-            raise ValueError(
-                f"A water value covers every investment period: `periods` leaves out {missing}."
-            )
         model, n = fixed_capacity_model(base, self.config, windowed=True)
         buses = self.valued_stores(n)
-        prices = self.marginal_prices(n, model)
-        return write_series(base, "marginal_cost", prices[buses].set_axis(buses.index, axis=1))
+        values = self.marginal_prices(n, model)[buses].set_axis(buses.index, axis=1)
+        own = n.stores.marginal_cost[buses.index]
+        return write_series(
+            base, "marginal_cost", values.reindex(record_snapshots(base)).fillna(own)
+        )

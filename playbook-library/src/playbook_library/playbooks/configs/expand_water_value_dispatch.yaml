@@ -17,6 +17,7 @@ expansion_overnight:
     entity: technology_group
 
 water_value:
+  periods: [2050]
   carriers: [H2]
   aggregation:
     snapshot: day

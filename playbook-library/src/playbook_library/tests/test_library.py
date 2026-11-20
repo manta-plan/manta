@@ -10,8 +10,6 @@ writes a new one into the same store, so what is checked is that a usable networ
 comes out as a descendant of the revision it read.
 """
 
-from contextlib import nullcontext
-
 import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
@@ -644,9 +642,14 @@ def test_a_water_value_over_investment_periods_refuses_stores_each_period_restar
         )
 
 
-def test_a_water_value_covers_every_investment_period(multi_period):
-    with pytest.raises(ValueError, match="leaves out \\[2030, 2040\\]"):
-        _water_value(multi_period, periods=[2050])
+def test_a_water_value_of_one_period_leaves_the_others_alone(store_revision, multi_period_network):
+    multi_period_network.add("Store", "tank", bus="bus", carrier="battery", e_nom=10.0)
+    expanded = _run(OvernightCapacityExpansion, {}, store_revision(multi_period_network, "one"))
+
+    values = to_network(_water_value(expanded, periods=[2050])).stores_t.marginal_cost["tank"]
+
+    assert values.drop(2050).eq(0).all()
+    assert values.loc[2050].gt(0).all()
 
 
 def test_a_water_value_leaves_the_capacities_of_its_input_alone(
@@ -713,21 +716,9 @@ def test_a_water_value_prices_the_load_fixed_capacities_cannot_meet_at_its_shedd
     assert to_network(result).stores_t.marginal_cost.to_numpy() == pytest.approx(1e5)
 
 
-WINDOWED = (RollingHorizonDispatch, {"optimize_config": {"horizon": 4}})
-WHOLE = (WaterValueCalculation, {"carriers": ["H2"]})
-
-
-@pytest.mark.parametrize(
-    ("block_cls", "config", "cap", "error"),
-    [
-        (*WHOLE, 300.0, SolveError),
-        (*WHOLE, 400.0, None),
-        (*WINDOWED, 0.0, SolveError),
-        (*WINDOWED, 400.0, ValueError),
-    ],
-)
+@pytest.mark.parametrize(("cap", "error"), [(0.0, SolveError), (400.0, ValueError)])
 def test_one_period_solves_under_the_global_constraints_of_that_period(
-    block_cls, config, cap, error, store_revision, multi_period_network
+    cap, error, store_revision, multi_period_network
 ):
     """The 2050 demand of 400 emits 400, so a cap below it cannot be met.
 
@@ -736,7 +727,6 @@ def test_one_period_solves_under_the_global_constraints_of_that_period(
     n = multi_period_network
     n.add("Carrier", "gas", co2_emissions=1.0)
     n.generators["carrier"] = "gas"
-    n.add("Store", "tank", bus="bus", carrier="H2", e_nom=10.0)
     expanded = _run(OvernightCapacityExpansion, {}, store_revision(n, "uncapped"))
     capped = to_network(expanded)
     capped.add(
@@ -748,7 +738,7 @@ def test_one_period_solves_under_the_global_constraints_of_that_period(
         constant=[0.0, cap],
         investment_period=[2030, 2050],
     )
-    config = {"periods": [2050], **config}
+    config = {"periods": [2050], "optimize_config": {"horizon": 4}}
 
-    with nullcontext() if error is None else pytest.raises(error):
-        _run(block_cls, config, write_network(capped, expanded))
+    with pytest.raises(error):
+        _run(RollingHorizonDispatch, config, write_network(capped, expanded))
