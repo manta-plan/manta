@@ -5,9 +5,11 @@ calls datarecord, so they work over any database that has the record views
 (a baked `.duckdb` file included).
 
 - A bus's **location** is its `location` property (PyPSA-Eur names a site
-  after its AC bus). `VIRTUAL_LOCATIONS` aren't places: `EU` is PyPSA-Eur's
-  copper plate for fuels and CO₂. Nothing in the data marks it, so it's named
-  here.
+  after its AC bus), or, where that's empty, the bus itself (PyPSA-Earth
+  leaves it empty: every bus is its own site). `VIRTUAL_LOCATIONS` aren't
+  places: `EU` is PyPSA-Eur's copper plate for fuels and CO₂, and the empty
+  name a bus without one (PyPSA-Earth's, at 0, 0). Nothing in the data marks
+  them, so they're named here.
 - A **zone** comes from a `busmap_*` attribute (PyPSA-Eur's clustering), read
   at the bus the location is named after. Each such attribute is one zone
   level, for example `busmap_5`. A record without them has no zones.
@@ -28,7 +30,7 @@ import duckdb
 
 SCHEMA = "manta"
 ZONE_LEVEL_PREFIX = "busmap_"
-VIRTUAL_LOCATIONS = ("EU",)
+VIRTUAL_LOCATIONS = ("EU", "")
 # What an attribute is about: the first of these among its dims. Snapshot is
 # the series axis unless it's the subject itself.
 SUBJECTS = ("entity", "connection", "bus", "carrier", "sub_network", "period", "snapshot", "scenario")
@@ -59,6 +61,42 @@ def _summary_select(name: str, dims: set[str], prefix: str) -> str:
     )
 
 
+# A bus's own polygons, as bus properties (the 30 October records); the
+# `component` a region gets from each.
+BUS_SHAPES = {"shape_onshore": "onshore", "shape_offshore": "offshore"}
+
+
+def _regions_sql(con: duckdb.DuckDBPyConnection, prefix: str, attributes: list[str]) -> str:
+    """Region polygons as WKT, with the bus (and location) they belong to:
+    PyPSA's Shape entities, and the bus properties in BUS_SHAPES. A bus's
+    region is named `<bus> <component>` (`BE0 0AC onshore`), apart from
+    any entity."""
+    parts = []
+    if {"geometry", "component", "idx"} <= set(attributes):
+        parts.append("""
+            SELECT g.entity, c.value AS component, i.value AS bus, b.location, g.value AS wkt
+            FROM attributes.geometry g
+            JOIN properties.entity e ON e.entity = g.entity AND e.ctype = 'Shape'
+            LEFT JOIN attributes.component c ON c.entity = g.entity
+            LEFT JOIN attributes.idx i ON i.entity = g.entity
+            LEFT JOIN manta.bus_location b ON b.bus = i.value""")
+    columns = {name for (name,) in con.execute(
+        "SELECT column_name FROM duckdb_columns() WHERE database_name = current_database() AND schema_name = 'properties' AND table_name = 'bus'"
+        if not prefix else
+        f"SELECT column_name FROM duckdb_columns() WHERE database_name = '{prefix[:-1]}' AND schema_name = 'properties' AND table_name = 'bus'"
+    ).fetchall()}
+    for column, component in BUS_SHAPES.items():
+        if column in columns:
+            parts.append(f"""
+            SELECT p.bus || ' {component}' AS entity, '{component}' AS component, p.bus, b.location, p.{column} AS wkt
+            FROM properties.bus p LEFT JOIN manta.bus_location b ON b.bus = p.bus
+            WHERE p.{column} IS NOT NULL""")
+    return " UNION ALL ".join(parts) or (
+        "SELECT NULL::VARCHAR AS entity, NULL::VARCHAR AS component, NULL::VARCHAR AS bus, "
+        "NULL::VARCHAR AS location, NULL::VARCHAR AS wkt WHERE false"
+    )
+
+
 def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str]], catalog: str | None = None) -> list[str]:
     """Create the `manta` views over the record views; return their names.
 
@@ -80,9 +118,8 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
     views = {
         # Every bus with its location, and whether that location is virtual.
         "bus_location": f"""
-            SELECT b.bus, b.carrier, b.location, b.x, b.y,
-                   b.location IN ({virtual}) AS virtual
-            FROM properties.bus b
+            SELECT bus, carrier, location, x, y, location IN ({virtual}) AS virtual
+            FROM (SELECT b.bus, b.carrier, coalesce(nullif(b.location, ''), b.bus) AS location, b.x, b.y FROM properties.bus b)
         """,
         # Real locations only: where the map draws a point.
         "locations": """
@@ -119,18 +156,7 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
             JOIN manta.bus_location b ON b.bus = c.connection.bus
             WHERE c.role = 'attached'
         """,
-        # Shape polygons as WKT, with the bus (and location) they belong to.
-        "regions": """
-            SELECT g.entity, c.value AS component, i.value AS bus, b.location, g.value AS wkt
-            FROM attributes.geometry g
-            JOIN properties.entity e ON e.entity = g.entity AND e.ctype = 'Shape'
-            LEFT JOIN attributes.component c ON c.entity = g.entity
-            LEFT JOIN attributes.idx i ON i.entity = g.entity
-            LEFT JOIN manta.bus_location b ON b.bus = i.value
-        """
-        if {"geometry", "component", "idx"} <= set(attributes)
-        else "SELECT NULL::VARCHAR AS entity, NULL::VARCHAR AS component, NULL::VARCHAR AS bus, "
-        "NULL::VARCHAR AS location, NULL::VARCHAR AS wkt WHERE false",
+        "regions": _regions_sql(con, prefix, attributes),
     }
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {prefix}{SCHEMA}")
     for name, sql in views.items():

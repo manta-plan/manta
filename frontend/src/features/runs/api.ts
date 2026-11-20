@@ -1,8 +1,8 @@
 import { ApiError, getJson, postJson } from "../../api/manta";
+import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {
-  CreateProjectResponse,
   CreateRunResponse,
-  DefaultProject,
+  DataRecordChoice,
   GetRunLogsResponse,
   GetRunResponse,
   GetRunSummaryResponse,
@@ -10,60 +10,52 @@ import type {
   RunStatus,
 } from "./types";
 
-const defaultProjectPayload = {
-  name: "My First Project",
-  description: "Default project for guest user, first time visit.",
+type CreateRunOptions = {
+  playbook: string;
+  config: PlaybookConfig;
+  dataRecord: DataRecordChoice;
 };
 
-const defaultRunPayload = {
-  playbook: "expand",
-  // TODO: there is no data-record creation in the frontend yet (store upload,
-  // or any other way to point a run at real data). These placeholders satisfy
-  // the API shape but don't resolve to anything real, so a run created this
-  // way won't complete — replace once that functionality exists.
-  data_record_url: "s3://manta/placeholder/store",
-  revision_uuid: "00000000-0000-0000-0000-000000000000",
-};
+// The bucket the backend stores projects in (S3_BUCKET in its env). Set VITE_S3_BUCKET
+// when the backend uses another one.
+const storageBucket: string = import.meta.env.VITE_S3_BUCKET ?? "manta";
 
-const defaultProjectSessionStorageKey = "manta.defaultProjectUuid";
+const missingRevisionPattern = /^Revision (\S+) not found in '(.+)'$/;
 
-export function getCachedDefaultProject(): DefaultProject | null {
-  const cachedProjectUuid = window.sessionStorage.getItem(defaultProjectSessionStorageKey);
-
-  if (cachedProjectUuid === null) {
-    return null;
+// The backend refuses a run whose data record revision is missing from the store. Turns that
+// into a message the user can act on; any other error is returned unchanged.
+export function toFriendlyRunError(error: unknown): unknown {
+  if (!(error instanceof ApiError) || error.status !== 404) {
+    return error;
   }
 
-  return { uuid: cachedProjectUuid, wasCached: true };
-}
+  const match = missingRevisionPattern.exec(error.message);
 
-export async function getOrCreateDefaultProject(): Promise<DefaultProject> {
-  const cachedProject = getCachedDefaultProject();
-
-  if (cachedProject !== null) {
-    return cachedProject;
+  if (match === null) {
+    return error;
   }
 
-  const project = await postJson<CreateProjectResponse>("/v1/projects", defaultProjectPayload);
-  window.sessionStorage.setItem(defaultProjectSessionStorageKey, project.uuid);
+  const [, revisionUuid, storeUrl] = match;
+  const storeName = storeUrl.split("/").filter(Boolean).pop() ?? storeUrl;
 
-  return { uuid: project.uuid, wasCached: false };
+  return new ApiError(
+    error.status,
+    `The data record "${storeName}" is not available in this project (revision ${revisionUuid}). Please select another data record.`,
+  );
 }
 
-export async function createRun(project: DefaultProject) {
+export async function createRun(projectUuid: string, options: CreateRunOptions) {
   try {
     return await postJson<CreateRunResponse>("/v1/runs", {
-      project_uuid: project.uuid,
-      playbook: defaultRunPayload.playbook,
-      data_record_url: defaultRunPayload.data_record_url,
-      revision_uuid: defaultRunPayload.revision_uuid,
+      project_uuid: projectUuid,
+      playbook: { name: options.playbook, config: options.config },
+      data_record: {
+        store_url: `s3://${storageBucket}/${projectUuid}/${options.dataRecord.name}`,
+        revision_uuid: options.dataRecord.revision_uuid,
+      },
     });
   } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
-
-    throw error;
+    throw toFriendlyRunError(error);
   }
 }
 
@@ -73,44 +65,28 @@ type ListRunsParams = {
   statuses: RunStatus[];
 };
 
-export async function listRuns(project: DefaultProject, params: ListRunsParams) {
-  try {
-    const searchParams = new URLSearchParams({
-      project_uuid: project.uuid,
-      limit: String(params.limit),
-      offset: String(params.offset),
-    });
-    params.statuses.forEach((status) => {
-      searchParams.append("statuses", status);
-    });
-    return await getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
-  } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
-
-    throw error;
-  }
+export function listRuns(projectUuid: string, params: ListRunsParams) {
+  const searchParams = new URLSearchParams({
+    project_uuid: projectUuid,
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  params.statuses.forEach((status) => {
+    searchParams.append("statuses", status);
+  });
+  return getJson<ListRunsResponse>(`/v1/runs?${searchParams.toString()}`);
 }
 
-export async function getRunSummary(project: DefaultProject) {
-  try {
-    const searchParams = new URLSearchParams({ project_uuid: project.uuid });
-    return await getJson<GetRunSummaryResponse>(`/v1/runs/summary?${searchParams.toString()}`);
-  } catch (error) {
-    if (project.wasCached && error instanceof ApiError && error.status === 404) {
-      window.sessionStorage.removeItem(defaultProjectSessionStorageKey);
-    }
-
-    throw error;
-  }
+export function getRunSummary(projectUuid: string) {
+  const searchParams = new URLSearchParams({ project_uuid: projectUuid });
+  return getJson<GetRunSummaryResponse>(`/v1/runs/summary?${searchParams.toString()}`);
 }
 
-export async function getProjectRun(project: DefaultProject, runId: string) {
+export async function getProjectRun(projectUuid: string, runId: string) {
   try {
     const run = await getRun(runId);
 
-    if (run.project_uuid !== project.uuid) {
+    if (run.project_uuid !== projectUuid) {
       return null;
     }
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 
 from manta.routes.v1.requests.login_request import LoginRequest
+from manta.routes.v1.requests.refresh_token_request import RefreshTokenRequest
 from manta.routes.v1.requests.register_request import RegisterRequest
 from manta.services.auth_service import AuthService
 from manta.services.results.login_result import LoginResult
@@ -12,6 +13,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/login", response_model=LoginResult)
 def login(request: LoginRequest, service: AuthService = Depends()) -> LoginResult:
     return service.login(request.username, request.password)
+
+
+@router.post("/refresh", response_model=LoginResult)
+def refresh(request: RefreshTokenRequest, service: AuthService = Depends()) -> LoginResult:
+    return service.refresh(request.refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: RefreshTokenRequest, service: AuthService = Depends()) -> None:
+    service.logout(request.refresh_token)
 
 
 @router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)

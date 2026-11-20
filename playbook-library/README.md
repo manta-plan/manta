@@ -45,6 +45,7 @@ src/playbook_library/
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   examples.py                   A tiny network, and the example playbook run on it
+  public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships, with default settings
 ```
 

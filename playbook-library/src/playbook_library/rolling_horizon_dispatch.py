@@ -48,7 +48,15 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             c.static[attr + "_extendable"] = False
 
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
+        """Dispatch `n` window by window, each result series then spanning every snapshot.
+
+        PyPSA keeps a series it writes whole on each window, such as `Bus.v_ang`, at
+        the last window alone; the windows before it are missing values.
+        """
         n.optimize.optimize_with_rolling_horizon(**self.config.optimize_config.model_dump())
+        for c in n.components:
+            for attr, series in c.dynamic.items():
+                c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
     def run(self, record: DataRecord) -> DataRecord:
