@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Manta Blocks contributors
+#
+# SPDX-License-Identifier: MIT
+
+cluster:
+  name: seg_730
+  segments: 730
+
+cluster_daily:
+  name: day
+  n_hours: 24
+
+expansion_overnight:
+  aggregation:
+    snapshot: seg_730
+    bus: busmap_5
+    entity: technology_group
+
+water_value:
+  periods: [2050]
+  carriers: [H2]
+  aggregation:
+    snapshot: day
+    bus: busmap_5
+    entity: technology_group
+  load_shedding: {}
+  optimize_config:
+    horizon: 28
+    overlap: 21
+
+dispatch:
+  periods: [2050]
+  aggregation:
+    bus: busmap_5
+    entity: technology_group
+  load_shedding: {}
+  optimize_config:
+    horizon: 168
+    overlap: 24

@@ -1,5 +1,7 @@
 import pytest
 from fastapi import HTTPException
+from playbook.blocks.registry import BlockDescription
+from playbook.blocks.tests.fakes import FakeNeedsUpstream
 from playbook.playbooks.yaml_io import parse_doc
 from playbook_library import library_catalogue
 from playbook_library.playbooks import LibraryPlaybook, library_playbooks
@@ -66,19 +68,37 @@ def test_get_playbook_describes_each_step_with_its_blocks_settings() -> None:
 
 
 def test_get_playbook_reports_a_step_wired_to_another_steps_output() -> None:
-    # Given
-    service = _library_service()
+    # Given a playbook whose second step takes the first step's output as a setting
+    doc = parse_doc(
+        {
+            "name": "wired",
+            "steps": [
+                {"name": "cluster", "block": "time_partition"},
+                {
+                    "name": "needs",
+                    "block": "fake_needs_upstream",
+                    "inputs": {"source": "${steps.cluster.output}"},
+                },
+            ],
+        }
+    )
+    needs = BlockDescription.for_block(FakeNeedsUpstream, "fake_needs_upstream")
+    catalogue = library_catalogue()
+    service = PlaybookService(
+        playbooks={"wired": LibraryPlaybook(doc=doc, default_config={})},
+        catalogue=catalogue.model_copy(update={"blocks": {**catalogue.blocks, needs.name: needs}}),
+    )
 
     # When
-    result = service.get_playbook("cluster-expand-dispatch")
+    result = service.get_playbook("wired")
 
     # Then the wiring is reported on the step it feeds...
     steps = {step.name: step for step in result.steps}
-    assert steps["dispatch"].inputs == {"capacity_source": "${steps.expansion_overnight.output}"}
+    assert steps["needs"].inputs == {"source": "${steps.cluster.output}"}
     assert steps["cluster"].inputs == {}
     # ...and a setting fed by another step stays tagged as such, so a form can skip it.
-    capacity_source = steps["dispatch"].block_config_schema["properties"]["capacity_source"]
-    assert capacity_source["x-manta-input"] is True
+    source = steps["needs"].block_config_schema["properties"]["source"]
+    assert source["x-manta-input"] is True
 
 
 def test_get_playbook_describes_a_block_used_by_two_steps_once_per_step() -> None:

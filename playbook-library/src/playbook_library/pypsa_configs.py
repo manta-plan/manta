@@ -3,19 +3,13 @@
 # SPDX-License-Identifier: MIT
 
 from collections.abc import Sequence
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Literal, Self
 
-from playbook.blocks import ConfigSchema, RecordProperty
+from playbook.blocks import ConfigSchema, RecordDimCoord, RecordProperty
 from pydantic import Field, computed_field, model_validator
+from pypsa.optimization.piecewise import PiecewiseOptions
 
 from playbook_library import linopy_configs
-
-try:
-    # `pypsa.optimize.piecewise` only exists on an as-yet-unreleased pypsa feature
-    # branch; fall back to `Any` until it lands in a released version.
-    from pypsa.optimize.piecewise import PiecewiseOptions
-except ImportError:
-    PiecewiseOptions = Any
 
 
 class _PyPSAOptimizeTransmissionLossesSchema(ConfigSchema):
@@ -45,8 +39,10 @@ class _PyPSAOptimizeTransmissionLossesSchema(ConfigSchema):
 class PyPSAOptimizeSchema(ConfigSchema):
     # TODO: dynamically generate this schema from the PyPSA optimize function
     # signature, so that we don't have to maintain it manually.
-    snapshots: Sequence | None = None
-    """Snapshots to solve, a subset of the model's snapshots. None solves all of them."""
+
+    # we will handle snapshot filtering in the block config, not the optimize config
+    # snapshots: Sequence | None = None
+    # """Snapshots to solve, a subset of the model's snapshots. None solves all of them."""
 
     multi_investment_periods: bool = False
     """Solve all investment periods together. Needs a model with a `period` dimension."""
@@ -137,14 +133,6 @@ class PyPSAOptimizeBlockConfig(ConfigSchema):
     aggregation: Aggregation = Field(default_factory=Aggregation)
     """Merge buses, assets and snapshots before solving. Results cover the full model."""
 
-    @model_validator(mode="after")
-    def snapshots_are_not_chosen_with_a_time_aggregation(self: Self) -> Self:
-        if self.aggregation.snapshot is not None and self.optimize_config.snapshots is not None:
-            raise ValueError(
-                "`optimize_config.snapshots` cannot be set together with `aggregation.snapshot`."
-            )
-        return self
-
 
 class LoadSheddingConfig(ConfigSchema):
     marginal_cost: float = 100.0
@@ -155,3 +143,13 @@ class LoadSheddingConfig(ConfigSchema):
 
     sign: float = 1e-3
     """Scale of shed load against the model's power unit; 1e-3 turns MW into kW."""
+
+
+class PyPSAFixedCapacityBlockConfig(PyPSAOptimizeBlockConfig):
+    periods: list[Annotated[int, RecordDimCoord("period")]] | None = Field(
+        default=None, min_length=1
+    )
+    """Investment periods to solve. None solves all of them."""
+
+    load_shedding: LoadSheddingConfig | None = None
+    """Let each bus shed load at a cost. None adds no load shedding."""

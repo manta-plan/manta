@@ -30,5 +30,3 @@ steps:
     when:
       config: globals.expansion_mode
       equals: overnight
-    inputs:
-      capacity_source: ${steps.expansion_overnight.output}

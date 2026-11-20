@@ -16,6 +16,7 @@ HYDRO = ["hydro_a", "hydro_b"]
 BATTERIES = ["bat_a", "bat_b"]
 LOADS = ["load_a", "load_b"]
 ASSETS = [*ENTITY_COMPONENTS, "Line"]
+ZONES_AND_CARRIERS = {"bus": "zone", "entity": "carrier"}
 
 
 def set_status(n: pypsa.Network, status: str | None = None) -> pypsa.Network:
