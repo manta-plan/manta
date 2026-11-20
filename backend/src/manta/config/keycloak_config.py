@@ -5,6 +5,8 @@ from typing import Any
 from dotenv import load_dotenv
 from keycloak import KeycloakOpenID
 
+from manta.config.keycloak_signing_keys import SigningKeyCache
+
 
 def keycloak_server_url() -> str:
     load_dotenv()
@@ -30,18 +32,18 @@ def keycloak_client_secret() -> str:
     return os.environ["IDP_CLIENT_SECRET"]
 
 
+def keycloak_jwks_ttl_seconds() -> float:
+    load_dotenv()
+    return float(os.environ.get("KEYCLOAK_JWKS_TTL_SECONDS", "600"))
+
+
 @lru_cache
 def get_keycloak_openid() -> KeycloakOpenID:
     # Cached so repeated calls reuse the same client (avoids rebuilding config/
-    # connection state each time). This does NOT cache JWKS: python-keycloak's
-    # decode_token(validate=True) calls certs() on every invocation, which does
-    # a synchronous HTTP GET to Keycloak's /certs endpoint with no caching of
-    # its own. authenticate()/authenticated_user() are sync defs, so FastAPI
-    # runs this in a threadpool worker per request — every authenticated
-    # request ties up a worker thread for a live network round trip to
-    # Keycloak just to re-fetch the same signing keys, before the token
-    # signature is even checked.
-    # See https://github.com/marcospereirampj/python-keycloak/blob/v7.1.1/src/keycloak/keycloak_openid.py#L587
+    # connection state each time). The client doesn't cache Keycloak's signing
+    # keys: decode_token(validate=True) fetches them from Keycloak on every call
+    # unless it's given a key, so pass it one from get_signing_keys().
+    # See https://github.com/marcospereirampj/python-keycloak/blob/v7.1.1/src/keycloak/keycloak_openid.py#L791
     return KeycloakOpenID(
         server_url=keycloak_server_url(),
         realm_name=keycloak_realm(),
@@ -54,3 +56,12 @@ def get_keycloak_openid() -> KeycloakOpenID:
 def well_known(kc_client: KeycloakOpenID) -> dict[str, Any]:
     # Cache keycloak's openid configuration data
     return kc_client.well_known()
+
+
+@lru_cache
+def get_signing_keys() -> SigningKeyCache:
+    # One cache per process, shared by every request.
+    return SigningKeyCache(
+        fetch_jwks=get_keycloak_openid().certs,
+        ttl_seconds=keycloak_jwks_ttl_seconds(),
+    )

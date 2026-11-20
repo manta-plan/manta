@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
 from manta.config.example_data_config import example_project_for_new_users_enabled
-from manta.config.keycloak_config import get_keycloak_openid, well_known
+from manta.config.keycloak_config import get_keycloak_openid, get_signing_keys, well_known
+from manta.config.keycloak_signing_keys import SigningKeyCache
 from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
@@ -32,9 +33,11 @@ def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) ->
     )
 
 
-def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
+def _authenticate(
+    db: Session, kc_client: KeycloakOpenID, signing_keys: SigningKeyCache, token: str
+) -> User:
     try:
-        claims = kc_client.decode_token(token, validate=True)
+        claims = kc_client.decode_token(token, validate=True, key=signing_keys.keys_for(token))
     except (KeycloakAuthenticationError, ValueError) as e:
         # ValueError: jwcrypto raises this (not a KeycloakError) for input
         # that isn't even well-formed JWT/JWS, e.g. a garbage bearer token.
@@ -62,10 +65,11 @@ def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
 def authenticated_user(
     db: Session = Depends(get_db_session),
     kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
+    signing_keys: SigningKeyCache = Depends(get_signing_keys),
     token: str = Depends(oauth2_scheme),
 ) -> User:
     try:
-        return _authenticate(db, kc_client, token)
+        return _authenticate(db, kc_client, signing_keys, token)
     except AuthenticationError as e:
         logger.warning("Rejected token: %s", e)
         raise
