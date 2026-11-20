@@ -8,9 +8,8 @@ COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.jso
 COPY public public
 COPY src src
 # Vite inlines VITE_* variables at build time, so the record server's address
-# (host:port, e.g. this site's own host, which proxies it; see Caddyfile) and
-# its shared dev token are build args, not runtime env. Unset, the data
-# catalogue reports "VITE_RECORD_SERVER is not set."
+# (host[:port]; unset means this site's own origin, which proxies it, see
+# Caddyfile) and its shared dev token are build args, not runtime env.
 ARG VITE_RECORD_SERVER
 ARG VITE_RECORD_TOKEN
 RUN pnpm build

@@ -20,8 +20,8 @@ services:
       # Baked into the bundle (see frontend/Dockerfile); set in backend/.env.
       # The app reaches the temporary record server through this container's
       # Caddy (same origin), so it needs `--profile temporary-quack-setup`; the
-      # token must match the server's QUACK_TOKEN. A deploy behind a domain
-      # sets VITE_RECORD_SERVER to that domain.
+      # token must match the server's QUACK_TOKEN. VITE_RECORD_SERVER is
+      # empty: the app's own origin, on any host, port or domain.
       args:
         VITE_RECORD_SERVER: ${VITE_RECORD_SERVER}
         VITE_RECORD_TOKEN: ${VITE_RECORD_TOKEN}

@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   /** Google Apps Script web-app URL that appends feedback rows to a sheet. */
   readonly VITE_FEEDBACK_ENDPOINT?: string;
-  /** host:port of the record server that lists the data catalog. */
+  /** host[:port] of the record server; unset means the app's own origin. */
   readonly VITE_RECORD_SERVER?: string;
   /** The record server's shared dev token; it ships in the bundle. */
   readonly VITE_RECORD_TOKEN?: string;

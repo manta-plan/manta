@@ -44,10 +44,11 @@ The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
 `quack-server:8080`, so the browser reaches it on the frontend's own origin.
 Its settings live in [`backend/.env`](../backend/.env) with the rest:
 `QUACK_SERVER_PORT` (`8010`), `QUACK_TOKEN` (`devtoken`), and the frontend's
-build args `VITE_RECORD_SERVER` (`localhost:5173`) and `VITE_RECORD_TOKEN`
-(`devtoken`, must match `QUACK_TOKEN`). The build args are baked into the
-public bundle: behind a domain, set `VITE_RECORD_SERVER=manta.example.org` and
-rebuild. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken; it only
+build args `VITE_RECORD_SERVER` (empty: the page's own origin, through Caddy,
+on any host, port or domain) and `VITE_RECORD_TOKEN` (`devtoken`, must match
+`QUACK_TOKEN`). The build args are baked into the public bundle. The browser
+calls the server over the page's own protocol, so a plain-HTTP deploy (a VM by
+IP) works as is, and a domain gets HTTPS from Caddy. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken; it only
 matters for reaching the server directly (e.g. with `pnpm dev`, where
 `VITE_RECORD_SERVER=localhost:8010`).
 
