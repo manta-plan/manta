@@ -38,7 +38,8 @@ class LinopyModelSchema(ConfigSchema):
 class HighsOptions(ConfigSchema):
     # TODO: dynamically generate this schema from the given Highs version, so that we
     # don't have to maintain it manually.
-    solver: Literal["simplex", "ipm", "hipo"] = "hipo"
+    solver: Literal["simplex", "ipx", "hipo"] = "hipo"
+    """The HiGHS algorithm: the simplex method, or the IPX or HiPO interior point method."""
     parallel: Literal["on", "off"] = "on"
     primal_feasibility_tolerance: float = 1.0e-05
     dual_feasibility_tolerance: float = 1.0e-05
