@@ -133,12 +133,13 @@ In a second terminal:
 ```bash
 cd backend
 uv sync
-uv run manta
+uv run uvicorn manta.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 On startup the backend applies database migrations, creates the storage
 bucket and checks that Prefect is reachable, then serves the API on
-`localhost:8000`.
+`localhost:8000`. `--reload` restarts it whenever you save a file under
+`backend/`.
 
 #### 3. Start the frontend
 
