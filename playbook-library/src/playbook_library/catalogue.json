@@ -80,6 +80,56 @@
             "title": "Aggregation",
             "type": "object"
           },
+          "HighsOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "dual_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Dual Feasibility Tolerance",
+                "type": "number"
+              },
+              "parallel": {
+                "default": "on",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Parallel",
+                "type": "string"
+              },
+              "primal_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Primal Feasibility Tolerance",
+                "type": "number"
+              },
+              "random_seed": {
+                "default": 123,
+                "title": "Random Seed",
+                "type": "integer"
+              },
+              "run_crossover": {
+                "default": "off",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Run Crossover",
+                "type": "string"
+              },
+              "solver": {
+                "default": "hipo",
+                "enum": [
+                  "simplex",
+                  "ipx",
+                  "hipo"
+                ],
+                "title": "Solver",
+                "type": "string"
+              }
+            },
+            "title": "HighsOptions",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -132,6 +182,7 @@
             "type": "object"
           },
           "PiecewiseOptions": {
+            "additionalProperties": false,
             "description": "Options for piecewise constraint formulation.",
             "properties": {
               "attribute": {
@@ -234,6 +285,9 @@
                 "default": "highs",
                 "title": "Solver Name",
                 "type": "string"
+              },
+              "solver_options": {
+                "$ref": "#/$defs/HighsOptions"
               },
               "transmission_losses": {
                 "anyOf": [
@@ -404,6 +458,56 @@
             "title": "Aggregation",
             "type": "object"
           },
+          "HighsOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "dual_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Dual Feasibility Tolerance",
+                "type": "number"
+              },
+              "parallel": {
+                "default": "on",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Parallel",
+                "type": "string"
+              },
+              "primal_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Primal Feasibility Tolerance",
+                "type": "number"
+              },
+              "random_seed": {
+                "default": 123,
+                "title": "Random Seed",
+                "type": "integer"
+              },
+              "run_crossover": {
+                "default": "off",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Run Crossover",
+                "type": "string"
+              },
+              "solver": {
+                "default": "hipo",
+                "enum": [
+                  "simplex",
+                  "ipx",
+                  "hipo"
+                ],
+                "title": "Solver",
+                "type": "string"
+              }
+            },
+            "title": "HighsOptions",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -456,6 +560,7 @@
             "type": "object"
           },
           "PiecewiseOptions": {
+            "additionalProperties": false,
             "description": "Options for piecewise constraint formulation.",
             "properties": {
               "attribute": {
@@ -558,6 +663,9 @@
                 "default": "highs",
                 "title": "Solver Name",
                 "type": "string"
+              },
+              "solver_options": {
+                "$ref": "#/$defs/HighsOptions"
               },
               "transmission_losses": {
                 "anyOf": [
@@ -743,6 +851,56 @@
             "title": "Aggregation",
             "type": "object"
           },
+          "HighsOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "dual_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Dual Feasibility Tolerance",
+                "type": "number"
+              },
+              "parallel": {
+                "default": "on",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Parallel",
+                "type": "string"
+              },
+              "primal_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Primal Feasibility Tolerance",
+                "type": "number"
+              },
+              "random_seed": {
+                "default": 123,
+                "title": "Random Seed",
+                "type": "integer"
+              },
+              "run_crossover": {
+                "default": "off",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Run Crossover",
+                "type": "string"
+              },
+              "solver": {
+                "default": "hipo",
+                "enum": [
+                  "simplex",
+                  "ipx",
+                  "hipo"
+                ],
+                "title": "Solver",
+                "type": "string"
+              }
+            },
+            "title": "HighsOptions",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -795,6 +953,7 @@
             "type": "object"
           },
           "PiecewiseOptions": {
+            "additionalProperties": false,
             "description": "Options for piecewise constraint formulation.",
             "properties": {
               "attribute": {
@@ -897,6 +1056,9 @@
                 "default": "highs",
                 "title": "Solver Name",
                 "type": "string"
+              },
+              "solver_options": {
+                "$ref": "#/$defs/HighsOptions"
               },
               "transmission_losses": {
                 "anyOf": [
@@ -1067,6 +1229,56 @@
             "title": "Aggregation",
             "type": "object"
           },
+          "HighsOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "dual_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Dual Feasibility Tolerance",
+                "type": "number"
+              },
+              "parallel": {
+                "default": "on",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Parallel",
+                "type": "string"
+              },
+              "primal_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Primal Feasibility Tolerance",
+                "type": "number"
+              },
+              "random_seed": {
+                "default": 123,
+                "title": "Random Seed",
+                "type": "integer"
+              },
+              "run_crossover": {
+                "default": "off",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Run Crossover",
+                "type": "string"
+              },
+              "solver": {
+                "default": "hipo",
+                "enum": [
+                  "simplex",
+                  "ipx",
+                  "hipo"
+                ],
+                "title": "Solver",
+                "type": "string"
+              }
+            },
+            "title": "HighsOptions",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -1141,6 +1353,7 @@
             "type": "object"
           },
           "PiecewiseOptions": {
+            "additionalProperties": false,
             "description": "Options for piecewise constraint formulation.",
             "properties": {
               "attribute": {
@@ -1253,6 +1466,9 @@
                 "default": "highs",
                 "title": "Solver Name",
                 "type": "string"
+              },
+              "solver_options": {
+                "$ref": "#/$defs/HighsOptions"
               },
               "transmission_losses": {
                 "anyOf": [
@@ -1513,6 +1729,56 @@
             "title": "Aggregation",
             "type": "object"
           },
+          "HighsOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "dual_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Dual Feasibility Tolerance",
+                "type": "number"
+              },
+              "parallel": {
+                "default": "on",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Parallel",
+                "type": "string"
+              },
+              "primal_feasibility_tolerance": {
+                "default": 1e-05,
+                "title": "Primal Feasibility Tolerance",
+                "type": "number"
+              },
+              "random_seed": {
+                "default": 123,
+                "title": "Random Seed",
+                "type": "integer"
+              },
+              "run_crossover": {
+                "default": "off",
+                "enum": [
+                  "on",
+                  "off"
+                ],
+                "title": "Run Crossover",
+                "type": "string"
+              },
+              "solver": {
+                "default": "hipo",
+                "enum": [
+                  "simplex",
+                  "ipx",
+                  "hipo"
+                ],
+                "title": "Solver",
+                "type": "string"
+              }
+            },
+            "title": "HighsOptions",
+            "type": "object"
+          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -1587,6 +1853,7 @@
             "type": "object"
           },
           "PiecewiseOptions": {
+            "additionalProperties": false,
             "description": "Options for piecewise constraint formulation.",
             "properties": {
               "attribute": {
@@ -1699,6 +1966,9 @@
                 "default": "highs",
                 "title": "Solver Name",
                 "type": "string"
+              },
+              "solver_options": {
+                "$ref": "#/$defs/HighsOptions"
               },
               "transmission_losses": {
                 "anyOf": [
@@ -1843,5 +2113,5 @@
       "name": "pypsa"
     }
   },
-  "generated_in_env": "pypsa"
+  "generated_in_env": "full"
 }

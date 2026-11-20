@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 
 from playbook.blocks import ConfigSchema, RecordDimCoord, RecordProperty
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, model_validator
 from pypsa.optimization.piecewise import PiecewiseOptions
 
 from playbook_library import linopy_configs
@@ -82,10 +82,8 @@ class PyPSAOptimizeSchema(ConfigSchema):
     piecewise_options: list[PiecewiseOptions] = Field(default_factory=list)
     """Overrides for piecewise constraints, each read as `y operator f(x)`."""
 
-    @computed_field
-    def solver_options(self) -> linopy_configs.HighsOptions:
-        """Settings to pass to the solver."""
-        return linopy_configs.HighsOptions()
+    solver_options: linopy_configs.HighsOptions = Field(default_factory=linopy_configs.HighsOptions)
+    """Settings to pass to the solver."""
 
 
 class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):

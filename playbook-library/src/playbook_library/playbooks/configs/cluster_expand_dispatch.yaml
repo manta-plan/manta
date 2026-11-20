@@ -10,12 +10,18 @@ cluster:
   segments: 730
 
 expansion_overnight:
+  optimize_config:
+    solver_options:
+      solver: hipo
   aggregation:
     snapshot: seg_730
     bus: busmap_5
     entity: technology_group
 
 expansion_myopic:
+  optimize_config:
+    solver_options:
+      solver: ipx
   aggregation:
     snapshot: seg_730
     bus: busmap_5
@@ -28,4 +34,6 @@ dispatch:
   load_shedding: {}
   optimize_config:
     horizon: 168
+    solver_options:
+      solver: simplex
     overlap: 24
