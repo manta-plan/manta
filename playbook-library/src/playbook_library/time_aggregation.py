@@ -64,10 +64,26 @@ def settled(record: RecordLike, attribute: str, axis: TimeAxis) -> DuckDBPyRelat
 
     A row without a step reaches every step that no row of its own coordinates names.
     """
+    return _settle(record, record.attributes[attribute], axis)
+
+
+def settled_series(record: RecordLike, attribute: str, axis: TimeAxis) -> DuckDBPyRelation:
+    """Return the rows of `attribute` of `record` as `settled` does, for its series only.
+
+    A series has at least one row that names a step. The other rows of `attribute` hold
+    one value at every step, and are left out before they are spread over the steps.
+    """
+    rows = record.attributes[attribute]
+    keys = ", ".join(f'"{c}"' for c in rows.columns if c not in {axis.dim, "value"})
+    window = f"OVER (PARTITION BY {keys})" if keys else "OVER ()"
+    columns = ", ".join(f'"{c}"' for c in rows.columns)
+    timed = rows.project(f'{columns}, count("{axis.dim}") {window} AS _steps')
+    return _settle(record, timed.filter("_steps > 0").project(columns), axis)
+
+
+def _settle(record: RecordLike, rows: DuckDBPyRelation, axis: TimeAxis) -> DuckDBPyRelation:
     over = frozenset({axis.dim})
-    return settle(
-        record.attributes[attribute], {axis.dim: record.dims[axis.dim]}, Flags(over, over)
-    )
+    return settle(rows, {axis.dim: record.dims[axis.dim]}, Flags(over, over))
 
 
 def widened(schema: Schema, axis: TimeAxis, properties: dict[str, PropertySpec]) -> Schema:
