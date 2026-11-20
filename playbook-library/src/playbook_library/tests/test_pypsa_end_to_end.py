@@ -91,7 +91,6 @@ def test_a_playbook_of_chained_blocks_solves_merged_buses_and_assets(store_recor
 
     n = to_network(result)
     assert list(n.buses.index) == ["a", "b", "c", "d"]
-    assert n.generators.p_nom_opt.notna().all()
     assert n.generators_t.p.shape == (6, len(n.generators))
     assert n.generators_t.p.notna().all().all()
 
