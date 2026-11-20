@@ -25,6 +25,15 @@ def logout(request: RefreshTokenRequest, service: AuthService = Depends()) -> No
     service.logout(request.refresh_token)
 
 
+@router.post("/guest", response_model=LoginResult, status_code=status.HTTP_201_CREATED)
+def login_as_guest(service: AuthService = Depends()) -> LoginResult:
+    # Unauthenticated by design: it backs the "Continue as guest" button.
+    # Each call creates a new Keycloak user, so anyone who can reach this
+    # endpoint can create accounts in bulk - rate limit it before exposing
+    # it publicly.
+    return service.login_as_guest()
+
+
 @router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)
 def register(request: RegisterRequest, service: AuthService = Depends()) -> RegisterResult:
     # No bearer token required here - idp_subject/idp_source are trusted as given,
