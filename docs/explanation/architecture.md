@@ -5,11 +5,11 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Architecture
 
-A project in Manta moves from sign-in through modelling, running, inspecting and reporting, as the [user guide](../user-guide/index.md) describes.
-A playbook run is the Run stage of that path.
-The backend starts it for a project, and the run saves its results as revisions in a data record.
+A project in Manta progresses from Build to Run to Inspect to Analyze, as the [user guide](../user-guide/index.md) describes.
+A playbook is a workflow template for the Run stage of that path.
+A run saves its results at each step (after every block) as revisions in a data record.
 
-Manta keeps its modelling code apart from the code that schedules and runs it.
+Manta keeps its modelling code separate from the code that schedules and runs it.
 So you can write and test a block without any of Manta's services.
 This page covers the design principles, who and what Manta talks to, the packages and their dependencies, the running services and the backend inside.
 It then follows one playbook run, and states where each kind of data is kept and which technologies Manta uses.
@@ -19,25 +19,35 @@ It assumes you know what a block and a playbook are, which are defined in the [u
 
 Five decisions answer most questions about why Manta is built the way it is.
 
-The backend orchestrates runs and never runs modelling code.
+
+1. The backend orchestrates runs and never runs modelling code.
+
 It hands each run to Prefect, the orchestration tool, and reads the state back.
 So the backend process stays small and installs no solver and no modelling framework.
 [Orchestration with Prefect](orchestration.md) explains how Manta uses Prefect.
 
-Prefect is the only record of a run's state.
+
+2. Prefect is the only record of a run's state.
+
 The `runs` table links a project to a Prefect flow run and has no status, progress or log column.
 State kept in two places drifts apart, so the backend reads it from Prefect on every request.
 
-The environment is the unit of isolation.
+
+3. The environment is the unit of isolation.
+
 A block names the environment it needs, and that name picks the container image its step runs in.
 So one playbook can chain blocks whose dependencies could never be installed side by side, such as two modelling frameworks.
 
-Everything about a block is known without importing it.
+
+4. Everything about a block is known without importing it.
+
 No single Python environment can import every block, so Manta describes each block as data, in the catalogue.
 The backend checks a playbook made of blocks it could never import.
 [Blocks, playbooks and the catalogue](blocks-and-playbooks.md) explains the design.
 
-The playbook document is the form in which a playbook travels.
+
+5. The playbook document is the form in which a playbook travels.
+
 The backend sends the document itself to Prefect, not a name to look up later.
 So a run uses the playbook as it was when the run started, even if the library changes afterwards.
 
