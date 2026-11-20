@@ -11,6 +11,9 @@ cluster_daily:
   n_hours: 24
 
 expansion_overnight:
+  optimize_config:
+    solver_options:
+      solver: hipo
   aggregation:
     snapshot: seg_730
     bus: busmap_5
@@ -26,6 +29,8 @@ water_value:
   load_shedding: {}
   optimize_config:
     horizon: 28
+    solver_options:
+      solver: simplex
     overlap: 21
 
 dispatch:
@@ -36,4 +41,6 @@ dispatch:
   load_shedding: {}
   optimize_config:
     horizon: 168
+    solver_options:
+      solver: simplex
     overlap: 24

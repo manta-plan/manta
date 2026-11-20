@@ -6,8 +6,17 @@ globals:
   expansion_mode: overnight
 
 
-expansion_overnight: {}
+expansion_overnight:
+  optimize_config:
+    solver_options:
+      solver: hipo
 
-expansion_myopic: {}
+expansion_myopic:
+  optimize_config:
+    solver_options:
+      solver: ipx
 
-expansion_perfect: {}
+expansion_perfect:
+  optimize_config:
+    solver_options:
+      solver: hipo
