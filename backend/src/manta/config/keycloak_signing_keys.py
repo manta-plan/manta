@@ -4,10 +4,14 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from cachetools import TTLCache
 from jwcrypto import jwk, jwt
 from keycloak.exceptions import KeycloakError
 
 logger = logging.getLogger(__name__)
+
+# The single key each TTLCache below is used with.
+_JWKS = "jwks"
 
 
 class SigningKeyCache:
@@ -34,16 +38,23 @@ class SigningKeyCache:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._fetch_jwks = fetch_jwks
-        self._ttl_seconds = ttl_seconds
-        self._refetch_cooldown_seconds = refetch_cooldown_seconds
-        self._clock = clock
         # authenticated_user() is a sync def, so FastAPI calls it from several
         # threadpool workers at once. The lock is held during a fetch, so requests
-        # that arrive meanwhile wait for its result instead of fetching too.
+        # that arrive meanwhile wait for its result instead of fetching too. It
+        # also guards the TTLCaches, which aren't thread-safe.
         self._lock = threading.Lock()
-        self._keys: jwk.JWKSet | None = None
-        self._fetched_at = 0.0  # last successful fetch
-        self._attempted_at = 0.0  # last fetch, successful or not
+        # Holds the keys until they are ttl_seconds old.
+        self._fresh_keys: TTLCache[str, jwk.JWKSet] = TTLCache(
+            maxsize=1, ttl=ttl_seconds, timer=clock
+        )
+        # Holds an entry for refetch_cooldown_seconds after each fetch,
+        # successful or not.
+        self._recent_fetch: TTLCache[str, bool] = TTLCache(
+            maxsize=1, ttl=refetch_cooldown_seconds, timer=clock
+        )
+        # The last keys fetched, still used once they've expired if fetching
+        # them again fails.
+        self._last_keys: jwk.JWKSet | None = None
 
     def keys_for(self, token: str) -> jwk.JWKSet:
         """Returns the keys to validate `token` with, fetching them if needed.
@@ -54,31 +65,27 @@ class SigningKeyCache:
         """
         kid = jwt.JWT(jwt=token).token.jose_header.get("kid")
         with self._lock:
-            now = self._clock()
-            if self._keys is None:
-                return self._fetch(now)  # nothing cached to fall back on
-            if self._needs_fetch(self._keys, now, kid):
-                try:
-                    return self._fetch(now)
-                except KeycloakError:
-                    logger.warning(
-                        "Could not fetch Keycloak's signing keys; using the cached ones",
-                        exc_info=True,
-                    )
-            return self._keys
+            keys = self._fresh_keys.get(_JWKS)
+            if keys is not None and (kid is None or keys.get_key(kid) is not None):
+                return keys
+            if self._last_keys is not None and _JWKS in self._recent_fetch:
+                return self._last_keys
+            try:
+                return self._fetch()
+            except KeycloakError:
+                if self._last_keys is None:
+                    raise  # nothing cached to fall back on
+                logger.warning(
+                    "Could not fetch Keycloak's signing keys; using the cached ones",
+                    exc_info=True,
+                )
+                return self._last_keys
 
-    def _needs_fetch(self, keys: jwk.JWKSet, now: float, kid: str | None) -> bool:
-        if now - self._attempted_at < self._refetch_cooldown_seconds:
-            return False
-        expired = now - self._fetched_at >= self._ttl_seconds
-        unknown_kid = kid is not None and keys.get_key(kid) is None
-        return expired or unknown_kid
-
-    def _fetch(self, now: float) -> jwk.JWKSet:
-        self._attempted_at = now
+    def _fetch(self) -> jwk.JWKSet:
+        self._recent_fetch[_JWKS] = True
         keys = jwk.JWKSet()
         for key in self._fetch_jwks()["keys"]:
             keys.add(jwk.JWK(**key))
-        self._keys = keys
-        self._fetched_at = now
+        self._fresh_keys[_JWKS] = keys
+        self._last_keys = keys
         return keys
