@@ -6,9 +6,9 @@ cluster:
   name: seg_730
   segments: 730
 
-cluster_daily:
-  name: day
-  n_hours: 24
+cluster_monthly:
+  name: month
+  n_hours: 730
 
 expansion_overnight:
   aggregation:
@@ -20,13 +20,10 @@ water_value:
   periods: [2050]
   carriers: [H2]
   aggregation:
-    snapshot: day
+    snapshot: month
     bus: busmap_5
     entity: technology_group
   load_shedding: {}
-  optimize_config:
-    horizon: 28
-    overlap: 21
 
 dispatch:
   periods: [2050]

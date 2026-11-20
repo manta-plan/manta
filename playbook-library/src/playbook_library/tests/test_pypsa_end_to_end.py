@@ -107,12 +107,11 @@ def test_water_values_chain_from_the_expansion_into_the_dispatch(store_record):
     shared = ["cluster", "expansion_overnight", "dispatch"]
     config = {
         **{step: ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG[step] for step in shared},
-        "cluster_daily": {"name": "agg_2h", "n_hours": 2},
+        "cluster_monthly": {"name": "agg_2h", "n_hours": 2},
         "water_value": {
             "carriers": ["battery"],
             "aggregation": {"snapshot": "agg_2h", **ZONES_AND_CARRIERS},
             "load_shedding": {},
-            "optimize_config": {"horizon": 2, "overlap": 1},
         },
     }
 
