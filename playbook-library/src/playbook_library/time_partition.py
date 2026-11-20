@@ -17,13 +17,17 @@ from functools import cache, reduce
 
 import numpy as np
 import pandas as pd
-import pyarrow.compute as pc
 import pypsa
-import tsam
 from datarecord import PropertySpec, RecordLike, Schema
+from duckdb import ColumnExpression as col
+from duckdb import ConstantExpression as lit
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb import FunctionExpression as fn
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
+from scipy.sparse import diags
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.preprocessing import MinMaxScaler
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_time_aggregation import (
@@ -32,7 +36,7 @@ from playbook_library.pypsa_time_aggregation import (
     snapshot_frame,
     snapshot_rows,
 )
-from playbook_library.time_aggregation import settled_series, time_relation, widened
+from playbook_library.time_aggregation import time_relation, widened
 
 
 @dataclass(frozen=True)
@@ -126,24 +130,18 @@ def input_series(base: RecordLike) -> list[str]:
     return floats
 
 
-def _profiles(rel: DuckDBPyRelation, name: str, rows: DuckDBPyRelation) -> DuckDBPyRelation:
-    """Return each series of attribute `name` that varies over the snapshots, as values per period.
+def _labelled(rel: DuckDBPyRelation, name: str) -> DuckDBPyRelation:
+    """Return the rows of attribute `name`, each tagged with the name of its time series.
 
-    A series is labelled by `name` and its other keys. A series constant over every
-    period is dropped.
+    The name is `name` and the row's other keys, joined by `|`.
     """
-    keys = [f'a."{c}"' for c in rel.columns if c not in {"snapshot", "value"}]
-    label = ", ".join([f"'{name}'", *(f"CAST({k} AS VARCHAR)" for k in keys)])
-    joined = rel.set_alias("a").join(rows.set_alias("s"), "a.snapshot = s.snapshot")
-    profiles = joined.aggregate(
-        f"concat_ws('|', {label}) AS series, s.period AS period, "
-        "list(CAST(a.value AS DOUBLE) ORDER BY s.row) AS profile, "
-        "min(a.value) AS low, max(a.value) AS high",
-        ", ".join([*keys, "s.period"]),
+    keys = [col(c).cast("VARCHAR") for c in rel.columns if c not in {"snapshot", "value"}]
+    series = fn("concat_ws", lit("|"), lit(name), *keys).alias("series")
+    return rel.select(
+        series,
+        col("snapshot"),
+        col("value").cast("DOUBLE").alias("value"),
     )
-    window = "OVER (PARTITION BY series)"
-    varies = f"min(low) {window} < max(high) {window} AS varies"
-    return profiles.project(f"series, period, profile, {varies}").filter("varies")
 
 
 def _period_matrices(
@@ -152,52 +150,69 @@ def _period_matrices(
     """Yield, per investment period, the positions of its rows in `frame` and its series matrix.
 
     The matrix has one column per distinct series of `attributes`, ordered by series
-    label. Only series that vary over the snapshots count. Of series identical within the
-    period, only the one with the first label is kept. Raises `ValueError` for a period
-    without such a series.
+    label. Only a series with rows at snapshots can vary. Its row without a snapshot
+    gives its value at every other snapshot, as by the broadcast rule. Only series that
+    vary over the snapshots count. Of series identical within the period, only the one
+    with the first label is kept. Raises `ValueError` if a series has no value at a
+    snapshot, or if no series varies.
     """
-    positions = frame[["snapshot", "period"]].assign(row=range(len(frame)))
-    rows = snapshot_rows(base.schema, con, positions, ["snapshot"])
-    axis = pypsa_time(base.schema)
-    profiles = [_profiles(settled_series(base, name, axis), name, rows) for name in attributes]
-    distinct = reduce(DuckDBPyRelation.union, profiles).aggregate(
-        "period, min(series) AS series, profile", "period, profile"
+    positions = frame[["snapshot"]].assign(row=range(len(frame)))
+    rows = snapshot_rows(base.schema, con, positions, ["snapshot"]).set_alias("s")
+    rels = [_labelled(base.attributes[name], name) for name in attributes]
+    labelled = reduce(DuckDBPyRelation.union, rels)
+    timed = labelled.filter(col("snapshot").isnotnull()).set_alias("a")
+    rank = (fn("row_number").over(order_by=[col("series")]) - lit(1)).alias("col")
+    ids = timed.select(col("series")).distinct().select(col("series"), rank).set_alias("i")
+    cells = (
+        timed.join(rows, col("a", "snapshot") == col("s", "snapshot"))
+        .join(ids, col("a", "series") == col("i", "series"))
+        .select(col("s", "row"), col("i", "col"), col("a", "value"))
+        .fetchnumpy()
     )
-    table = distinct.order("period, series").to_arrow_table()
-    for period, positions in frame.groupby("period").indices.items():
-        chosen = table.filter(pc.equal(table["period"], period))["profile"]
-        if not len(chosen):
-            raise ValueError(
-                f"The record has no input series that vary over its snapshots in period {period}"
-            )
-        values = chosen.combine_chunks().flatten().to_numpy()
-        yield positions, values.reshape(len(chosen), len(positions)).T
+    fallback = (
+        labelled.filter(col("snapshot").isnull())
+        .set_alias("a")
+        .join(ids, col("a", "series") == col("i", "series"))
+        .select(col("i", "col"), col("a", "value"))
+        .fetchnumpy()
+    )
+    wide = np.full((len(frame), len(ids)), np.nan)
+    wide[:, fallback["col"]] = fallback["value"]
+    wide[cells["row"], cells["col"]] = cells["value"]
+    if np.isnan(wide).any():
+        raise ValueError("An input series has no value at some snapshots")
+    wide = wide[:, wide.min(axis=0) < wide.max(axis=0)]
+    if not wide.shape[1]:
+        raise ValueError("The record has no input series that vary over its snapshots")
+    for at in frame.groupby("period").indices.values():
+        block = wide[at]
+        _, first = np.unique(block, axis=1, return_index=True)
+        yield at, block[:, np.sort(first)]
 
 
-def _segment_starts(matrix: pd.DataFrame, n_segments: int) -> np.ndarray:
-    """Split `matrix` into `n_segments` segments with tsam, and return where each row's starts.
+def _segment_starts(matrix: np.ndarray, n_segments: int) -> np.ndarray:
+    """Split `matrix` into `n_segments` segments, and return where each row's starts.
 
-    A segment is a contiguous stretch of rows with similar values. tsam is a time series
-    aggregation package.
+    A segment is a contiguous stretch of rows with similar values. Rows are merged by
+    Ward clustering over min-max scaled columns, each row linked only to its neighbours,
+    as tsam segments a single period.
     """
-    result = tsam.aggregate(
-        matrix.reset_index(drop=True),
-        n_clusters=1,
-        period_duration=len(matrix),
-        temporal_resolution=1.0,
-        segments=tsam.SegmentConfig(n_segments=n_segments),
-    )
-    durations = result.cluster_representatives.index.get_level_values("Segment Duration")
-    return np.repeat(np.cumsum(durations) - durations, durations)
+    n = len(matrix)
+    chain = diags([np.ones(n - 1), np.ones(n - 1)], [-1, 1])
+    clustering = AgglomerativeClustering(n_segments, linkage="ward", connectivity=chain)
+    labels = clustering.fit_predict(MinMaxScaler().fit_transform(matrix))
+    starts = np.r_[True, labels[1:] != labels[:-1]]
+    return np.maximum.accumulate(np.where(starts, np.arange(n), 0))
 
 
 def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
     """Map each snapshot to the first snapshot of its segment, `n_segments` in each period.
 
-    tsam places the segments by the PyPSA input series of `record` that vary over its
+    The segments are placed by the PyPSA input series of `record` that vary over its
     snapshots. Within a period, a series that duplicates another is dropped first, so
     each profile counts once. The profiles of cohorts of one technology are such
-    duplicates. Raises `ValueError` if `record` has no such series, overall or in a period.
+    duplicates. Raises `ValueError` if `record` has no such series, or if a series has
+    no value at a snapshot.
     """
     ws, rev = revision(record)
     frame = snapshot_frame(rev.record)
@@ -205,7 +220,7 @@ def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
     representatives = labels.copy()
     inputs = _period_matrices(rev.record, frame, ws.con, input_series(rev.record))
     for positions, matrix in inputs:
-        starts = _segment_starts(pd.DataFrame(matrix), n_segments)
+        starts = _segment_starts(matrix, n_segments)
         representatives[positions] = labels[positions][starts]
     return pd.Series(representatives, index=frame["snapshot"])
 
