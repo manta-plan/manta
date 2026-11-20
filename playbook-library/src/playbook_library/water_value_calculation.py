@@ -13,10 +13,11 @@ from pydantic import Field
 from playbook_library.pypsa_helpers import (
     fixed_capacity_model,
     restarting_storage,
+    to_network,
     write_series,
 )
 from playbook_library.pypsa_spatial_aggregation import aggregate_network, expand_network
-from playbook_library.pypsa_time_aggregation import record_snapshots, snapshot_map
+from playbook_library.pypsa_time_aggregation import snapshot_map
 from playbook_library.rolling_horizon_dispatch import (
     RollingHorizonDispatchConfig,
     optimize_rolling_horizon,
@@ -88,7 +89,5 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
         model, n = fixed_capacity_model(record, self.config, windowed=True)
         buses = self.valued_stores(n)
         values = self.marginal_prices(n, model)[buses].set_axis(buses.index, axis=1)
-        own = n.stores.marginal_cost[buses.index]
-        return write_series(
-            record, "marginal_cost", values.reindex(record_snapshots(record)).fillna(own)
-        )
+        held = to_network(record).get_switchable_as_dense("Store", "marginal_cost")[buses.index]
+        return write_series(record, "marginal_cost", values.reindex(held.index).fillna(held))
