@@ -265,7 +265,6 @@ services:
       context: ./quack-server
     environment:
       QUACK_TOKEN: ${QUACK_TOKEN}
-      CORS_ORIGINS: ${QUACK_CORS_ORIGINS:-http://localhost:5173}
       # Records are read from the dev object store (SeaweedFS), where the
       # backend puts the example stores at startup (EXAMPLE_DATA_SEED, under
       # `example-data/`). Override QUACK_RECORDS_ROOT with /srv/data/records

@@ -35,7 +35,7 @@ export function recordServerConfig(): RecordServerConfig {
   // Unset, the record server is on the app's own origin: the deployed
   // frontend's Caddy proxies it there (frontend/Caddyfile), so one build
   // works on any host, port or domain, with no CORS. Set it for a record
-  // server on another origin, e.g. localhost:8010 under `pnpm dev`.
+  // server on another origin.
   const server = import.meta.env.VITE_RECORD_SERVER || window.location.host;
 
   return { server, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };

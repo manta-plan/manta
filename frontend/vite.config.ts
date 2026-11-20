@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
@@ -17,25 +17,30 @@ function appVersion() {
   }
 }
 
-// The record server's host port (QUACK_SERVER_PORT in backend/.env).
-const quackUrl = process.env.QUACK_URL ?? "http://127.0.0.1:8010";
-
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
-  define: {
-    __APP_VERSION__: JSON.stringify(appVersion()),
-  },
-  server: {
-    proxy: {
-      "/v1": "http://127.0.0.1:8000",
-      // TEMPORARY: the record server (docker/quack-server), proxied like
-      // frontend/Caddyfile does in a deploy, so the app reaches it on its own
-      // origin in dev too: the catalogue API, the Quack relay and the
-      // DuckDB-Wasm extensions. QUACK_URL overrides where it listens.
-      "/api": quackUrl,
-      "/quack": quackUrl,
-      "/ext": quackUrl,
+export default defineConfig(({ mode }) => {
+  // The record server's port and token are the compose stack's, in
+  // backend/.env, so they're set once there.
+  const quack = loadEnv(mode, "../backend", "QUACK_");
+  const quackUrl = `http://127.0.0.1:${quack.QUACK_SERVER_PORT ?? 8010}`;
+  process.env.VITE_RECORD_TOKEN ??= quack.QUACK_TOKEN;
+
+  return {
+    plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion()),
     },
-  },
+    server: {
+      proxy: {
+        "/v1": "http://127.0.0.1:8000",
+        // TEMPORARY: the record server (docker/quack-server), proxied like
+        // frontend/Caddyfile does in a deploy, so the app reaches it on its
+        // own origin in dev too: the catalogue API, the Quack relay and the
+        // DuckDB-Wasm extensions.
+        "/api": quackUrl,
+        "/quack": quackUrl,
+        "/ext": quackUrl,
+      },
+    },
+  };
 });

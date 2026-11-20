@@ -43,18 +43,17 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
 The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
 `quack-server:8080`, so the browser reaches it on the frontend's own origin.
 Its settings live in [`backend/.env`](../backend/.env) with the rest:
-`QUACK_SERVER_PORT` (`8010`), `QUACK_TOKEN` (`devtoken`), and the frontend's
-build args `VITE_RECORD_SERVER` (empty: the page's own origin, through Caddy,
-on any host, port or domain) and `VITE_RECORD_TOKEN` (`devtoken`, must match
-`QUACK_TOKEN`). The build args are baked into the public bundle. The browser
-calls the server over the page's own protocol, so a plain-HTTP deploy (a VM by
-IP) works as is, and a domain gets HTTPS from Caddy.
+`FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN` (`devtoken`).
+The token is also built into the public frontend bundle, so only a dev value
+belongs there. The app calls the server on its own origin, over the page's own
+protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets
+HTTPS from Caddy. No CORS settings are needed.
 
 The frontend is served on `FRONTEND_PORT` (`80`, in `backend/.env`):
 <http://localhost>. `pnpm dev` stays on 5173, and its Vite server proxies the
 same record server paths to `localhost:${QUACK_SERVER_PORT}` (`8010`, published
-on the host's loopback only). Set `QUACK_SERVER_PORT` to a free host port if
-8010 is taken, and `QUACK_URL` when starting `pnpm dev` to match it.
+on the host's loopback only), reading both that port and the token from
+`backend/.env`. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken.
 
 ## Services
 

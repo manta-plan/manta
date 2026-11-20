@@ -17,14 +17,12 @@ services:
     image: ${MANTA_FRONTEND_IMAGE:-manta-frontend}:${IMAGE_TAG:-latest}
     build:
       context: ../frontend
-      # Baked into the bundle (see frontend/Dockerfile); set in backend/.env.
       # The app reaches the temporary record server through this container's
-      # Caddy (same origin), so it needs `--profile temporary-quack-setup`; the
-      # token must match the server's QUACK_TOKEN. VITE_RECORD_SERVER is
-      # empty: the app's own origin, on any host, port or domain.
+      # Caddy (same origin, on any host, port or domain), so it needs
+      # `--profile temporary-quack-setup`. Its token is baked into the public
+      # bundle (see frontend/Dockerfile) and is the server's QUACK_TOKEN.
       args:
-        VITE_RECORD_SERVER: ${VITE_RECORD_SERVER}
-        VITE_RECORD_TOKEN: ${VITE_RECORD_TOKEN}
+        VITE_RECORD_TOKEN: ${QUACK_TOKEN}
     environment:
       BACKEND_URL: http://backend:8000
       # Container port, not QUACK_SERVER_PORT (that's the host-published one).
