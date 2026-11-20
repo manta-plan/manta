@@ -1,6 +1,3 @@
-import type { Node } from "@xyflow/react";
-import type { DataRecordChoice } from "../features/runs/types";
-
 // ── GET /v1/playbooks ───────────────────────────────────────────────────────
 
 export type PlaybookStepSummary = {
@@ -98,18 +95,9 @@ export type ValidatePlaybookConfigResponse = {
   issues: PlaybookIssue[];
 };
 
-// ── Dialog ──────────────────────────────────────────────────────────────────
+// ── Drawer ──────────────────────────────────────────────────────────────────
 
-export type PlaybookCanvasNode = Node<{ label: string; block: string | null }, "playbook">;
-
-export type RunPlaybookDialogProps = {
-  error: string | null;
+export type NewRunDrawerProps = {
   open: boolean;
-  isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (
-    playbook: string,
-    config: PlaybookConfig,
-    dataRecord: DataRecordChoice,
-  ) => Promise<void>;
 };
