@@ -22,6 +22,7 @@ The [user guide](user-guide/index.md) describes each stage and what the web app 
 
 ## Where to start
 
+- To learn what Manta is for and why it exists, read [Manta's purpose](explanation/purpose.md).
 - To use the web app as a modeller, read the [user guide](user-guide/index.md).
 - To write or run blocks and playbooks, follow [Blocks and playbooks](installation/blocks-and-playbooks.md), then read the [playbook and playbook-library contributing guide](contributing/playbook.md) and the [`playbook` reference](reference/playbook/api.md).
 - To work on Manta itself, follow [Full stack](installation/full-stack.md), [Backend](installation/backend.md) or [Frontend](installation/frontend.md). The [technical overview](explanation/architecture.md) shows how the parts fit together, and the [contributing guide](contributing/index.md) sets out how to change them. The [reference](reference/index.md) lists the Python and REST interfaces.

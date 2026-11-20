@@ -131,6 +131,7 @@ nav:
       - Frontend: installation/frontend.md
   - Explanation:
       - explanation/index.md
+      - Manta's purpose: explanation/purpose.md
       - Users and scope: explanation/scope.md
       - Architecture: explanation/architecture.md
       - Orchestration with Prefect: explanation/orchestration.md
