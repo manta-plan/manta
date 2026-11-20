@@ -21,7 +21,7 @@ import pypsa
 from datarecord import PropertySpec, RecordLike, Schema
 from duckdb import ColumnExpression as col
 from duckdb import ConstantExpression as lit
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb import DuckDBPyRelation
 from duckdb import FunctionExpression as fn
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
@@ -31,10 +31,11 @@ from sklearn.preprocessing import MinMaxScaler
 
 from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_time_aggregation import (
+    PYPSA_TIME,
+    has_periods,
     pypsa_time,
     snapshot_axis,
     snapshot_frame,
-    snapshot_rows,
 )
 from playbook_library.time_aggregation import time_relation, widened
 
@@ -144,29 +145,48 @@ def _labelled(rel: DuckDBPyRelation, name: str) -> DuckDBPyRelation:
     )
 
 
-def _period_matrices(
-    base: RecordLike, frame: pd.DataFrame, con: DuckDBPyConnection, attributes: Sequence[str]
-) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Yield, per investment period, the positions of its rows in `frame` and its series matrix.
+def _distinct_varying(matrix: np.ndarray, period: int) -> np.ndarray:
+    """Return the columns of `matrix`, the series of `period`, that vary and are distinct.
 
-    The matrix has one column per distinct series of `attributes`, ordered by series
-    label. Only a series with rows at snapshots can vary. Its row without a snapshot
-    gives its value at every other snapshot, as by the broadcast rule. Only series that
-    vary over the snapshots of the period count. Of series identical within the period,
-    only the one with the first label is kept. Raises `ValueError` if a series has no
-    value at a snapshot, or for a period without a series that varies.
+    Of identical columns only the first is kept. Raises `ValueError` if a series has no
+    value at a snapshot, or if none varies.
     """
-    positions = frame[["snapshot"]].assign(row=range(len(frame)))
-    rows = snapshot_rows(base.schema, con, positions, ["snapshot"]).set_alias("s")
+    if np.isnan(matrix).any():
+        raise ValueError(f"An input series has no value at some snapshots in period {period}")
+    matrix = matrix[:, matrix.min(axis=0) < matrix.max(axis=0)]
+    if not matrix.shape[1]:
+        raise ValueError(
+            f"The record has no input series that vary over its snapshots in period {period}"
+        )
+    _, first = np.unique(matrix, axis=1, return_index=True)
+    return matrix[:, np.sort(first)]
+
+
+def _period_matrices(
+    base: RecordLike, attributes: Sequence[str]
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield, per investment period, the positions of its snapshots and its series matrix.
+
+    Positions count the snapshots of `base` in axis order. The matrix has one column per
+    series of `attributes` with rows at snapshots, ordered by series label, as
+    `_distinct_varying` keeps them. A series' row without a snapshot gives its value at
+    every other snapshot, as by the broadcast rule.
+    """
     rels = [_labelled(base.attributes[name], name) for name in attributes]
     labelled = reduce(DuckDBPyRelation.union, rels)
+    period = col("snapshot")["period"] if has_periods(base.schema) else lit(0)
+    position = (fn("row_number").over() - lit(1)).alias("position")
+    numbered = time_relation(base, PYPSA_TIME).select(
+        col("snapshot"), period.alias("period"), position
+    )
     timed = labelled.filter(col("snapshot").isnotnull()).set_alias("a")
+    placed = timed.join(numbered.set_alias("s"), col("a", "snapshot") == col("s", "snapshot"))
+    placed = placed.select(col("series"), col("position"), col("value")).set_alias("p")
     rank = (fn("row_number").over(order_by=[col("series")]) - lit(1)).alias("col")
-    ids = timed.select(col("series")).distinct().select(col("series"), rank).set_alias("i")
+    ids = placed.select(col("series")).distinct().select(col("series"), rank).set_alias("i")
     cells = (
-        timed.join(rows, col("a", "snapshot") == col("s", "snapshot"))
-        .join(ids, col("a", "series") == col("i", "series"))
-        .select(col("s", "row"), col("i", "col"), col("a", "value"))
+        placed.join(ids, col("p", "series") == col("i", "series"))
+        .select(col("p", "position"), col("i", "col"), col("p", "value"))
         .fetchnumpy()
     )
     fallback = (
@@ -176,20 +196,12 @@ def _period_matrices(
         .select(col("i", "col"), col("a", "value"))
         .fetchnumpy()
     )
-    wide = np.full((len(frame), len(ids)), np.nan)
+    wide = np.full((len(numbered), len(ids)), np.nan)
     wide[:, fallback["col"]] = fallback["value"]
-    wide[cells["row"], cells["col"]] = cells["value"]
-    if np.isnan(wide).any():
-        raise ValueError("An input series has no value at some snapshots")
-    for period, at in frame.groupby("period").indices.items():
-        block = wide[at]
-        block = block[:, block.min(axis=0) < block.max(axis=0)]
-        if not block.shape[1]:
-            raise ValueError(
-                f"The record has no input series that vary over its snapshots in period {period}"
-            )
-        _, first = np.unique(block, axis=1, return_index=True)
-        yield at, block[:, np.sort(first)]
+    wide[cells["position"], cells["col"]] = cells["value"]
+    spans = numbered.aggregate("period, min(position) AS start, count(*) AS n", "period")
+    for period, start, n in spans.order("start").fetchall():
+        yield np.arange(start, start + n), _distinct_varying(wide[start : start + n], period)
 
 
 def _segment_starts(matrix: np.ndarray, n_segments: int) -> np.ndarray:
@@ -216,11 +228,11 @@ def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
     duplicates. Raises `ValueError` if a period has no such series, or if a series has
     no value at a snapshot.
     """
-    ws, rev = revision(record)
+    _, rev = revision(record)
     frame = snapshot_frame(rev.record)
     labels = frame["snapshot"].to_numpy()
     representatives = labels.copy()
-    inputs = _period_matrices(rev.record, frame, ws.con, input_series(rev.record))
+    inputs = _period_matrices(rev.record, input_series(rev.record))
     for positions, matrix in inputs:
         starts = _segment_starts(matrix, n_segments)
         representatives[positions] = labels[positions][starts]
