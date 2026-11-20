@@ -78,9 +78,12 @@ pnpm preview
 ## Record server
 
 The data records (the New Project drawer, the Data Catalog and the data record of a run) come
-from the quack record server in `docker/quack-server`. Point the app at it in `.env.local` (copy `.env.example`):
+from the quack record server in `docker/quack-server`. The dev server proxies `/api`, `/quack` and `/ext`
+to it on `localhost:8010` (`QUACK_URL=http://127.0.0.1:<port> pnpm dev` for another port), like the Caddy
+in the deployed frontend, so the app reaches it on its own origin. It only needs the shared dev token in `.env.local`:
 
 ```bash
-VITE_RECORD_SERVER=localhost:8010
 VITE_RECORD_TOKEN=devtoken
 ```
+
+Leave `VITE_RECORD_SERVER` unset (its default is the app's own origin); set it only for a record server elsewhere.
