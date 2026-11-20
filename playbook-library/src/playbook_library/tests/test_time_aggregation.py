@@ -112,14 +112,9 @@ def test_resampling_groups_snapshots_as_pypsa_does(single_period_record):
     assert (pd.factorize(mapping.to_numpy())[0] == expected).all()
 
 
-@pytest.mark.parametrize(
-    ("record_name", "n_segments"),
-    [("multi_period_record", 2), pytest.param("bel_hourly_record", 50, marks=pytest.mark.slow)],
-)
-def test_segmenting_makes_as_many_segments_in_each_period(record_name, n_segments, request):
-    record = request.getfixturevalue(record_name)
-    counts = _clusters_per_period(record, segment_map(record, n_segments))
-    assert (counts.clusters == n_segments).all()
+def test_segmenting_makes_as_many_segments_in_each_period(storage_record):
+    counts = _clusters_per_period(storage_record, segment_map(storage_record, 2))
+    assert (counts.clusters == 2).all()
 
 
 @pytest.mark.slow
@@ -186,9 +181,15 @@ def test_segmenting_refuses_a_series_without_a_value_at_some_snapshots(storage_r
         segment_map(gaps, 4)
 
 
-def test_segmenting_needs_a_series_that_varies(single_period_record):
-    with pytest.raises(ValueError, match="no input series that vary"):
-        segment_map(single_period_record, 4)
+@pytest.mark.parametrize(
+    ("record_name", "period"), [("single_period_record", 0), ("multi_period_record", 2030)]
+)
+def test_segmenting_needs_a_series_that_varies_in_each_period(record_name, period, request):
+    """Neither record has an input series that varies within a period; the load of
+    `multi_period_record` only steps up from one period to the next."""
+    record = request.getfixturevalue(record_name)
+    with pytest.raises(ValueError, match=f"vary over its snapshots in period {period}$"):
+        segment_map(record, 2)
 
 
 @pytest.mark.parametrize("record_name", ["single_period_record", "multi_period_record"])

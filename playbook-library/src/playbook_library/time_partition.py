@@ -152,9 +152,9 @@ def _period_matrices(
     The matrix has one column per distinct series of `attributes`, ordered by series
     label. Only a series with rows at snapshots can vary. Its row without a snapshot
     gives its value at every other snapshot, as by the broadcast rule. Only series that
-    vary over the snapshots count. Of series identical within the period, only the one
-    with the first label is kept. Raises `ValueError` if a series has no value at a
-    snapshot, or if no series varies.
+    vary over the snapshots of the period count. Of series identical within the period,
+    only the one with the first label is kept. Raises `ValueError` if a series has no
+    value at a snapshot, or for a period without a series that varies.
     """
     positions = frame[["snapshot"]].assign(row=range(len(frame)))
     rows = snapshot_rows(base.schema, con, positions, ["snapshot"]).set_alias("s")
@@ -181,11 +181,13 @@ def _period_matrices(
     wide[cells["row"], cells["col"]] = cells["value"]
     if np.isnan(wide).any():
         raise ValueError("An input series has no value at some snapshots")
-    wide = wide[:, wide.min(axis=0) < wide.max(axis=0)]
-    if not wide.shape[1]:
-        raise ValueError("The record has no input series that vary over its snapshots")
-    for at in frame.groupby("period").indices.values():
+    for period, at in frame.groupby("period").indices.items():
         block = wide[at]
+        block = block[:, block.min(axis=0) < block.max(axis=0)]
+        if not block.shape[1]:
+            raise ValueError(
+                f"The record has no input series that vary over its snapshots in period {period}"
+            )
         _, first = np.unique(block, axis=1, return_index=True)
         yield at, block[:, np.sort(first)]
 
@@ -211,7 +213,7 @@ def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
     The segments are placed by the PyPSA input series of `record` that vary over its
     snapshots. Within a period, a series that duplicates another is dropped first, so
     each profile counts once. The profiles of cohorts of one technology are such
-    duplicates. Raises `ValueError` if `record` has no such series, or if a series has
+    duplicates. Raises `ValueError` if a period has no such series, or if a series has
     no value at a snapshot.
     """
     ws, rev = revision(record)
