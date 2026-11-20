@@ -36,7 +36,12 @@ from playbook_library.pypsa_time_aggregation import (
     write_expanded_results,
 )
 from playbook_library.time_aggregation import Overlay, cluster_starts, shaped
-from playbook_library.time_partition import add_snapshot_property, resample_map, segment_map
+from playbook_library.time_partition import (
+    _segment_starts,
+    add_snapshot_property,
+    resample_map,
+    segment_map,
+)
 
 pytestmark = pytest.mark.pypsa
 
@@ -69,10 +74,11 @@ def _clusters_per_period(record: DataRecord, mapping: pd.Series) -> pd.DataFrame
     return counts.agg(clusters="sum", snapshots="size")
 
 
-def _sparse(record: DataRecord, attribute: str) -> DataRecord:
+def _sparse(record: DataRecord, attribute: str, fallback: bool = True) -> DataRecord:
     """Store `attribute` of `record` again, as each series' most common value and the rows apart.
 
     The most common value is a row without a snapshot, which every other snapshot takes.
+    Without `fallback`, it is left out, so those snapshots have no value.
     """
     ws, rev = revision(record)
     rel = rev.record.attributes[attribute]
@@ -81,7 +87,8 @@ def _sparse(record: DataRecord, attribute: str) -> DataRecord:
     unset = "CASE WHEN false THEN snapshot END AS snapshot, common AS value"
     scalars = ranked.project(f"* EXCLUDE (common) REPLACE ({unset})").distinct()
     apart = ranked.filter("value <> common").project("* EXCLUDE (common)")
-    attributes = {**rev.record.attributes, attribute: scalars.union(apart)}
+    stored = scalars.union(apart) if fallback else apart
+    attributes = {**rev.record.attributes, attribute: stored}
     child = rev.store.commit(Overlay(rev.record, attributes=attributes), parent=rev)
     return DataRecord(url=record.url, uuid=child.id)
 
@@ -151,6 +158,32 @@ def test_segmenting_hourly_bel_makes_the_segments_of_pypsa_eur(bel_hourly_record
 def test_segmenting_reads_sparse_series_as_the_dense_ones(attribute, storage_record):
     sparse = _sparse(storage_record, attribute)
     assert segment_map(sparse, 4).equals(segment_map(storage_record, 4))
+
+
+def _tsam_starts(matrix: np.ndarray, n_segments: int) -> np.ndarray:
+    """Segment `matrix` as one period with tsam, and return where each row's segment starts."""
+    tsam = pytest.importorskip("tsam")
+    result = tsam.aggregate(
+        pd.DataFrame(matrix),
+        n_clusters=1,
+        period_duration=len(matrix),
+        temporal_resolution=1.0,
+        segments=tsam.SegmentConfig(n_segments=n_segments),
+    )
+    durations = result.cluster_representatives.index.get_level_values("Segment Duration")
+    return np.repeat(np.cumsum(durations) - durations, durations)
+
+
+@pytest.mark.parametrize(("seed", "n_segments"), [(0, 2), (1, 10), (2, 50)])
+def test_segment_starts_are_those_of_tsam(seed, n_segments):
+    matrix = np.random.default_rng(seed).random((200, 5))
+    assert (_segment_starts(matrix, n_segments) == _tsam_starts(matrix, n_segments)).all()
+
+
+def test_segmenting_refuses_a_series_without_a_value_at_some_snapshots(storage_record):
+    gaps = _sparse(storage_record, "p_max_pu", fallback=False)
+    with pytest.raises(ValueError, match="no value at some snapshots"):
+        segment_map(gaps, 4)
 
 
 def test_segmenting_needs_a_series_that_varies(single_period_record):
