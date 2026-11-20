@@ -26,3 +26,4 @@ These pages describe work that is decided but not built, and questions that are 
 
 - [Planned changes](planned-changes.md): open it to see the decided changes and what stands in their place today.
 - [Open questions](open-questions.md): open it to see the design questions still to answer, and the options for each.
+- [Design of the datarecord session](datarecord-session/index.md): open it to see the draft design for reading and editing a project's data through a per-user session service.

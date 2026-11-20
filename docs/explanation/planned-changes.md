@@ -78,6 +78,7 @@ With the datarecord integration of milestone M2.2, Manta is to track data record
 A run then starts from the project's model, and lists the records it produced.
 A record's content is to be served from its own endpoint, under `/v1/data-records/`.
 Whether the run row also keeps its final record is still open, as [Open questions](open-questions.md#storing-a-runs-final-record) states.
+The draft [design of the datarecord session](datarecord-session/index.md) works out how the backend lists stores and revisions, and how users read and edit them.
 
 ## Resource requirements
 
