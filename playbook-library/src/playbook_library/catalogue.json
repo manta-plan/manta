@@ -1634,7 +1634,7 @@
             "title": "PiecewiseOptions",
             "type": "object"
           },
-          "PyPSAOptimizeRollingHorizonConfig": {
+          "PyPSAOptimizeSchema": {
             "additionalProperties": false,
             "properties": {
               "assign_all_duals": {
@@ -1653,11 +1653,6 @@
                 ],
                 "default": null,
                 "title": "Committable Big M"
-              },
-              "horizon": {
-                "default": 100,
-                "title": "Horizon",
-                "type": "integer"
               },
               "include_objective_constant": {
                 "default": true,
@@ -1684,11 +1679,6 @@
                 "title": "Multi Investment Periods",
                 "type": "boolean"
               },
-              "overlap": {
-                "default": 0,
-                "title": "Overlap",
-                "type": "integer"
-              },
               "piecewise_options": {
                 "items": {
                   "$ref": "#/$defs/PiecewiseOptions"
@@ -1714,7 +1704,7 @@
                 "default": null
               }
             },
-            "title": "PyPSAOptimizeRollingHorizonConfig",
+            "title": "PyPSAOptimizeSchema",
             "type": "object"
           },
           "_PyPSAOptimizeTransmissionLossesSchema": {
@@ -1790,7 +1780,7 @@
             "default": null
           },
           "optimize_config": {
-            "$ref": "#/$defs/PyPSAOptimizeRollingHorizonConfig"
+            "$ref": "#/$defs/PyPSAOptimizeSchema"
           },
           "periods": {
             "anyOf": [

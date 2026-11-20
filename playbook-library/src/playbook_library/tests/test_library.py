@@ -590,13 +590,12 @@ def _foresight(rev: Revision, horizon: int) -> pypsa.Network:
     return to_network(_dispatch(rev, optimize_config={"horizon": horizon}))
 
 
-@pytest.mark.parametrize("horizon", [6, 3])
-def test_a_water_value_is_the_price_its_rolling_horizon_finds_at_its_stores_bus(
-    horizon, fixed_zoned_record
+def test_a_water_value_is_the_price_a_solve_of_the_whole_period_finds_at_its_stores_bus(
+    fixed_zoned_record,
 ):
-    n = to_network(_water_value(fixed_zoned_record, optimize_config={"horizon": horizon}))
+    n = to_network(_water_value(fixed_zoned_record))
 
-    prices = _foresight(fixed_zoned_record, horizon).buses_t.marginal_price
+    prices = _foresight(fixed_zoned_record, 6).buses_t.marginal_price
     expected = prices[["c", "d"]].set_axis(["st_c", "st_d"], axis=1)
     pd.testing.assert_frame_equal(
         n.stores_t.marginal_cost, expected, check_names=False, check_column_type=False
@@ -623,7 +622,7 @@ def test_a_water_value_solved_by_a_time_aggregation_holds_over_each_stretch(
     [
         (["battery", "H2"], False, "no stores of the carriers \\['H2'\\]"),
         (["solar"], False, "no stores of the carriers \\['solar'\\]"),
-        (["battery"], True, "\\['st_c'\\] restart: a rolling horizon restarts them"),
+        (["battery"], True, "\\['st_c'\\] restart: a rolling horizon dispatch restarts"),
     ],
 )
 def test_a_water_value_needs_stores_a_rolling_horizon_can_carry_energy_in(
@@ -636,16 +635,10 @@ def test_a_water_value_needs_stores_a_rolling_horizon_can_carry_energy_in(
         _water_value(store_revision(n, "cyclic"), carriers=carriers)
 
 
-@pytest.mark.parametrize("per_period", ["e_cyclic_per_period", "e_initial_per_period"])
-def test_a_water_value_over_investment_periods_refuses_stores_each_period_restarts(
-    per_period, store_revision, multi_period_network
-):
-    n = _fixed(multi_period_network)
-    n.add("Store", "tank", bus="bus", carrier="battery", e_nom=10.0, **{per_period: True})
-    with pytest.raises(ValueError, match="\\['tank'\\] restart"):
-        _water_value(
-            store_revision(n, "per_period"), optimize_config={"multi_investment_periods": True}
-        )
+def test_a_water_value_refuses_a_solve_over_investment_periods():
+    config = {"carriers": ["battery"], "optimize_config": {"multi_investment_periods": True}}
+    with pytest.raises(Exception, match="one investment period at a time"):
+        WaterValueCalculation.merge_config(config, {})
 
 
 def test_a_water_value_of_one_period_leaves_the_others_alone(store_revision, multi_period_network):

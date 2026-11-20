@@ -13,7 +13,7 @@ steps:
   - name: cluster
     block: time_partition
 
-  - name: cluster_daily
+  - name: cluster_monthly
     block: time_partition
 
   - name: expansion_overnight

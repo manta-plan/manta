@@ -57,7 +57,7 @@ def with_its_blocks_imported(name: str) -> Playbook:
         ),
         (
             "expand-water-value-dispatch",
-            ["cluster", "cluster_daily", "expansion_overnight", "water_value", "dispatch"],
+            ["cluster", "cluster_monthly", "expansion_overnight", "water_value", "dispatch"],
         ),
     ],
 )
