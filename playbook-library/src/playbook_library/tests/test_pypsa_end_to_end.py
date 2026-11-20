@@ -24,7 +24,7 @@ from playbook_library.overnight_capacity_expansion import OvernightCapacityExpan
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
-from playbook_library.tests.networks import new_zoned_network
+from playbook_library.tests.networks import ZONES_AND_CARRIERS, new_zoned_network
 
 pytestmark = pytest.mark.pypsa
 
@@ -45,7 +45,6 @@ CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "expansion_myopic": {"aggregation": {"snapshot": "agg_3h"}},
     "dispatch": {"optimize_config": {"horizon": 4}},
 }
-ZONES_AND_CARRIERS = {"bus": "zone", "entity": "carrier"}
 ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG = {
     **CLUSTER_EXPAND_DISPATCH_CONFIG,
     "expansion_overnight": {"aggregation": {"snapshot": "agg_3h", **ZONES_AND_CARRIERS}},
@@ -106,6 +105,28 @@ def test_the_network_the_playbook_started_from_is_left_alone(network):
     n = to_network(network)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
+
+
+def test_water_values_chain_from_the_expansion_into_the_dispatch(store_revision, workspace):
+    rev = store_revision(new_zoned_network(), "zoned")
+    shared = ["cluster", "expansion_overnight", "dispatch"]
+    config = {
+        **{step: ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG[step] for step in shared},
+        "cluster_daily": {"name": "agg_2h", "n_hours": 2},
+        "water_value": {
+            "carriers": ["battery"],
+            "aggregation": {"snapshot": "agg_2h", **ZONES_AND_CARRIERS},
+            "load_shedding": {},
+            "optimize_config": {"horizon": 2, "overlap": 1},
+        },
+    }
+
+    ref = build_playbook("expand-water-value-dispatch").run(RevisionRef.from_revision(rev), config)
+
+    n = to_network(open_revision(workspace, ref))
+    assert n.stores_t.marginal_cost[["st_c", "st_d"]].ge(0).all().all()
+    assert n.stores_t.e.shape == (6, 2)
+    assert n.generators_t.p.notna().all().all()
 
 
 BUILT_CARRIERS = [

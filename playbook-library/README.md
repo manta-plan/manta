@@ -21,6 +21,7 @@ The blocks — single units of work on a model:
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
+| `water_value_calculation` | Price the energy in long-duration stores, so a rolling horizon dispatch keeps it for later |
 
 The playbooks — those blocks chained into something worth running, each with default
 settings a user can start from:
@@ -29,6 +30,7 @@ settings a user can start from:
 | --- | --- |
 | `cluster-expand-dispatch` | Shorten the time series, decide what to build, then decide how to run it |
 | `expand` | Decide what to build: overnight, myopic or with perfect foresight |
+| `expand-water-value-dispatch` | Decide what to build, price the hydrogen in its stores week by week, then decide how to run it |
 
 > This directory is developed inside the `manta` monorepo for now, but is written as a
 > standalone package: it is also the reference for anyone writing their own library of
@@ -62,7 +64,7 @@ To see a whole playbook run, run the `cluster-expand-dispatch` playbook on the
 full-resolution Belgian test model from the public `manta-public-test-data` bucket:
 
 ```bash
-pixi run -e full python -m playbook_library.examples [directory]
+pixi run -e full python -m playbook_library.examples [directory] [--playbook NAME]
 ```
 
 Each block writes its result as a new revision into the store it reads, and the bucket
@@ -72,7 +74,8 @@ With its default settings, the playbook splits the year into 730 segments, then 
 an overnight capacity expansion and a rolling horizon dispatch. Each solve merges the
 buses by `busmap_5` and the assets by `technology_group`, which gives the five regions
 of `BEL-pre-aggregated`, and spreads its results back over every bus and asset. The
-script prints the final revision.
+script prints the final revision. Pass `--playbook expand-water-value-dispatch`
+to dispatch 2050 with the hydrogen stores priced by a weekly solve instead.
 
 To run a single block instead, without a playbook around it:
 

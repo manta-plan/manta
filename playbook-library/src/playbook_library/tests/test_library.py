@@ -10,21 +10,34 @@ writes a new one into the same store, so what is checked is that a usable networ
 comes out as a descendant of the revision it read.
 """
 
+from contextlib import nullcontext
+
 import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
+import numpy as np
 import pandas as pd
 from datarecord import Revision
-from playbook.blocks.core import RevisionRef, SolveError
+from playbook.blocks.core import SolveError
 
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
-from playbook_library.pypsa_helpers import nominal_attr, remove_unbuilt_cohorts, to_network
+from playbook_library.pypsa_helpers import (
+    BUILT_COMPONENTS,
+    apply_decided_capacities,
+    fix_capacities,
+    nominal_attr,
+    remove_unbuilt_cohorts,
+    to_network,
+    write_network,
+)
 from playbook_library.pypsa_time_aggregation import series_frame, snapshot_frame
 from playbook_library.rolling_horizon_dispatch import RollingHorizonDispatch
+from playbook_library.tests.networks import ZONES_AND_CARRIERS, new_zoned_network, set_status
 from playbook_library.time_partition import TimePartition
+from playbook_library.water_value_calculation import WaterValueCalculation
 
 pytestmark = pytest.mark.pypsa
 
@@ -35,6 +48,18 @@ def _run(block_cls, config: dict, base: Revision) -> Revision:
 
 
 CLUSTER = {"name": "agg_3h", "n_hours": 3}
+
+
+def _fixed(n: pypsa.Network) -> pypsa.Network:
+    """Fix the capacity of each generator of `n` at 100, so it is dispatched as it is."""
+    n.generators["p_nom_extendable"] = False
+    n.generators["p_nom"] = 100.0
+    return n
+
+
+@pytest.fixture
+def fixed_single_period_record(store_revision, new_single_period_network) -> Revision:
+    return store_revision(_fixed(new_single_period_network()), "fixed")
 
 
 def _snapshots(rev: Revision) -> pd.DataFrame:
@@ -122,7 +147,7 @@ AGGREGATED = [
     pytest.param(
         RollingHorizonDispatch,
         {"optimize_config": {"horizon": 4}},
-        "single_period",
+        "fixed_single_period_record",
         [0],
         id="dispatch",
     ),
@@ -302,44 +327,30 @@ def test_myopic_expansion_never_builds_a_cohort_before_the_first_period(
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_can_run_against_capacities_another_block_chose(single_period):
+def test_dispatch_runs_against_the_capacities_an_expansion_decided(single_period):
     expanded = _run(OvernightCapacityExpansion, {}, single_period)
 
-    result = _run(
-        RollingHorizonDispatch,
-        {
-            "capacity_source": RevisionRef.from_revision(expanded),
-            "optimize_config": {"horizon": 12},
-        },
-        single_period,
-    )
+    result = _run(RollingHorizonDispatch, {"optimize_config": {"horizon": 12}}, expanded)
     n = to_network(result)
 
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
 @pytest.mark.parametrize("component", ["Generator", "Line", "Transformer"])
-def test_dispatch_fixes_the_capacities_its_source_decided(component):
+def test_dispatch_fixes_the_capacities_an_expansion_decided(component):
     attr = nominal_attr(component)
     n = _assets(2030, 30.0, component)
 
-    RollingHorizonDispatch.apply_decided_capacities(n, pd.Series({"built": 40.0, "new": 10.0}))
+    apply_decided_capacities(n, pd.Series({"built": 40.0, "new": 10.0}))
 
     static = n.c[component].static
     assert static[attr].to_dict() == {"built": 40.0, "new": 10.0}
     assert not static[attr + "_extendable"].any()
 
 
-def test_dispatch_can_run_on_its_own(single_period, store_revision):
-    n = to_network(single_period)
-    n.generators.loc["gen", "p_nom_extendable"] = False
-    n.generators.loc["gen", "p_nom"] = 100.0
-    rev = store_revision(n, "fixed")
-
+def test_dispatch_can_run_on_its_own(fixed_single_period_record):
     result = _run(
-        RollingHorizonDispatch,
-        {"optimize_config": {"horizon": 12}},
-        rev,
+        RollingHorizonDispatch, {"optimize_config": {"horizon": 12}}, fixed_single_period_record
     )
     assert to_network(result).generators.p_nom["gen"] == pytest.approx(100.0)
 
@@ -358,17 +369,13 @@ def _periods(rev: Revision) -> list[int]:
 def test_dispatch_writes_the_periods_it_is_given_and_leaves_the_others(periods, multi_period):
     solved = _run(PerfectCapacityExpansion, {}, multi_period)
 
-    fresh = _dispatch(
-        multi_period, capacity_source=RevisionRef.from_revision(solved), periods=periods
-    )
-    again = _dispatch(solved, capacity_source=RevisionRef.from_revision(solved), periods=periods)
+    again = _dispatch(solved, periods=periods)
 
     frame = _snapshots(solved)
     elsewhere = frame["snapshot"][~frame["period"].isin(periods)]
     keys = ["entity", "snapshot"]
     rows = [_stored(r, "p") for r in (solved, again)]
     rows = [r[r["snapshot"].isin(elsewhere)].sort_values(keys, ignore_index=True) for r in rows]
-    assert _periods(fresh) == periods
     assert to_network(again).snapshots.equals(to_network(solved).snapshots)
     pd.testing.assert_frame_equal(rows[1], rows[0])
 
@@ -380,16 +387,14 @@ def test_dispatch_writes_the_periods_it_is_given_and_leaves_the_others(periods, 
         (None, "no results of the periods \\[2030, 2040\\]"),
     ],
 )
-def test_dispatch_refuses_periods_its_model_or_source_lacks(periods, match, multi_period):
+def test_dispatch_refuses_periods_its_model_or_expansion_lacks(periods, match, multi_period):
     expanded = _run(OvernightCapacityExpansion, {}, multi_period)
     with pytest.raises(ValueError, match=match):
-        _dispatch(
-            multi_period, capacity_source=RevisionRef.from_revision(expanded), periods=periods
-        )
+        _dispatch(expanded, periods=periods)
 
 
 def test_dispatch_refuses_periods_of_a_model_without_them(single_period):
-    with pytest.raises(ValueError, match="no investment periods to dispatch"):
+    with pytest.raises(ValueError, match="no investment periods to select"):
         _dispatch(single_period, periods=[2030])
 
 
@@ -397,9 +402,7 @@ def test_dispatch_refuses_periods_of_a_model_without_them(single_period):
 def test_dispatch_runs_the_period_overnight_expansion_built_for(period, multi_period):
     expanded = _run(OvernightCapacityExpansion, {"period": period}, multi_period)
 
-    result = _dispatch(
-        multi_period, capacity_source=RevisionRef.from_revision(expanded), periods=[period]
-    )
+    result = _dispatch(expanded, periods=[period])
 
     n = to_network(result, select={"period": [period]})
     assert _periods(result) == [period]
@@ -414,21 +417,35 @@ def test_dispatch_of_one_period_keeps_the_cohorts_myopic_expansion_built(
     rev = store_revision(n, "early-cohort")
     expanded = _run(MyopicCapacityExpansion, {}, rev)
 
-    result = _dispatch(rev, capacity_source=RevisionRef.from_revision(expanded), periods=[2050])
+    result = _dispatch(expanded, periods=[2050])
 
-    dispatch = _stored(result, "p").groupby("entity")["value"].sum().to_dict()
-    expected = {"gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 200.0, "load": 400.0}
+    dispatch = to_network(result, select={"period": [2050]}).generators_t.p.sum().to_dict()
+    expected = {"gen-2020": 0.0, "gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 200.0}
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_refuses_an_asset_its_source_decided_no_capacity_of(single_period, store_revision):
-    expanded = _run(OvernightCapacityExpansion, {}, single_period)
-    n = to_network(single_period)
-    n.add("Generator", "unplanned", bus="bus", p_nom_extendable=True)
-    with pytest.raises(ValueError, match="decided no capacity of {'Generator': \\['unplanned'\\]}"):
-        _dispatch(
-            store_revision(n, "unplanned"), capacity_source=RevisionRef.from_revision(expanded)
-        )
+@pytest.mark.parametrize(
+    ("asset", "capacity"), [("gen", 0.0), ("brownfield", 20.0), ("fixed", 30.0)]
+)
+def test_fixing_capacities_takes_the_decided_capacity_of_extendable_assets_alone(
+    asset, capacity, store_revision, new_single_period_network
+):
+    n = new_single_period_network()
+    n.add("Generator", "fixed", bus="bus", p_nom=30.0, marginal_cost=1.0)
+    brownfield = {"p_nom": 10.0, "p_nom_min": 10.0, "p_nom_extendable": True}
+    n.add("Generator", "brownfield", bus="bus", capital_cost=1.0, marginal_cost=10.0, **brownfield)
+    expanded = _run(OvernightCapacityExpansion, {}, store_revision(n, "brownfield"))
+    fixed = to_network(expanded)
+
+    fix_capacities(fixed, expanded, [])
+
+    assert fixed.generators.p_nom[asset] == pytest.approx(capacity, abs=1e-3)
+    assert not fixed.generators.p_nom_extendable.any()
+
+
+def test_dispatch_refuses_an_extendable_asset_no_expansion_decided(single_period):
+    with pytest.raises(ValueError, match="decided no capacity of {'Generator': \\['gen'\\]}"):
+        _dispatch(single_period)
 
 
 TECHNOLOGY_GROUPS = {"entity": "technology_group", "ungrouped": "drop"}
@@ -462,8 +479,8 @@ def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
 
 
 def _with_storage(rev: Revision, store_revision, component: str, **storage) -> Revision:
-    """Add `storage` of a `component` to the network of `rev`, and cluster it by `agg_3h`."""
-    n = to_network(rev)
+    """Add `storage` of a `component` to the fixed network of `rev`, clustered by `agg_3h`."""
+    n = _fixed(to_network(rev))
     n.add(component, "storage", bus="bus", **storage)
     return _run(TimePartition, CLUSTER, store_revision(n, "storage"))
 
@@ -523,33 +540,215 @@ def test_a_rolling_horizon_must_move_forward():
 
 
 @pytest.mark.parametrize(
-    "block_cls",
+    ("block_cls", "config"),
     [
-        OvernightCapacityExpansion,
-        MyopicCapacityExpansion,
-        PerfectCapacityExpansion,
-        RollingHorizonDispatch,
+        (RollingHorizonDispatch, {"periods": []}),
+        (WaterValueCalculation, {"carriers": ["battery"], "periods": []}),
+        (WaterValueCalculation, {"carriers": []}),
     ],
 )
-def test_a_time_aggregation_is_not_combined_with_chosen_snapshots(block_cls):
-    config = {"aggregation": {"snapshot": "agg"}, "optimize_config": {"snapshots": [0]}}
-    with pytest.raises(Exception, match="snapshots"):
+def test_an_empty_list_of_periods_or_carriers_is_refused(block_cls, config):
+    with pytest.raises(Exception, match="at least 1 item"):
         block_cls.merge_config(config, {})
 
 
-def test_dispatch_refuses_an_empty_list_of_periods():
-    with pytest.raises(Exception, match="periods"):
-        RollingHorizonDispatch.merge_config({"periods": []}, {})
+FIXED = {
+    "solar_a": 100.0,
+    "solar_b": 140.0,
+    "gas_c": 80.0,
+    "gas_d": 10.0,
+    "st_c": 60.0,
+    "st_d": 100.0,
+    "bat_a": 1.0,
+    "bat_b": 0.5,
+}
+SHORT = {**FIXED, "solar_a": 10.0, "solar_b": 30.0, "gas_c": 0.0, "gas_d": 0.0}
 
 
-def test_a_wired_capacity_source_is_checked_like_any_other_setting():
-    with pytest.raises(Exception, match="capacity_source"):
-        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-revision"})
+def _fixed_zoned(store_revision, capacities: dict[str, float]) -> Revision:
+    """Store the zoned network of `capacities`, partitioned into two-hour stretches `agg_2h`."""
+    n = new_zoned_network()
+    apply_decided_capacities(n, pd.Series(capacities))
+    rev = store_revision(set_status(n), "fixed")
+    return _run(TimePartition, {"name": "agg_2h", "n_hours": 2}, rev)
 
 
-def test_a_capacity_source_can_be_given_by_its_field_name():
-    # It also has a friendlier name for display, which must not stop the field itself
-    # being set the ordinary way.
-    source = {"store": "somewhere", "id": "00000000-0000-0000-0000-000000000000"}
-    config = RollingHorizonDispatch.merge_config({"capacity_source": source}, {})
-    assert config.capacity_source.store == "somewhere"
+@pytest.fixture
+def fixed_zoned_record(store_revision) -> Revision:
+    return _fixed_zoned(store_revision, FIXED)
+
+
+def _water_value(rev: Revision, **config) -> Revision:
+    return _run(WaterValueCalculation, {"carriers": ["battery"], **config}, rev)
+
+
+def _foresight(rev: Revision, horizon: int) -> pypsa.Network:
+    return to_network(_dispatch(rev, optimize_config={"horizon": horizon}))
+
+
+@pytest.mark.parametrize("horizon", [6, 3])
+def test_a_water_value_is_the_price_its_rolling_horizon_finds_at_its_stores_bus(
+    horizon, fixed_zoned_record
+):
+    n = to_network(_water_value(fixed_zoned_record, optimize_config={"horizon": horizon}))
+
+    prices = _foresight(fixed_zoned_record, horizon).buses_t.marginal_price
+    expected = prices[["c", "d"]].set_axis(["st_c", "st_d"], axis=1)
+    pd.testing.assert_frame_equal(
+        n.stores_t.marginal_cost, expected, check_names=False, check_column_type=False
+    )
+    assert n.stores.marginal_cost.eq(0).all()
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "load_shedding"),
+    [({"snapshot": "agg_2h"}, None), ({"snapshot": "agg_2h", **ZONES_AND_CARRIERS}, {})],
+)
+def test_a_water_value_solved_by_a_time_aggregation_holds_over_each_stretch(
+    aggregation, load_shedding, fixed_zoned_record
+):
+    result = _water_value(fixed_zoned_record, aggregation=aggregation, load_shedding=load_shedding)
+
+    values = to_network(result).stores_t.marginal_cost
+    assert values.notna().all().all()
+    assert values.groupby(np.arange(len(values)) // 2).nunique().eq(1).all().all()
+
+
+@pytest.mark.parametrize(
+    ("carriers", "cyclic", "match"),
+    [
+        (["battery", "H2"], False, "no stores of the carriers \\['H2'\\]"),
+        (["solar"], False, "no stores of the carriers \\['solar'\\]"),
+        (["battery"], True, "\\['st_c'\\] restart: a rolling horizon restarts them"),
+    ],
+)
+def test_a_water_value_needs_stores_a_rolling_horizon_can_carry_energy_in(
+    carriers, cyclic, match, store_revision
+):
+    n = new_zoned_network()
+    apply_decided_capacities(n, pd.Series(FIXED))
+    n.stores.loc["st_c", "e_cyclic"] = cyclic
+    with pytest.raises(ValueError, match=match):
+        _water_value(store_revision(n, "cyclic"), carriers=carriers)
+
+
+@pytest.mark.parametrize("per_period", ["e_cyclic_per_period", "e_initial_per_period"])
+def test_a_water_value_over_investment_periods_refuses_stores_each_period_restarts(
+    per_period, store_revision, multi_period_network
+):
+    n = _fixed(multi_period_network)
+    n.add("Store", "tank", bus="bus", carrier="battery", e_nom=10.0, **{per_period: True})
+    with pytest.raises(ValueError, match="\\['tank'\\] restart"):
+        _water_value(
+            store_revision(n, "per_period"), optimize_config={"multi_investment_periods": True}
+        )
+
+
+def test_a_water_value_covers_every_investment_period(multi_period):
+    with pytest.raises(ValueError, match="leaves out \\[2030, 2040\\]"):
+        _water_value(multi_period, periods=[2050])
+
+
+def test_a_water_value_leaves_the_capacities_of_its_input_alone(
+    store_revision, multi_period_network
+):
+    multi_period_network.add("Store", "tank", bus="bus", carrier="battery", e_nom=10.0)
+    rev = store_revision(multi_period_network, "extendable")
+    expanded = _run(PerfectCapacityExpansion, {}, rev)
+
+    result = to_network(_water_value(expanded))
+
+    n = to_network(expanded)
+    for c in n.components[BUILT_COMPONENTS]:
+        columns = [nominal_attr(c.name), nominal_attr(c.name) + "_extendable"]
+        pd.testing.assert_frame_equal(result.components[c.name].static[columns], c.static[columns])
+
+
+@pytest.mark.parametrize("aggregation", [{}, {"snapshot": "agg_2h"}])
+def test_water_values_let_a_rolling_horizon_store_energy_for_a_later_window(
+    aggregation, store_revision
+):
+    """Store `st_c` charges through a costly link while solar is spilt, for the evening."""
+    n = new_zoned_network()
+    apply_decided_capacities(n, pd.Series({**FIXED, "st_c": 100.0, "st_d": 0.0}))
+    n.add("Bus", "h", carrier="battery")
+    n.add(
+        "Link",
+        ["charge", "discharge"],
+        bus0=["c", "h"],
+        bus1=["h", "c"],
+        carrier="battery",
+        p_nom=30.0,
+        efficiency=0.9,
+        marginal_cost=[0.5, 0.0],
+    )
+    n.stores.loc["st_c", "bus"] = "h"
+    rev = _run(
+        TimePartition,
+        {"name": "agg_2h", "n_hours": 2},
+        store_revision(set_status(n), "behind_links"),
+    )
+    valued = _water_value(rev, aggregation=aggregation)
+
+    perfect = _foresight(rev, 6).stores_t.e["st_c"]
+    myopic, foresighted = (_foresight(r, 3).stores_t.e["st_c"] for r in (rev, valued))
+
+    assert foresighted.iloc[:4].to_numpy() == pytest.approx(perfect.iloc[:4], abs=1e-3)
+    assert perfect.iloc[2] > 0
+    assert myopic.iloc[2] == pytest.approx(0.0, abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    "aggregation", [{}, ZONES_AND_CARRIERS, {"snapshot": "agg_2h", **ZONES_AND_CARRIERS}]
+)
+def test_a_water_value_prices_the_load_fixed_capacities_cannot_meet_at_its_shedding_cost(
+    aggregation, store_revision
+):
+    rev = _fixed_zoned(store_revision, SHORT)
+    with pytest.raises(SolveError):
+        _water_value(rev, aggregation=aggregation)
+
+    result = _water_value(rev, aggregation=aggregation, load_shedding={})
+
+    assert to_network(result).stores_t.marginal_cost.to_numpy() == pytest.approx(1e5)
+
+
+WINDOWED = (RollingHorizonDispatch, {"optimize_config": {"horizon": 4}})
+WHOLE = (WaterValueCalculation, {"carriers": ["H2"]})
+
+
+@pytest.mark.parametrize(
+    ("block_cls", "config", "cap", "error"),
+    [
+        (*WHOLE, 300.0, SolveError),
+        (*WHOLE, 400.0, None),
+        (*WINDOWED, 0.0, SolveError),
+        (*WINDOWED, 400.0, ValueError),
+    ],
+)
+def test_one_period_solves_under_the_global_constraints_of_that_period(
+    block_cls, config, cap, error, store_revision, multi_period_network
+):
+    """The 2050 demand of 400 emits 400, so a cap below it cannot be met.
+
+    A rolling horizon would hold a cap other than 0 in full within each window.
+    """
+    n = multi_period_network
+    n.add("Carrier", "gas", co2_emissions=1.0)
+    n.generators["carrier"] = "gas"
+    n.add("Store", "tank", bus="bus", carrier="H2", e_nom=10.0)
+    expanded = _run(OvernightCapacityExpansion, {}, store_revision(n, "uncapped"))
+    capped = to_network(expanded)
+    capped.add(
+        "GlobalConstraint",
+        ["co2-2030", "co2-2050"],
+        type="primary_energy",
+        carrier_attribute="co2_emissions",
+        sense="<=",
+        constant=[0.0, cap],
+        investment_period=[2030, 2050],
+    )
+    config = {"periods": [2050], **config}
+
+    with nullcontext() if error is None else pytest.raises(error):
+        _run(block_cls, config, write_network(capped, expanded))

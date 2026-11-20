@@ -131,6 +131,52 @@
             "title": "LinopyModelSchema",
             "type": "object"
           },
+          "PiecewiseOptions": {
+            "description": "Options for piecewise constraint formulation.",
+            "properties": {
+              "attribute": {
+                "title": "Attribute",
+                "type": "string"
+              },
+              "component": {
+                "title": "Component",
+                "type": "string"
+              },
+              "cumulative_attr": {
+                "default": false,
+                "title": "Cumulative Attr",
+                "type": "boolean"
+              },
+              "method": {
+                "default": "auto",
+                "title": "Method",
+                "type": "string"
+              },
+              "name": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Name",
+                "type": "array"
+              },
+              "sign": {
+                "enum": [
+                  "=",
+                  "<=",
+                  ">="
+                ],
+                "title": "Sign",
+                "type": "string"
+              }
+            },
+            "required": [
+              "component",
+              "attribute",
+              "sign"
+            ],
+            "title": "PiecewiseOptions",
+            "type": "object"
+          },
           "PyPSAOptimizeSchema": {
             "additionalProperties": false,
             "properties": {
@@ -177,22 +223,11 @@
                 "type": "boolean"
               },
               "piecewise_options": {
-                "items": {},
+                "items": {
+                  "$ref": "#/$defs/PiecewiseOptions"
+                },
                 "title": "Piecewise Options",
                 "type": "array"
-              },
-              "snapshots": {
-                "anyOf": [
-                  {
-                    "items": {},
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Snapshots"
               },
               "solver_name": {
                 "const": "highs",
@@ -420,6 +455,52 @@
             "title": "LinopyModelSchema",
             "type": "object"
           },
+          "PiecewiseOptions": {
+            "description": "Options for piecewise constraint formulation.",
+            "properties": {
+              "attribute": {
+                "title": "Attribute",
+                "type": "string"
+              },
+              "component": {
+                "title": "Component",
+                "type": "string"
+              },
+              "cumulative_attr": {
+                "default": false,
+                "title": "Cumulative Attr",
+                "type": "boolean"
+              },
+              "method": {
+                "default": "auto",
+                "title": "Method",
+                "type": "string"
+              },
+              "name": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Name",
+                "type": "array"
+              },
+              "sign": {
+                "enum": [
+                  "=",
+                  "<=",
+                  ">="
+                ],
+                "title": "Sign",
+                "type": "string"
+              }
+            },
+            "required": [
+              "component",
+              "attribute",
+              "sign"
+            ],
+            "title": "PiecewiseOptions",
+            "type": "object"
+          },
           "PyPSAOptimizeSchema": {
             "additionalProperties": false,
             "properties": {
@@ -466,22 +547,11 @@
                 "type": "boolean"
               },
               "piecewise_options": {
-                "items": {},
+                "items": {
+                  "$ref": "#/$defs/PiecewiseOptions"
+                },
                 "title": "Piecewise Options",
                 "type": "array"
-              },
-              "snapshots": {
-                "anyOf": [
-                  {
-                    "items": {},
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Snapshots"
               },
               "solver_name": {
                 "const": "highs",
@@ -559,7 +629,11 @@
           "period": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "x-manta-record": {
+                  "dim": "period",
+                  "kind": "coordinate"
+                }
               },
               {
                 "type": "null"
@@ -720,6 +794,52 @@
             "title": "LinopyModelSchema",
             "type": "object"
           },
+          "PiecewiseOptions": {
+            "description": "Options for piecewise constraint formulation.",
+            "properties": {
+              "attribute": {
+                "title": "Attribute",
+                "type": "string"
+              },
+              "component": {
+                "title": "Component",
+                "type": "string"
+              },
+              "cumulative_attr": {
+                "default": false,
+                "title": "Cumulative Attr",
+                "type": "boolean"
+              },
+              "method": {
+                "default": "auto",
+                "title": "Method",
+                "type": "string"
+              },
+              "name": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Name",
+                "type": "array"
+              },
+              "sign": {
+                "enum": [
+                  "=",
+                  "<=",
+                  ">="
+                ],
+                "title": "Sign",
+                "type": "string"
+              }
+            },
+            "required": [
+              "component",
+              "attribute",
+              "sign"
+            ],
+            "title": "PiecewiseOptions",
+            "type": "object"
+          },
           "PyPSAOptimizeSchema": {
             "additionalProperties": false,
             "properties": {
@@ -766,22 +886,11 @@
                 "type": "boolean"
               },
               "piecewise_options": {
-                "items": {},
+                "items": {
+                  "$ref": "#/$defs/PiecewiseOptions"
+                },
                 "title": "Piecewise Options",
                 "type": "array"
-              },
-              "snapshots": {
-                "anyOf": [
-                  {
-                    "items": {},
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Snapshots"
               },
               "solver_name": {
                 "const": "highs",
@@ -1031,6 +1140,52 @@
             "title": "LoadSheddingConfig",
             "type": "object"
           },
+          "PiecewiseOptions": {
+            "description": "Options for piecewise constraint formulation.",
+            "properties": {
+              "attribute": {
+                "title": "Attribute",
+                "type": "string"
+              },
+              "component": {
+                "title": "Component",
+                "type": "string"
+              },
+              "cumulative_attr": {
+                "default": false,
+                "title": "Cumulative Attr",
+                "type": "boolean"
+              },
+              "method": {
+                "default": "auto",
+                "title": "Method",
+                "type": "string"
+              },
+              "name": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Name",
+                "type": "array"
+              },
+              "sign": {
+                "enum": [
+                  "=",
+                  "<=",
+                  ">="
+                ],
+                "title": "Sign",
+                "type": "string"
+              }
+            },
+            "required": [
+              "component",
+              "attribute",
+              "sign"
+            ],
+            "title": "PiecewiseOptions",
+            "type": "object"
+          },
           "PyPSAOptimizeRollingHorizonConfig": {
             "additionalProperties": false,
             "properties": {
@@ -1087,22 +1242,11 @@
                 "type": "integer"
               },
               "piecewise_options": {
-                "items": {},
+                "items": {
+                  "$ref": "#/$defs/PiecewiseOptions"
+                },
                 "title": "Piecewise Options",
                 "type": "array"
-              },
-              "snapshots": {
-                "anyOf": [
-                  {
-                    "items": {},
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Snapshots"
               },
               "solver_name": {
                 "const": "highs",
@@ -1123,26 +1267,6 @@
               }
             },
             "title": "PyPSAOptimizeRollingHorizonConfig",
-            "type": "object"
-          },
-          "RevisionRef": {
-            "description": "Where a block's data lives, as it travels between processes.\n\nOnly ever a pointer - never the data itself - because it is passed between\nprocesses and machines, which a loaded model could not survive. `store` names a\ndatarecord store, either a local directory or an `s3://` address, and `id` names\none revision in that store: the fields a datarecord `Revision` serialises to.",
-            "properties": {
-              "id": {
-                "format": "uuid",
-                "title": "Id",
-                "type": "string"
-              },
-              "store": {
-                "title": "Store",
-                "type": "string"
-              }
-            },
-            "required": [
-              "store",
-              "id"
-            ],
-            "title": "RevisionRef",
             "type": "object"
           },
           "_PyPSAOptimizeTransmissionLossesSchema": {
@@ -1194,19 +1318,6 @@
           "aggregation": {
             "$ref": "#/$defs/Aggregation"
           },
-          "capacity_source": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/RevisionRef"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Capacity data source",
-            "x-manta-input": true
-          },
           "load_shedding": {
             "anyOf": [
               {
@@ -1225,7 +1336,11 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "integer"
+                  "type": "integer",
+                  "x-manta-record": {
+                    "dim": "period",
+                    "kind": "coordinate"
+                  }
                 },
                 "minItems": 1,
                 "type": "array"
@@ -1250,9 +1365,7 @@
       },
       "doc": "Decide how to run a system, one window of time at a time.",
       "env": "pypsa",
-      "inputs": [
-        "capacity_source"
-      ],
+      "inputs": [],
       "manifest": null,
       "module": "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
       "name": "rolling_horizon_dispatch",
@@ -1318,6 +1431,407 @@
       "manifest": null,
       "module": "playbook_library.time_partition:TimePartition",
       "name": "time_partition",
+      "outputs": [
+        "output"
+      ]
+    },
+    "water_value_calculation": {
+      "config_schema": {
+        "$defs": {
+          "Aggregation": {
+            "additionalProperties": false,
+            "properties": {
+              "bus": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "bus",
+                      "kind": "property"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bus"
+              },
+              "clip_p_max_pu": {
+                "anyOf": [
+                  {
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Clip P Max Pu"
+              },
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "entity",
+                      "kind": "property"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Entity"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "x-manta-record": {
+                      "dim": "snapshot",
+                      "kind": "property"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot"
+              },
+              "ungrouped": {
+                "default": "keep",
+                "enum": [
+                  "keep",
+                  "drop"
+                ],
+                "title": "Ungrouped",
+                "type": "string"
+              }
+            },
+            "title": "Aggregation",
+            "type": "object"
+          },
+          "LinopyModelSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "auto_mask": {
+                "default": false,
+                "title": "Auto Mask",
+                "type": "boolean"
+              },
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Chunk"
+              },
+              "force_dim_names": {
+                "default": false,
+                "title": "Force Dim Names",
+                "type": "boolean"
+              },
+              "freeze_constraints": {
+                "default": false,
+                "title": "Freeze Constraints",
+                "type": "boolean"
+              },
+              "set_names_in_solver_io": {
+                "default": true,
+                "title": "Set Names In Solver Io",
+                "type": "boolean"
+              },
+              "solver_dir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Solver Dir"
+              }
+            },
+            "title": "LinopyModelSchema",
+            "type": "object"
+          },
+          "LoadSheddingConfig": {
+            "additionalProperties": false,
+            "properties": {
+              "marginal_cost": {
+                "default": 100.0,
+                "title": "Marginal Cost",
+                "type": "number"
+              },
+              "p_nom": {
+                "default": 1000000000.0,
+                "title": "P Nom",
+                "type": "number"
+              },
+              "sign": {
+                "default": 0.001,
+                "title": "Sign",
+                "type": "number"
+              }
+            },
+            "title": "LoadSheddingConfig",
+            "type": "object"
+          },
+          "PiecewiseOptions": {
+            "description": "Options for piecewise constraint formulation.",
+            "properties": {
+              "attribute": {
+                "title": "Attribute",
+                "type": "string"
+              },
+              "component": {
+                "title": "Component",
+                "type": "string"
+              },
+              "cumulative_attr": {
+                "default": false,
+                "title": "Cumulative Attr",
+                "type": "boolean"
+              },
+              "method": {
+                "default": "auto",
+                "title": "Method",
+                "type": "string"
+              },
+              "name": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Name",
+                "type": "array"
+              },
+              "sign": {
+                "enum": [
+                  "=",
+                  "<=",
+                  ">="
+                ],
+                "title": "Sign",
+                "type": "string"
+              }
+            },
+            "required": [
+              "component",
+              "attribute",
+              "sign"
+            ],
+            "title": "PiecewiseOptions",
+            "type": "object"
+          },
+          "PyPSAOptimizeRollingHorizonConfig": {
+            "additionalProperties": false,
+            "properties": {
+              "assign_all_duals": {
+                "default": false,
+                "title": "Assign All Duals",
+                "type": "boolean"
+              },
+              "committable_big_m": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Committable Big M"
+              },
+              "horizon": {
+                "default": 100,
+                "title": "Horizon",
+                "type": "integer"
+              },
+              "include_objective_constant": {
+                "default": true,
+                "title": "Include Objective Constant",
+                "type": "boolean"
+              },
+              "linearized_unit_commitment": {
+                "default": false,
+                "title": "Linearized Unit Commitment",
+                "type": "boolean"
+              },
+              "meshed_thresholds": {
+                "items": {
+                  "type": "integer"
+                },
+                "title": "Meshed Thresholds",
+                "type": "array"
+              },
+              "model_kwargs": {
+                "$ref": "#/$defs/LinopyModelSchema"
+              },
+              "multi_investment_periods": {
+                "default": false,
+                "title": "Multi Investment Periods",
+                "type": "boolean"
+              },
+              "overlap": {
+                "default": 0,
+                "title": "Overlap",
+                "type": "integer"
+              },
+              "piecewise_options": {
+                "items": {
+                  "$ref": "#/$defs/PiecewiseOptions"
+                },
+                "title": "Piecewise Options",
+                "type": "array"
+              },
+              "solver_name": {
+                "const": "highs",
+                "default": "highs",
+                "title": "Solver Name",
+                "type": "string"
+              },
+              "transmission_losses": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_PyPSAOptimizeTransmissionLossesSchema"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "PyPSAOptimizeRollingHorizonConfig",
+            "type": "object"
+          },
+          "_PyPSAOptimizeTransmissionLossesSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "atol": {
+                "default": 1.0,
+                "title": "Atol",
+                "type": "number"
+              },
+              "max_segments": {
+                "default": 20,
+                "title": "Max Segments",
+                "type": "integer"
+              },
+              "mode": {
+                "default": "secant",
+                "enum": [
+                  "secant",
+                  "tangent"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "rtol": {
+                "default": 0.1,
+                "title": "Rtol",
+                "type": "number"
+              },
+              "segments": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Segments"
+              }
+            },
+            "title": "_PyPSAOptimizeTransmissionLossesSchema",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "$ref": "#/$defs/Aggregation"
+          },
+          "carriers": {
+            "items": {
+              "type": "string",
+              "x-manta-record": {
+                "dim": "carrier",
+                "kind": "coordinate"
+              }
+            },
+            "minItems": 1,
+            "title": "Carriers",
+            "type": "array"
+          },
+          "load_shedding": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LoadSheddingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "optimize_config": {
+            "$ref": "#/$defs/PyPSAOptimizeRollingHorizonConfig"
+          },
+          "periods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer",
+                  "x-manta-record": {
+                    "dim": "period",
+                    "kind": "coordinate"
+                  }
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Periods"
+          }
+        },
+        "required": [
+          "carriers"
+        ],
+        "title": "WaterValueCalculationConfig",
+        "type": "object"
+      },
+      "dims": {
+        "adds": [],
+        "removes": [],
+        "requires": [
+          "snapshot"
+        ]
+      },
+      "doc": "Price the energy in long-duration stores, so a rolling horizon dispatch keeps it for later.",
+      "env": "pypsa",
+      "inputs": [],
+      "manifest": null,
+      "module": "playbook_library.water_value_calculation:WaterValueCalculation",
+      "name": "water_value_calculation",
       "outputs": [
         "output"
       ]
