@@ -7,11 +7,9 @@ RUN pnpm install --frozen-lockfile
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
 COPY public public
 COPY src src
-# Vite inlines VITE_* variables at build time, so the record server's address
-# (host:port, e.g. this site's own host, which proxies it; see Caddyfile) and
-# its shared dev token are build args, not runtime env. Unset, the data
-# catalogue reports "VITE_RECORD_SERVER is not set."
-ARG VITE_RECORD_SERVER
+# Vite inlines VITE_* variables at build time, so the record server's shared dev
+# token is a build arg, not runtime env. The app reaches the record server on
+# this site's own origin, which proxies it (see Caddyfile).
 ARG VITE_RECORD_TOKEN
 RUN pnpm build
 

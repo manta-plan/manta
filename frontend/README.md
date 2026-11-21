@@ -78,9 +78,7 @@ pnpm preview
 ## Record server
 
 The data records (the New Project drawer, the Data Catalog and the data record of a run) come
-from the quack record server in `docker/quack-server`. Point the app at it in `.env.local` (copy `.env.example`):
-
-```bash
-VITE_RECORD_SERVER=localhost:8010
-VITE_RECORD_TOKEN=devtoken
-```
+from the quack record server in `docker/quack-server`. The dev server proxies `/api`, `/quack` and `/ext`
+to it, like the Caddy in the deployed frontend, so the app reaches it on its own origin. The server's
+port and token come from `QUACK_SERVER_PORT` and `QUACK_TOKEN` in `backend/.env`, so nothing is needed in
+`.env.local`.
