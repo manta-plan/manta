@@ -170,7 +170,7 @@ services:
         condition: service_completed_successfully
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.2
+    image: quay.io/keycloak/keycloak:26.8.2
     command:
       - start-dev
       # This option causes startup to attempt to import a realm from the
