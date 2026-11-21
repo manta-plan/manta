@@ -14,6 +14,7 @@ aggregation to solve by.
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache, reduce
+from typing import Annotated
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,7 @@ import pypsa
 import tsam
 from datarecord import PropertySpec, RecordLike, Schema
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from playbook.blocks import CreatesProperty
 from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
 from pydantic import field_validator, model_validator
 
@@ -211,7 +213,7 @@ def segment_map(record: DataRecord, n_segments: int) -> pd.Series:
 
 
 class TimePartitionConfig(ConfigSchema):
-    name: str
+    name: Annotated[str, CreatesProperty("snapshot")]
     """Name later steps use to solve by this time aggregation. Not `period` or `timestep`."""
 
     segments: int | None = None

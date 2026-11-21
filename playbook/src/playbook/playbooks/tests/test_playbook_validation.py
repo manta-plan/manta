@@ -11,13 +11,15 @@ anything driving playbooks from outside. Where both apply, they have to agree.
 
 import pytest
 
-from playbook.blocks import BlockSpec, describe_block
+from playbook.blocks import BlockSpec, RecordContents, describe_block
 from playbook.blocks.tests.fakes import (
     FakeAddsClustered,
+    FakeCreatesBusProperty,
     FakeNeedsUpstream,
     FakeNestedSettings,
     FakeOtherEnv,
     FakePassthrough,
+    FakeReadsRecord,
     FakeRemovesInvestmentPeriod,
     FakeRequiresInvestmentPeriod,
     FakeStrictConfig,
@@ -294,3 +296,58 @@ def test_an_issue_reads_well_when_printed():
     assert str(issue) == (
         "[config] step 'strict', setting 'strict.required_field': this setting is required"
     )
+
+
+RECORD = RecordContents(
+    coordinates={"carrier": frozenset({"H2"})}, properties={"bus": frozenset({"zone"})}
+)
+
+
+@IMPORTED_OR_DESCRIBED
+@pytest.mark.parametrize(
+    ("settings", "problems"),
+    [
+        ({"by": "zone", "carriers": ["H2"]}, []),
+        ({"by": "country"}, [("read", "by")]),
+        ({"carriers": ["H2", "gas"]}, [("read", "carriers", 1)]),
+    ],
+)
+def test_a_setting_naming_part_of_the_record_must_name_something_in_it(
+    as_step_block, settings, problems
+):
+    pb = Playbook(name="p")
+    pb.add("read", as_step_block(FakeReadsRecord))
+    issues = find_playbook_issues(pb, {"read": settings}, RECORD)
+    assert [(issue.kind, issue.config_path) for issue in issues] == [
+        ("config", where) for where in problems
+    ]
+
+
+def test_without_a_record_a_name_missing_from_it_is_not_reported():
+    pb = Playbook(name="p")
+    pb.add("read", FakeReadsRecord)
+    assert find_playbook_issues(pb, {"read": {"by": "country"}}) == []
+
+
+@IMPORTED_OR_DESCRIBED
+@pytest.mark.parametrize(
+    ("order", "problems"), [(["make", "read"], []), (["read", "make"], [("read", "by")])]
+)
+def test_a_property_an_earlier_step_adds_can_be_named(as_step_block, order, problems):
+    blocks = {"make": FakeCreatesBusProperty, "read": FakeReadsRecord}
+    pb = Playbook(name="p")
+    for name in order:
+        pb.add(name, as_step_block(blocks[name]))
+    config = {"make": {"name": "region"}, "read": {"by": "region"}}
+    issues = find_playbook_issues(pb, config, RECORD)
+    assert [issue.config_path for issue in issues] == problems
+
+
+def test_a_property_a_nested_playbook_adds_can_be_named_after_it():
+    inner = Playbook(name="inner")
+    inner.add("make", FakeCreatesBusProperty)
+    pb = Playbook(name="outer")
+    pb.add_playbook("nested", inner)
+    pb.add("read", FakeReadsRecord)
+    config = {"nested": {"make": {"name": "region"}}, "read": {"by": "region"}}
+    assert find_playbook_issues(pb, config, RECORD) == []
