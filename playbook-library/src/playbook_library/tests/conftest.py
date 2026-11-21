@@ -74,6 +74,7 @@ def new_single_period_network() -> Callable[[], "pypsa.Network"]:
             marginal_cost=10.0,
         )
         n.add("Load", "load", bus="bus", p_set=50.0)
+        n.generators["asset_status"] = "candidate"
         return n
 
     return build
@@ -114,6 +115,7 @@ def new_multi_period_network() -> Callable[[], "pypsa.Network"]:
                 marginal_cost=10.0,
             )
         n.add("Load", "load", bus="bus", p_set=pd.Series([50.0] * 8 + [100.0] * 4, index=snapshots))
+        n.generators["asset_status"] = "candidate"
         return n
 
     return build
