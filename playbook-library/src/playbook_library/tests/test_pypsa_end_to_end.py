@@ -20,8 +20,8 @@ import pytest
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
 from datarecord import Revision, Workspace
-from playbook.blocks.core import DataRecordError, RevisionRef
-from playbook.blocks.run import open_revision, run_block
+from playbook.blocks.core import RevisionRef
+from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
@@ -32,7 +32,6 @@ from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
 from playbook_library.public_data import download_public_store
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
-from playbook_library.time_cluster import ClusterTime
 
 pytestmark = pytest.mark.pypsa
 
@@ -93,17 +92,6 @@ def test_the_network_the_playbook_started_from_is_left_alone(network):
     n = to_network(network)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
-
-
-@pytest.mark.parametrize(
-    ("suffix", "revision_id"),
-    [("missing-store", None), ("", UUID(int=0))],
-    ids=["missing-store", "missing-revision"],
-)
-def test_a_revision_pointing_at_nothing_raises_a_datarecord_error(network, suffix, revision_id):
-    ref = RevisionRef(store=network.store.uri + suffix, id=revision_id or network.id)
-    with pytest.raises(DataRecordError, match="No revision"):
-        run_block(ClusterTime, {"n_hours": 3}, {}, ref)
 
 
 @pytest.fixture(scope="session")

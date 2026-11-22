@@ -80,8 +80,8 @@ def main(argv: list[str] | None = None) -> int:
     result = run_block(
         get_block(args.block),
         json.loads(args.config),
-        wired,
-        RevisionRef.from_dict(json.loads(args.revision)),
+        revision=RevisionRef.from_dict(json.loads(args.revision)),
+        inputs=wired,
     )
 
     print(result_line(result), flush=True)

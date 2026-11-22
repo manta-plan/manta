@@ -29,7 +29,7 @@ pytestmark = pytest.mark.pypsa
 
 
 def _run(block_cls, config: dict, base: Revision) -> Revision:
-    """Run a block the way a playbook's step runner would."""
+    """Run a block on `base`, inside the test's own workspace."""
     return block_cls(block_cls.merge_config(config, {})).run(base)
 
 

@@ -32,8 +32,9 @@ def open_revision(workspace: Workspace, ref: RevisionRef) -> Revision:
 def run_block(
     block_cls: type[MantaBlock],
     config: dict,
-    inputs: dict[str, RevisionRef],
+    *,
     revision: RevisionRef,
+    inputs: dict[str, RevisionRef],
 ) -> RevisionRef:
     """Run `block_cls` on `revision`, in a workspace of its own.
 

@@ -68,7 +68,7 @@ class LocalBlockRunner:
         # needs the `playbook[run]` extra; driving one elsewhere does not.
         from playbook.blocks.run import run_block
 
-        return run_block(block.block_class(), config, inputs, revision)
+        return run_block(block.block_class(), config, revision=revision, inputs=inputs)
 
 
 def execute_playbook(

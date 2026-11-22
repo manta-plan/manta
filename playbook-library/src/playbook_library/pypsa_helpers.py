@@ -8,7 +8,7 @@ This is also where the blocks meet their data, revisions of a datarecord store, 
 or in S3: `store_network` starts a store with a network, `to_network` builds a network
 from a revision, and `write_network` adds the network a block produced as a child
 revision of it, through the same store and so the same workspace.
-Both are confined to this module, so a change in how networks are stored only ever
+All three are confined to this module, so a change in how networks are stored only ever
 changes it.
 """
 

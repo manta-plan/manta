@@ -121,7 +121,9 @@ def run_block(
     # with BlockNotRegisteredError.
     load_block_sources()
     wired = {name: RevisionRef.from_dict(value) for name, value in (inputs or {}).items()}
-    result = run_in_process(get_block(block), config, wired, RevisionRef.from_dict(revision))
+    result = run_in_process(
+        get_block(block), config, revision=RevisionRef.from_dict(revision), inputs=wired
+    )
     output = result.to_dict()
     create_table_artifact(table=[output], key=OUTPUT_ARTIFACT_KEY)
     return output

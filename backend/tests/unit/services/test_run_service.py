@@ -22,7 +22,7 @@ from manta.services.user_service import UserService
 
 _LIBRARY_PLAYBOOK = "expand"
 _BUCKET = "manta"
-_RECORD_URL = f"s3://{_BUCKET}/{uuid4()}/store"
+_STORE_URL = f"s3://{_BUCKET}/{uuid4()}/store"
 _REVISION_UUID = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
 
 
@@ -52,7 +52,7 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={
             "config": config if config is not None else {},
-            "revision": {"store": _RECORD_URL, "id": str(_REVISION_UUID)},
+            "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
         },
     )
 
@@ -229,7 +229,7 @@ def test_create_run_with_unknown_project_raises_404(
             project_uuid=uuid4(),
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -252,7 +252,7 @@ def test_create_run_with_unknown_playbook_raises_404(
             project_uuid=project.uuid,
             playbook="does-not-exist",
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -284,7 +284,7 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=myopic_config,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -394,7 +394,7 @@ def test_get_run_returns_dto_for_a_known_run(
     # The config is whatever the run was dispatched with, read back from Prefect.
     assert result.config == started_with_config
     assert result.data_record == DataRecordResult(
-        store_url=_RECORD_URL, revision_uuid=_REVISION_UUID
+        store_url=_STORE_URL, revision_uuid=_REVISION_UUID
     )
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
@@ -607,7 +607,7 @@ def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | 
         parameters={
             "playbook": playbook_doc,
             "config": config,
-            "revision": {"store": _RECORD_URL, "id": str(_REVISION_UUID)},
+            "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
             "catalogue": catalogue_parameter(library_catalogue()),
         },
     )
@@ -940,7 +940,7 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=other_user,
         )

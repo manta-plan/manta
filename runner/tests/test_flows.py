@@ -35,7 +35,7 @@ from runner.flows import (
 )
 
 STORE = "s3://bucket/store"
-RECORD_ID = "00000000-0000-0000-0000-000000000000"
+REVISION_ID = "00000000-0000-0000-0000-000000000000"
 EARLIER_ID = "00000000-0000-0000-0000-000000000001"
 OUTPUT_ID = "00000000-0000-0000-0000-000000000002"
 
@@ -197,7 +197,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         _spec(),
         step_name="cluster",
         config={"label": "tidy"},
-        revision=RevisionRef(store=STORE, id=RECORD_ID),
+        revision=RevisionRef(store=STORE, id=REVISION_ID),
         inputs={"source": RevisionRef(store=STORE, id=EARLIER_ID)},
     )
 
@@ -209,7 +209,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         "block": "runtime_fake",
         "step_name": "cluster",
         "config": {"label": "tidy"},
-        "revision": {"store": STORE, "id": RECORD_ID},
+        "revision": {"store": STORE, "id": REVISION_ID},
         "inputs": {"source": {"store": STORE, "id": EARLIER_ID}},
     }
     assert result == RevisionRef(store=STORE, id=OUTPUT_ID)
@@ -231,7 +231,7 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
             _spec(),
             step_name="cluster",
             config={},
-            revision=RevisionRef(store=STORE, id=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
     message = str(exc_info.value)
@@ -253,7 +253,7 @@ def test_a_step_that_completed_without_publishing_its_output_fails_the_playbook(
             _spec(),
             step_name="cluster",
             config={},
-            revision=RevisionRef(store=STORE, id=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
 
@@ -271,7 +271,7 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
             _spec(),
             step_name="cluster",
             config={},
-            revision=RevisionRef(store=STORE, id=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
 
@@ -288,7 +288,7 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
             _spec(env=env),
             step_name="step",
             config={},
-            revision=RevisionRef(store=STORE, id=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
 
@@ -313,7 +313,7 @@ def test_a_step_needing_an_unconfigured_environment_says_so(
             _spec(env="julia"),
             step_name="step",
             config={},
-            revision=RevisionRef(store=STORE, id=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
     assert "julia" in str(exc_info.value)
@@ -369,7 +369,7 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     result = run_playbook.fn(
         playbook=doc.model_dump(mode="json"),
         config={"cluster": {"label": "tidy"}},
-        revision={"store": STORE, "id": RECORD_ID},
+        revision={"store": STORE, "id": REVISION_ID},
         catalogue=catalogue_parameter(catalogue),
     )
 

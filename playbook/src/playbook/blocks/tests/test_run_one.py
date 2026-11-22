@@ -10,10 +10,11 @@ parser/printer pair staying in step.
 """
 
 import json
+from uuid import UUID
 
 import pytest
 
-from playbook.blocks.core import RevisionRef
+from playbook.blocks.core import DataRecordError, RevisionRef
 from playbook.blocks.registry import BlockNotRegisteredError
 from playbook.blocks.run import run_block
 from playbook.blocks.run_one import RESULT_MARKER, main, parse_result_line, result_line
@@ -49,7 +50,9 @@ def test_a_block_runs_and_reports_where_its_result_went(capsys, initial_revision
 
 
 def test_wired_inputs_reach_the_block_and_open_beside_its_input(capsys, initial_revision):
-    upstream = run_block(FakePassthrough, {"label": "upstream"}, {}, initial_revision)
+    upstream = run_block(
+        FakePassthrough, {"label": "upstream"}, revision=initial_revision, inputs={}
+    )
     main(
         [
             "fake_needs_upstream",
@@ -94,6 +97,19 @@ def test_an_unknown_block_library_is_reported_rather_than_ignored(initial_revisi
                 json.dumps(initial_revision.to_dict()),
             ]
         )
+
+
+@pytest.mark.parametrize(
+    ("suffix", "revision_id"),
+    [("missing-store", None), ("", UUID(int=0))],
+    ids=["missing-store", "missing-revision"],
+)
+def test_a_revision_pointing_at_nothing_raises_a_datarecord_error(
+    initial_revision, suffix, revision_id
+):
+    ref = RevisionRef(store=initial_revision.store + suffix, id=revision_id or initial_revision.id)
+    with pytest.raises(DataRecordError, match="No revision"):
+        run_block(FakePassthrough, {}, revision=ref, inputs={})
 
 
 def test_the_result_line_round_trips_through_its_parser(initial_revision):
