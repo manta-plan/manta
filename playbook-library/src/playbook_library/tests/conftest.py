@@ -2,34 +2,37 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Fixtures shared by the tests that run real blocks."""
+"""Fixtures shared by the tests that run real blocks.
 
-from collections.abc import Callable
+Each test gets one datarecord workspace, closed when it ends, and every revision it
+reads or writes is opened on it.
+"""
+
+from collections.abc import Callable, Iterator
+from contextlib import closing
 from pathlib import Path
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 import pytest
-from playbook.blocks.core import DataRecord
+
+if TYPE_CHECKING:
+    from datarecord import Revision, Workspace
 
 
 @pytest.fixture
-def store_record(tmp_path: Path) -> Callable:
+def workspace() -> Iterator["Workspace"]:
+    from datarecord import Workspace
+
+    with closing(Workspace()) as ws:
+        yield ws
+
+
+@pytest.fixture
+def store_revision(tmp_path: Path, workspace: "Workspace") -> Callable[..., "Revision"]:
     """Write a network as the root revision of a new store, named `name`, under tmp_path."""
     from playbook_library.pypsa_helpers import store_network
 
-    def write(n, name: str) -> DataRecord:
-        return store_network(n, str(tmp_path / name))
+    def write(n, name: str) -> "Revision":
+        return store_network(n, workspace.store(str(tmp_path / name)))
 
     return write
-
-
-@pytest.fixture
-def ancestry() -> Callable[[DataRecord], list[UUID]]:
-    """The revision ids from a record's store root down to the record, root first."""
-    from datarecord import Workspace
-
-    def lineage(record: DataRecord) -> list[UUID]:
-        revision = Workspace().store(record.url).revision(record.uuid)
-        return revision.ancestry()
-
-    return lineage

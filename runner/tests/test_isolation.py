@@ -9,6 +9,8 @@ it is tested rather than only written down.
 """
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -47,3 +49,10 @@ def test_there_are_source_files_to_check():
 @pytest.mark.parametrize("path", source_files(), ids=lambda p: p.name)
 def test_nothing_imports_manta_or_a_block_library(path: Path):
     assert not (imported_roots(path) & FORBIDDEN)
+
+
+def test_the_control_image_runs_without_datarecord():
+    # The control image installs plain `playbook`: only the `run-block` flow, inside a
+    # block's own container, may import `playbook.blocks.run`.
+    code = "import sys, runner.flows; assert 'datarecord' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603

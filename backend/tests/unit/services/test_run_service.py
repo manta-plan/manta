@@ -52,7 +52,7 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={
             "config": config if config is not None else {},
-            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
+            "revision": {"store": _RECORD_URL, "id": str(_REVISION_UUID)},
         },
     )
 
@@ -151,7 +151,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
     assert parameters["config"] == library_playbook.default_config
-    assert parameters["record"] == {"url": _store_url(project), "uuid": str(_REVISION_UUID)}
+    assert parameters["revision"] == {"store": _store_url(project), "id": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
 
@@ -607,7 +607,7 @@ def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | 
         parameters={
             "playbook": playbook_doc,
             "config": config,
-            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
+            "revision": {"store": _RECORD_URL, "id": str(_REVISION_UUID)},
             "catalogue": catalogue_parameter(library_catalogue()),
         },
     )
@@ -759,7 +759,7 @@ def test_get_run_steps_reports_the_output_record_each_block_run_published(
         monkeypatch,
         _fake_playbook_flow_run("COMPLETED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
         [block_run],
-        [_fake_output_artifact(block_run, {"url": _store_url(project), "uuid": str(output_uuid)})],
+        [_fake_output_artifact(block_run, {"store": _store_url(project), "id": str(output_uuid)})],
     )
     service = RunService(db=db, user_service=UserService(db))
 

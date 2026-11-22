@@ -4,21 +4,22 @@
 
 """Shared PyPSA work for the blocks in this library.
 
-This is also where the blocks meet their data. A record points at a revision in a
-datarecord store, locally or in S3: `store_network` starts a store with a network,
-`to_network` builds a network from a revision, and `write_network` adds the network
-a block produced as a child revision of it.
-Both are confined to this module, so richer record storage only ever changes it.
+This is also where the blocks meet their data, revisions of a datarecord store, locally
+or in S3: `store_network` starts a store with a network, `to_network` builds a network
+from a revision, and `write_network` adds the network a block produced as a child
+revision of it, through the same store and so the same workspace.
+Both are confined to this module, so a change in how networks are stored only ever
+changes it.
 """
 
 from typing import Any
 
 import numpy as np
 import pypsa
-from datarecord import Revision, Workspace
+from datarecord import Revision, Store
 from datarecord.tools.base import UnsupportedRecordError
 from datarecord.tools.pypsa import PyPSA
-from playbook.blocks.core import DataRecord, DataRecordError, SolveError
+from playbook.blocks.core import DataRecordError, SolveError
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 
@@ -31,57 +32,44 @@ def nominal_attr(component_name: str) -> str:
     return {"Store": "e_nom", "Line": "s_nom", "Transformer": "s_nom"}.get(component_name, "p_nom")
 
 
-def _revision(record: DataRecord) -> tuple[Workspace, Revision]:
-    ws = Workspace()
-    try:
-        return ws, ws.store(record.url).revision(record.uuid)
-    except KeyError as exc:
-        raise DataRecordError(exc.args[0]) from exc
+def store_network(n: pypsa.Network, store: Store) -> Revision:
+    """Store `n` as the root revision of `store`."""
+    return store.commit(PyPSA.to_datarecord(n, store.workspace.con), parent=None)
 
 
-def store_network(n: pypsa.Network, url: str) -> DataRecord:
-    """Store `n` as the root revision of a new store at `url`, and point a record at it."""
-    ws = Workspace()
-    rev = ws.store(url).commit(PyPSA.to_datarecord(n, ws.con), parent=None)
-    return DataRecord(url=url, uuid=rev.id)
-
-
-def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pypsa.Network:
-    """Build the network stored in the revision a record points at.
+def to_network(rev: Revision, select: dict[str, Any] | None = None) -> pypsa.Network:
+    """Build the network stored in `rev`.
 
     Every call builds the network from the store again, so a block gets a network of
     its own and never has to copy one. `select` narrows what is built, such as a
     single investment period.
     """
-    _, rev = _revision(record)
     try:
         return PyPSA.build(rev.record.select(**select) if select else rev.record)
     except UnsupportedRecordError as exc:
         raise DataRecordError(str(exc)) from exc
 
 
-def investment_periods(record: DataRecord) -> list[int]:
-    """The investment periods of the network a record points at, read without building it.
+def investment_periods(rev: Revision) -> list[int]:
+    """The investment periods of the network in `rev`, read without building it.
 
     A network without investment periods has none.
     """
-    _, rev = _revision(record)
     if "period" not in rev.record.dims:
         return []
     return [period for (period,) in rev.record.dims["period"].fetchall()]
 
 
-def write_network(
-    n: pypsa.Network, parent_record: DataRecord, results_only: bool = False
-) -> DataRecord:
-    """Store `n` as a child revision of `parent_record`, and point a new record at it.
+def write_network(n: pypsa.Network, parent: Revision, results_only: bool = False) -> Revision:
+    """Store `n` as a child revision of `parent`.
 
     Over a multi-period network, `n` may hold one investment period of it, its results
     written to that period alone.
     """
-    ws, rev = _revision(parent_record)
-    source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
-    return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
+    source = PyPSA.to_datarecord(
+        n, parent.store.workspace.con, results_only=results_only, base=parent.record
+    )
+    return parent.store.commit(source, parent=parent)
 
 
 def remove_unbuilt_cohorts(n: pypsa.Network) -> None:
