@@ -663,7 +663,7 @@ def test_a_water_value_leaves_the_capacities_of_its_input_alone(
     rev = store_revision(multi_period_network, "extendable")
     expanded = _run(PerfectCapacityExpansion, {}, rev)
 
-    result = to_network(_water_value(expanded))
+    result = to_network(_water_value(expanded, load_shedding={}))
 
     n = to_network(expanded)
     for c in n.components[BUILT_COMPONENTS]:

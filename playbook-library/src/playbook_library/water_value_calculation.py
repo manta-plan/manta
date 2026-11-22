@@ -40,13 +40,13 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
 
     Each investment period of `periods` is solved whole, with the capacities a solve of the
     record decided, and gives the marginal price at each store's bus: the value of energy
-    kept in the store, its water value. Solved by a coarse time aggregation, such as one
+    kept in the store, its water value. Each valued store cycles over the period, from and
+    to a level the solve chooses. Solved by a coarse time aggregation, such as one
     snapshot a month, it stands for an owner who knows only a rough forecast of the year.
     Each store of `carriers` then takes its water value as its `marginal_cost` at every
     snapshot, the one input this block writes. A rolling horizon dispatch of the result
-    sees what energy in the store is worth
-    beyond each of its own windows. Each store keeps its own `marginal_cost` at the
-    snapshots of the other periods. Solved by an aggregation, the prices of a merged bus
+    sees what energy in the store is worth beyond each of its own windows. Each store
+    keeps its own `marginal_cost` at the snapshots of the other periods. Solved by an aggregation, the prices of a merged bus
     apply to each of its buses, and those of a time cluster to each of its snapshots. With
     `load_shedding`, the solve sheds load as a dispatch of the same setting does, and the
     written revision holds the water values alone, without the load-shedding generators.
@@ -94,6 +94,7 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
         config = self.config.model_copy(update={"periods": None if period is None else [period]})
         model, n = fixed_capacity_model(base, config, windowed=False)
         buses = self.valued_stores(n)
+        n.stores.loc[buses.index, "e_cyclic"] = True
         return self.marginal_prices(n, model)[buses].set_axis(buses.index, axis=1)
 
     def run(self, base: Revision) -> Revision:
