@@ -46,8 +46,9 @@ class WaterValueCalculation(MantaBlock[WaterValueCalculationConfig]):
     Each store of `carriers` then takes its water value as its `marginal_cost` at every
     snapshot, the one input this block writes. A rolling horizon dispatch of the result
     sees what energy in the store is worth beyond each of its own windows. Each store
-    keeps its own `marginal_cost` at the snapshots of the other periods. Solved by an aggregation, the prices of a merged bus
-    apply to each of its buses, and those of a time cluster to each of its snapshots. With
+    keeps its own `marginal_cost` at the snapshots of the other periods.
+    Solved by an aggregation, the prices of a merged bus apply to each of its buses,
+    and those of a time cluster to each of its snapshots. With
     `load_shedding`, the solve sheds load as a dispatch of the same setting does, and the
     written revision holds the water values alone, without the load-shedding generators.
     """
