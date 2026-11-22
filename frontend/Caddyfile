@@ -7,6 +7,17 @@
 		reverse_proxy {$BACKEND_URL}
 	}
 
+	# TEMPORARY: the record server (docker/quack-server), until the backend
+	# serves Quack itself. The app calls its own origin, so the browser
+	# reaches it here, same-origin (no CORS) and over this site's
+	# HTTPS: the catalogue API, the Quack protocol relay, and the DuckDB-Wasm
+	# extensions it serves. Without the temporary-quack-setup compose profile
+	# nothing listens at QUACK_URL, and these return 502.
+	@quack path /api/* /quack /ext/*
+	handle @quack {
+		reverse_proxy {$QUACK_URL}
+	}
+
 	# Everything else is the static build; client-side routes fall back to the
 	# SPA shell.
 	handle {

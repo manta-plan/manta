@@ -22,7 +22,9 @@ import type {
   PlaybookSummary,
   RunPlaybookDialogProps,
 } from "../../../utils/playbookTypes";
-import { exampleDataRecords } from "../exampleDataRecords";
+import type { DataRecordChoice } from "../types";
+import { getRecordRevisions } from "../../home/lib/record-server";
+import { useRecordCatalogue } from "../../home/lib/use-record-catalogue";
 import { buildConfig } from "../../playbook-config/buildConfig";
 import {
   deriveGlobalFields,
@@ -66,7 +68,11 @@ export function RunPlaybookDialog({
   onOpenChange,
   onSubmit,
 }: RunPlaybookDialogProps) {
-  const [dataRecordName, setDataRecordName] = useState(exampleDataRecords[0].name);
+  const { catalogue, error: recordsError } = useRecordCatalogue();
+  const dataRecords = catalogue?.records ?? [];
+  // null until the user picks one: the server's default applies meanwhile.
+  const [chosenDataRecord, setChosenDataRecord] = useState<string | null>(null);
+  const dataRecordName = chosenDataRecord ?? catalogue?.default ?? dataRecords[0]?.id ?? null;
   // null until the user picks one.
   const [playbook, setPlaybook] = useState<string | null>(null);
   const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookSummary[]>([]);
@@ -283,9 +289,7 @@ export function RunPlaybookDialog({
       return;
     }
 
-    const dataRecord = exampleDataRecords.find((record) => record.name === dataRecordName);
-
-    if (dataRecord === undefined) {
+    if (dataRecordName === null) {
       setValidationError("Select a data record before creating a run.");
       return;
     }
@@ -301,8 +305,18 @@ export function RunPlaybookDialog({
     setIsValidating(true);
     submitAttempt.current += 1;
     const attempt = submitAttempt.current;
+    let dataRecord: DataRecordChoice;
 
     try {
+      // The run starts from the record's `inputs` revision, which the record server names.
+      const revisionUuid = (await getRecordRevisions(dataRecordName)).inputs;
+
+      if (revisionUuid === undefined) {
+        throw new Error(`The data record "${dataRecordName}" has no inputs revision.`);
+      }
+
+      dataRecord = { name: dataRecordName, revision_uuid: revisionUuid };
+
       // The backend's own check, so every problem is shown here instead of the
       // run being refused afterwards.
       const result = await validatePlaybookConfig(
@@ -369,11 +383,18 @@ export function RunPlaybookDialog({
                 </label>
                 <SelectField
                   id="run-data-record"
-                  items={exampleDataRecords.map((record) => ({
-                    label: record.name,
-                    value: record.name,
+                  items={dataRecords.map((record) => ({
+                    label: record.label,
+                    value: record.id,
                   }))}
-                  onValueChange={setDataRecordName}
+                  onValueChange={setChosenDataRecord}
+                  placeholder={
+                    recordsError
+                      ? "Can't reach the record server"
+                      : catalogue
+                        ? "No data records available"
+                        : "Loading data records..."
+                  }
                   value={dataRecordName}
                 />
               </div>
@@ -581,6 +602,7 @@ export function RunPlaybookDialog({
                     isValidating ||
                     isLoadingPlaybooks ||
                     isLoadingCanvas ||
+                    dataRecordName === null ||
                     playbookDetail === null ||
                     stepErrors.size > 0
                   }
