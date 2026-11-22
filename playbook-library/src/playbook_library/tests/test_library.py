@@ -15,7 +15,8 @@ import pytest
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
 import pandas as pd
-from playbook.blocks.core import DataRecord, SolveError
+from datarecord import Revision
+from playbook.blocks.core import RevisionRef, SolveError
 
 from playbook_library.examples import build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
@@ -27,15 +28,15 @@ from playbook_library.time_cluster import ClusterTime
 pytestmark = pytest.mark.pypsa
 
 
-def _run(block_cls, config: dict, record: DataRecord) -> DataRecord:
-    """Run a block the way a playbook's step runner would."""
-    return block_cls(block_cls.merge_config(config, {})).run(record)
+def _run(block_cls, config: dict, base: Revision) -> Revision:
+    """Run a block on `base`, inside the test's own workspace."""
+    return block_cls(block_cls.merge_config(config, {})).run(base)
 
 
 @pytest.fixture
-def single_period_record(store_record) -> DataRecord:
+def single_period(store_revision) -> Revision:
     """One bus, one generator that can be built, and a day of demand."""
-    return store_record(build_example_network(), "base")
+    return store_revision(build_example_network(), "base")
 
 
 def _multi_period_network() -> pypsa.Network:
@@ -65,45 +66,43 @@ def _multi_period_network() -> pypsa.Network:
 
 
 @pytest.fixture
-def multi_period_record(store_record) -> DataRecord:
-    return store_record(_multi_period_network(), "periods")
+def multi_period(store_revision) -> Revision:
+    return store_revision(_multi_period_network(), "periods")
 
 
-def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period_record, ancestry):
-    result = _run(ClusterTime, {"n_hours": 3}, single_period_record)
+def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period):
+    result = _run(ClusterTime, {"n_hours": 3}, single_period)
 
-    assert result.url == single_period_record.url
-    assert ancestry(result) == [single_period_record.uuid, result.uuid]
+    assert result.store is single_period.store
+    assert result.ancestry() == [single_period.id, result.id]
     to_network(result)
 
 
-def test_clustering_by_hours_shortens_the_time_series(single_period_record):
-    before = len(to_network(single_period_record).snapshots)
-    result = _run(ClusterTime, {"n_hours": 3}, single_period_record)
+def test_clustering_by_hours_shortens_the_time_series(single_period):
+    before = len(to_network(single_period).snapshots)
+    result = _run(ClusterTime, {"n_hours": 3}, single_period)
     after = len(to_network(result).snapshots)
 
     assert before == 24
     assert after == 8
 
 
-def test_clustering_leaves_the_network_it_read_alone(single_period_record):
-    _run(ClusterTime, {"n_hours": 3}, single_period_record)
-    assert len(to_network(single_period_record).snapshots) == 24
+def test_clustering_leaves_the_network_it_read_alone(single_period):
+    _run(ClusterTime, {"n_hours": 3}, single_period)
+    assert len(to_network(single_period).snapshots) == 24
 
 
-def test_overnight_expansion_decides_what_to_build(single_period_record):
-    result = _run(OvernightCapacityExpansion, {}, single_period_record)
+def test_overnight_expansion_decides_what_to_build(single_period):
+    result = _run(OvernightCapacityExpansion, {}, single_period)
     n = to_network(result)
 
     # Enough generation to meet a demand of 50 at every hour.
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
-    multi_period_record, ancestry
-):
-    result = _run(MyopicCapacityExpansion, {}, multi_period_record)
-    root, *revisions = ancestry(result)
+def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(multi_period):
+    result = _run(MyopicCapacityExpansion, {}, multi_period)
+    root, *revisions = result.ancestry()
     dispatch = pd.DataFrame(
         {
             2030: {"gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 0.0},
@@ -112,10 +111,10 @@ def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
         }
     ).T
 
-    assert root == multi_period_record.uuid
-    assert revisions[-1] == result.uuid
-    for solved, uuid in enumerate(revisions, start=1):
-        p = to_network(DataRecord(url=result.url, uuid=uuid)).generators_t.p
+    assert root == multi_period.id
+    assert revisions[-1] == result.id
+    for solved, revision_id in enumerate(revisions, start=1):
+        p = to_network(result.store.revision(revision_id)).generators_t.p
         expected = dispatch.iloc[:solved]
         totals = p.groupby(level="period").sum().loc[expected.index, expected.columns]
         assert totals.to_numpy() == pytest.approx(expected.to_numpy(), abs=1e-3)
@@ -130,27 +129,25 @@ def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
         (2030, {"gen-2030": 50.0}),
     ],
 )
-def test_overnight_expansion_builds_one_period_from_what_exists(
-    period, built, multi_period_record, ancestry
-):
-    result = _run(OvernightCapacityExpansion, {"period": period}, multi_period_record)
+def test_overnight_expansion_builds_one_period_from_what_exists(period, built, multi_period):
+    result = _run(OvernightCapacityExpansion, {"period": period}, multi_period)
     solved = 2050 if period is None else period
     n = to_network(result, select={"period": [solved]})
 
-    assert ancestry(result) == [multi_period_record.uuid, result.uuid]
+    assert result.ancestry() == [multi_period.id, result.id]
     assert n.generators.p_nom_opt.to_dict() == pytest.approx(built, abs=1e-3)
 
 
-def test_overnight_expansion_needs_the_period_it_is_given(multi_period_record):
+def test_overnight_expansion_needs_the_period_it_is_given(multi_period):
     with pytest.raises(ValueError, match="no investment period 2045"):
-        _run(OvernightCapacityExpansion, {"period": 2045}, multi_period_record)
+        _run(OvernightCapacityExpansion, {"period": 2045}, multi_period)
 
 
-def test_a_failed_solve_raises_a_solve_error(store_record):
+def test_a_failed_solve_raises_a_solve_error(store_revision):
     n = build_example_network()
     n.generators.p_nom_max = 0.0
     with pytest.raises(SolveError, match="infeasible"):
-        _run(OvernightCapacityExpansion, {}, store_record(n, "infeasible"))
+        _run(OvernightCapacityExpansion, {}, store_revision(n, "infeasible"))
 
 
 def _assets(period: int, lifetime: float, component: str = "Generator") -> pypsa.Network:
@@ -192,25 +189,26 @@ def test_cohorts_built_before_the_period_are_removed(lifetime, kept):
     assert n.generators.index.tolist() == kept
 
 
-def test_myopic_expansion_never_builds_a_cohort_before_the_first_period(store_record):
+def test_myopic_expansion_never_builds_a_cohort_before_the_first_period(store_revision):
     n = _multi_period_network()
     n.add("Generator", "gen-2020", bus="bus", p_nom_extendable=True, build_year=2020, lifetime=40)
-    record = store_record(n, "early-cohort")
-
-    result = _run(MyopicCapacityExpansion, {}, record)
+    result = _run(MyopicCapacityExpansion, {}, store_revision(n, "early-cohort"))
 
     dispatch = to_network(result, select={"period": [2050]}).generators_t.p.sum().to_dict()
     expected = {"gen-2020": 0.0, "gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 200.0}
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_can_run_against_capacities_another_block_chose(single_period_record):
-    expanded = _run(OvernightCapacityExpansion, {}, single_period_record)
+def test_dispatch_can_run_against_capacities_another_block_chose(single_period):
+    expanded = _run(OvernightCapacityExpansion, {}, single_period)
 
     result = _run(
         RollingHorizonDispatch,
-        {"capacity_source": expanded, "optimize_config": {"horizon": 12}},
-        single_period_record,
+        {
+            "capacity_source": RevisionRef.from_revision(expanded),
+            "optimize_config": {"horizon": 12},
+        },
+        single_period,
     )
     n = to_network(result)
 
@@ -233,16 +231,13 @@ def test_dispatch_fixes_the_capacities_its_source_decided(component):
     assert not static[attr + "_extendable"].any()
 
 
-def test_dispatch_can_run_on_its_own(single_period_record, store_record):
-    n = to_network(single_period_record)
+def test_dispatch_can_run_on_its_own(single_period, store_revision):
+    n = to_network(single_period)
     n.generators.loc["gen", "p_nom_extendable"] = False
     n.generators.loc["gen", "p_nom"] = 100.0
-    record = store_record(n, "fixed")
 
     result = _run(
-        RollingHorizonDispatch,
-        {"optimize_config": {"horizon": 12}},
-        record,
+        RollingHorizonDispatch, {"optimize_config": {"horizon": 12}}, store_revision(n, "fixed")
     )
     assert to_network(result).generators.p_nom["gen"] == pytest.approx(100.0)
 
@@ -254,12 +249,12 @@ def test_a_rolling_horizon_must_move_forward():
 
 def test_a_wired_capacity_source_is_checked_like_any_other_setting():
     with pytest.raises(Exception, match="capacity_source"):
-        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-record"})
+        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-revision"})
 
 
 def test_a_capacity_source_can_be_given_by_its_field_name():
     # It also has a friendlier name for display, which must not stop the field itself
     # being set the ordinary way.
-    source = {"url": "somewhere", "uuid": "00000000-0000-0000-0000-000000000000"}
+    source = {"store": "somewhere", "id": "00000000-0000-0000-0000-000000000000"}
     config = RollingHorizonDispatch.merge_config({"capacity_source": source}, {})
-    assert config.capacity_source.url == "somewhere"
+    assert config.capacity_source.store == "somewhere"

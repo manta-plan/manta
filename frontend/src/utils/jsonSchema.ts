@@ -190,7 +190,7 @@ export type SchemaGroup = {
 };
 
 /**
- * Every nested group of settings (an object, or a linked def such as DataRecord),
+ * Every nested group of settings (an object, or a linked def such as RevisionRef),
  * depth-first and flattened, so each one can be its own top-level dropdown.
  */
 export function collectGroups(

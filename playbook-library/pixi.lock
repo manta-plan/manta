@@ -2,19 +2,19 @@ version: 7
 platforms:
 - name: linux-64
   virtual-packages:
-  - __unix=0=0
+  - __unix=0
   - __linux=4.18
   - __glibc=2.28
   - __archspec=0=x86_64
 - name: linux-aarch64
   virtual-packages:
-  - __unix=0=0
+  - __unix=0
   - __linux=4.18
   - __glibc=2.28
   - __archspec=0=aarch64
 - name: osx-arm64
   virtual-packages:
-  - __unix=0=0
+  - __unix=0
   - __osx=13.0
   - __archspec=0=m1
 environments:
@@ -12039,6 +12039,7 @@ packages:
   - jsonschema>=4.18
   - pydantic>=2
   - pyyaml>=6
+  - datarecord @ git+https://github.com/energy-models/datarecord@8889d623865e3cab80d7a18681e48a6c2536741d ; extra == 'run'
   requires_python: '>=3.12'
 - pypi: ./
   name: playbook-library

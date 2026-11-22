@@ -9,9 +9,9 @@ from playbook.blocks.core import (
     BlockDims,
     BlockRunError,
     ConfigSchema,
-    DataRecord,
     DataRecordError,
     MantaBlock,
+    RevisionRef,
     SolveError,
 )
 from playbook.blocks.environments import EnvironmentConflictError, EnvironmentSpec, current_env
@@ -44,11 +44,11 @@ __all__ = [
     "BlockUnavailableError",
     "Catalogue",
     "ConfigSchema",
-    "DataRecord",
     "DataRecordError",
     "EnvironmentConflictError",
     "EnvironmentSpec",
     "MantaBlock",
+    "RevisionRef",
     "SolveError",
     "available_blocks",
     "catalogue",

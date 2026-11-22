@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from pydantic import Field
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
@@ -41,14 +42,14 @@ class OvernightCapacityExpansion(MantaBlock[OvernightCapacityExpansionConfig]):
             n, self.config.optimize_config, multi_investment_periods=multi_investment_periods
         )
 
-    def run(self, record: DataRecord) -> DataRecord:
-        periods = investment_periods(record)
+    def run(self, base: Revision) -> Revision:
+        periods = investment_periods(base)
         if periods:
             period = periods[-1] if self.config.period is None else self.config.period
             if period not in periods:
                 raise ValueError(f"The model has no investment period {period}: {periods}.")
-            n = to_network(record, select={"period": [period]})
+            n = to_network(base, select={"period": [period]})
             remove_unbuilt_cohorts(n)
         else:
-            n = to_network(record)
-        return write_network(self.optimize(n), record, results_only=True)
+            n = to_network(base)
+        return write_network(self.optimize(n), base, results_only=True)
