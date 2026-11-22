@@ -20,6 +20,7 @@ pass pointers to data rather than the data itself.
 
 import json
 import logging
+from contextlib import closing
 from uuid import UUID
 
 from playbook.blocks import BlockSpec, Catalogue, RevisionRef
@@ -113,18 +114,20 @@ def run_block(
     """
     # Imported here: only a block's own image installs `playbook[run]`, and the
     # control image imports this module to dispatch at this flow.
-    from playbook.blocks.run import run_block as run_in_process
+    from datarecord import Workspace
+    from playbook.blocks.run import open_revision
 
     # Nothing has imported this container's block library yet until this call
     # does: MANTA_BLOCK_SOURCES (see config.block_sources) names it, but only
     # importing it registers its blocks. Skipping this leaves every run failing
     # with BlockNotRegisteredError.
     load_block_sources()
+    block_cls = get_block(block)
     wired = {name: RevisionRef.from_dict(value) for name, value in (inputs or {}).items()}
-    result = run_in_process(
-        get_block(block), config, revision=RevisionRef.from_dict(revision), inputs=wired
-    )
-    output = result.to_dict()
+    instance = block_cls(block_cls.merge_config(config, wired))
+    with closing(Workspace()) as workspace:
+        result = instance.run(open_revision(workspace, RevisionRef.from_dict(revision)))
+        output = RevisionRef.from_revision(result).to_dict()
     create_table_artifact(table=[output], key=OUTPUT_ARTIFACT_KEY)
     return output
 

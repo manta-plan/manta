@@ -23,6 +23,7 @@ Before anything runs, the playbook is checked against its settings (see
 partway through.
 """
 
+from contextlib import closing
 from typing import Protocol
 
 from playbook.blocks import BlockSpec, RevisionRef
@@ -66,9 +67,14 @@ class LocalBlockRunner:
     ) -> RevisionRef:
         # Imported here: only running a block in this process opens stores, which
         # needs the `playbook[run]` extra; driving one elsewhere does not.
-        from playbook.blocks.run import run_block
+        from datarecord import Workspace
 
-        return run_block(block.block_class(), config, revision=revision, inputs=inputs)
+        from playbook.blocks.run import open_revision
+
+        block_cls = block.block_class()
+        instance = block_cls(block_cls.merge_config(config, inputs))
+        with closing(Workspace()) as workspace:
+            return RevisionRef.from_revision(instance.run(open_revision(workspace, revision)))
 
 
 def execute_playbook(

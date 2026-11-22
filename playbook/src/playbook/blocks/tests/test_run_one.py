@@ -16,9 +16,8 @@ import pytest
 
 from playbook.blocks.core import DataRecordError, RevisionRef
 from playbook.blocks.registry import BlockNotRegisteredError
-from playbook.blocks.run import run_block
 from playbook.blocks.run_one import RESULT_MARKER, main, parse_result_line, result_line
-from playbook.blocks.tests.fakes import FakePassthrough, steps
+from playbook.blocks.tests.fakes import steps
 
 
 def _result_from(capsys) -> RevisionRef:
@@ -50,9 +49,16 @@ def test_a_block_runs_and_reports_where_its_result_went(capsys, initial_revision
 
 
 def test_wired_inputs_reach_the_block_and_open_beside_its_input(capsys, initial_revision):
-    upstream = run_block(
-        FakePassthrough, {"label": "upstream"}, revision=initial_revision, inputs={}
+    main(
+        [
+            "fake_passthrough",
+            "--revision",
+            json.dumps(initial_revision.to_dict()),
+            "--config",
+            json.dumps({"label": "upstream"}),
+        ]
     )
+    upstream = _result_from(capsys)
     main(
         [
             "fake_needs_upstream",
@@ -109,7 +115,7 @@ def test_a_revision_pointing_at_nothing_raises_a_datarecord_error(
 ):
     ref = RevisionRef(store=initial_revision.store + suffix, id=revision_id or initial_revision.id)
     with pytest.raises(DataRecordError, match="No revision"):
-        run_block(FakePassthrough, {}, revision=ref, inputs={})
+        main(["fake_passthrough", "--revision", json.dumps(ref.to_dict())])
 
 
 def test_the_result_line_round_trips_through_its_parser(initial_revision):

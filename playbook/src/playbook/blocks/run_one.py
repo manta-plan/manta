@@ -17,10 +17,13 @@ the driving, which is what lets block images stay free of any orchestration code
 import argparse
 import json
 import sys
+from contextlib import closing
+
+from datarecord import Workspace
 
 from playbook.blocks.core import RevisionRef
 from playbook.blocks.registry import get_block, load_block_sources
-from playbook.blocks.run import run_block
+from playbook.blocks.run import open_revision
 
 RESULT_MARKER = "MANTA_BLOCK_RESULT "
 """Prefix of the one stdout line that carries the block's result revision as JSON."""
@@ -76,13 +79,12 @@ def main(argv: list[str] | None = None) -> int:
     # holding the one being asked for has to be named before it can be looked up.
     load_block_sources(args.source or None)
 
+    block_cls = get_block(args.block)
     wired = {name: RevisionRef.from_dict(value) for name, value in json.loads(args.inputs).items()}
-    result = run_block(
-        get_block(args.block),
-        json.loads(args.config),
-        revision=RevisionRef.from_dict(json.loads(args.revision)),
-        inputs=wired,
-    )
+    block = block_cls(block_cls.merge_config(json.loads(args.config), wired))
+    with closing(Workspace()) as workspace:
+        base = open_revision(workspace, RevisionRef.from_dict(json.loads(args.revision)))
+        result = RevisionRef.from_revision(block.run(base))
 
     print(result_line(result), flush=True)
     return 0

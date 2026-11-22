@@ -99,8 +99,9 @@ What a block declares:
 
 `run` receives the datarecord `Revision` to work on, commits its result as a new
 revision through `base.store`, and returns that revision. Every revision a block run
-touches shares one `Workspace`, opened by `playbook.blocks.run.run_block` before the
-block runs and closed after it, so a block never opens a store of its own.
+touches shares one `Workspace`, opened by whatever runs the block (`LocalBlockRunner`,
+`run_one`) before the block runs and closed after it, so a block never opens a store of
+its own.
 
 Between processes a revision travels as a `RevisionRef`: a `store` (a local directory
 or an `s3://` URL) and the `id` of one revision in it. Settings wired in through
