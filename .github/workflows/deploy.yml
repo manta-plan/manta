@@ -165,7 +165,8 @@ jobs:
         run: bash scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
 
       # Before the deployment itself, so the new host rule spreads across the
-      # load balancer while the images build.
+      # load balancer and the new certificate provisions while the images
+      # build.
       - name: Register with the load balancer
         env:
           VM_IP: ${{ steps.vm.outputs.ip }}
@@ -181,7 +182,14 @@ jobs:
           fi
           bash scripts/deploy/gcp-ssh.sh "sudo bash -s -- $args" < scripts/deploy/vm-deploy.sh
 
+      # A new instance's certificate can take up to an hour. Past the wait this
+      # only warns, and the public URL is checked on the next deployment.
+      - name: Wait for the certificate
+        id: cert
+        run: bash scripts/deploy/gcp-wait-cert.sh
+
       - name: Check the public URL
+        if: ${{ steps.cert.outputs.active == 'true' }}
         run: |
           url="https://$SITE_HOST/v1/health"
           for attempt in $(seq 1 60); do
@@ -195,12 +203,13 @@ jobs:
             echo "Got $code from $url (attempt $attempt of 60) $(head -n 1 curl-error.txt)"
             sleep 10
           done
-          echo "::error::$url did not return 200 within 10 minutes. The instance is healthy on the VM itself, so look at the wildcard DNS record, the wildcard certificate and the load balancer."
+          echo "::error::$url did not return 200 within 10 minutes. The instance is healthy on the VM itself and its certificate is active, so look at the *.manta-plan.org DNS record and the load balancer's host rule."
           exit 1
 
       - name: Summary
         env:
           VM_CREATED: ${{ steps.vm.outputs.created }}
+          CERT_STATUS: ${{ steps.cert.outputs.status }}
         run: |
           {
             echo "### Deployed to https://$SITE_HOST"
@@ -210,6 +219,11 @@ jobs:
             echo "| Commit | \`$SHA\` |"
             echo "| VM | \`$VM_NAME\` in \`$GCP_PROJECT\` |"
             echo "| New VM | $VM_CREATED |"
+            echo "| Certificate | \`manta-$VM_NAME-cert\` ($CERT_STATUS) |"
+            if [ "$CERT_STATUS" != "ACTIVE" ] && [ "$CERT_STATUS" != "RENEWAL_FAILED" ]; then
+              echo
+              echo "The certificate is still provisioning, so the public URL was not checked. https://$SITE_HOST works once it is active, usually within the hour."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify:

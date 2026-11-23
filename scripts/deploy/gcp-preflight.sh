@@ -48,6 +48,10 @@ LB_PERMISSIONS=(
   compute.globalNetworkEndpointGroups.attachNetworkEndpoints
   compute.globalNetworkEndpointGroups.detachNetworkEndpoints
   compute.targetHttpsProxies.list
+  compute.targetHttpsProxies.get
+  compute.targetHttpsProxies.setSslCertificates
+  compute.sslCertificates.create
+  compute.sslCertificates.get
   compute.targetHttpProxies.list
   compute.globalForwardingRules.list
 )
