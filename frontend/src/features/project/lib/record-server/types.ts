@@ -39,9 +39,13 @@ export interface Revision {
   kind: "scenario" | "result";
   label: string;
   description: string;
-  // The server catalog a scenario is read from (`<record>__<scenario>`);
-  // null for a run result, which isn't served yet.
+  // The server catalog it's read from (`<record>__<revision>`), scenarios
+  // and run results alike; `open` once attached. A run result is attached
+  // when first shown (openRecord with its name).
   catalog: string | null;
+  open: boolean;
+  // A run result's result attributes: those it adds to its scenario's.
+  results: string[];
 }
 
 // One attribute a scenario changes, over how many entities or buses.
@@ -135,6 +139,12 @@ export interface EntityListItem {
   location: string | null;
   // A branch's output locations.
   outputs: string[];
+}
+
+// An entity with its type and carrier, for a level page's title and breadcrumb.
+export interface EntityPlace extends EntityListItem {
+  ctype: string;
+  carrier: string | null;
 }
 
 export interface EntityConnection {

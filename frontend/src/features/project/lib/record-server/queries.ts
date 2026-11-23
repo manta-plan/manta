@@ -9,6 +9,7 @@ import type {
   EntityCount,
   EntityDetail,
   EntityListItem,
+  EntityPlace,
   EntityValue,
   LabelDetail,
   Location,
@@ -28,8 +29,10 @@ import type {
 // browser's attached `r` only lists the catalogs that existed when it
 // attached. It also means only the result travels.
 
-export function openRecord(id: string): Promise<RecordInfo> {
-  return fetchApi<RecordInfo>(`/api/records/${encodeURIComponent(id)}/open`, "POST");
+// Opens the record if it isn't yet; with `revision`, that run result too.
+export function openRecord(id: string, revision?: string): Promise<RecordInfo> {
+  const query = revision ? `?revision=${encodeURIComponent(revision)}` : "";
+  return fetchApi<RecordInfo>(`/api/records/${encodeURIComponent(id)}/open${query}`, "POST");
 }
 
 export function getCarriers(): Promise<Carrier[]> {
@@ -77,6 +80,22 @@ export function getEntities(ctype: string, carrier: string | null): Promise<Enti
     LEFT JOIN ${serverName("manta.regions")} g USING (entity)
     WHERE e.ctype = ${sqlString(ctype)} AND e.carrier IS NOT DISTINCT FROM ${carrier === null ? "NULL" : sqlString(carrier)}
     ORDER BY e.entity`);
+}
+
+// Entities with where each is: its bus's location, a branch's input location
+// (and its outputs), or a Shape's.
+export async function getEntityListItem(entity: string): Promise<EntityPlace | null> {
+  const rows = await serverQuery<EntityPlace>(`
+    SELECT e.entity, e.ctype, e.carrier,
+           coalesce(a.location, b.location0, g.location) AS location,
+           coalesce(b.outputs, []) AS outputs
+    FROM ${serverName("properties.entity")} e
+    LEFT JOIN ${serverName("manta.attached")} a USING (entity)
+    LEFT JOIN (SELECT entity, any_value(location0) AS location0, list(DISTINCT location1 ORDER BY location1) AS outputs
+               FROM ${serverName("manta.branches")} GROUP BY entity) b USING (entity)
+    LEFT JOIN (SELECT entity, any_value(location) AS location FROM ${serverName("manta.regions")} GROUP BY entity) g USING (entity)
+    WHERE e.entity = ${sqlString(entity)}`);
+  return rows[0] ?? null;
 }
 
 // The manifest default for one entity: a `default_by` rule on its ctype wins.

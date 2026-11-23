@@ -1,5 +1,47 @@
 @import "tailwindcss";
 
+/* Clickable things show the pointer (Tailwind v4 leaves buttons on the arrow).
+ * In the base layer, so a component's own cursor-* class still wins. */
+@layer base {
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="menuitemcheckbox"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  [role="combobox"],
+  summary,
+  select,
+  label:has(input[type="checkbox"], input[type="radio"]),
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="color"],
+  input[type="file"] {
+    cursor: pointer;
+  }
+}
+
+/* Unavailable controls say so. Unlayered, so it wins over cursor-pointer
+ * classes on items that can be disabled (menu and select items). */
+:is(button, input, select, textarea):disabled,
+[aria-disabled="true"],
+[data-disabled]:is(
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="menuitemcheckbox"],
+  [role="tab"],
+  [role="radio"],
+  [role="checkbox"],
+  [role="switch"]
+) {
+  cursor: not-allowed;
+}
+
 @font-face {
   font-family: "Google Sans Flex Variable";
   font-style: normal;

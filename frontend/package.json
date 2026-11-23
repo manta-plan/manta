@@ -29,6 +29,7 @@
     "lottie-web": "^5.13.0",
     "maplibre-gl": "^5.24.0",
     "mermaid": "^11.17.2",
+    "motion": "^14.14.0",
     "react": "^19.2.8",
     "react-arborist": "^3.16.0",
     "react-dom": "^19.2.8",
@@ -37,6 +38,7 @@
     "react-markdown": "^10.1.0",
     "react-zoom-pan-pinch": "^4.2.0",
     "remark-gfm": "^4.0.1",
+    "swr": "^2.5.1",
     "tailwindcss": "^4.3.3",
     "wouter": "^3.10.0",
     "zustand": "^5.0.16"

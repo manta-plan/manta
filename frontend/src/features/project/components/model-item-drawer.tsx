@@ -240,7 +240,7 @@ export function ModelItemDrawer() {
   const [location] = useLocation();
   const activeTab = getActiveProjectTab(location);
   useEffect(() => {
-    if (activeTab !== "model") closeItemDrawer();
+    if (activeTab !== "build") closeItemDrawer();
   }, [activeTab, closeItemDrawer]);
 
   const stored = detail?.attributes.filter((attribute) => !attribute.isDefault) ?? [];
