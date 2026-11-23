@@ -9,9 +9,9 @@ SPDX-License-Identifier: MIT
 A **block** is one unit of work in an energy model workflow. A **playbook** chains blocks
 together into something you can run.
 
-Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in 
-python for testing purposes only). Each block declares which environment it needs, 
-so one playbook can span environments that could never be installed side by side: 
+Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in
+python for testing purposes only). Each block declares which environment it needs,
+so one playbook can span environments that could never be installed side by side:
 each step runs where it belongs, and the results are passed along.
 
 This package is the *framework*: what a block is, what a playbook is, and how to run
@@ -49,6 +49,7 @@ src/playbook/
 needs.
 
 ## Getting started
+<!-- --8<-- [start:docs-setup] -->
 
 ```bash
 uv sync
@@ -63,6 +64,7 @@ Running a block opens datarecord stores, so a process that runs blocks installs
 `playbook[run]`. One that only passes revisions along, such as an orchestrator or a
 web backend, installs plain `playbook`: everything outside `playbook.blocks.run`
 imports without datarecord.
+<!-- --8<-- [end:docs-setup] -->
 
 ## Writing a block
 
@@ -343,6 +345,7 @@ offer a playbook's settings and [check](#checking-a-playbook) a playbook against
 without importing a single block.
 
 ## Testing your contribution
+<!-- --8<-- [start:docs-testing] -->
 
 ```bash
 uv run pytest                 # the whole suite
@@ -365,8 +368,9 @@ once per process.
 
 A pull request is expected to keep this suite green and to add tests for what it
 changes. If you are adding a real block rather than a framework feature, it belongs in
-[`playbook-library`](../playbook-library), which has its own suite and its own
+[`playbook-library`](https://github.com/manta-plan/manta/tree/main/playbook-library), which has its own suite and its own
 instructions.
+<!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
 
