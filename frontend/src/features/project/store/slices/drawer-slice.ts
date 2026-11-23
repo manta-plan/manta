@@ -1,5 +1,4 @@
 import type { ProjectStoreSet, UtilityDrawerFlow } from "../types";
-import type { RunStatus } from "../../data/runs";
 
 export function createDrawerSlice(set: ProjectStoreSet) {
   return {
@@ -45,16 +44,8 @@ export function createDrawerSlice(set: ProjectStoreSet) {
     closeRunNodeConfigDrawer: () => set({ configuringRunNodeId: null }),
 
     isRunFilterDrawerOpen: false,
-    runStatusFilters: [],
     openRunFilterDrawer: () => set({ isRunFilterDrawerOpen: true }),
     closeRunFilterDrawer: () => set({ isRunFilterDrawerOpen: false }),
-    toggleRunStatusFilter: (status: RunStatus) =>
-      set((state) => ({
-        runStatusFilters: state.runStatusFilters.includes(status)
-          ? state.runStatusFilters.filter((item) => item !== status)
-          : [...state.runStatusFilters, status],
-      })),
-    clearRunFilters: () => set({ runStatusFilters: [] }),
 
     isInspectionFilterDrawerOpen: false,
     inspectionFilters: [],

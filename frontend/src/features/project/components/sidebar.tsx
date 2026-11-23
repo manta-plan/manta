@@ -1,9 +1,12 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Tooltip } from "@base-ui/react/tooltip";
-import { LuBoxes, LuLayers, LuPlus } from "react-icons/lu";
+import { LuBoxes, LuHistory, LuLayers, LuPlus } from "react-icons/lu";
 import { useLocation } from "wouter";
 import { RecordTree } from "../../level/tree/record-tree";
 import { RecordScenariosPanel } from "../../level/scenarios/record-scenarios-panel";
+import { RunsPanel } from "../../runs/components/runs-panel";
+import { RunsPanelActions } from "../../runs/components/runs-panel-actions";
+import { ScenarioPlaybooksPanel } from "../../runs/components/scenario-playbooks-panel";
 import { getActiveProjectTab } from "../lib/project-route";
 import { useProjectStore } from "../store/project-store";
 import { SidebarPanel } from "./sidebar-panel";
@@ -39,9 +42,11 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 // Build and Inspect: the Scenarios panel (inputs on Build, results on Inspect)
-// over the record tree, which opens a level page.
+// over the record tree, which opens a level page. Run: the runs over the
+// playbooks to run.
 export function Sidebar() {
   const [location] = useLocation();
+  const isRunTab = getActiveProjectTab(location) === "run";
   const activeTab = getActiveProjectTab(location) === "inspect" ? "inspect" : "build";
   const sidebarRef = useRef<HTMLElement>(null);
   const [primaryPanelHeight, setPrimaryPanelHeight] = useState<number | null>(null);
@@ -82,7 +87,7 @@ export function Sidebar() {
       className="border-surface-600 bg-surface-800 flex h-full w-72 shrink-0 flex-col border-r"
     >
       <div
-        data-tour="scenarios-panel"
+        data-tour={isRunTab ? undefined : "scenarios-panel"}
         className="min-h-40 shrink-0 overflow-hidden"
         style={{
           height:
@@ -91,21 +96,30 @@ export function Sidebar() {
               : `clamp(10rem, ${primaryPanelHeight}px, calc(100% - 10rem))`,
         }}
       >
-        <SidebarPanel
-          icon={LuLayers}
-          label="Scenarios"
-          qualifier={activeTab === "build" ? "Inputs" : "Results"}
-          action={
-            activeTab === "build" ? (
-              <AddButton label="New scenario" onClick={() => openScenarioDialog({ mode: "new" })} />
-            ) : undefined
-          }
-        >
-          <RecordScenariosPanel
-            tab={activeTab === "build" ? "changes" : "results"}
-            withDrafts={activeTab === "build"}
-          />
-        </SidebarPanel>
+        {isRunTab ? (
+          <SidebarPanel icon={LuHistory} label="Runs" action={<RunsPanelActions />}>
+            <RunsPanel />
+          </SidebarPanel>
+        ) : (
+          <SidebarPanel
+            icon={LuLayers}
+            label="Scenarios"
+            qualifier={activeTab === "build" ? "Inputs" : "Results"}
+            action={
+              activeTab === "build" ? (
+                <AddButton
+                  label="New scenario"
+                  onClick={() => openScenarioDialog({ mode: "new" })}
+                />
+              ) : undefined
+            }
+          >
+            <RecordScenariosPanel
+              tab={activeTab === "build" ? "changes" : "results"}
+              withDrafts={activeTab === "build"}
+            />
+          </SidebarPanel>
+        )}
       </div>
       <div
         role="separator"
@@ -119,12 +133,12 @@ export function Sidebar() {
       />
       <div data-tour="record-tree-panel" className="min-h-40 flex-1 overflow-hidden">
         <SidebarPanel
-          icon={LuBoxes}
-          label={record?.info.label ?? "Record"}
+          icon={isRunTab ? LuLayers : LuBoxes}
+          label={isRunTab ? "Playbooks by Scenario" : (record?.info.label ?? "Record")}
           onHeaderPointerDown={startResize}
           onHeaderPointerMove={continueResize}
         >
-          <RecordTree />
+          {isRunTab ? <ScenarioPlaybooksPanel /> : <RecordTree />}
         </SidebarPanel>
       </div>
     </aside>

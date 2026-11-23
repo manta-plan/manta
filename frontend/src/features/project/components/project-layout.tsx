@@ -35,8 +35,8 @@ export function ProjectLayout({ children }: { children: ReactNode }) {
     <div className="bg-surface-900 flex h-svh w-full flex-col">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        {/* The record's scenarios over its tree; the other tabs fill the page. */}
-        {(activeTab === "build" || activeTab === "inspect") && <Sidebar />}
+        {/* Build and Inspect: the record's scenarios over its tree. Run: the runs and the playbooks to run. The other tabs fill the page. */}
+        {(activeTab === "build" || activeTab === "inspect" || activeTab === "run") && <Sidebar />}
         <main data-tour="run-main-section" className="relative flex-1 overflow-hidden">
           {children}
           <RightDrawer />

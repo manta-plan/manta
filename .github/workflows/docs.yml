@@ -1,0 +1,40 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "pixi.toml"
+      - "pixi.lock"
+      - "tools/docs/**"
+      - "**/README.md"
+      - "CONTRIBUTING.md"
+      - "backend/src/manta/**"
+      - "backend/pyproject.toml"
+      - "backend/uv.lock"
+      - "playbook/src/**"
+      - "runner/src/**"
+      - ".github/workflows/docs.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # Fails when a route, request or result changed without `pixi run docs-openapi`.
+      - run: uv run --project backend python tools/docs/export_openapi.py
+      - run: git diff --exit-code docs/reference/backend/openapi.json
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          cache: true
+      - run: pixi run docs-build

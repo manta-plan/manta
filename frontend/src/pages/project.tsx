@@ -88,7 +88,7 @@ export function ProjectPage() {
         <RecordPages key={activeTab} pageId={detailId ?? null} />
       )}
 
-      {activeTab === "run" && projectId && <RunsView key={projectId} projectId={projectId} />}
+      {activeTab === "run" && <RunsView />}
 
       {/* Analyse arrives with its own page (a separate issue). */}
       {activeTab === "analyse" && (
