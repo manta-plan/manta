@@ -17,21 +17,24 @@ from functools import cache, reduce
 
 import numpy as np
 import pandas as pd
-import pyarrow.compute as pc
 import pypsa
-import tsam
 from datarecord import PropertySpec, RecordLike, Revision, Schema
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb import ColumnExpression as col
+from duckdb import ConstantExpression as lit
+from duckdb import DuckDBPyRelation
+from duckdb import FunctionExpression as fn
 from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from pydantic import field_validator, model_validator
+from scipy.sparse import diags
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.preprocessing import MinMaxScaler
 
 from playbook_library.pypsa_time_aggregation import (
+    PYPSA_TIME,
+    has_periods,
     pypsa_time,
-    snapshot_axis,
-    snapshot_frame,
-    snapshot_rows,
 )
-from playbook_library.time_aggregation import settled_series, time_relation, widened
+from playbook_library.time_aggregation import time_relation, widened
 
 
 @dataclass(frozen=True)
@@ -58,45 +61,78 @@ RESERVED = frozenset({"period", "timestep"})
 """The snapshot properties that PyPSA reads, so no time aggregation may take their names."""
 
 
-def add_snapshot_property(rev: Revision, name: str, values: pd.Series) -> Revision:
-    """Add `snapshot.<name>` as a child revision of `rev`, mapping each snapshot to another.
+def _snapshot_positions(base: RecordLike) -> DuckDBPyRelation:
+    """Return the snapshots of `base` with their properties and their positions.
 
-    `values` has one snapshot per snapshot of `rev`, indexed by them, all labelled as
-    by `snapshot_labels`. The child declares the property in its schema, and restates the
+    It adds each snapshot's `_period` (0 without investment periods), its `_step`, the
+    label a time aggregation refers to, and its `_position` in axis order.
+    """
+    rel = time_relation(base, PYPSA_TIME)
+    snapshot = col("snapshot")
+    period, step = (
+        (snapshot["period"], snapshot["timestep"])
+        if has_periods(base.schema)
+        else (lit(0), snapshot)
+    )
+    position = fn("row_number").over() - lit(1)
+    return rel.select(
+        *map(col, rel.columns),
+        period.alias("_period"),
+        step.alias("_step"),
+        position.alias("_position"),
+    )
+
+
+def add_time_aggregation(rev: Revision, name: str, starts: DuckDBPyRelation) -> Revision:
+    """Commit the time aggregation `snapshot.<name>` as a child revision of `rev`.
+
+    A cluster starts at each `_position` in `starts`, counting snapshots in axis order,
+    and at the first snapshot of each investment period. Each snapshot maps to the first
+    of its cluster. The child declares the property in its schema, and restates the
     `snapshot` axis in the order of `rev`. A name that the store declares, but this
     revision leaves unset, can be set again. Raises `ValueError` if `name` is reserved or
-    already set, if `values` has the wrong length, or maps a snapshot to one outside its
-    investment period.
+    already set.
     """
     base = rev.record
-    frame = snapshot_frame(base)
-    if name in RESERVED or (name in frame and frame[name].notna().any()):
-        raise ValueError(f"snapshot.{name} is reserved or already declared")
-    if len(values) != len(frame):
-        raise ValueError(f"snapshot.{name} needs {len(frame)} values, got {len(values)}")
-    representatives = values.loc[frame["snapshot"]].to_numpy()
-    positions = pd.Index(frame["snapshot"]).get_indexer(representatives)
-    periods = frame["period"].to_numpy()
-    if ((positions < 0) | (periods[positions] != periods)).any():
-        raise ValueError(f"snapshot.{name} maps a snapshot to one outside its investment period")
     axis = pypsa_time(base.schema)
-    stored = frame[time_relation(base, axis).columns].assign(**{name: representatives})
+    own = time_relation(base, axis)
+    if name in RESERVED or (
+        name in own.columns and own.filter(col(name).isnotnull()).limit(1).fetchall()
+    ):
+        raise ValueError(f"snapshot.{name} is reserved or already declared")
+    snapshots = _snapshot_positions(base)
+    marked = starts.select(col("_position").alias("_start")).set_alias("t")
+    joined = snapshots.join(marked, col("_position") == col("_start"), how="left")
+    by_period = {"partition_by": [col("_period")], "order_by": [col("_position")]}
+    runs = fn("count", col("_start")).over(**by_period).alias("_run")
+    counted = joined.select(*map(col, snapshots.columns), runs)
+    first = fn("first", col("_step")).over(
+        partition_by=[col("_period"), col("_run")], order_by=[col("_position")]
+    )
+    kept = [col(c) for c in own.columns if c != name]
+    stored = (
+        counted.select(*kept, first.alias(name), col("_position"))
+        .order("_position")
+        .select(*kept, col(name))
+    )
     schema = widened(base.schema, axis, {name: PropertySpec(one_of=axis.step)})
-    snapshots = snapshot_axis(schema, rev.store.workspace.con, stored)
-    return rev.store.commit(_SnapshotAxis(schema, snapshots), parent=rev)
+    return rev.store.commit(_SnapshotAxis(schema, stored), parent=rev)
 
 
-def resample_map(rev: Revision, n_hours: int) -> pd.Series:
-    """Map each snapshot to the first snapshot of its block of `n_hours` hours.
+def resample_starts(rev: Revision, n_hours: int) -> DuckDBPyRelation:
+    """Return the `_position` of each snapshot of `rev` that starts a block of `n_hours` hours.
 
     Blocks count from midnight of the first day of each investment period, and none
     crosses from one period into the next.
     """
-    frame = snapshot_frame(rev.record)
-    origin = frame["timestep"].groupby(frame["period"]).transform("min").dt.normalize()
-    blocks = [frame["period"], (frame["timestep"] - origin) // pd.Timedelta(hours=n_hours)]
-    first = frame["snapshot"].groupby(blocks).transform("first")
-    return pd.Series(first.to_numpy(), index=frame["snapshot"])
+    day = fn("date_trunc", lit("day"), fn("min", col("_step")).over(partition_by=[col("_period")]))
+    hours = (fn("epoch", col("_step")) - fn("epoch", day)) / lit(3600 * n_hours)
+    blocks = _snapshot_positions(rev.record).select(
+        col("_period"), col("_position"), fn("floor", hours).alias("_block")
+    )
+    first = fn("min", col("_position")).over(partition_by=[col("_period"), col("_block")])
+    firsts = blocks.select(col("_position"), first.alias("_first"))
+    return firsts.filter(col("_position") == col("_first"))
 
 
 @cache
@@ -123,87 +159,94 @@ def input_series(base: RecordLike) -> list[str]:
     return floats
 
 
-def _profiles(rel: DuckDBPyRelation, name: str, rows: DuckDBPyRelation) -> DuckDBPyRelation:
-    """Return each series of attribute `name` that varies over the snapshots, as values per period.
+def _labelled(rel: DuckDBPyRelation, name: str) -> DuckDBPyRelation:
+    """Return the rows of attribute `name`, each tagged with the name of its time series.
 
-    A series is labelled by `name` and its other keys. A series constant over every
-    period is dropped.
+    The name is `name` and the row's other keys, joined by `|`.
     """
-    keys = [f'a."{c}"' for c in rel.columns if c not in {"snapshot", "value"}]
-    label = ", ".join([f"'{name}'", *(f"CAST({k} AS VARCHAR)" for k in keys)])
-    joined = rel.set_alias("a").join(rows.set_alias("s"), "a.snapshot = s.snapshot")
-    profiles = joined.aggregate(
-        f"concat_ws('|', {label}) AS series, s.period AS period, "
-        "list(CAST(a.value AS DOUBLE) ORDER BY s.row) AS profile, "
-        "min(a.value) AS low, max(a.value) AS high",
-        ", ".join([*keys, "s.period"]),
-    )
-    window = "OVER (PARTITION BY series)"
-    varies = f"min(low) {window} < max(high) {window} AS varies"
-    return profiles.project(f"series, period, profile, {varies}").filter("varies")
+    keys = [col(c).cast("VARCHAR") for c in rel.columns if c not in {"snapshot", "value"}]
+    series = fn("concat_ws", lit("|"), lit(name), *keys).alias("series")
+    return rel.select(series, col("snapshot"), col("value").cast("DOUBLE").alias("value"))
+
+
+def _distinct_varying(matrix: np.ndarray, period: int) -> np.ndarray:
+    """Return the columns of `matrix`, the series of `period`, that vary and are distinct.
+
+    Of identical columns only the first is kept. Raises `ValueError` if a series has no
+    value at a snapshot, or if none varies.
+    """
+    if np.isnan(matrix).any():
+        raise ValueError(f"An input series has no value at some snapshots in period {period}")
+    matrix = matrix[:, matrix.min(axis=0) < matrix.max(axis=0)]
+    if not matrix.shape[1]:
+        raise ValueError(
+            f"The record has no input series that vary over its snapshots in period {period}"
+        )
+    _, first = np.unique(matrix, axis=1, return_index=True)
+    return matrix[:, np.sort(first)]
 
 
 def _period_matrices(
-    base: RecordLike, frame: pd.DataFrame, con: DuckDBPyConnection, attributes: Sequence[str]
+    base: RecordLike, attributes: Sequence[str]
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Yield, per investment period, the positions of its rows in `frame` and its series matrix.
+    """Yield, per investment period, the positions of its snapshots and its series matrix.
 
-    The matrix has one column per distinct series of `attributes`, ordered by series
-    label. Only series that vary over the snapshots count. Of series identical within the
-    period, only the one with the first label is kept. Raises `ValueError` for a period
-    without such a series.
+    Positions count the snapshots of `base` in axis order. The matrix has one column per
+    series of `attributes` with rows at snapshots, ordered by series label, as
+    `_distinct_varying` keeps them. A series' row without a snapshot gives its value at
+    every other snapshot, as by the broadcast rule.
     """
-    positions = frame[["snapshot", "period"]].assign(row=range(len(frame)))
-    rows = snapshot_rows(base.schema, con, positions, ["snapshot"])
-    axis = pypsa_time(base.schema)
-    profiles = [_profiles(settled_series(base, name, axis), name, rows) for name in attributes]
-    distinct = reduce(DuckDBPyRelation.union, profiles).aggregate(
-        "period, min(series) AS series, profile", "period, profile"
+    rels = [_labelled(base.attributes[name], name) for name in attributes]
+    labelled = reduce(DuckDBPyRelation.union, rels)
+    snapshots = _snapshot_positions(base)
+    timed = labelled.filter(col("snapshot").isnotnull()).set_alias("a")
+    placed = timed.join(snapshots.set_alias("s"), col("a", "snapshot") == col("s", "snapshot"))
+    rank = fn("dense_rank").over(order_by=[col("series")]) - lit(1)
+    ranked = placed.select(col("series"), col("_position"), col("value"), rank.alias("col"))
+    cells = ranked.fetchnumpy()
+    ids = ranked.select(col("series"), col("col")).distinct().set_alias("i")
+    fallback = (
+        labelled.filter(col("snapshot").isnull())
+        .set_alias("a")
+        .join(ids, col("a", "series") == col("i", "series"))
+        .select(col("i", "col"), col("a", "value"))
+        .fetchnumpy()
     )
-    table = distinct.order("period, series").to_arrow_table()
-    for period, positions in frame.groupby("period").indices.items():
-        chosen = table.filter(pc.equal(table["period"], period))["profile"]
-        if not len(chosen):
-            raise ValueError(
-                f"The record has no input series that vary over its snapshots in period {period}"
-            )
-        values = chosen.combine_chunks().flatten().to_numpy()
-        yield positions, values.reshape(len(chosen), len(positions)).T
+    wide = np.full((len(snapshots), len(np.unique(cells["col"]))), np.nan)
+    wide[:, fallback["col"]] = fallback["value"]
+    wide[cells["_position"], cells["col"]] = cells["value"]
+    spans = snapshots.aggregate("_period, min(_position) AS start, count(*) AS n", "_period")
+    for period, start, n in spans.order("start").fetchall():
+        yield np.arange(start, start + n), _distinct_varying(wide[start : start + n], period)
 
 
-def _segment_starts(matrix: pd.DataFrame, n_segments: int) -> np.ndarray:
-    """Split `matrix` into `n_segments` segments with tsam, and return where each row's starts.
+def _segment_starts(matrix: np.ndarray, n_segments: int) -> np.ndarray:
+    """Split `matrix` into `n_segments` segments, and return the row each starts at.
 
-    A segment is a contiguous stretch of rows with similar values. tsam is a time series
-    aggregation package.
+    A segment is a contiguous stretch of rows with similar values. Rows are merged by
+    Ward clustering over min-max scaled columns, each row linked only to its neighbours,
+    as tsam segments a single period.
     """
-    result = tsam.aggregate(
-        matrix.reset_index(drop=True),
-        n_clusters=1,
-        period_duration=len(matrix),
-        temporal_resolution=1.0,
-        segments=tsam.SegmentConfig(n_segments=n_segments),
-    )
-    durations = result.cluster_representatives.index.get_level_values("Segment Duration")
-    return np.repeat(np.cumsum(durations) - durations, durations)
+    n = len(matrix)
+    chain = diags([np.ones(n - 1), np.ones(n - 1)], [-1, 1])
+    clustering = AgglomerativeClustering(n_segments, linkage="ward", connectivity=chain)
+    labels = clustering.fit_predict(MinMaxScaler().fit_transform(matrix))
+    return np.flatnonzero(np.r_[True, labels[1:] != labels[:-1]])
 
 
-def segment_map(rev: Revision, n_segments: int) -> pd.Series:
-    """Map each snapshot to the first snapshot of its segment, `n_segments` in each period.
+def segment_starts(rev: Revision, n_segments: int) -> DuckDBPyRelation:
+    """Return the `_position` of each snapshot of `rev` that starts one of `n_segments` segments.
 
-    tsam places the segments by the PyPSA input series of `rev` that vary over its
-    snapshots. Within a period, a series that duplicates another is dropped first, so
-    each profile counts once. The profiles of cohorts of one technology are such
-    duplicates. Raises `ValueError` if `rev` has no such series, overall or in a period.
+    Each period has `n_segments` segments. They are placed by the PyPSA input series of
+    `rev` that vary over the period's snapshots. Within a period, a series that
+    duplicates another is dropped first, so each profile counts once. The profiles of
+    cohorts of one technology are such duplicates. Raises `ValueError` if a period has
+    no such series, or if a series has no value at a snapshot.
     """
-    frame = snapshot_frame(rev.record)
-    labels = frame["snapshot"].to_numpy()
-    representatives = labels.copy()
-    inputs = _period_matrices(rev.record, frame, rev.store.workspace.con, input_series(rev.record))
-    for positions, matrix in inputs:
-        starts = _segment_starts(pd.DataFrame(matrix), n_segments)
-        representatives[positions] = labels[positions][starts]
-    return pd.Series(representatives, index=frame["snapshot"])
+    base = rev.record
+    inputs = _period_matrices(base, input_series(base))
+    positions = np.concatenate([at[_segment_starts(m, n_segments)] for at, m in inputs])
+    return rev.store.workspace.con.from_df(pd.DataFrame({"_position": positions}))
 
 
 class TimePartitionConfig(ConfigSchema):
@@ -253,7 +296,7 @@ class TimePartition(MantaBlock[TimePartitionConfig]):
 
     def run(self, base: Revision) -> Revision:
         if self.config.segments is not None:
-            mapping = segment_map(base, self.config.segments)
+            starts = segment_starts(base, self.config.segments)
         else:
-            mapping = resample_map(base, self.config.n_hours)
-        return add_snapshot_property(base, self.config.name, mapping)
+            starts = resample_starts(base, self.config.n_hours)
+        return add_time_aggregation(base, self.config.name, starts)

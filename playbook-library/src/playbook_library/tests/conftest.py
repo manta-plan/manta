@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from playbook.blocks.run import open_revision
 
 from playbook_library.examples import inputs_ref
 from playbook_library.public_data import download_public_store
@@ -156,6 +155,7 @@ def public_revision(
 
     The function takes the store's folder name, and opens its `inputs` revision.
     """
+    from playbook.blocks.run import open_revision
 
     def copy(name: str) -> "Revision":
         store_dir = tmp_path / name

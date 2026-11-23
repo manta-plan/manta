@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Tests of time aggregations, computed from a record and kept on it as snapshot properties.
+"""Tests of time aggregations, computed from a rev and kept on it as snapshot properties.
 
 A time aggregation maps each snapshot to the first snapshot of its cluster, a contiguous
-stretch within one investment period. A record can have any number of them, and PyPSA
+stretch within one investment period. A rev can have any number of them, and PyPSA
 ignores them all.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import closing
 
 import pytest
@@ -19,8 +19,9 @@ pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA install
 import duckdb
 import numpy as np
 import pandas as pd
-from datarecord import RecordLike, Revision, Workspace
+from datarecord import PropertySpec, RecordLike, Revision, Workspace
 from datarecord.tools.pypsa import PyPSA
+from duckdb import DuckDBPyRelation
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
 from playbook_library.pypsa_helpers import (
@@ -33,11 +34,18 @@ from playbook_library.pypsa_time_aggregation import (
     STATES,
     cluster_network,
     series_frame,
+    snapshot_axis,
     snapshot_frame,
     write_expanded_results,
 )
-from playbook_library.time_aggregation import Overlay, cluster_starts, shaped
-from playbook_library.time_partition import add_snapshot_property, resample_map, segment_map
+from playbook_library.time_aggregation import Overlay, cluster_starts, shaped, widened
+from playbook_library.time_partition import (
+    _segment_starts,
+    _SnapshotAxis,
+    add_time_aggregation,
+    resample_starts,
+    segment_starts,
+)
 
 pytestmark = pytest.mark.pypsa
 
@@ -51,18 +59,24 @@ def _dynamic_data(n: pypsa.Network) -> dict[tuple[str, str], pd.DataFrame]:
     }
 
 
-def _snapshots(rev: Revision) -> pd.DataFrame:
-    return snapshot_frame(rev.record)
+def _positions(starts: DuckDBPyRelation) -> np.ndarray:
+    return starts.order("_position").fetchnumpy()["_position"]
 
 
-def _clusters_per_period(rev: Revision, mapping: pd.Series) -> pd.DataFrame:
-    """Assert `mapping` aggregates `rev` in time, and count clusters and snapshots per period."""
-    frame = _snapshots(rev).assign(mapping=mapping.to_numpy())
+def _aggregated(
+    rev: Revision, name: str, starts: Callable[[Revision, int], DuckDBPyRelation], n: int
+) -> Revision:
+    """Add the time aggregation `name` to `rev`, its clusters starting where `starts` says."""
+    return add_time_aggregation(rev, name, starts(rev, n))
+
+
+def _clusters_per_period(rev: Revision, name: str) -> pd.DataFrame:
+    """Assert `name` aggregates `rev` in time, and count clusters and snapshots per period."""
+    frame = snapshot_frame(rev.record)
     labels = frame["snapshot"].to_numpy()
-    representatives = mapping.to_numpy()
-    starts = cluster_starts(frame, "mapping")
+    representatives = frame[name].to_numpy()
+    starts = cluster_starts(frame, name)
 
-    assert (mapping.index.to_numpy() == labels).all()
     assert (representatives[starts] == labels[starts]).all()
     assert pd.Series(representatives[starts]).is_unique
     assert starts[cluster_starts(frame, "period")].all()
@@ -70,10 +84,11 @@ def _clusters_per_period(rev: Revision, mapping: pd.Series) -> pd.DataFrame:
     return counts.agg(clusters="sum", snapshots="size")
 
 
-def _sparse(rev: Revision, attribute: str) -> Revision:
+def _sparse(rev: Revision, attribute: str, fallback: bool = True) -> Revision:
     """Store `attribute` of `rev` again, as each series' most common value and the rows apart.
 
     The most common value is a row without a snapshot, which every other snapshot takes.
+    Without `fallback`, it is left out, so those snapshots have no value.
     """
     rel = rev.record.attributes[attribute]
     keys = ", ".join(f'"{c}"' for c in rel.columns if c not in {"snapshot", "value"})
@@ -81,7 +96,8 @@ def _sparse(rev: Revision, attribute: str) -> Revision:
     unset = "CASE WHEN false THEN snapshot END AS snapshot, common AS value"
     scalars = ranked.project(f"* EXCLUDE (common) REPLACE ({unset})").distinct()
     apart = ranked.filter("value <> common").project("* EXCLUDE (common)")
-    attributes = {**rev.record.attributes, attribute: scalars.union(apart)}
+    stored = scalars.union(apart) if fallback else apart
+    attributes = {**rev.record.attributes, attribute: stored}
     return rev.store.commit(Overlay(rev.record, attributes=attributes), parent=rev)
 
 
@@ -89,29 +105,26 @@ def _sparse(rev: Revision, attribute: str) -> Revision:
 @pytest.mark.parametrize("n_hours", [1, 3, 5, 24])
 def test_resampling_makes_even_blocks_within_each_period(base_name, n_hours, request):
     rev = request.getfixturevalue(base_name)
-    mapping = resample_map(rev, n_hours)
+    widened = _aggregated(rev, "agg", resample_starts, n_hours)
 
-    counts = _clusters_per_period(rev, mapping)
+    counts = _clusters_per_period(widened, "agg")
     assert (counts.clusters == np.ceil(counts.snapshots / n_hours)).all()
-    assert (mapping.to_numpy() == mapping.index.to_numpy()).all() == (n_hours == 1)
+    frame = snapshot_frame(widened.record)
+    assert (frame["agg"] == frame["snapshot"]).all() == (n_hours == 1)
 
 
 def test_resampling_groups_snapshots_as_pypsa_does(single_period):
-    mapping = resample_map(single_period, 3)
+    starts = _positions(resample_starts(single_period, 3))
     pypsa_map = to_network(single_period).cluster.temporal.get_resample_result("3h")
 
     expected = pd.factorize(pypsa_map.snapshot_map.to_numpy())[0]
-    assert (pd.factorize(mapping.to_numpy())[0] == expected).all()
+    assert (np.flatnonzero(np.r_[True, np.diff(expected) != 0]) == starts).all()
 
 
-@pytest.mark.parametrize(
-    ("base_name", "n_segments"),
-    [("multi_period", 2), pytest.param("bel_hourly", 50, marks=pytest.mark.slow)],
-)
-def test_segmenting_makes_as_many_segments_in_each_period(base_name, n_segments, request):
-    rev = request.getfixturevalue(base_name)
-    counts = _clusters_per_period(rev, segment_map(rev, n_segments))
-    assert (counts.clusters == n_segments).all()
+def test_segmenting_makes_as_many_segments_in_each_period(storage):
+    widened = _aggregated(storage, "seg", segment_starts, 2)
+    counts = _clusters_per_period(widened, "seg")
+    assert (counts.clusters == 2).all()
 
 
 @pytest.mark.slow
@@ -121,8 +134,7 @@ def test_segmenting_hourly_bel_makes_the_segments_of_pypsa_eur(bel_hourly, bel):
     PyPSA-Eur sets `p_max_pu` and similar series to 0 up to 0.01 when solving, so the test
     does too. Averaging a constant cost or efficiency can be one unit in the last place off.
     """
-    mapping = segment_map(bel_hourly, 730)
-    rev = add_snapshot_property(bel_hourly, "seg", mapping)
+    rev = _aggregated(bel_hourly, "seg", segment_starts, 730)
     clustered = cluster_network(to_network(rev), rev, "seg")
     for df in (
         clustered.generators_t.p_max_pu,
@@ -149,25 +161,57 @@ def test_segmenting_hourly_bel_makes_the_segments_of_pypsa_eur(bel_hourly, bel):
 @pytest.mark.parametrize("attribute", ["p_set", "p_max_pu"])
 def test_segmenting_reads_sparse_series_as_the_dense_ones(attribute, storage):
     sparse = _sparse(storage, attribute)
-    assert segment_map(sparse, 4).equals(segment_map(storage, 4))
+    dense = _positions(segment_starts(storage, 4))
+    assert (_positions(segment_starts(sparse, 4)) == dense).all()
 
 
-def test_segmenting_needs_a_series_that_varies(single_period):
-    with pytest.raises(ValueError, match="no input series that vary"):
-        segment_map(single_period, 4)
+def _tsam_starts(matrix: np.ndarray, n_segments: int) -> np.ndarray:
+    """Segment `matrix` as one period with tsam, and return the row each segment starts at."""
+    tsam = pytest.importorskip("tsam")
+    result = tsam.aggregate(
+        pd.DataFrame(matrix),
+        n_clusters=1,
+        period_duration=len(matrix),
+        temporal_resolution=1.0,
+        segments=tsam.SegmentConfig(n_segments=n_segments),
+    )
+    durations = result.cluster_representatives.index.get_level_values("Segment Duration")
+    return np.cumsum(durations) - durations
+
+
+@pytest.mark.parametrize(("seed", "n_segments"), [(0, 2), (1, 10), (2, 50)])
+def test_segment_starts_are_those_of_tsam(seed, n_segments):
+    matrix = np.random.default_rng(seed).random((200, 5))
+    assert (_segment_starts(matrix, n_segments) == _tsam_starts(matrix, n_segments)).all()
+
+
+def test_segmenting_refuses_a_series_without_a_value_at_some_snapshots(storage):
+    gaps = _sparse(storage, "p_max_pu", fallback=False)
+    with pytest.raises(ValueError, match="no value at some snapshots"):
+        segment_starts(gaps, 4)
+
+
+@pytest.mark.parametrize(("base_name", "period"), [("single_period", 0), ("multi_period", 2030)])
+def test_segmenting_needs_a_series_that_varies_in_each_period(base_name, period, request):
+    """Neither rev has an input series that varies within a period; the load of
+    `multi_period` only steps up from one period to the next."""
+    rev = request.getfixturevalue(base_name)
+    with pytest.raises(ValueError, match=f"vary over its snapshots in period {period}$"):
+        segment_starts(rev, 2)
 
 
 @pytest.mark.parametrize("base_name", ["single_period", "multi_period"])
 def test_snapshot_properties_coexist_and_pypsa_ignores_them(base_name, request):
     rev = request.getfixturevalue(base_name)
-    maps = {"agg_3h": resample_map(rev, 3), "agg_24h": resample_map(rev, 24)}
+    hours = {"agg_3h": 3, "agg_24h": 24}
     widened = rev
-    for name, mapping in maps.items():
-        widened = add_snapshot_property(widened, name, mapping)
+    for name, n_hours in hours.items():
+        widened = _aggregated(widened, name, resample_starts, n_hours)
 
-    frame = _snapshots(widened)
-    for name, mapping in maps.items():
-        assert (frame[name].to_numpy() == mapping.to_numpy()).all()
+    frame = snapshot_frame(widened.record)
+    for name, n_hours in hours.items():
+        alone = _aggregated(rev, name, resample_starts, n_hours)
+        assert frame[name].equals(snapshot_frame(alone.record)[name])
     assert to_network(widened).snapshots.equals(to_network(rev).snapshots)
 
 
@@ -177,20 +221,18 @@ def test_a_network_written_over_a_widened_record_keeps_its_properties(
     base_name, results_only, request
 ):
     rev = request.getfixturevalue(base_name)
-    mapping = resample_map(rev, 3)
-    widened = add_snapshot_property(rev, "agg_3h", mapping)
+    widened = _aggregated(rev, "agg_3h", resample_starts, 3)
 
     written = write_network(to_network(widened), widened, results_only=results_only)
 
-    assert (_snapshots(written)["agg_3h"].to_numpy() == mapping.to_numpy()).all()
+    assert snapshot_frame(written.record)["agg_3h"].equals(snapshot_frame(widened.record)["agg_3h"])
 
 
 @pytest.mark.parametrize("name", ["period", "timestep", "agg_3h"])
 def test_a_snapshot_property_is_declared_once_and_never_shadows_pypsa(name, single_period):
-    mapping = resample_map(single_period, 3)
-    widened = add_snapshot_property(single_period, "agg_3h", mapping)
+    widened = _aggregated(single_period, "agg_3h", resample_starts, 3)
     with pytest.raises(ValueError, match="reserved or already declared"):
-        add_snapshot_property(widened, name, mapping)
+        _aggregated(widened, name, resample_starts, 3)
 
 
 CYCLIC = {"cyclic_state_of_charge": True, "cyclic_state_of_charge_per_period": True}
@@ -260,7 +302,7 @@ def storage(
     n.loads_t.p_set["load"] = 50.0 + 20.0 * profile
     with closing(Workspace()) as ws:
         rev = store_network(n, ws.store(str(tmp_path_factory.mktemp(request.param))))
-        yield add_snapshot_property(rev, "agg_3h", resample_map(rev, 3))
+        yield _aggregated(rev, "agg_3h", resample_starts, 3)
 
 
 def _solved(rev: Revision, name: str) -> pypsa.Network:
@@ -292,7 +334,7 @@ def _by_cluster(rev: Revision, frame: pd.DataFrame) -> pd.DataFrame:
 
     Each row also has the snapshot's position in its cluster and the cluster's size.
     """
-    clusters = _snapshots(rev)
+    clusters = snapshot_frame(rev.record)
     clusters["pos"] = clusters.groupby("agg_3h").cumcount()
     clusters["size"] = clusters.groupby("agg_3h")["snapshot"].transform("size")
     weights = _stored(rev, "snapshot_weighting_stores").set_index("snapshot")["value"]
@@ -302,7 +344,7 @@ def _by_cluster(rev: Revision, frame: pd.DataFrame) -> pd.DataFrame:
 
 @pytest.fixture(scope="module")
 def expanded(storage) -> tuple[Revision, pypsa.Network, Revision]:
-    """Return the aggregated record, its network clustered and solved, and the expanded results."""
+    """Return the aggregated rev, its network clustered and solved, and the expanded results."""
     n_c = _solved(storage, "agg_3h")
     result = write_expanded_results(n_c, n_c, storage, "agg_3h", n_c.has_periods)
     return storage, n_c, result
@@ -322,25 +364,29 @@ def test_clustering_by_hours_matches_pypsa_resampling(storage):
             pd.testing.assert_frame_equal(aggregated, series, check_freq=False)
 
 
+def _broken(rev: Revision, name: str, broken: str) -> Revision:
+    """Store a time aggregation `name` of `rev` that `add_time_aggregation` cannot write.
+
+    Its clusters are `split` into separate runs, or `unled` by their representative.
+    """
+    frame = snapshot_frame(rev.record)
+    labels = frame["snapshot"].to_numpy()
+    representatives = labels.copy()
+    if broken == "split":
+        representatives[[0, 2]] = [labels[0], labels[0]]
+    else:
+        representatives[0:3] = [labels[1]] * 3
+    schema = widened(rev.record.schema, PYPSA_TIME, {name: PropertySpec(one_of="timestep")})
+    stored = frame[["snapshot"]].assign(**{name: representatives})
+    axis = snapshot_axis(schema, rev.store.workspace.con, stored)
+    return rev.store.commit(_SnapshotAxis(schema, axis), parent=rev)
+
+
 @pytest.mark.parametrize("broken", ["split", "unled"])
 def test_clustering_refuses_clusters_that_are_not_contiguous_runs(broken, multi_period):
-    mapping = resample_map(multi_period, 3)
-    labels = mapping.index
-    if broken == "split":
-        mapping.iloc[1:2] = [labels[1]]
-    else:
-        mapping.iloc[0:3] = [labels[1]] * 3
-    widened = add_snapshot_property(multi_period, "bad", mapping)
-
-    with pytest.raises(ValueError, match="not contiguous clusters"):
-        cluster_network(to_network(widened), widened, "bad")
-
-
-def test_a_time_aggregation_refuses_clusters_across_periods(multi_period):
-    mapping = resample_map(multi_period, 3)
-    mapping.iloc[:] = [mapping.index[0]] * len(mapping)
-    with pytest.raises(ValueError, match="outside its investment period"):
-        add_snapshot_property(multi_period, "bad", mapping)
+    rev = _broken(multi_period, "bad", broken)
+    with pytest.raises(ValueError, match="not contiguous clusters within a period"):
+        cluster_network(to_network(rev), rev, "bad")
 
 
 @pytest.mark.parametrize("name", ["p", "state_of_charge", "e", "marginal_price"])
@@ -350,7 +396,7 @@ def test_expanded_results_stand_at_every_snapshot_once(name, expanded):
     counts = frame.groupby([c for c in ["entity", "bus"] if c in frame])["snapshot"].nunique()
 
     assert len(frame) == counts.sum()
-    assert (counts == len(_snapshots(rev))).all()
+    assert (counts == len(snapshot_frame(rev.record))).all()
 
 
 @pytest.mark.parametrize("entity", ["solar", "bat", "st"])
@@ -383,7 +429,7 @@ def test_expanded_variable_generation_is_capped_where_its_weighted_mean_falls_sh
     n = new_single_period_network()
     _with_solar(n, [2.0, 1.0, 1.0])
     rev = store_revision(n, "capped")
-    rev = add_snapshot_property(rev, "agg_3h", resample_map(rev, 3))
+    rev = _aggregated(rev, "agg_3h", resample_starts, 3)
     n_c = _solved(rev, "agg_3h")
     result = write_expanded_results(n_c, n_c, rev, "agg_3h", n_c.has_periods)
 
@@ -406,7 +452,7 @@ def test_expanded_loads_draw_their_original_demand(expanded):
     demand = _stored(rev, "p_set").query("entity == 'load'")
 
     merged = loads.merge(demand, on="snapshot", suffixes=("", "_set"))
-    assert len(merged) == len(_snapshots(rev))
+    assert len(merged) == len(snapshot_frame(rev.record))
     assert np.allclose(merged["value"], merged["value_set"])
 
 
@@ -458,7 +504,7 @@ def test_expanded_static_results_are_the_clustered_ones(name, expanded):
 
 def test_expanding_refuses_a_network_clustered_otherwise(expanded):
     rev, n_c, _ = expanded
-    other = add_snapshot_property(rev, "agg_6h", resample_map(rev, 6))
+    other = _aggregated(rev, "agg_6h", resample_starts, 6)
     with pytest.raises(ValueError, match="not clustered by snapshot.agg_6h"):
         write_expanded_results(n_c, n_c, other, "agg_6h", n_c.has_periods)
 
@@ -519,7 +565,7 @@ def test_expanded_prices_are_per_hour_whatever_the_weighting(
     n.remove("Generator", "gen")
     n.add("Generator", "gen", bus="bus", p_nom=100.0, marginal_cost=10.0)
     rev = store_revision(n, "fixed")
-    rev = add_snapshot_property(rev, "agg", resample_map(rev, n_hours))
+    rev = _aggregated(rev, "agg", resample_starts, n_hours)
 
     n_c = _solved(rev, "agg")
     prices = _stored(
@@ -532,7 +578,7 @@ def test_expanded_prices_are_per_hour_whatever_the_weighting(
 
 @pytest.mark.slow
 def test_expanding_bel_covers_every_hour_and_keeps_the_energy_of_each_cluster(bel_hourly):
-    rev = add_snapshot_property(bel_hourly, "agg", resample_map(bel_hourly, 168))
+    rev = _aggregated(bel_hourly, "agg", resample_starts, 168)
     n_c = _solved(rev, "agg")
     result = write_expanded_results(n_c, n_c, rev, "agg", n_c.has_periods)
 
@@ -555,5 +601,5 @@ def test_expanding_bel_covers_every_hour_and_keeps_the_energy_of_each_cluster(be
 
     assert len(frame) == len(_clustered(n_c, rev, "p"))
     assert (frame["size"] == frame["n"]).all()
-    assert (frame.groupby(["entity", "bus"])["size"].sum() == len(_snapshots(rev))).all()
+    assert (frame.groupby(["entity", "bus"])["size"].sum() == len(snapshot_frame(rev.record))).all()
     assert np.allclose(frame["energy"], frame["value"] * frame["size"], rtol=1e-6, atol=1e-3)
