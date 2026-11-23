@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { LuBoxes, LuLayers } from "react-icons/lu";
+import { Tooltip } from "@base-ui/react/tooltip";
+import { LuBoxes, LuLayers, LuPlus } from "react-icons/lu";
 import { useLocation } from "wouter";
 import { RecordTree } from "../../level/tree/record-tree";
 import { RecordScenariosPanel } from "../../level/scenarios/record-scenarios-panel";
@@ -10,6 +11,33 @@ import { SidebarPanel } from "./sidebar-panel";
 // The scenarios list is short; the record tree below it is not.
 const DEFAULT_TOP_SHARE = 40;
 
+function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            onClick={onClick}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="text-surface-400 hover:text-surface-100 outline-none"
+          />
+        }
+      >
+        <LuPlus size={13} />
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Positioner sideOffset={8}>
+          <Tooltip.Popup className="border-surface-600 bg-surface-950 text-surface-100 rounded border px-2 py-1 text-[11px] shadow-lg">
+            {label}
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
 // Build and Inspect: the Scenarios panel (inputs on Build, results on Inspect)
 // over the record tree, which opens a level page.
 export function Sidebar() {
@@ -19,6 +47,7 @@ export function Sidebar() {
   const [primaryPanelHeight, setPrimaryPanelHeight] = useState<number | null>(null);
   // The Record panel is titled with the project's record.
   const record = useProjectStore((s) => s.record);
+  const openScenarioDialog = useProjectStore((s) => s.openScenarioDialog);
   const updatePrimaryPanelHeight = (height: number) => {
     const sidebarHeight = sidebarRef.current?.clientHeight ?? 0;
     const minimumPanelHeight = 160;
@@ -66,6 +95,11 @@ export function Sidebar() {
           icon={LuLayers}
           label="Scenarios"
           qualifier={activeTab === "build" ? "Inputs" : "Results"}
+          action={
+            activeTab === "build" ? (
+              <AddButton label="New scenario" onClick={() => openScenarioDialog({ mode: "new" })} />
+            ) : undefined
+          }
         >
           <RecordScenariosPanel
             tab={activeTab === "build" ? "changes" : "results"}
