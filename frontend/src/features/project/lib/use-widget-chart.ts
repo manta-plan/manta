@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { EChartsOption } from "echarts";
 import { useAppStore } from "../../home/store";
 
 // Shared look for the inspection widgets. Literal hex, not CSS vars —
@@ -49,4 +50,44 @@ export function useChartColors() {
     }),
     [theme],
   );
+}
+
+type ChartColors = ReturnType<typeof useChartColors>;
+
+/**
+ * A time series' zoom: a slider under the chart, and dragging the plot to
+ * pan. The wheel zooms only with Ctrl/Cmd held, so it still scrolls the page.
+ * Only for series longer than two days of hourly snapshots; `gridBottom` is
+ * the room the slider needs under the plot.
+ */
+export function timeZoom(
+  colors: ChartColors,
+  count: number,
+): { dataZoom?: EChartsOption["dataZoom"]; gridBottom: number } {
+  if (count <= 48) return { gridBottom: 8 };
+  return {
+    gridBottom: 36,
+    dataZoom: [
+      { type: "inside", zoomOnMouseWheel: "ctrl", moveOnMouseWheel: false, moveOnMouseMove: true },
+      {
+        type: "slider",
+        height: 16,
+        bottom: 6,
+        borderColor: colors.axisLine,
+        fillerColor: "rgba(86, 153, 255, 0.18)",
+        handleStyle: { color: colors.tooltipBackground, borderColor: colors.text },
+        moveHandleStyle: { color: colors.axisLine },
+        dataBackground: {
+          lineStyle: { color: colors.text, opacity: 0.5 },
+          areaStyle: { color: colors.text, opacity: 0.12 },
+        },
+        selectedDataBackground: {
+          lineStyle: { color: "#5699ff" },
+          areaStyle: { color: "#5699ff", opacity: 0.2 },
+        },
+        textStyle: { color: colors.text, fontSize: 10 },
+        brushSelect: false,
+      },
+    ],
+  };
 }

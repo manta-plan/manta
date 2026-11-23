@@ -251,8 +251,8 @@ services:
             "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
           ]
 
-  # TEMPORARY: serves a datarecord over the Quack protocol so the Model /
-  # Inspect / Report tabs can be ported to the frontend before datarecord is
+  # TEMPORARY: serves a datarecord over the Quack protocol so the
+  # Build / Inspect / Analyse tabs can be ported to the frontend before datarecord is
   # integrated into the backend (issue #223). Reads every store under
   # ./quack-server/data/records (git-ignored; see quack-server/README.md).
   # Remove once the backend serves Quack itself.
