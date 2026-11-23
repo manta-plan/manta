@@ -12,7 +12,7 @@ import {
   LuTrash2,
 } from "react-icons/lu";
 import { Link, useLocation, useParams } from "wouter";
-import { ConfirmDialog } from "../../home/components/confirm-dialog";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 import { projectRunHref } from "../../project/lib/project-route";
 import { getRunsPanelEmptyMessage } from "../run-draft";
 import { formatRunStatus, normalizeRunStatus } from "../status";

@@ -76,8 +76,8 @@ on the host's loopback only), reading both that port and the token from
 - **quack-server** — *temporary*, **opt-in** (compose profile
   `temporary-quack-setup`: add `--profile temporary-quack-setup` to the `up`
   command above, or name the service) record server that exposes a datarecord to the
-  browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
-  Inspect / Report tabs before datarecord is integrated into the backend. Copied
+  browser (DuckDB-Wasm) over the Quack protocol, used to port the Build /
+  Inspect / Analyse tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
   Listens on `localhost:${QUACK_SERVER_PORT}`, token `${QUACK_TOKEN}` (both in `backend/.env`).
   It reads the example stores the backend seeds into SeaweedFS

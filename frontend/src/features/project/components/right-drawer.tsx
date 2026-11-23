@@ -9,13 +9,11 @@ import {
   LuGlobe,
   LuLock,
   LuDownload,
-  LuLayers,
   LuWorkflow,
 } from "react-icons/lu";
 import { RunNodeConfigForm } from "../../runs/components/run-node-config-form";
 import { useProjectStore, type UtilityDrawerFlow } from "../store/project-store";
 import { AiChatView } from "./ai-chat-view";
-import { MapLayersPanel } from "./map-layers-panel";
 import { RaiAnimated } from "./rai-mascot";
 
 // Rai idles once each time the drawer opens.
@@ -98,11 +96,10 @@ function SharePanel() {
   );
 }
 
+// The right drawer: Rai and Share, anchored to the right edge.
 export function RightDrawer() {
   const utilityDrawerFlow = useProjectStore((s) => s.utilityDrawerFlow);
   const closeUtilityDrawer = useProjectStore((s) => s.closeUtilityDrawer);
-  const isMapLayersDrawerOpen = useProjectStore((s) => s.isMapLayersDrawerOpen);
-  const toggleMapLayersDrawer = useProjectStore((s) => s.toggleMapLayersDrawer);
   const isRunNodeOpen = useProjectStore((s) => s.configuringRunNodeId !== null);
   const closeRunNodeConfigDrawer = useProjectStore((s) => s.closeRunNodeConfigDrawer);
 
@@ -112,33 +109,6 @@ export function RightDrawer() {
 
   return (
     <>
-      {/* Layer 2 (detail): page-specific panels. Map layers and the run block settings;
-          the widget config form arrives with its tab. Stacks
-          just inside layer 1 when it's open, otherwise hugs the right edge. */}
-      <aside
-        className={clsx(
-          "absolute top-0 z-20 flex h-full w-96 max-w-full flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
-          isUtilityOpen ? "right-96" : "right-0",
-          isMapLayersDrawerOpen
-            ? "translate-x-0 pointer-events-auto"
-            : "translate-x-full pointer-events-none",
-        )}
-      >
-        <div className="border-surface-600/60 flex h-8 shrink-0 items-center justify-between border-b px-3">
-          <div className="text-surface-200 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-            <LuLayers size={12} />
-            Layers
-          </div>
-          <button
-            onClick={toggleMapLayersDrawer}
-            className="text-surface-400 hover:text-surface-100 outline-none"
-          >
-            <LuX size={14} />
-          </button>
-        </div>
-        {isMapLayersDrawerOpen && <MapLayersPanel />}
-      </aside>
-
       {/* Layer 2 (detail), run node: the settings of one block of the open run. */}
       <aside
         aria-hidden={!isRunNodeOpen}

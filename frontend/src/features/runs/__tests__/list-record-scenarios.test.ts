@@ -3,7 +3,17 @@ import type { Revision } from "../../project/lib/record-server/types";
 import { listRecordScenarios } from "../list-record-scenarios";
 
 function revision(name: string, parent: string | null, kind: Revision["kind"] = "scenario") {
-  return { name, id: name, parent, kind, label: name, description: "", catalog: null };
+  return {
+    name,
+    id: name,
+    parent,
+    kind,
+    label: name,
+    description: "",
+    catalog: null,
+    open: false,
+    results: [],
+  };
 }
 
 describe("listRecordScenarios", () => {

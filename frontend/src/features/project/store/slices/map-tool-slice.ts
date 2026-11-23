@@ -1,4 +1,3 @@
-import type { MapLayerStyle } from "../../data/map-layers";
 import type { ProjectStoreSet, BasemapId, CursorPosition, ToolId, ViewState } from "../types";
 
 // The theme the home store keeps (features/home/store.ts); the vector basemap
@@ -22,27 +21,6 @@ export function createMapToolSlice(set: ProjectStoreSet) {
 
     basemap: initialBasemap(),
     setBasemap: (basemap: BasemapId) => set({ basemap }),
-
-    // Overrides only; each layer's defaults live in mapLayers.ts, since the
-    // link layers depend on the record's carriers.
-    mapLayerVisibility: {} as Record<string, boolean>,
-    setMapLayerVisible: (id: string, visible: boolean) =>
-      set((state) => ({ mapLayerVisibility: { ...state.mapLayerVisibility, [id]: visible } })),
-
-    mapLayerStyle: {} as Record<string, Partial<MapLayerStyle>>,
-    setMapLayerColor: (id: string, color: string) =>
-      set((state) => ({
-        mapLayerStyle: { ...state.mapLayerStyle, [id]: { ...state.mapLayerStyle[id], color } },
-      })),
-    setMapLayerOpacity: (id: string, opacity: number) =>
-      set((state) => ({
-        mapLayerStyle: { ...state.mapLayerStyle, [id]: { ...state.mapLayerStyle[id], opacity } },
-      })),
-    resetMapLayerStyle: (id: string) =>
-      set((state) => {
-        const { [id]: _reset, ...mapLayerStyle } = state.mapLayerStyle;
-        return { mapLayerStyle };
-      }),
 
     viewState: {
       longitude: 4.5,

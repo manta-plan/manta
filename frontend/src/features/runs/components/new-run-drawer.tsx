@@ -4,7 +4,7 @@ import { LuHistory, LuPlus, LuX } from "react-icons/lu";
 import { useLocation, useParams } from "wouter";
 import { humanize } from "../../../utils/jsonSchema";
 import type { NewRunDrawerProps } from "../../../utils/playbookTypes";
-import { FormSelect } from "../../home/components/form-select";
+import { FormSelect } from "../../../components/form-select";
 import { getRecordRevisions } from "../../home/lib/record-server";
 import { useRecordCatalogue } from "../../home/lib/use-record-catalogue";
 import { deriveGlobalFields, getIn, setAtPath } from "../../playbook-config/conditions";
