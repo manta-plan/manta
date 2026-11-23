@@ -1,5 +1,10 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { LuBoxes, LuLayers } from "react-icons/lu";
+import { LuBoxes, LuHistory, LuLayers } from "react-icons/lu";
+import { useLocation } from "wouter";
+import { RunsPanel } from "../../runs/components/runs-panel";
+import { RunsPanelActions } from "../../runs/components/runs-panel-actions";
+import { ScenarioPlaybooksPanel } from "../../runs/components/scenario-playbooks-panel";
+import { getActiveProjectTab } from "../lib/project-route";
 import { useProjectStore } from "../store/project-store";
 import { SidebarPanel } from "./sidebar-panel";
 import { ModelTreePanel } from "./model-tree-panel";
@@ -10,6 +15,8 @@ export function Sidebar() {
   const [primaryPanelHeight, setPrimaryPanelHeight] = useState<number | null>(null);
   // The Record panel is titled with the project's record.
   const record = useProjectStore((s) => s.record);
+  const [location] = useLocation();
+  const isRunTab = getActiveProjectTab(location) === "run";
   const updatePrimaryPanelHeight = (height: number) => {
     const sidebarHeight = sidebarRef.current?.clientHeight ?? 0;
     const minimumPanelHeight = 160;
@@ -44,7 +51,7 @@ export function Sidebar() {
       className="border-surface-600 bg-surface-800 flex h-full w-72 shrink-0 flex-col border-r"
     >
       <div
-        data-tour="model-tree-panel"
+        data-tour={isRunTab ? undefined : "model-tree-panel"}
         className="min-h-40 shrink-0 overflow-hidden"
         style={{
           height:
@@ -53,9 +60,15 @@ export function Sidebar() {
               : `clamp(10rem, ${primaryPanelHeight}px, calc(100% - 10rem))`,
         }}
       >
-        <SidebarPanel icon={LuBoxes} label={record?.info.label ?? "Record"}>
-          <ModelTreePanel />
-        </SidebarPanel>
+        {isRunTab ? (
+          <SidebarPanel icon={LuHistory} label="Runs" action={<RunsPanelActions />}>
+            <RunsPanel />
+          </SidebarPanel>
+        ) : (
+          <SidebarPanel icon={LuBoxes} label={record?.info.label ?? "Record"}>
+            <ModelTreePanel />
+          </SidebarPanel>
+        )}
       </div>
       <div
         role="separator"
@@ -70,11 +83,11 @@ export function Sidebar() {
       <div className="min-h-40 flex-1 overflow-hidden">
         <SidebarPanel
           icon={LuLayers}
-          label="Scenarios"
+          label={isRunTab ? "Playbooks by Scenario" : "Scenarios"}
           onHeaderPointerDown={startResize}
           onHeaderPointerMove={continueResize}
         >
-          <RecordScenariosPanel />
+          {isRunTab ? <ScenarioPlaybooksPanel /> : <RecordScenariosPanel />}
         </SidebarPanel>
       </div>
     </aside>

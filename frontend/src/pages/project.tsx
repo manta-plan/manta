@@ -64,7 +64,7 @@ export function ProjectPage() {
         <MapView isVisible={activeTab === "model"} />
       </div>
 
-      {activeTab === "run" && projectId && <RunsView key={projectId} projectId={projectId} />}
+      {activeTab === "run" && <RunsView />}
 
       {/* Inspect and Report arrive with their own tabs. */}
       {(activeTab === "inspect" || activeTab === "report") && (
