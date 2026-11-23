@@ -68,5 +68,6 @@ def test_the_block_layer_does_not_import_the_playbook_layer(path: Path):
 def test_passing_revisions_along_does_not_need_datarecord():
     # Only `playbook.blocks.run` opens stores; an orchestrator or web backend imports
     # the rest to pass `RevisionRef`s along, without the `playbook[run]` extra.
-    code = "import sys, playbook.blocks, playbook.playbooks; assert 'datarecord' not in sys.modules"
+    modules = "playbook.blocks, playbook.blocks.run_one, playbook.playbooks"
+    code = f"import sys, {modules}; assert 'datarecord' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603
