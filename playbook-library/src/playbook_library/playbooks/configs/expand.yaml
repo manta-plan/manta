@@ -15,6 +15,7 @@ expansion_myopic:
   optimize_config:
     solver_options:
       solver: ipx
+      run_crossover: "on"
 
 expansion_perfect:
   optimize_config:

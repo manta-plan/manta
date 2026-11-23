@@ -190,13 +190,14 @@ def _built(n: pypsa.Network) -> dict[str, float]:
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    ("block_cls", "mode", "periods", "dispatched"),
+    ("block_cls", "mode", "periods", "dispatched", "config"),
     [
         pytest.param(
             PerfectCapacityExpansion,
             "perfect",
             [None],
             [2030, 2040, 2050],
+            {},
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-perfect",
         ),
         pytest.param(
@@ -204,6 +205,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
             "overnight2050",
             [2050],
             [2050],
+            {},
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-overnight2050",
         ),
         pytest.param(
@@ -211,12 +213,13 @@ def _built(n: pypsa.Network) -> dict[str, float]:
             "myopic",
             [2030, 2040, 2050],
             [2030, 2040, 2050],
+            {"optimize_config": {"solver_options": {"run_crossover": "on"}}},
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-myopic",
         ),
     ],
 )
 def test_expansion_of_a_real_network_matches_the_pypsa_eur_reference(
-    block_cls, mode, periods, dispatched, bel
+    block_cls, mode, periods, dispatched, config, bel
 ):
     objectives = []
 
@@ -226,7 +229,7 @@ def test_expansion_of_a_real_network_matches_the_pypsa_eur_reference(
             objectives.append(solved.objective)
             return solved
 
-    result = Recorded({}).run(bel)
+    result = Recorded(config).run(bel)
     root, *revisions = result.ancestry()
 
     assert result.store is bel.store

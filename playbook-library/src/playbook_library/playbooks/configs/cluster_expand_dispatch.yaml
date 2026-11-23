@@ -22,6 +22,7 @@ expansion_myopic:
   optimize_config:
     solver_options:
       solver: ipx
+      run_crossover: "on"
   aggregation:
     snapshot: seg_730
     bus: busmap_5
