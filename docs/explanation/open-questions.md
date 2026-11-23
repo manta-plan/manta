@@ -18,6 +18,7 @@ Nobody has decided who names a record, which project it belongs to, and when it 
 The likely split is that Manta owns a record's identity and lifetime, and a block library owns how a block reads and writes one.
 The contract between the two is then the URL scheme and the way credentials reach a block.
 Today every block container gets one credential for the whole bucket.
+The draft [design of the datarecord session](datarecord-session/index.md) proposes an answer: the backend owns stores and revisions, and hands out [write tokens scoped to one revision](datarecord-session/storage-commit.md#2-the-two-tokens).
 
 ### Should a block declare fixed resources, or resources relative to its data? {#resource-requirements}
 
@@ -55,6 +56,7 @@ That would be a narrow exception to keeping run state out of Manta's database.
 It is justified because a record points at lasting data rather than describing the run.
 Nothing in Manta watches a run end, so something has to write the record.
 Three options exist: the first read after the run ends, a Prefect automation that calls Manta, or a periodic job that reconciles runs.
+The draft [design of the datarecord session](datarecord-session/backend-mvp.md#8-results-of-runs) compares ways to link a run to the revisions it wrote.
 
 ### Should a saved playbook pin the catalogue it was written against? {#catalogue-versions-and-pinned-playbooks}
 

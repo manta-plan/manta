@@ -139,6 +139,14 @@ nav:
       - Deployment topology: explanation/deployment.md
       - Planned changes: explanation/planned-changes.md
       - Open questions: explanation/open-questions.md
+      - Design of the datarecord session:
+          - explanation/datarecord-session/index.md
+          - MVP backend: explanation/datarecord-session/backend-mvp.md
+          - Backend: explanation/datarecord-session/backend.md
+          - Session service: explanation/datarecord-session/session.md
+          - Storage access and commit: explanation/datarecord-session/storage-commit.md
+          - Data access for the frontend: explanation/datarecord-session/frontend.md
+          - Appendix: explanation/datarecord-session/appendix.md
   - Reference:
       - reference/index.md
       - playbook: reference/playbook/api.md

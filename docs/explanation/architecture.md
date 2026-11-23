@@ -286,6 +286,7 @@ The store URL is either a local directory or an `s3://` address.
 Model data never passes through Prefect or the workers, because only records cross between processes.
 
 No block writes to a run's output folder, so the models a run produces are found only as revisions in the datarecord store.
+The draft [design of the datarecord session](datarecord-session/index.md) describes how Manta is to list these stores and revisions, and serve them to the web app.
 
 The `runs` table does not contain a run's settings or status.
 The backend reads both back from the Prefect flow run each time a client asks for a run.
