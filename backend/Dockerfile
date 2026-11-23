@@ -21,6 +21,8 @@ COPY --from=playbook src playbook/src
 COPY --from=playbook-library src playbook-library/src
 COPY --from=runner src runner/src
 COPY src backend/src
+# The pages the chat answers from (see manta.config.chat_config).
+COPY --from=docs . docs
 
 WORKDIR /app/backend
 
@@ -28,6 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 ENV APP_HOST=0.0.0.0
+ENV CHAT_DOCS_DIR=/app/docs
 
 EXPOSE 8000
 

@@ -25,6 +25,7 @@ jobs:
             playbook=playbook
             playbook-library=playbook-library
             runner=runner
+            docs=docs
           push: false
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend

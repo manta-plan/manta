@@ -28,7 +28,36 @@ export function deleteRequest(url: string) {
   return requestJson<void>(url, { method: "DELETE" });
 }
 
+/**
+ * POSTs like postJson, but resolves to the response itself as soon as its
+ * headers arrive, for a caller that reads the body as a stream. Aborting
+ * `signal` cancels the request, also while the body is being read.
+ */
+export function postStream(url: string, body: unknown, signal?: AbortSignal) {
+  return request(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
+  const response = await request(url, init);
+
+  // A 204 (e.g. a delete) has no body to parse.
+  if (response.status === 204) {
+    return undefined as ResponseBody;
+  }
+
+  return (await response.json()) as ResponseBody;
+}
+
+// Sends an authenticated request and resolves to its successful response.
+// Throws an ApiError for any other status.
+async function request(url: string, init: RequestInit = {}) {
   const accessToken = await getValidAccessToken();
   let response = await sendRequest(url, init, accessToken);
 
@@ -55,12 +84,7 @@ async function requestJson<ResponseBody>(url: string, init: RequestInit = {}) {
     throw error;
   }
 
-  // A 204 (e.g. a delete) has no body to parse.
-  if (response.status === 204) {
-    return undefined as ResponseBody;
-  }
-
-  return (await response.json()) as ResponseBody;
+  return response;
 }
 
 function sendRequest(url: string, init: RequestInit, accessToken: string | null) {

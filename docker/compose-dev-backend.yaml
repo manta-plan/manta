@@ -23,6 +23,7 @@ services:
         playbook: ../playbook
         playbook-library: ../playbook-library
         runner: ../runner
+        docs: ../docs
     env_file: ../backend/.env
     environment:
       # backend/.env addresses everything via localhost and the host-published

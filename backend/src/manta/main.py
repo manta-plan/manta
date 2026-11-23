@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from sqlalchemy.orm import Session
 
 from manta.config.app_config import app_host, app_port
+from manta.config.chat_config import chat_enabled, chat_model, get_chat_client
 from manta.config.database_config import get_engine
 from manta.config.example_data_config import example_data_seed_enabled, example_data_stores
 from manta.config.keycloak_config import get_keycloak_openid, well_known
@@ -12,6 +13,7 @@ from manta.config.logging_config import configure_logging
 from manta.config.s3_config import get_s3_client, s3_bucket_name
 from manta.migrations.runner import run_migrations
 from manta.routes.v1 import router as v1_router
+from manta.services.chat_service import system_prompt
 from manta.services.example_data_service import ExampleDataService
 from manta.services.run_service import ensure_prefect_ready
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -31,6 +33,11 @@ def create_app() -> FastAPI:
     configure_logging()
     print(BANNER, flush=True)
     logger.info("Manta starting up...")
+    if chat_enabled():
+        # Fails here, not on the first question, when the chat is misconfigured.
+        logger.info("Loading the chat documentation for model %r...", chat_model())
+        get_chat_client()
+        system_prompt()
     logger.info("Running database migrations...")
     run_migrations()
     logger.info("Ensuring S3 bucket exists...")

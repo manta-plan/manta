@@ -1,10 +1,13 @@
+import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from functools import cache
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -275,12 +278,58 @@ def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float
     raise TimeoutError(f"app did not become healthy within {timeout}s")
 
 
+_CHAT_MODEL_RESUME = threading.Event()
+
+
+class _FakeChatModel(BaseHTTPRequestHandler):
+    """Answers a chat completion request the way an OpenAI-compatible API streams one:
+    "Hello" in two chunks. Asked to "wait", it pauses after the first chunk until
+    chat_model_resume is set, so a test can hold a reply open."""
+
+    def do_POST(self) -> None:  # noqa: N802 — the name http.server calls
+        request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        self._send({"delta": {"content": "Hel"}, "finish_reason": None})
+        if request["messages"][-1]["content"] == "wait":
+            _CHAT_MODEL_RESUME.wait(timeout=30)
+        self._send({"delta": {"content": "lo"}, "finish_reason": None})
+        self._send({"delta": {}, "finish_reason": "stop"})
+        self.wfile.write(b"data: [DONE]\n\n")
+
+    def _send(self, choice: dict) -> None:
+        self.wfile.write(f"data: {json.dumps({'choices': [choice]})}\n\n".encode())
+        self.wfile.flush()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+@pytest.fixture(scope="session")
+def chat_model() -> Iterator[str]:
+    """The base URL of a stand-in for the chat's model API, on a free port."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeChatModel)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}/v1"
+    server.shutdown()
+
+
+@pytest.fixture
+def chat_model_resume() -> Iterator[threading.Event]:
+    """Cleared for the test, so a reply asked to "wait" stays open until the test sets it."""
+    _CHAT_MODEL_RESUME.clear()
+    yield _CHAT_MODEL_RESUME
+    _CHAT_MODEL_RESUME.set()
+
+
 @pytest.fixture(scope="session")
 def app_server(
     postgres_service: dict[str, str],
     seaweedfs_service: dict[str, str],
     prefect_service: dict[str, str],
     keycloak_service: dict[str, str],
+    chat_model: str,
 ) -> Iterator[str]:
     """Runs the real app as a host subprocess on a free port, so the integration
     suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
@@ -297,6 +346,11 @@ def app_server(
         "KEYCLOAK_PORT": keycloak_service["port"],
         # Only the small store every test needs, instead of all of them.
         "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
+        "CHAT_ENABLED": "true",
+        "CHAT_BASE_URL": chat_model,
+        "CHAT_MODEL": "fake-model",
+        # One reply at a time, so a single open reply makes the next request busy.
+        "CHAT_MAX_CONCURRENT": "1",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input

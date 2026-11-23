@@ -139,6 +139,9 @@ nav:
       - Deployment topology: explanation/deployment.md
       - Planned changes: explanation/planned-changes.md
       - Open questions: explanation/open-questions.md
+  - Design:
+      - design/index.md
+      - Chat: design/chat.md
   - Reference:
       - reference/index.md
       - playbook: reference/playbook/api.md

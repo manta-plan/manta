@@ -195,6 +195,63 @@ client, so clients can't call Keycloak directly.
   stay valid until they expire, since they're verified by signature alone.
 - Logging out an already-ended session returns `204`. An invalid refresh
   token returns `401`.
+
+## Chat
+
+The "Ask Rai" drawer answers questions from the user guide.
+`POST /v1/chat/messages` forwards the conversation to a model and streams the reply as server-sent events.
+The backend reaches the model through an OpenAI-compatible chat completions API, so a local [Ollama](https://ollama.com) server and a hosted provider both work.
+The chat is off unless `CHAT_ENABLED=true`: the drawer then states that chat isn't enabled, and the route answers `404`.
+[The chat design page](https://github.com/manta-plan/manta/blob/main/docs/design/chat.md) explains the design and its limits.
+
+### Run the chat with a local model
+
+First install Ollama, download the model, and create a copy of it with a context window of 8,192 tokens:
+
+```bash
+ollama pull llama3.2:3b
+printf 'FROM llama3.2:3b\nPARAMETER num_ctx 8192\n' > Modelfile
+ollama create manta-chat -f Modelfile
+```
+
+The copy is needed because Ollama's OpenAI-compatible API cannot set the context window for a request.
+Ollama's default window is too small for the documentation, and Ollama cuts off a longer prompt without an error.
+
+Then start the backend with the chat enabled:
+
+```bash
+CHAT_ENABLED=true CHAT_BASE_URL=http://localhost:11434/v1 CHAT_MODEL=manta-chat uv run manta
+```
+
+For a backend that runs in a container, set the three values in `backend/.env` instead.
+On Docker Desktop, the container reaches Ollama on the host at `http://host.docker.internal:11434/v1`.
+
+To check it, open a project, select **Ask Rai**, and ask a question that the user guide answers.
+The first reply takes longest, because the model has to read the documentation once.
+Afterwards, `ollama ps` lists `manta-chat` with a `CONTEXT` of 8192.
+
+`llama3.2:3b` is a 2 GB download and needs about 2.6 GB of memory while it is loaded.
+
+### Chat settings
+
+| Variable | Default | Sets |
+| --- | --- | --- |
+| `CHAT_ENABLED` | `false` | Whether the chat is on. |
+| `CHAT_BASE_URL` | required when enabled | The base URL of the model API, up to and including `/v1`. |
+| `CHAT_MODEL` | required when enabled | The model's name at that API. |
+| `CHAT_API_KEY` | none | The key sent as a bearer token. Never commit one to `backend/.env`. |
+| `CHAT_MAX_OUTPUT_TOKENS` | `400` | The longest reply, in tokens. |
+| `CHAT_MAX_MESSAGES` | `12` | The most turns in one request. |
+| `CHAT_MAX_MESSAGE_CHARS` | `2000` | The longest turn, in characters. |
+| `CHAT_MAX_HISTORY_CHARS` | `6000` | The most characters in all turns of one request. |
+| `CHAT_MAX_CONCURRENT` | `2` | The most replies written at once. A request beyond that gets a `429`. |
+| `CHAT_TIMEOUT_SECONDS` | `120` | The longest wait for the model's next piece of text, and for a whole reply. |
+| `CHAT_DOCS_DIR` | the repository's `docs/` | Where the documentation pages are. |
+| `CHAT_DOCS_PAGES` | the four `user-guide` pages | The pages the model answers from, comma-separated, in prompt order. |
+| `CHAT_DOCS_MAX_CHARS` | `20000` | The most characters those pages may have. The backend refuses to start beyond it. |
+
+The documentation, the turns, and the reply have to fit the model's context window together.
+The defaults fit 8,192 tokens, so raise them only for a model with a larger window.
 <!-- --8<-- [end:docs-dev] -->
 
 ## Manually testing a run
