@@ -10,9 +10,13 @@ calls datarecord, so they work over any database that has the record views
   places: `EU` is PyPSA-Eur's copper plate for fuels and CO₂, and the empty
   name a bus without one (PyPSA-Earth's, at 0, 0). Nothing in the data marks
   them, so they're named here.
-- A **zone** comes from a `busmap_*` attribute (PyPSA-Eur's clustering), read
-  at the bus the location is named after. Each such attribute is one zone
-  level, for example `busmap_5`. A record without them has no zones.
+- A **zone** comes from a `busmap_*` attribute (PyPSA-Eur's clustering), or
+  a `busmap_*` bus property (as BEL-full-res stores it), read at the bus the
+  location is named after. Each such name is one zone level, for example
+  `busmap_5`; an attribute wins over a property of the same name. A record
+  without them has no zones.
+- An entity's **geometry** is its `geometry` property (WKT): a point where a
+  plant sits, a line's route, or an area (a renewable potential's polygon).
 - A **branch** is one input → output pair of a line, link or transformer, from
   the `connection` dim, whose labels are `{entity, bus}` pairs with a `role`.
   A link with several outputs gives several branches.
@@ -66,6 +70,67 @@ def _summary_select(name: str, dims: set[str], prefix: str) -> str:
 BUS_SHAPES = {"shape_onshore": "onshore", "shape_offshore": "offshore"}
 
 
+def _columns(con: duckdb.DuckDBPyConnection, prefix: str, table: str) -> set[str]:
+    """The columns of `properties.<table>` in the catalog (none if it's absent)."""
+    database = _quote(prefix[:-1]) if prefix else "current_database()"
+    return {name for (name,) in con.execute(
+        f"SELECT column_name FROM duckdb_columns() WHERE database_name = {database} "
+        f"AND schema_name = 'properties' AND table_name = {_quote(table)}"
+    ).fetchall()}
+
+
+def _zones_sql(levels: list[str], bus_columns: set[str]) -> str:
+    """One row per zone level and real location: from the `busmap_*`
+    attributes, and from the `busmap_*` bus properties no attribute names."""
+    parts = [
+        f"SELECT '{level}' AS level, m.bus AS location, m.value AS zone "
+        f'FROM attributes."{level}" m WHERE m.bus IN (SELECT location FROM manta.bus_location WHERE NOT virtual)'
+        for level in levels
+    ]
+    for column in zone_levels(sorted(bus_columns - set(levels))):
+        name = '"' + column.replace('"', '""') + '"'
+        parts.append(
+            f"SELECT {_quote(column)} AS level, l.location, p.{name}::VARCHAR AS zone "
+            f"FROM manta.locations l JOIN properties.bus p ON p.bus = l.location WHERE p.{name} IS NOT NULL"
+        )
+    return " UNION ALL ".join(parts) or (
+        "SELECT NULL::VARCHAR AS level, NULL::VARCHAR AS location, NULL::VARCHAR AS zone WHERE false"
+    )
+
+
+# A WKT's leading type word (`POINT`, `LINESTRING`, …), and a point's two
+# coordinates. The spatial extension isn't loaded, so plain string functions.
+_WKT_TYPE = r"^\s*([A-Za-z]+)"
+_WKT_POINT = r"(?i)^\s*POINT\s*(?:ZM|Z|M)?\s*\(\s*([-+0-9.e]+)\s+([-+0-9.e]+)"
+
+
+def _entity_geometry_sql(entity_columns: set[str]) -> str:
+    """Entities with a geometry of their own: `kind` is 'point' (a site, with
+    its lon and lat), 'route' (a line's path) or 'area' (a polygon); another
+    WKT type is its lowercase name."""
+    if "geometry" not in entity_columns:
+        return (
+            "SELECT NULL::VARCHAR AS entity, NULL::VARCHAR AS ctype, NULL::VARCHAR AS carrier, NULL::VARCHAR AS kind, "
+            "NULL::VARCHAR AS wkt, NULL::DOUBLE AS lon, NULL::DOUBLE AS lat WHERE false"
+        )
+    return f"""
+        SELECT entity, ctype, carrier,
+               CASE type WHEN 'POINT' THEN 'point'
+                         WHEN 'LINESTRING' THEN 'route' WHEN 'MULTILINESTRING' THEN 'route'
+                         WHEN 'POLYGON' THEN 'area' WHEN 'MULTIPOLYGON' THEN 'area'
+                         ELSE lower(type) END AS kind,
+               wkt,
+               CASE WHEN type = 'POINT' THEN TRY_CAST(regexp_extract(wkt, '{_WKT_POINT}', 1) AS DOUBLE) END AS lon,
+               CASE WHEN type = 'POINT' THEN TRY_CAST(regexp_extract(wkt, '{_WKT_POINT}', 2) AS DOUBLE) END AS lat
+        FROM (
+            SELECT entity, ctype, carrier, geometry::VARCHAR AS wkt,
+                   upper(regexp_extract(geometry::VARCHAR, '{_WKT_TYPE}', 1)) AS type
+            FROM properties.entity
+            WHERE geometry IS NOT NULL AND trim(geometry::VARCHAR) <> ''
+        )
+    """
+
+
 def _regions_sql(con: duckdb.DuckDBPyConnection, prefix: str, attributes: list[str]) -> str:
     """Region polygons as WKT, with the bus (and location) they belong to:
     PyPSA's Shape entities, and the bus properties in BUS_SHAPES. A bus's
@@ -80,11 +145,7 @@ def _regions_sql(con: duckdb.DuckDBPyConnection, prefix: str, attributes: list[s
             LEFT JOIN attributes.component c ON c.entity = g.entity
             LEFT JOIN attributes.idx i ON i.entity = g.entity
             LEFT JOIN manta.bus_location b ON b.bus = i.value""")
-    columns = {name for (name,) in con.execute(
-        "SELECT column_name FROM duckdb_columns() WHERE database_name = current_database() AND schema_name = 'properties' AND table_name = 'bus'"
-        if not prefix else
-        f"SELECT column_name FROM duckdb_columns() WHERE database_name = '{prefix[:-1]}' AND schema_name = 'properties' AND table_name = 'bus'"
-    ).fetchall()}
+    columns = _columns(con, prefix, "bus")
     for column, component in BUS_SHAPES.items():
         if column in columns:
             parts.append(f"""
@@ -110,11 +171,6 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
     attributes = sorted(dims)
     levels = zone_levels(attributes)
     virtual = ", ".join(f"'{location}'" for location in VIRTUAL_LOCATIONS)
-    zones = " UNION ALL ".join(
-        f"SELECT '{level}' AS level, m.bus AS location, m.value AS zone "
-        f'FROM attributes."{level}" m WHERE m.bus IN (SELECT location FROM manta.bus_location WHERE NOT virtual)'
-        for level in levels
-    )
     views = {
         # Every bus with its location, and whether that location is virtual.
         "bus_location": f"""
@@ -129,8 +185,7 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
             GROUP BY location
         """,
         # One row per zone level and real location.
-        "location_zones": zones
-        or "SELECT NULL::VARCHAR AS level, NULL::VARCHAR AS location, NULL::VARCHAR AS zone WHERE false",
+        "location_zones": _zones_sql(levels, _columns(con, prefix, "bus")),
         "branches": """
             WITH ends AS (
                 SELECT connection.entity AS entity, connection.bus AS bus, role
@@ -157,6 +212,8 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
             WHERE c.role = 'attached'
         """,
         "regions": _regions_sql(con, prefix, attributes),
+        # Entity sites, line routes and areas, from the `geometry` property.
+        "entity_geometry": _entity_geometry_sql(_columns(con, prefix, "entity")),
     }
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {prefix}{SCHEMA}")
     for name, sql in views.items():
