@@ -312,7 +312,10 @@ export function RecordTree() {
         {/* Over the tree rather than instead of it, so the tree keeps its
             open folders for when the search clears. */}
         {treeData && search.trim() && period !== null && (
-          <div className="bg-surface-800 absolute inset-0 z-10">
+          <div
+            className="bg-surface-800 absolute inset-0 z-10"
+            onKeyDown={(event) => event.stopPropagation()}
+          >
             <RecordSearchResults term={search} period={period} />
           </div>
         )}

@@ -21,7 +21,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
             aria-label={label}
             onClick={onClick}
             onPointerDown={(event) => event.stopPropagation()}
-            className="text-surface-400 hover:text-surface-100 outline-none"
+            className="text-surface-400 hover:text-surface-100 focus-visible:ring-accent-500 rounded outline-none focus-visible:ring-1"
           />
         }
       >

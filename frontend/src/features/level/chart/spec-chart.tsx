@@ -1,5 +1,6 @@
 import { useChartHeight } from "./use-chart-height";
 import { useMemo } from "react";
+import { format } from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { EChart } from "../../project/components/echart";
 import { timeZoom, useChartColors } from "../../project/lib/use-widget-chart";
@@ -27,7 +28,7 @@ const valueOf = (item: TooltipItem): number | null => {
 };
 
 const swatch = (color: unknown) =>
-  `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${typeof color === "string" ? color : ACCENT}"></span>`;
+  `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${format.encodeHTML(typeof color === "string" ? color : ACCENT)}"></span>`;
 
 export function SpecChart({
   spec,
@@ -73,7 +74,7 @@ export function SpecChart({
         .slice(0, TOOLTIP_VALUES)
         .map(
           (item) =>
-            `<div>${swatch(item.color)}${item.seriesName ?? ""}: <b>${formatNumber(valueOf(item))}</b> ${unit}</div>`,
+            `<div>${swatch(item.color)}${format.encodeHTML(item.seriesName ?? "")}: <b>${formatNumber(valueOf(item))}</b> ${unit}</div>`,
         );
       if (shown.length > TOOLTIP_VALUES)
         rows.push(`<div style="opacity:.7">and ${shown.length - TOOLTIP_VALUES} more</div>`);

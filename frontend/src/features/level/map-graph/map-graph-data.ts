@@ -224,12 +224,20 @@ export function highlightOf(
 // siting, and says so once.
 const missingGeometry = new Set<string>();
 
+/** Whether a query failed because the relation isn't there (an older server), not because of a timeout or the like. */
+export function isMissingRelation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /does not exist|not found/i.test(message) && /entity_geometry/i.test(message);
+}
+
 async function readGeometry<T>(sql: string): Promise<T[] | null> {
   const catalog = recordCatalog() ?? "";
   if (missingGeometry.has(catalog)) return null;
   try {
     return await serverQuery<T>(sql);
   } catch (error) {
+    // Anything but a missing relation (a timeout...) is thrown, so a later fetch retries.
+    if (!isMissingRelation(error)) throw error;
     missingGeometry.add(catalog);
     console.warn(
       "No manta.entity_geometry on the record server: the map shows no entity siting.",

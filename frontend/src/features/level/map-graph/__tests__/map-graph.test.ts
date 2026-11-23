@@ -15,6 +15,7 @@ import { lineSql, regionSql } from "../map/map-shading";
 import {
   baseScope,
   highlightOf,
+  isMissingRelation,
   levelOnlyScope,
   routePoints,
   type BranchRow,
@@ -198,5 +199,17 @@ describe("layer shading", () => {
     expect(rampColor(0)).toBe("hsl(210, 70%, 55%)");
     expect(rampColor(1)).toBe("hsl(20, 70%, 55%)");
     expect(rampColor(5)).toBe(rampColor(1));
+  });
+});
+
+describe("isMissingRelation", () => {
+  it("is true only for a missing manta.entity_geometry", () => {
+    expect(
+      isMissingRelation(
+        new Error("Catalog Error: Table with name entity_geometry does not exist!"),
+      ),
+    ).toBe(true);
+    expect(isMissingRelation(new Error("Query timed out"))).toBe(false);
+    expect(isMissingRelation(new Error("Table with name bus does not exist"))).toBe(false);
   });
 });

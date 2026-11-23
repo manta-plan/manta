@@ -39,7 +39,12 @@ export function DraftScenarioDialog() {
 
   const revisions = record?.info.revisions ?? [];
   const parentName = editing?.parent ?? record?.scenario ?? null;
-  const parent = revisions.find((revision) => revision.name === parentName);
+  const shown = revisions.find((revision) => revision.name === parentName);
+  // A run result isn't listed in the Scenarios panel: a draft starts from its scenario.
+  const parent =
+    shown?.kind === "result" && shown.parent
+      ? (revisions.find((revision) => revision.name === shown.parent) ?? shown)
+      : shown;
   const taken = drafts.some(
     (draft) =>
       draft.id !== editing?.id &&

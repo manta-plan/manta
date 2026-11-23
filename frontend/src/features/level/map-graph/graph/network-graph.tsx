@@ -22,7 +22,14 @@ export function NetworkGraph() {
   const busesData = useBuses();
   const branchesData = useBranches(scope);
   const linksData = useInnerLinks(scope);
-  const buses = busesData.status === "ready" ? busesData.data : NO_BUSES;
+  // A bus without usable coordinates can't be placed (and would turn every position into NaN).
+  const buses = useMemo(
+    () =>
+      busesData.status === "ready"
+        ? busesData.data.filter((bus) => Number.isFinite(bus.x) && Number.isFinite(bus.y))
+        : NO_BUSES,
+    [busesData],
+  );
   const lines =
     branchesData.status === "ready"
       ? branchesData.data.filter((branch) => branch.ctype === "Line")
