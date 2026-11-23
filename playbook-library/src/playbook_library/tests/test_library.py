@@ -590,13 +590,15 @@ def _foresight(rev: Revision, horizon: int) -> pypsa.Network:
     return to_network(_dispatch(rev, optimize_config={"horizon": horizon}))
 
 
-def test_a_water_value_is_the_price_a_solve_of_the_whole_period_finds_at_its_stores_bus(
+def test_a_water_value_is_the_price_a_solve_of_the_whole_period_cycling_stores_finds_at_their_bus(
     fixed_zoned_record,
 ):
     n = to_network(_water_value(fixed_zoned_record))
 
-    prices = _foresight(fixed_zoned_record, 6).buses_t.marginal_price
-    expected = prices[["c", "d"]].set_axis(["st_c", "st_d"], axis=1)
+    whole = to_network(fixed_zoned_record)
+    whole.stores["e_cyclic"] = True
+    whole.optimize()
+    expected = whole.buses_t.marginal_price[["c", "d"]].set_axis(["st_c", "st_d"], axis=1)
     pd.testing.assert_frame_equal(
         n.stores_t.marginal_cost, expected, check_names=False, check_column_type=False
     )
