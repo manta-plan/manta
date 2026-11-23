@@ -4,8 +4,8 @@
 
 """Running a playbook.
 
-Each step gets the record the previous step produced, plus anything wired to it from
-further back. Each block writes its result into the input record's own store, so
+Each step gets the revision the previous step produced, plus anything wired to it from
+further back. Each block writes its result into the input revision's own store, so
 the engine never decides where outputs go.
 
 How a single block actually runs is behind `BlockRunner`. The default runner executes
@@ -23,9 +23,10 @@ Before anything runs, the playbook is checked against its settings (see
 partway through.
 """
 
+from contextlib import closing
 from typing import Protocol
 
-from playbook.blocks import BlockSpec, DataRecord
+from playbook.blocks import BlockSpec, RevisionRef
 from playbook.playbooks.playbook import BlockStep, Playbook, Step, child_config
 from playbook.playbooks.validation import raise_for_playbook_issues
 
@@ -45,10 +46,10 @@ class BlockRunner(Protocol):
         *,
         step_name: str,
         config: dict,
-        record: DataRecord,
-        inputs: dict[str, DataRecord],
-    ) -> DataRecord:
-        """Run `block` on `record` and return the record it produced."""
+        revision: RevisionRef,
+        inputs: dict[str, RevisionRef],
+    ) -> RevisionRef:
+        """Run `block` on `revision` and return the revision it produced."""
         ...
 
 
@@ -61,71 +62,78 @@ class LocalBlockRunner:
         *,
         step_name: str,
         config: dict,
-        record: DataRecord,
-        inputs: dict[str, DataRecord],
-    ) -> DataRecord:
+        revision: RevisionRef,
+        inputs: dict[str, RevisionRef],
+    ) -> RevisionRef:
+        # Imported here: only running a block in this process opens stores, which
+        # needs the `playbook[run]` extra; driving one elsewhere does not.
+        from datarecord import Workspace
+
+        from playbook.blocks.run import open_revision
+
         block_cls = block.block_class()
-        # A fresh instance per step: a block never carries state between runs.
-        return block_cls(block_cls.merge_config(config, inputs)).run(record)
+        instance = block_cls(block_cls.merge_config(config, inputs))
+        with closing(Workspace()) as workspace:
+            return RevisionRef.from_revision(instance.run(open_revision(workspace, revision)))
 
 
 def execute_playbook(
     playbook: Playbook,
-    record: DataRecord,
+    revision: RevisionRef,
     config: dict,
     *,
     runner: BlockRunner | None = None,
-) -> DataRecord:
-    """Run `playbook`, returning the final step's record.
+) -> RevisionRef:
+    """Run `playbook`, returning the final step's revision.
 
     Nothing runs unless the playbook passes every check against `config` first:
     `PlaybookHasIssuesError` lists everything wrong at once, rather than one problem
     surfacing at a time, steps into the run.
     """
     raise_for_playbook_issues(playbook, config)
-    return _execute(playbook, record, config, runner or LocalBlockRunner(), {})
+    return _execute(playbook, revision, config, runner or LocalBlockRunner(), {})
 
 
 def _execute(
     playbook: Playbook,
-    record: DataRecord,
+    revision: RevisionRef,
     config: dict,
     runner: BlockRunner,
-    external_inputs: dict[str, DataRecord],
-) -> DataRecord:
-    results: dict[str, dict[str, DataRecord]] = {}
+    external_inputs: dict[str, RevisionRef],
+) -> RevisionRef:
+    results: dict[str, dict[str, RevisionRef]] = {}
 
     for step in playbook.active(config).steps:
         wired = _wire_up(step, results, external_inputs)
 
         if isinstance(step, BlockStep):
-            record = runner.run_block(
+            revision = runner.run_block(
                 step.block,
                 step_name=step.name,
                 config=config.get(step.name, {}),
-                record=record,
+                revision=revision,
                 inputs=wired,
             )
         else:
-            record = _execute(
+            revision = _execute(
                 step.playbook,
-                record,
+                revision,
                 child_config(config, step.name),
                 runner,
                 wired,
             )
 
-        results[step.name] = {"output": record}
+        results[step.name] = {"output": revision}
 
-    return record
+    return revision
 
 
 def _wire_up(
     step: Step,
-    results: dict[str, dict[str, DataRecord]],
-    external: dict[str, DataRecord],
-) -> dict[str, DataRecord]:
-    """The records to feed into this step's wired-in settings."""
+    results: dict[str, dict[str, RevisionRef]],
+    external: dict[str, RevisionRef],
+) -> dict[str, RevisionRef]:
+    """The revisions to feed into this step's wired-in settings."""
     wired = {input_name: results[ref.step][ref.output] for input_name, ref in step.inputs.items()}
     # Anything this step still needs may be fed from outside, when this playbook is
     # itself a step in a longer one.

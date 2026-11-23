@@ -10,106 +10,116 @@ parser/printer pair staying in step.
 """
 
 import json
+from uuid import UUID
 
 import pytest
 
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import DataRecordError, RevisionRef
 from playbook.blocks.registry import BlockNotRegisteredError
 from playbook.blocks.run_one import RESULT_MARKER, main, parse_result_line, result_line
-from playbook.blocks.tests.fakes import RECORD_UUID, STORE, revision_of
-
-ROOT = DataRecord(url=STORE, uuid=RECORD_UUID)
-UPSTREAM = DataRecord(url="s3://bucket/upstream", uuid=RECORD_UUID)
+from playbook.blocks.tests.fakes import steps
 
 
-def _result_from(capsys) -> DataRecord:
+def _result_from(capsys) -> RevisionRef:
     lines = capsys.readouterr().out.splitlines()
-    results = [record for record in map(parse_result_line, lines) if record is not None]
+    results = [ref for ref in map(parse_result_line, lines) if ref is not None]
     assert len(results) == 1, f"expected exactly one result line in {lines}"
     return results[0]
 
 
-def test_a_block_runs_and_reports_where_its_result_went(capsys):
+@pytest.mark.parametrize("source", [[], ["--source", "playbook.blocks.tests.fakes"]])
+def test_a_block_runs_and_reports_where_its_result_went(capsys, initial_revision, source):
+    # The library holding a block can be named on the command line (or in
+    # MANTA_BLOCK_SOURCES); either way it is loaded before the block is looked up.
     exit_code = main(
         [
-            "fake_writes_output",
-            "--record",
-            json.dumps(ROOT.to_dict()),
+            "fake_passthrough",
+            *source,
+            "--revision",
+            json.dumps(initial_revision.to_dict()),
+            "--config",
+            json.dumps({"label": "ran"}),
         ]
     )
 
     assert exit_code == 0
-    assert _result_from(capsys) == revision_of(ROOT)
+    result = _result_from(capsys)
+    assert result.store == initial_revision.store
+    assert steps(result) == ["ran"]
 
 
-def test_config_and_wired_inputs_reach_the_block(capsys):
+def test_wired_inputs_reach_the_block_and_open_beside_its_input(capsys, initial_revision):
+    main(
+        [
+            "fake_passthrough",
+            "--revision",
+            json.dumps(initial_revision.to_dict()),
+            "--config",
+            json.dumps({"label": "upstream"}),
+        ]
+    )
+    upstream = _result_from(capsys)
     main(
         [
             "fake_needs_upstream",
-            "--record",
-            json.dumps(ROOT.to_dict()),
-            "--config",
-            json.dumps({"label": "ignored-by-this-fake"}),
+            "--revision",
+            json.dumps(initial_revision.to_dict()),
             "--inputs",
-            json.dumps({"source": UPSTREAM.to_dict()}),
+            json.dumps({"source": upstream.to_dict()}),
         ]
     )
 
-    assert _result_from(capsys).url == f"{STORE}+needs({UPSTREAM.url})"
+    assert steps(_result_from(capsys)) == ["needs(upstream)"]
 
 
 def test_an_unknown_block_fails_rather_than_guessing():
     with pytest.raises(BlockNotRegisteredError):
-        main(["no_such_block", "--record", "{}"])
+        main(["no_such_block", "--revision", "{}"])
 
 
-def test_a_wrongly_wired_input_is_refused_before_the_block_runs():
-    # `label` is text; a record cannot go there. The container exits non-zero
+def test_a_wrongly_wired_input_is_refused_before_the_block_runs(initial_revision):
+    # `label` is text; a revision cannot go there. The container exits non-zero
     # instead of running the block against nonsense.
     with pytest.raises(Exception, match="label"):
         main(
             [
                 "fake_passthrough",
-                "--record",
-                json.dumps(ROOT.to_dict()),
+                "--revision",
+                json.dumps(initial_revision.to_dict()),
                 "--inputs",
-                json.dumps({"label": DataRecord(url=STORE, uuid=RECORD_UUID).to_dict()}),
+                json.dumps({"label": initial_revision.to_dict()}),
             ]
         )
 
 
-def test_a_block_library_is_loaded_before_its_block_is_looked_up(capsys):
-    # The library holding a block is named on the command line (or in
-    # MANTA_BLOCK_SOURCES); without that, nothing would have registered it.
-    main(
-        [
-            "fake_writes_output",
-            "--source",
-            "playbook.blocks.tests.fakes",
-            "--record",
-            json.dumps(ROOT.to_dict()),
-        ]
-    )
-
-    assert _result_from(capsys) == revision_of(ROOT)
-
-
-def test_an_unknown_block_library_is_reported_rather_than_ignored():
+def test_an_unknown_block_library_is_reported_rather_than_ignored(initial_revision):
     with pytest.raises(ModuleNotFoundError):
         main(
             [
-                "fake_writes_output",
+                "fake_passthrough",
                 "--source",
                 "not_a_real_library",
-                "--record",
-                json.dumps(ROOT.to_dict()),
+                "--revision",
+                json.dumps(initial_revision.to_dict()),
             ]
         )
 
 
-def test_the_result_line_round_trips_through_its_parser():
-    record = DataRecord(url=STORE, uuid=RECORD_UUID)
-    assert parse_result_line(result_line(record)) == record
+@pytest.mark.parametrize(
+    ("suffix", "revision_id"),
+    [("missing-store", None), ("", UUID(int=0))],
+    ids=["missing-store", "missing-revision"],
+)
+def test_a_revision_pointing_at_nothing_raises_a_datarecord_error(
+    initial_revision, suffix, revision_id
+):
+    ref = RevisionRef(store=initial_revision.store + suffix, id=revision_id or initial_revision.id)
+    with pytest.raises(DataRecordError, match="No revision"):
+        main(["fake_passthrough", "--revision", json.dumps(ref.to_dict())])
+
+
+def test_the_result_line_round_trips_through_its_parser(initial_revision):
+    assert parse_result_line(result_line(initial_revision)) == initial_revision
 
 
 def test_ordinary_log_lines_are_not_mistaken_for_results():

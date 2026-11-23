@@ -9,6 +9,8 @@ breaks anything visible when it happens - which is exactly why they are tested.
 """
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,3 +63,11 @@ def test_the_block_layer_does_not_import_the_playbook_layer(path: Path):
         if isinstance(node, ast.ImportFrom) and node.module
     }
     assert not any(module.startswith("playbook.playbooks") for module in imported)
+
+
+def test_passing_revisions_along_does_not_need_datarecord():
+    # Only `playbook.blocks.run` opens stores; an orchestrator or web backend imports
+    # the rest to pass `RevisionRef`s along, without the `playbook[run]` extra.
+    modules = "playbook.blocks, playbook.blocks.run_one, playbook.playbooks"
+    code = f"import sys, {modules}; assert 'datarecord' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603

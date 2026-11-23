@@ -7,10 +7,11 @@ import threading
 
 import pandas as pd
 import pypsa
-from playbook.blocks.core import BlockDims, DataRecord, MantaBlock, SolveError
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, MantaBlock, RevisionRef, SolveError
+from playbook.blocks.run import open_revision
 from pydantic import Field
 
-from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_configs import (
     LoadSheddingConfig,
     PyPSAOptimizeBlockConfig,
@@ -50,7 +51,7 @@ class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
     optimize_config: PyPSAOptimizeRollingHorizonConfig = Field(
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
-    capacity_source: DataRecord | None = Field(default=None, title="Capacity data source")
+    capacity_source: RevisionRef | None = Field(default=None, title="Capacity data source")
     """Where the capacities to dispatch against come from.
 
     It is normally wired to a capacity-expansion block earlier in the playbook. Left
@@ -98,12 +99,11 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     INPUTS = frozenset({"capacity_source"})
 
     @staticmethod
-    def solved_periods(record: DataRecord) -> list[int]:
-        """Return the investment periods that `record` has results for, without building a network.
+    def solved_periods(rev: Revision) -> list[int]:
+        """Return the investment periods that `rev` has results for, without building a network.
 
-        A record without the result `p` or without investment periods has none.
+        A revision without the result `p` or without investment periods has none.
         """
-        _, rev = revision(record)
         if "p" not in rev.record.attributes or "period" not in rev.record.dims:
             return []
         solved = rev.record.attributes["p"].filter("snapshot IS NOT NULL")
@@ -111,13 +111,12 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         return sorted(period for (period,) in held.fetchall())
 
     @staticmethod
-    def decided_capacities(record: DataRecord) -> pd.Series:
-        """Return the optimised capacity of each asset that `record` has one for, by asset name.
+    def decided_capacities(rev: Revision) -> pd.Series:
+        """Return the optimised capacity of each asset that `rev` has one for, by asset name.
 
-        It reads the record, not a network built from it, because a network fills an
+        It reads the revision, not a network built from it, because a network fills an
         undecided capacity with 0.
         """
-        _, rev = revision(record)
         names = {nominal_attr(c) + "_opt" for c in BUILT_COMPONENTS} & set(rev.record.attributes)
         frames = [rev.record.attributes[name].df().set_index("entity")["value"] for name in names]
         return pd.concat(frames) if frames else pd.Series(dtype=float)
@@ -149,13 +148,13 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         if undecided:
             raise ValueError(f"The capacity source decided no capacity of {undecided}")
 
-    def selected_periods(self, record: DataRecord) -> list[int]:
-        """Return the investment periods of `record` to dispatch, in model order.
+    def selected_periods(self, base: Revision) -> list[int]:
+        """Return the investment periods of `base` to dispatch, in model order.
 
         Raises `ValueError` if `periods` is set and the model has no investment periods,
         or lacks one of those set.
         """
-        periods = investment_periods(record)
+        periods = investment_periods(base)
         if self.config.periods is None:
             return periods
         if not periods:
@@ -165,7 +164,7 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             raise ValueError(f"The model has no investment periods {missing}: {periods}.")
         return [period for period in periods if period in self.config.periods]
 
-    def fix_capacities(self, n: pypsa.Network, source: DataRecord, periods: list[int]) -> None:
+    def fix_capacities(self, n: pypsa.Network, source: Revision, periods: list[int]) -> None:
         """Fix in `n` the capacities that `source` decided for `periods`, the periods `n` has.
 
         Over a single period, overnight expansion removes the cohorts only an earlier period
@@ -181,15 +180,15 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             remove_unbuilt_cohorts(n)
         self.refuse_undecided_capacities(n)
 
-    def with_load_shedding(self, record: DataRecord) -> DataRecord:
-        """Add load shedding to the network of `record`, and store it as a child revision of it.
+    def with_load_shedding(self, base: Revision) -> Revision:
+        """Add load shedding to the network of `base`, and store it as a child revision of it.
 
         The load-shedding generators are then part of the stored model, so a later
         results-only write includes their results.
         """
-        n = to_network(record)
+        n = to_network(base)
         n.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
-        return write_network(n, record)
+        return write_network(n, base)
 
     def refuse_restarting_storage(self, n: pypsa.Network) -> None:
         """Raise `NotImplementedError` for storage of `n` that a window starts afresh.
@@ -234,19 +233,20 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
                 c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
-    def run(self, record: DataRecord) -> DataRecord:
-        periods = self.selected_periods(record)
+    def run(self, base: Revision) -> Revision:
+        periods = self.selected_periods(base)
         if self.config.load_shedding is not None:
-            record = self.with_load_shedding(record)
-        n_new = to_network(record, select={"period": periods}) if periods else to_network(record)
+            base = self.with_load_shedding(base)
+        n_new = to_network(base, select={"period": periods}) if periods else to_network(base)
         if self.config.capacity_source is not None:
-            self.fix_capacities(n_new, self.config.capacity_source, periods)
+            source = open_revision(base.store.workspace, self.config.capacity_source)
+            self.fix_capacities(n_new, source, periods)
         if self.config.time_aggregation is not None:
             self.refuse_restarting_storage(n_new)
 
         return solve_and_write(
             n_new,
-            record,
+            base,
             self.optimize,
             self.config.time_aggregation,
             multi_investment_periods=self.config.optimize_config.multi_investment_periods,

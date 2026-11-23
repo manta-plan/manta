@@ -7,14 +7,14 @@ import type { IconType } from "react-icons";
 import { useAppStore } from "../../home/store";
 import { useProjectStore } from "../store/project-store";
 import { projectTabHref } from "../lib/project-route";
-import { startModelWorkspaceTour } from "../lib/workspace-tours";
+import { startBuildWorkspaceTour } from "../lib/workspace-tours";
 import { isWelcomeDialogDisabled, setWelcomeDialogDisabled } from "../lib/welcome-preference";
 
 // Same icons as the Sidebar panels, so the overview maps onto what the user sees.
 const WORKSPACES: { label: string; description: string; icon: IconType }[] = [
   {
-    label: "Model",
-    description: "Browse the network and edit scenarios as mutations.",
+    label: "Build",
+    description: "Browse the record by level and see what its scenarios change.",
     icon: LuBoxes,
   },
   {
@@ -53,8 +53,8 @@ export function WelcomeDialog() {
 
   const startTour = () => {
     dismiss();
-    setLocation(projectTabHref(projectId, "model"));
-    window.setTimeout(startModelWorkspaceTour, TOUR_START_DELAY_MS);
+    setLocation(projectTabHref(projectId, "build"));
+    window.setTimeout(startBuildWorkspaceTour, TOUR_START_DELAY_MS);
   };
 
   return (
@@ -66,7 +66,7 @@ export function WelcomeDialog() {
             Welcome to {projectName ?? "your project"}
           </Dialog.Title>
           <Dialog.Description className="text-surface-400 mt-1.5 text-[12px] leading-5">
-            A project has two workspaces so far: the model and its runs.
+            A project has two workspaces so far: Build and its runs. Inspect and Analyse follow.
           </Dialog.Description>
 
           <ol className="mt-4 flex flex-col gap-3">

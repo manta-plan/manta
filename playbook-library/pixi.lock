@@ -14065,6 +14065,7 @@ packages:
   - jsonschema>=4.18
   - pydantic>=2
   - pyyaml>=6
+  - datarecord @ git+https://github.com/energy-models/datarecord@8889d623865e3cab80d7a18681e48a6c2536741d ; extra == 'run'
   requires_python: '>=3.12'
 - pypi: ./
   name: playbook-library

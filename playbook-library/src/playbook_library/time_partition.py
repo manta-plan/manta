@@ -23,13 +23,12 @@ from duckdb import ColumnExpression as col
 from duckdb import ConstantExpression as lit
 from duckdb import DuckDBPyRelation
 from duckdb import FunctionExpression as fn
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from pydantic import field_validator, model_validator
 from scipy.sparse import diags
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import MinMaxScaler
 
-from playbook_library.datarecord_helpers import revision
 from playbook_library.pypsa_time_aggregation import (
     PYPSA_TIME,
     has_periods,
@@ -295,11 +294,9 @@ class TimePartition(MantaBlock[TimePartitionConfig]):
     CONFIG = TimePartitionConfig
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
-    def run(self, record: DataRecord) -> DataRecord:
-        _, rev = revision(record)
+    def run(self, base: Revision) -> Revision:
         if self.config.segments is not None:
-            starts = segment_starts(rev, self.config.segments)
+            starts = segment_starts(base, self.config.segments)
         else:
-            starts = resample_starts(rev, self.config.n_hours)
-        child = add_time_aggregation(rev, self.config.name, starts)
-        return DataRecord(url=record.url, uuid=child.id)
+            starts = resample_starts(base, self.config.n_hours)
+        return add_time_aggregation(base, self.config.name, starts)

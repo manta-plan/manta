@@ -15,13 +15,11 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 import pypsa
-from datarecord import LazyRelations, RecordLike, Schema
+from datarecord import LazyRelations, RecordLike, Revision, Schema
 from datarecord.tools.pypsa import PyPSA
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 from duckdb.sqltypes import DuckDBPyType
-from playbook.blocks.core import DataRecord
 
-from playbook_library.datarecord_helpers import revision
 from playbook_library.time_aggregation import (
     Overlay,
     TimeAxis,
@@ -168,15 +166,15 @@ def _held_frame(n: pypsa.Network, base: RecordLike) -> pd.DataFrame:
     return frame[frame["period"].isin(n.snapshots.unique(level="period"))]
 
 
-def cluster_network(n: pypsa.Network, record: DataRecord, name: str) -> pypsa.Network:
-    """Cluster `n`, built from `record`, by the time aggregation `snapshot.<name>` of `record`.
+def cluster_network(n: pypsa.Network, rev: Revision, name: str) -> pypsa.Network:
+    """Cluster `n`, built from `rev`, by the time aggregation `snapshot.<name>` of `rev`.
 
-    `n` may have only some investment periods of `record`. Each cluster becomes one
+    `n` may have only some investment periods of `rev`. Each cluster becomes one
     snapshot at its representative, weighted by the sum of its snapshots' weightings.
     Series are aggregated as PyPSA's `from_snapshot_map` aggregates them. Raises
-    `ValueError` if `record` has no valid `snapshot.<name>`.
+    `ValueError` if `rev` has no valid `snapshot.<name>`.
     """
-    base = revision(record)[1].record
+    base = rev.record
     frame = _held_frame(n, base)
     representatives = checked_clusters(frame, name, pypsa_time(base.schema))
     snapshots = _network_snapshots(base, frame)
@@ -275,13 +273,13 @@ def _series_of(base: RecordLike, attribute: str, ctype: str) -> DuckDBPyRelation
 def write_expanded_results(
     n_c: pypsa.Network,
     unsolved: pypsa.Network,
-    record: DataRecord,
+    rev: Revision,
     name: str,
     multi_investment_periods: bool,
-) -> DataRecord:
-    """Store the results of `n_c` at every snapshot of `record`, as one child revision of it.
+) -> Revision:
+    """Store the results of `n_c` at every snapshot of `rev`, as one child revision of it.
 
-    `n_c` is the network of `record`, or some investment periods of it, clustered by
+    `n_c` is the network of `rev`, or some investment periods of it, clustered by
     `snapshot.<name>` and solved. It was solved over investment periods if
     `multi_investment_periods`. `unsolved` is that network before the solve, with the
     initial states it started from. Rows of the periods `n_c` lacks are those that a
@@ -303,12 +301,12 @@ def write_expanded_results(
     cluster does the cap never bind and the expanded dispatch balance per cluster. The
     expanded dispatch never balances at each snapshot.
 
-    Raises `NotImplementedError` for a stochastic network. Raises `ValueError` if `record`
+    Raises `NotImplementedError` for a stochastic network. Raises `ValueError` if `rev`
     has no valid `snapshot.<name>`, or `n_c` is not clustered by it.
     """
     if n_c.has_scenarios:
         raise NotImplementedError("Expanding the results of a stochastic network")
-    ws, rev = revision(record)
+    con = rev.store.workspace.con
     base = rev.record
     frame = _held_frame(n_c, base)
     axis = pypsa_time(base.schema)
@@ -316,17 +314,17 @@ def write_expanded_results(
     leads = frame[cluster_starts(frame, name)]
     if not n_c.snapshots.equals(_network_snapshots(base, leads)):
         raise ValueError(f"The network is not clustered by snapshot.{name}")
-    results = PyPSA.to_datarecord(n_c, ws.con, results_only=True, base=base)
+    results = PyPSA.to_datarecord(n_c, con, results_only=True, base=base)
     weightings = ("snapshot_weighting_generators", "snapshot_weighting_stores")
     snapshots = snapshot_frame(base)
     weight, progress = (_weighting(base, snapshots, attribute) for attribute in weightings)
     clusters = cluster_members(snapshots, name, weight, progress, axis)
-    members = snapshot_rows(base.schema, ws.con, clusters, ["snapshot", "rep"])
+    members = snapshot_rows(base.schema, con, clusters, ["snapshot", "rep"])
     demand = _series_of(base, "p_set", "Load")
     profile = _series_of(base, "p_max_pu", "Generator")
     capacities = n_c.generators["p_nom_opt"].rename("value").rename_axis("entity")
-    capacity = ws.con.from_df(capacities.reset_index())
-    held_snapshots = snapshot_rows(base.schema, ws.con, frame[["snapshot"]], ["snapshot"])
+    capacity = con.from_df(capacities.reset_index())
+    held_snapshots = snapshot_rows(base.schema, con, frame[["snapshot"]], ["snapshot"])
 
     def expanded(attribute: str) -> DuckDBPyRelation:
         rel = results.attributes[attribute]
@@ -339,12 +337,11 @@ def write_expanded_results(
     def spread(attribute: str, rel: DuckDBPyRelation) -> DuckDBPyRelation:
         if attribute in STATES:
             previous = _starts(n_c, unsolved, attribute, leads, multi_investment_periods)
-            starts = snapshot_rows(base.schema, ws.con, previous, ["snapshot"])
+            starts = snapshot_rows(base.schema, con, previous, ["snapshot"])
             return interpolated(rel, members, starts, axis)
         if attribute == "p":
             return shaped(rel, members, demand, profile, capacity, axis)
         return held(rel, members, axis)
 
     attributes = LazyRelations(tuple(results.attributes), expanded)
-    child = rev.store.commit(Overlay(results, attributes=attributes), parent=rev)
-    return DataRecord(url=record.url, uuid=child.id)
+    return rev.store.commit(Overlay(results, attributes=attributes), parent=rev)

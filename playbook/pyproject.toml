@@ -30,11 +30,24 @@ dependencies = [
 # Running a block is a plain method call here; what schedules that call, and what a
 # block does when it runs, both live outside this package.
 
+[project.optional-dependencies]
+# Only what runs a block in its own process opens datarecord stores
+# (`playbook.blocks.run`). The backend and the playbook orchestrator only pass
+# `RevisionRef` pointers along, and install plain `playbook`. Git-pinned until
+# datarecord is released; keep in step with playbook-library/pixi.toml.
+run = [
+    "datarecord @ git+https://github.com/energy-models/datarecord@8889d623865e3cab80d7a18681e48a6c2536741d",
+]
+
 [dependency-groups]
 dev = [
+    "playbook[run]",
     "pytest>=8",
     "ruff>=0.16.0",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/playbook"]

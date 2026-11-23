@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from playbook.blocks.core import DataRecord
+from playbook.blocks.core import RevisionRef
 from playbook.playbooks.yaml_io import playbook_from_doc
 
 from playbook_library.playbooks import library_playbooks
@@ -28,20 +28,20 @@ EXAMPLE_STORE = "BEL-pre-aggregated"
 EXAMPLE_PLAYBOOK = "expand"
 
 
-def inputs_record(store_dir: Path) -> DataRecord:
-    """Point a record at the `inputs` revision that `revisions.json` of a public store lists."""
+def inputs_ref(store_dir: Path) -> RevisionRef:
+    """Point at the `inputs` revision that `revisions.json` of a public store lists."""
     revisions = json.loads((store_dir / "revisions.json").read_text())
-    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
+    return RevisionRef(store=str(store_dir), id=UUID(revisions["inputs"]))
 
 
 def main(argv: list[str]) -> int:
     root = Path(argv[0]) if argv else Path(tempfile.mkdtemp(prefix="playbook-example-"))
-    record = inputs_record(download_public_store(EXAMPLE_STORE, root / EXAMPLE_STORE))
+    ref = inputs_ref(download_public_store(EXAMPLE_STORE, root / EXAMPLE_STORE))
 
     entry = library_playbooks()[EXAMPLE_PLAYBOOK]
-    print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {record.uuid} of {record.url}")
-    result = playbook_from_doc(entry.doc).run(record, entry.default_config)
-    print(f"Done. Final result: revision {result.uuid} of {result.url}")
+    print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {ref.id} of {ref.store}")
+    result = playbook_from_doc(entry.doc).run(ref, entry.default_config)
+    print(f"Done. Final result: revision {result.id} of {result.store}")
     return 0
 
 

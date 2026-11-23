@@ -40,3 +40,7 @@ dist-ssr/
 
 # local plans and scratch
 dev/
+
+# Docs
+.docs/
+docs/reference/backend/rest-api.md

@@ -47,11 +47,11 @@ Each step is dispatched at the `run-block` deployment on a **docker** work pool
 as child flow runs of the playbook's flow run, named `<step>[<block>]`, which is
 what groups a run's steps under it in Prefect.
 
-A step's output record travels back as a Prefect table artifact
+A step's output revision travels back as a Prefect table artifact
 (`OUTPUT_ARTIFACT_KEY`), published by `run-block` and read through the Prefect
 API, rather than through a shared volume, which would be the one thing tying
 every container to a single machine. Manta's backend reads the same artifact to
-report each step's output. Only the small record pointers go that way; model
+report each step's output. Only the small revision pointers go that way; model
 data never passes through Prefect or the orchestrator at all. This is an MVP
 shortcut: once data records are tracked in Manta's own database, both the
 orchestrator and the backend should consider reading step outputs from there
@@ -139,6 +139,7 @@ really be built or resolved independently until that changes.
 something concrete is what will keep either change to one function plus a new
 step, not a refactor of every call site.
 
+<!-- --8<-- [start:docs-dev] -->
 ## Configuration
 
 Everything in `config.py` is read from the environment (`MANTA_*`, `S3_*`,
@@ -148,6 +149,8 @@ once a work pool's job template carries a value, every block run inherits it
 without anything here being consulted again.
 
 ## Testing
+
+Run these from the `runner` folder:
 
 ```bash
 uv sync
@@ -159,3 +162,4 @@ functions and `PrefectBlockRunner` with `run_deployment` stubbed — no live
 Prefect server or Docker daemon needed. `tests/test_isolation.py` is the
 boundary this package cannot afford to lose by accident: that it never imports
 this monorepo's own backend or a block library.
+<!-- --8<-- [end:docs-dev] -->

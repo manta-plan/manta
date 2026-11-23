@@ -2,57 +2,58 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Fixtures shared by the tests that run real blocks."""
+"""Fixtures shared by the tests that run real blocks.
+
+Each test gets one datarecord workspace, closed when it ends, and every revision it
+reads or writes is opened on it.
+"""
 
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 import pytest
-from playbook.blocks.core import DataRecord
+from playbook.blocks.run import open_revision
 
-from playbook_library.examples import inputs_record
+from playbook_library.examples import inputs_ref
 from playbook_library.public_data import download_public_store
 
 if TYPE_CHECKING:
     import pypsa
+    from datarecord import Revision, Store, Workspace
 
 
 @pytest.fixture(scope="session")
-def store_network() -> Callable[["pypsa.Network", str], DataRecord]:
-    """Return a function that stores a network as the root revision of a new store at a URL."""
-    from datarecord import Workspace
+def store_network() -> Callable[["pypsa.Network", "Store"], "Revision"]:
+    """Return a function that stores a network as the root revision of a store."""
     from datarecord.tools.pypsa import PyPSA
 
-    def store(n: "pypsa.Network", url: str) -> DataRecord:
-        ws = Workspace()
-        rev = ws.store(url).commit(PyPSA.to_datarecord(n, ws.con), parent=None)
-        return DataRecord(url=url, uuid=rev.id)
+    def store(n: "pypsa.Network", store: "Store") -> "Revision":
+        return store.commit(PyPSA.to_datarecord(n, store.workspace.con), parent=None)
 
     return store
 
 
 @pytest.fixture
-def store_record(tmp_path: Path, store_network) -> Callable[["pypsa.Network", str], DataRecord]:
-    """Write a network as the root revision of a new store, named `name`, under tmp_path."""
+def workspace() -> Iterator["Workspace"]:
+    from datarecord import Workspace
 
-    def write(n: "pypsa.Network", name: str) -> DataRecord:
-        return store_network(n, str(tmp_path / name))
-
-    return write
+    with closing(Workspace()) as ws:
+        yield ws
 
 
 @pytest.fixture
-def ancestry() -> Callable[[DataRecord], list[UUID]]:
-    """The revision ids from a record's store root down to the record, root first."""
-    from playbook_library.datarecord_helpers import revision
+def store_revision(
+    tmp_path: Path, workspace: "Workspace", store_network
+) -> Callable[["pypsa.Network", str], "Revision"]:
+    """Write a network as the root revision of a new store, named `name`, under tmp_path."""
 
-    def lineage(record: DataRecord) -> list[UUID]:
-        return revision(record)[1].ancestry()
+    def write(n: "pypsa.Network", name: str) -> "Revision":
+        return store_network(n, workspace.store(str(tmp_path / name)))
 
-    return lineage
+    return write
 
 
 @pytest.fixture(scope="session")
@@ -80,9 +81,9 @@ def new_single_period_network() -> Callable[[], "pypsa.Network"]:
 
 
 @pytest.fixture
-def single_period_record(store_record, new_single_period_network) -> DataRecord:
+def single_period(store_revision, new_single_period_network) -> "Revision":
     """Store the network that `new_single_period_network` builds."""
-    return store_record(new_single_period_network(), "base")
+    return store_revision(new_single_period_network(), "base")
 
 
 @pytest.fixture(scope="session")
@@ -126,8 +127,8 @@ def multi_period_network(new_multi_period_network) -> "pypsa.Network":
 
 
 @pytest.fixture
-def multi_period_record(store_record, multi_period_network) -> DataRecord:
-    return store_record(multi_period_network, "periods")
+def multi_period(store_revision, multi_period_network) -> "Revision":
+    return store_revision(multi_period_network, "periods")
 
 
 @pytest.fixture(scope="session")
@@ -148,28 +149,29 @@ def public_store(tmp_path_factory) -> Callable[[str], Path]:
 
 
 @pytest.fixture
-def public_record(tmp_path: Path, public_store) -> Callable[[str], DataRecord]:
+def public_revision(
+    tmp_path: Path, public_store, workspace: "Workspace"
+) -> Callable[[str], "Revision"]:
     """Return a function that copies a store of the public test data under `tmp_path`.
 
-    The function takes the store's folder name, and points a record at its `inputs`
-    revision.
+    The function takes the store's folder name, and opens its `inputs` revision.
     """
 
-    def copy(name: str) -> DataRecord:
+    def copy(name: str) -> "Revision":
         store_dir = tmp_path / name
         shutil.copytree(public_store(name), store_dir)
-        return inputs_record(store_dir)
+        return open_revision(workspace, inputs_ref(store_dir))
 
     return copy
 
 
 @pytest.fixture
-def bel_record(public_record) -> DataRecord:
+def bel(public_revision) -> "Revision":
     """Copy BEL as PyPSA-Eur segments it, with 730 segments in each of three investment periods."""
-    return public_record("BEL-pre-aggregated")
+    return public_revision("BEL-pre-aggregated")
 
 
 @pytest.fixture
-def bel_hourly_record(public_record) -> DataRecord:
+def bel_hourly(public_revision) -> "Revision":
     """Copy BEL at hourly resolution, over three investment periods."""
-    return public_record("BEL-pre-aggregated-hourly")
+    return public_revision("BEL-pre-aggregated-hourly")

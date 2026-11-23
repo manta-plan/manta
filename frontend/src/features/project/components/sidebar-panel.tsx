@@ -4,6 +4,8 @@ import type { IconType } from "react-icons";
 interface SidebarPanelProps {
   icon: IconType;
   label: string;
+  /** Read after the label in lighter grey: Scenarios · Inputs. */
+  qualifier?: string;
   action?: ReactNode;
   onHeaderPointerDown?: PointerEventHandler<HTMLDivElement>;
   onHeaderPointerMove?: PointerEventHandler<HTMLDivElement>;
@@ -13,6 +15,7 @@ interface SidebarPanelProps {
 export function SidebarPanel({
   icon: Icon,
   label,
+  qualifier,
   action,
   onHeaderPointerDown,
   onHeaderPointerMove,
@@ -26,8 +29,12 @@ export function SidebarPanel({
         className={`border-surface-600 bg-surface-800 text-surface-200 flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase ${onHeaderPointerDown ? "cursor-row-resize touch-none select-none" : ""}`}
       >
         <Icon size={12} />
-        <span className="min-w-0 flex-1 truncate" title={label}>
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={qualifier ? `${label} · ${qualifier}` : label}
+        >
           {label}
+          {qualifier && <span className="text-surface-500 font-normal"> · {qualifier}</span>}
         </span>
         {action}
       </div>

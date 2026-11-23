@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { useAppStore } from "../../home/store";
 import type { ProjectState } from "./types";
 import { createCurrentProjectSlice } from "./slices/current-project-slice";
+import { createDraftSlice } from "./slices/draft-slice";
 import { createDrawerSlice } from "./slices/drawer-slice";
 import { createMapToolSlice } from "./slices/map-tool-slice";
 import { createRecordSlice } from "./slices/record-slice";
@@ -17,9 +18,6 @@ export type {
   CreateScenarioDirectMutationInput,
   NewInspectionInput,
   ProjectState,
-  RecordItem,
-  Resolution,
-  TableDrawerContent,
   ScenarioSelection,
   ToolId,
   UtilityDrawerFlow,
@@ -32,6 +30,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   ...createMapToolSlice(set),
   ...createDrawerSlice(set),
   ...createRecordSlice(set, get),
+  ...createDraftSlice(set, get),
   ...createScenarioRunReportSlice(set, get),
 }));
 

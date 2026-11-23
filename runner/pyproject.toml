@@ -49,6 +49,9 @@ dev = [
     # prefect-docker just to read its default job template — needed for local
     # testing even though the [docker] extra is what a real install declares.
     "prefect-docker>=0.6",
+    # The run-block flow runs a block in this process (tests/test_flows.py), which
+    # opens datarecord stores; only block images install it for real.
+    "playbook[run]",
 ]
 
 [tool.pytest.ini_options]

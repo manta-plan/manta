@@ -15,9 +15,9 @@ import pytest
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
 import pandas as pd
-from playbook.blocks.core import DataRecord, SolveError
+from datarecord import Revision
+from playbook.blocks.core import RevisionRef, SolveError
 
-from playbook_library.datarecord_helpers import revision
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
@@ -29,65 +29,65 @@ from playbook_library.time_partition import TimePartition
 pytestmark = pytest.mark.pypsa
 
 
-def _run(block_cls, config: dict, record: DataRecord) -> DataRecord:
-    """Run a block the way a playbook's step runner would."""
-    return block_cls(block_cls.merge_config(config, {})).run(record)
+def _run(block_cls, config: dict, base: Revision) -> Revision:
+    """Run a block on `base`, inside the test's own workspace."""
+    return block_cls(block_cls.merge_config(config, {})).run(base)
 
 
 CLUSTER = {"name": "agg_3h", "n_hours": 3}
 
 
-def _snapshots(record: DataRecord) -> pd.DataFrame:
-    return snapshot_frame(revision(record)[1].record)
+def _snapshots(rev: Revision) -> pd.DataFrame:
+    return snapshot_frame(rev.record)
 
 
-def _stored(record: DataRecord, name: str) -> pd.DataFrame:
-    """Return an attribute of the revision `record` points at, with each row's entity."""
-    frame = series_frame(revision(record)[1].record, name)
+def _stored(rev: Revision, name: str) -> pd.DataFrame:
+    """Return an attribute of `rev`, with each row's entity."""
+    frame = series_frame(rev.record, name)
     if "connection" in frame:
         frame["entity"] = frame.pop("connection").str.get("entity")
     return frame
 
 
-def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period_record, ancestry):
-    result = _run(TimePartition, CLUSTER, single_period_record)
+def test_a_block_writes_a_new_revision_into_the_store_it_read(single_period):
+    result = _run(TimePartition, CLUSTER, single_period)
 
-    assert result.url == single_period_record.url
-    assert ancestry(result) == [single_period_record.uuid, result.uuid]
+    assert result.store is single_period.store
+    assert result.ancestry() == [single_period.id, result.id]
     to_network(result)
 
 
 @pytest.mark.parametrize(
-    ("config", "record_name", "stretches"),
+    ("config", "base_name", "stretches"),
     [
-        ({"n_hours": 3}, "single_period_record", 8),
-        ({"n_hours": 24}, "single_period_record", 1),
-        ({"n_hours": 2}, "multi_period_record", 6),
+        ({"n_hours": 3}, "single_period", 8),
+        ({"n_hours": 24}, "single_period", 1),
+        ({"n_hours": 2}, "multi_period", 6),
     ],
 )
 def test_clustering_names_stretches_of_time_and_keeps_every_snapshot(
-    config, record_name, stretches, request
+    config, base_name, stretches, request
 ):
-    record = request.getfixturevalue(record_name)
-    result = _run(TimePartition, {"name": "agg", **config}, record)
+    rev = request.getfixturevalue(base_name)
+    result = _run(TimePartition, {"name": "agg", **config}, rev)
     frame = _snapshots(result)
 
-    assert to_network(result).snapshots.equals(to_network(record).snapshots)
+    assert to_network(result).snapshots.equals(to_network(rev).snapshots)
     assert frame["agg"].nunique() == stretches
 
 
-def test_a_record_can_be_clustered_again_by_a_name_its_store_holds(single_period_record):
-    first = _run(TimePartition, CLUSTER, single_period_record)
-    again = _run(TimePartition, {"name": "agg_3h", "n_hours": 6}, single_period_record)
+def test_a_record_can_be_clustered_again_by_a_name_its_store_holds(single_period):
+    first = _run(TimePartition, CLUSTER, single_period)
+    again = _run(TimePartition, {"name": "agg_3h", "n_hours": 6}, single_period)
 
     frames = [_snapshots(r) for r in (first, again)]
     assert [f["agg_3h"].nunique() for f in frames] == [8, 4]
 
 
-def test_clustering_leaves_the_network_it_read_alone(single_period_record):
-    before = _snapshots(single_period_record)
-    _run(TimePartition, CLUSTER, single_period_record)
-    after = _snapshots(single_period_record)
+def test_clustering_leaves_the_network_it_read_alone(single_period):
+    before = _snapshots(single_period)
+    _run(TimePartition, CLUSTER, single_period)
+    after = _snapshots(single_period)
 
     pd.testing.assert_frame_equal(after, before)
 
@@ -108,63 +108,55 @@ def test_a_time_aggregation_is_named_and_made_one_way(config, match):
 
 
 AGGREGATED = [
-    pytest.param(OvernightCapacityExpansion, {}, "single_period_record", [0], id="overnight"),
-    pytest.param(
-        OvernightCapacityExpansion, {}, "multi_period_record", [2050], id="overnight-last"
-    ),
+    pytest.param(OvernightCapacityExpansion, {}, "single_period", [0], id="overnight"),
+    pytest.param(OvernightCapacityExpansion, {}, "multi_period", [2050], id="overnight-last"),
     pytest.param(
         OvernightCapacityExpansion,
         {"period": 2030},
-        "multi_period_record",
+        "multi_period",
         [2030],
         id="overnight-2030",
     ),
-    pytest.param(
-        MyopicCapacityExpansion, {}, "multi_period_record", [2030, 2040, 2050], id="myopic"
-    ),
-    pytest.param(
-        PerfectCapacityExpansion, {}, "multi_period_record", [2030, 2040, 2050], id="perfect"
-    ),
+    pytest.param(MyopicCapacityExpansion, {}, "multi_period", [2030, 2040, 2050], id="myopic"),
+    pytest.param(PerfectCapacityExpansion, {}, "multi_period", [2030, 2040, 2050], id="perfect"),
     pytest.param(
         RollingHorizonDispatch,
         {"optimize_config": {"horizon": 4}},
-        "single_period_record",
+        "single_period",
         [0],
         id="dispatch",
     ),
 ]
 
 
-@pytest.mark.parametrize(("block_cls", "config", "record_name", "solved"), AGGREGATED)
+@pytest.mark.parametrize(("block_cls", "config", "base_name", "solved"), AGGREGATED)
 def test_a_block_solving_by_a_time_aggregation_writes_results_at_every_snapshot(
-    block_cls, config, record_name, solved, request
+    block_cls, config, base_name, solved, request
 ):
-    record = _run(TimePartition, CLUSTER, request.getfixturevalue(record_name))
+    rev = _run(TimePartition, CLUSTER, request.getfixturevalue(base_name))
 
-    result = _run(block_cls, {**config, "time_aggregation": "agg_3h"}, record)
+    result = _run(block_cls, {**config, "time_aggregation": "agg_3h"}, rev)
 
     frame = _snapshots(result)
     snapshots = frame["snapshot"][frame["period"].isin(solved)]
     p = _stored(result, "p")
-    assert to_network(result).snapshots.equals(to_network(record).snapshots)
+    assert to_network(result).snapshots.equals(to_network(rev).snapshots)
     assert not p.duplicated(["entity", "snapshot"]).any()
     assert set(p["snapshot"]) == set(snapshots)
     assert sorted(p.query("entity == 'load'")["snapshot"]) == sorted(snapshots)
 
 
-@pytest.mark.parametrize(("block_cls", "config", "record_name", "_"), AGGREGATED)
-def test_a_block_needs_the_time_aggregation_it_is_given(block_cls, config, record_name, _, request):
-    record = request.getfixturevalue(record_name)
+@pytest.mark.parametrize(("block_cls", "config", "base_name", "_"), AGGREGATED)
+def test_a_block_needs_the_time_aggregation_it_is_given(block_cls, config, base_name, _, request):
+    rev = request.getfixturevalue(base_name)
     with pytest.raises(ValueError, match="no time aggregation snapshot.agg_3h"):
-        _run(block_cls, {**config, "time_aggregation": "agg_3h"}, record)
+        _run(block_cls, {**config, "time_aggregation": "agg_3h"}, rev)
 
 
 @pytest.mark.parametrize("name", ["p", "marginal_price"])
-def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(
-    name, multi_period_record
-):
-    record = _run(TimePartition, CLUSTER, multi_period_record)
-    solved = _run(PerfectCapacityExpansion, {}, record)
+def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(name, multi_period):
+    rev = _run(TimePartition, CLUSTER, multi_period)
+    solved = _run(PerfectCapacityExpansion, {}, rev)
     configs = [{"period": 2030}, {"period": 2030, "time_aggregation": "agg_3h"}]
     full, aggregated = (_run(OvernightCapacityExpansion, c, solved) for c in configs)
 
@@ -179,36 +171,32 @@ def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(
     )
 
 
-def test_myopic_expansion_by_a_time_aggregation_keeps_each_period_it_expanded(
-    multi_period_record, ancestry
-):
-    record = _run(TimePartition, CLUSTER, multi_period_record)
-    result = _run(MyopicCapacityExpansion, {"time_aggregation": "agg_3h"}, record)
-    *_, first, _, last = ancestry(result)
+def test_myopic_expansion_by_a_time_aggregation_keeps_each_period_it_expanded(multi_period):
+    rev = _run(TimePartition, CLUSTER, multi_period)
+    result = _run(MyopicCapacityExpansion, {"time_aggregation": "agg_3h"}, rev)
+    *_, first, _, last = result.ancestry()
 
-    expanded = [_stored(DataRecord(url=result.url, uuid=u), "p") for u in (first, last)]
+    expanded = [_stored(result.store.revision(u), "p") for u in (first, last)]
     in_2030 = [p[p["snapshot"].isin(expanded[0]["snapshot"])] for p in expanded]
     keys = ["entity", "snapshot"]
-    assert ancestry(result)[:-3] == ancestry(record)
+    assert result.ancestry()[:-3] == rev.ancestry()
     pd.testing.assert_frame_equal(
         in_2030[1].sort_values(keys, ignore_index=True),
         in_2030[0].sort_values(keys, ignore_index=True),
     )
 
 
-def test_overnight_expansion_decides_what_to_build(single_period_record):
-    result = _run(OvernightCapacityExpansion, {}, single_period_record)
+def test_overnight_expansion_decides_what_to_build(single_period):
+    result = _run(OvernightCapacityExpansion, {}, single_period)
     n = to_network(result)
 
     # Enough generation to meet a demand of 50 at every hour.
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
-    multi_period_record, ancestry
-):
-    result = _run(MyopicCapacityExpansion, {}, multi_period_record)
-    root, *revisions = ancestry(result)
+def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(multi_period):
+    result = _run(MyopicCapacityExpansion, {}, multi_period)
+    root, *revisions = result.ancestry()
     dispatch = pd.DataFrame(
         {
             2030: {"gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 0.0},
@@ -217,10 +205,10 @@ def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
         }
     ).T
 
-    assert root == multi_period_record.uuid
-    assert revisions[-1] == result.uuid
+    assert root == multi_period.id
+    assert revisions[-1] == result.id
     for solved, uuid in enumerate(revisions, start=1):
-        p = to_network(DataRecord(url=result.url, uuid=uuid)).generators_t.p
+        p = to_network(result.store.revision(uuid)).generators_t.p
         expected = dispatch.iloc[:solved]
         totals = p.groupby(level="period").sum().loc[expected.index, expected.columns]
         assert totals.to_numpy() == pytest.approx(expected.to_numpy(), abs=1e-3)
@@ -235,27 +223,25 @@ def test_myopic_expansion_writes_each_period_as_a_revision_of_its_own(
         (2030, {"gen-2030": 50.0}),
     ],
 )
-def test_overnight_expansion_builds_one_period_from_what_exists(
-    period, built, multi_period_record, ancestry
-):
-    result = _run(OvernightCapacityExpansion, {"period": period}, multi_period_record)
+def test_overnight_expansion_builds_one_period_from_what_exists(period, built, multi_period):
+    result = _run(OvernightCapacityExpansion, {"period": period}, multi_period)
     solved = 2050 if period is None else period
     n = to_network(result, select={"period": [solved]})
 
-    assert ancestry(result) == [multi_period_record.uuid, result.uuid]
+    assert result.ancestry() == [multi_period.id, result.id]
     assert n.generators.p_nom_opt.to_dict() == pytest.approx(built, abs=1e-3)
 
 
-def test_overnight_expansion_needs_the_period_it_is_given(multi_period_record):
+def test_overnight_expansion_needs_the_period_it_is_given(multi_period):
     with pytest.raises(ValueError, match="no investment period 2045"):
-        _run(OvernightCapacityExpansion, {"period": 2045}, multi_period_record)
+        _run(OvernightCapacityExpansion, {"period": 2045}, multi_period)
 
 
-def test_a_failed_solve_raises_a_solve_error(store_record, new_single_period_network):
+def test_a_failed_solve_raises_a_solve_error(store_revision, new_single_period_network):
     n = new_single_period_network()
     n.generators.p_nom_max = 0.0
     with pytest.raises(SolveError, match="infeasible"):
-        _run(OvernightCapacityExpansion, {}, store_record(n, "infeasible"))
+        _run(OvernightCapacityExpansion, {}, store_revision(n, "infeasible"))
 
 
 def _assets(period: int, lifetime: float, component: str = "Generator") -> pypsa.Network:
@@ -298,26 +284,29 @@ def test_cohorts_built_before_the_period_are_removed(lifetime, kept):
 
 
 def test_myopic_expansion_never_builds_a_cohort_before_the_first_period(
-    store_record, multi_period_network
+    store_revision, multi_period_network
 ):
     n = multi_period_network
     n.add("Generator", "gen-2020", bus="bus", p_nom_extendable=True, build_year=2020, lifetime=40)
-    record = store_record(n, "early-cohort")
+    rev = store_revision(n, "early-cohort")
 
-    result = _run(MyopicCapacityExpansion, {}, record)
+    result = _run(MyopicCapacityExpansion, {}, rev)
 
     dispatch = to_network(result, select={"period": [2050]}).generators_t.p.sum().to_dict()
     expected = {"gen-2020": 0.0, "gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 200.0}
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_can_run_against_capacities_another_block_chose(single_period_record):
-    expanded = _run(OvernightCapacityExpansion, {}, single_period_record)
+def test_dispatch_can_run_against_capacities_another_block_chose(single_period):
+    expanded = _run(OvernightCapacityExpansion, {}, single_period)
 
     result = _run(
         RollingHorizonDispatch,
-        {"capacity_source": expanded, "optimize_config": {"horizon": 12}},
-        single_period_record,
+        {
+            "capacity_source": RevisionRef.from_revision(expanded),
+            "optimize_config": {"horizon": 12},
+        },
+        single_period,
     )
     n = to_network(result)
 
@@ -336,38 +325,38 @@ def test_dispatch_fixes_the_capacities_its_source_decided(component):
     assert not static[attr + "_extendable"].any()
 
 
-def test_dispatch_can_run_on_its_own(single_period_record, store_record):
-    n = to_network(single_period_record)
+def test_dispatch_can_run_on_its_own(single_period, store_revision):
+    n = to_network(single_period)
     n.generators.loc["gen", "p_nom_extendable"] = False
     n.generators.loc["gen", "p_nom"] = 100.0
-    record = store_record(n, "fixed")
+    rev = store_revision(n, "fixed")
 
     result = _run(
         RollingHorizonDispatch,
         {"optimize_config": {"horizon": 12}},
-        record,
+        rev,
     )
     assert to_network(result).generators.p_nom["gen"] == pytest.approx(100.0)
 
 
-def _dispatch(record: DataRecord, **config) -> DataRecord:
-    return _run(RollingHorizonDispatch, {"optimize_config": {"horizon": 4}, **config}, record)
+def _dispatch(rev: Revision, **config) -> Revision:
+    return _run(RollingHorizonDispatch, {"optimize_config": {"horizon": 4}, **config}, rev)
 
 
-def _periods(record: DataRecord) -> list[int]:
-    frame = _snapshots(record)
-    solved = frame["snapshot"].isin(_stored(record, "p")["snapshot"])
+def _periods(rev: Revision) -> list[int]:
+    frame = _snapshots(rev)
+    solved = frame["snapshot"].isin(_stored(rev, "p")["snapshot"])
     return sorted(frame["period"][solved].unique())
 
 
 @pytest.mark.parametrize("periods", [[2040], [2030, 2050]])
-def test_dispatch_writes_the_periods_it_is_given_and_leaves_the_others(
-    periods, multi_period_record
-):
-    solved = _run(PerfectCapacityExpansion, {}, multi_period_record)
+def test_dispatch_writes_the_periods_it_is_given_and_leaves_the_others(periods, multi_period):
+    solved = _run(PerfectCapacityExpansion, {}, multi_period)
 
-    fresh = _dispatch(multi_period_record, capacity_source=solved, periods=periods)
-    again = _dispatch(solved, capacity_source=solved, periods=periods)
+    fresh = _dispatch(
+        multi_period, capacity_source=RevisionRef.from_revision(solved), periods=periods
+    )
+    again = _dispatch(solved, capacity_source=RevisionRef.from_revision(solved), periods=periods)
 
     frame = _snapshots(solved)
     elsewhere = frame["snapshot"][~frame["period"].isin(periods)]
@@ -386,22 +375,26 @@ def test_dispatch_writes_the_periods_it_is_given_and_leaves_the_others(
         (None, "no results of the periods \\[2030, 2040\\]"),
     ],
 )
-def test_dispatch_refuses_periods_its_model_or_source_lacks(periods, match, multi_period_record):
-    expanded = _run(OvernightCapacityExpansion, {}, multi_period_record)
+def test_dispatch_refuses_periods_its_model_or_source_lacks(periods, match, multi_period):
+    expanded = _run(OvernightCapacityExpansion, {}, multi_period)
     with pytest.raises(ValueError, match=match):
-        _dispatch(multi_period_record, capacity_source=expanded, periods=periods)
+        _dispatch(
+            multi_period, capacity_source=RevisionRef.from_revision(expanded), periods=periods
+        )
 
 
-def test_dispatch_refuses_periods_of_a_model_without_them(single_period_record):
+def test_dispatch_refuses_periods_of_a_model_without_them(single_period):
     with pytest.raises(ValueError, match="no investment periods to dispatch"):
-        _dispatch(single_period_record, periods=[2030])
+        _dispatch(single_period, periods=[2030])
 
 
 @pytest.mark.parametrize("period", [2030, 2050])
-def test_dispatch_runs_the_period_overnight_expansion_built_for(period, multi_period_record):
-    expanded = _run(OvernightCapacityExpansion, {"period": period}, multi_period_record)
+def test_dispatch_runs_the_period_overnight_expansion_built_for(period, multi_period):
+    expanded = _run(OvernightCapacityExpansion, {"period": period}, multi_period)
 
-    result = _dispatch(multi_period_record, capacity_source=expanded, periods=[period])
+    result = _dispatch(
+        multi_period, capacity_source=RevisionRef.from_revision(expanded), periods=[period]
+    )
 
     n = to_network(result, select={"period": [period]})
     assert _periods(result) == [period]
@@ -409,70 +402,70 @@ def test_dispatch_runs_the_period_overnight_expansion_built_for(period, multi_pe
 
 
 def test_dispatch_of_one_period_keeps_the_cohorts_myopic_expansion_built(
-    store_record, multi_period_network
+    store_revision, multi_period_network
 ):
     n = multi_period_network
     n.add("Generator", "gen-2020", bus="bus", p_nom_extendable=True, build_year=2020, lifetime=40)
-    record = store_record(n, "early-cohort")
-    expanded = _run(MyopicCapacityExpansion, {}, record)
+    rev = store_revision(n, "early-cohort")
+    expanded = _run(MyopicCapacityExpansion, {}, rev)
 
-    result = _dispatch(record, capacity_source=expanded, periods=[2050])
+    result = _dispatch(rev, capacity_source=RevisionRef.from_revision(expanded), periods=[2050])
 
     dispatch = _stored(result, "p").groupby("entity")["value"].sum().to_dict()
     expected = {"gen-2030": 200.0, "gen-2040": 0.0, "gen-2050": 200.0, "load": 400.0}
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_refuses_an_asset_its_source_decided_no_capacity_of(
-    single_period_record, store_record
-):
-    expanded = _run(OvernightCapacityExpansion, {}, single_period_record)
-    n = to_network(single_period_record)
+def test_dispatch_refuses_an_asset_its_source_decided_no_capacity_of(single_period, store_revision):
+    expanded = _run(OvernightCapacityExpansion, {}, single_period)
+    n = to_network(single_period)
     n.add("Generator", "unplanned", bus="bus", p_nom_extendable=True)
     with pytest.raises(ValueError, match="decided no capacity of {'Generator': \\['unplanned'\\]}"):
-        _dispatch(store_record(n, "unplanned"), capacity_source=expanded)
+        _dispatch(
+            store_revision(n, "unplanned"), capacity_source=RevisionRef.from_revision(expanded)
+        )
 
 
 @pytest.mark.parametrize(
-    ("record_name", "config", "shed"),
+    ("base_name", "config", "shed"),
     [
-        ("single_period_record", {}, 720.0),
-        ("single_period_record", {"time_aggregation": "agg_3h"}, 720.0),
-        ("multi_period_record", {"periods": [2050]}, 320.0),
+        ("single_period", {}, 720.0),
+        ("single_period", {"time_aggregation": "agg_3h"}, 720.0),
+        ("multi_period", {"periods": [2050]}, 320.0),
     ],
 )
 def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
-    record_name, config, shed, store_record, request
+    base_name, config, shed, store_revision, request
 ):
-    n = to_network(request.getfixturevalue(record_name))
+    n = to_network(request.getfixturevalue(base_name))
     n.generators["p_nom_extendable"] = False
     n.generators.loc[n.generators.index[0], "p_nom"] = 20.0
-    record = _run(TimePartition, CLUSTER, store_record(n, "short"))
+    rev = _run(TimePartition, CLUSTER, store_revision(n, "short"))
     with pytest.raises(SolveError, match="could not solve a window"):
-        _dispatch(record, **config)
+        _dispatch(rev, **config)
 
-    result = _dispatch(record, load_shedding={}, **config)
+    result = _dispatch(rev, load_shedding={}, **config)
 
     p = _stored(result, "p").query("entity == 'bus load shedding'")
     assert p["value"].sum() * 1e-3 == pytest.approx(shed)
 
 
-def _with_storage(record: DataRecord, store_record, component: str, **storage) -> DataRecord:
-    """Add `storage` of a `component` to the network of `record`, and cluster it by `agg_3h`."""
-    n = to_network(record)
+def _with_storage(rev: Revision, store_revision, component: str, **storage) -> Revision:
+    """Add `storage` of a `component` to the network of `rev`, and cluster it by `agg_3h`."""
+    n = to_network(rev)
     n.add(component, "storage", bus="bus", **storage)
-    return _run(TimePartition, CLUSTER, store_record(n, "storage"))
+    return _run(TimePartition, CLUSTER, store_revision(n, "storage"))
 
 
 def test_dispatch_by_a_time_aggregation_starts_its_storage_at_its_initial_state(
-    single_period_record, store_record
+    single_period, store_revision
 ):
-    record = _with_storage(single_period_record, store_record, "Store", e_nom=100.0, e_initial=60.0)
+    rev = _with_storage(single_period, store_revision, "Store", e_nom=100.0, e_initial=60.0)
     config = {"optimize_config": {"horizon": 4}, "time_aggregation": "agg_3h"}
 
-    result = _run(RollingHorizonDispatch, config, record)
+    result = _run(RollingHorizonDispatch, config, rev)
 
-    first = _snapshots(record)["snapshot"].min()
+    first = _snapshots(rev)["snapshot"].min()
     e, p = (_stored(result, name).query("entity == 'storage'") for name in ("e", "p"))
     merged = e.merge(p, on="snapshot", suffixes=("", "_p"))
     frame = merged[merged["snapshot"] == first]
@@ -481,15 +474,15 @@ def test_dispatch_by_a_time_aggregation_starts_its_storage_at_its_initial_state(
 
 
 def test_dispatch_by_a_time_aggregation_not_over_investment_periods_carries_storage_across_them(
-    multi_period_record, store_record
+    multi_period, store_revision
 ):
     storage = {"e_nom": 100.0, "e_initial": 60.0, "e_initial_per_period": True}
-    record = _with_storage(multi_period_record, store_record, "Store", **storage)
+    rev = _with_storage(multi_period, store_revision, "Store", **storage)
     config = {"optimize_config": {"horizon": 2}, "time_aggregation": "agg_3h"}
 
-    result = _run(RollingHorizonDispatch, config, record)
+    result = _run(RollingHorizonDispatch, config, rev)
 
-    frame = _snapshots(record)
+    frame = _snapshots(rev)
     e, p = (_stored(result, name).query("entity == 'storage'") for name in ("e", "p"))
     states = frame.merge(e, on="snapshot").merge(p, on="snapshot", suffixes=("", "_p"))
     opening = states[states["period"] == 2040].iloc[0]
@@ -505,12 +498,12 @@ def test_dispatch_by_a_time_aggregation_not_over_investment_periods_carries_stor
     ],
 )
 def test_dispatch_by_a_time_aggregation_refuses_storage_each_window_cycles(
-    component, storage, single_period_record, store_record
+    component, storage, single_period, store_revision
 ):
-    record = _with_storage(single_period_record, store_record, component, **storage)
+    rev = _with_storage(single_period, store_revision, component, **storage)
     config = {"optimize_config": {"horizon": 4}, "time_aggregation": "agg_3h"}
     with pytest.raises(NotImplementedError, match="each window restarts"):
-        _run(RollingHorizonDispatch, config, record)
+        _run(RollingHorizonDispatch, config, rev)
 
 
 def test_a_rolling_horizon_must_move_forward():
@@ -540,12 +533,12 @@ def test_dispatch_refuses_an_empty_list_of_periods():
 
 def test_a_wired_capacity_source_is_checked_like_any_other_setting():
     with pytest.raises(Exception, match="capacity_source"):
-        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-record"})
+        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-revision"})
 
 
 def test_a_capacity_source_can_be_given_by_its_field_name():
     # It also has a friendlier name for display, which must not stop the field itself
     # being set the ordinary way.
-    source = {"url": "somewhere", "uuid": "00000000-0000-0000-0000-000000000000"}
+    source = {"store": "somewhere", "id": "00000000-0000-0000-0000-000000000000"}
     config = RollingHorizonDispatch.merge_config({"capacity_source": source}, {})
-    assert config.capacity_source.url == "somewhere"
+    assert config.capacity_source.store == "somewhere"

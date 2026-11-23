@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, DataRecord, MantaBlock
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, MantaBlock
 
 from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import optimize_network, solve_and_write, to_network
@@ -27,6 +28,6 @@ class PerfectCapacityExpansion(MantaBlock[PerfectCapacityExpansionConfig]):
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
         return optimize_network(n, self.config.optimize_config, multi_investment_periods=True)
 
-    def run(self, record: DataRecord) -> DataRecord:
-        n = to_network(record)
-        return solve_and_write(n, record, self.optimize, self.config.time_aggregation, True)[1]
+    def run(self, base: Revision) -> Revision:
+        n = to_network(base)
+        return solve_and_write(n, base, self.optimize, self.config.time_aggregation, True)[1]

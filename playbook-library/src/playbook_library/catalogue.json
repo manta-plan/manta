@@ -677,26 +677,6 @@
     "rolling_horizon_dispatch": {
       "config_schema": {
         "$defs": {
-          "DataRecord": {
-            "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL names a\ndatarecord store, either a local directory or an `s3://` address, and the uuid\nnames one revision in that store.",
-            "properties": {
-              "url": {
-                "title": "Url",
-                "type": "string"
-              },
-              "uuid": {
-                "format": "uuid",
-                "title": "Uuid",
-                "type": "string"
-              }
-            },
-            "required": [
-              "url",
-              "uuid"
-            ],
-            "title": "DataRecord",
-            "type": "object"
-          },
           "LinopyModelSchema": {
             "additionalProperties": false,
             "properties": {
@@ -864,6 +844,26 @@
             "title": "PyPSAOptimizeRollingHorizonConfig",
             "type": "object"
           },
+          "RevisionRef": {
+            "description": "Where a block's data lives, as it travels between processes.\n\nOnly ever a pointer - never the data itself - because it is passed between\nprocesses and machines, which a loaded model could not survive. `store` names a\ndatarecord store, either a local directory or an `s3://` address, and `id` names\none revision in that store: the fields a datarecord `Revision` serialises to.",
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "title": "Id",
+                "type": "string"
+              },
+              "store": {
+                "title": "Store",
+                "type": "string"
+              }
+            },
+            "required": [
+              "store",
+              "id"
+            ],
+            "title": "RevisionRef",
+            "type": "object"
+          },
           "_PyPSAOptimizeTransmissionLossesSchema": {
             "additionalProperties": false,
             "properties": {
@@ -913,7 +913,7 @@
           "capacity_source": {
             "anyOf": [
               {
-                "$ref": "#/$defs/DataRecord"
+                "$ref": "#/$defs/RevisionRef"
               },
               {
                 "type": "null"
