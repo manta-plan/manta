@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { LuListFilter, LuX } from "react-icons/lu";
 import { useProjectStore } from "../../project/store/project-store";
 import { statusOptions } from "../status";

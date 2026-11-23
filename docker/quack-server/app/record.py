@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 """Expose a datarecord revision as named views in a catalog of its own."""
 
 from __future__ import annotations

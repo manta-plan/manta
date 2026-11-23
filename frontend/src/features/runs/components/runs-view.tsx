@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect } from "react";
 import { useParams } from "wouter";
 import { useSessionUser } from "../../auth/session";

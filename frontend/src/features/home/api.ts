@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { deleteRequest, getJson, patchJson, postJson } from "../../api/manta";
 import type { CreateProjectResponse } from "../runs/types";
 

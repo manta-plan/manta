@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useMemo, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { LuArrowDown, LuArrowUp, LuFilter } from "react-icons/lu";

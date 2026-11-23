@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { AddButton, FilterButton } from "../../project/components/sidebar-actions";
 import { useProjectStore } from "../../project/store/project-store";
 import { useRunsStore } from "../store/runs-store";

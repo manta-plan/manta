@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { LuDatabase, LuFolder } from "react-icons/lu";
 import type { ComponentType } from "react";
 import type { IconType } from "react-icons";

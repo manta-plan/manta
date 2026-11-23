@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Dummy result values shared by the built-in widgets and the custom
 // widget's result tables, so a custom copy of a built-in shows the same
 // numbers. Fixed placeholders, not solver output.

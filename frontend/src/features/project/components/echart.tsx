@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useId, useRef } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";

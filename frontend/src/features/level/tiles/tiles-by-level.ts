@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { Level } from "../level";
 import { capacityUnit, formatMega, formatNumber, formatPercent, plural } from "./format";
 import type { Group, TileInputs, TileResults } from "./tile-queries";

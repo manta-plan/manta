@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { ApiError, getJson, postJson } from "../../api/manta";
 import type { PlaybookConfig } from "../../utils/playbookTypes";
 import type {

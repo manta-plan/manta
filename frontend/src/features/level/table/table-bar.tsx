@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { ReactNode } from "react";
 import { LuFilter, LuMap, LuMapPin, LuX } from "react-icons/lu";
 import { useLevelStore } from "../level-store";

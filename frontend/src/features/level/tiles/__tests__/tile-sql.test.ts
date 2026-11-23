@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { afterEach, describe, expect, it } from "vitest";
 import { setRecordCatalog } from "../../../project/lib/record-server/client";
 import { ALL_ENTITIES, ALL_LOCATIONS, type Level } from "../../level";

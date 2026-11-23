@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useCallback } from "react";
 import { formatNumber } from "../../project/lib/record-format";
 import { useProjectStore } from "../../project/store/project-store";

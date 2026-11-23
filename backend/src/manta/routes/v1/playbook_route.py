@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from fastapi import APIRouter, Depends, Security
 
 from manta.routes.v1.requests.playbook_request import ValidatePlaybookConfigRequest

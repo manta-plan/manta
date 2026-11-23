@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { CSSProperties } from "react";
 import type { TreeNode } from "./tree-nodes";
 import { SidebarSkeletonBlock } from "../../../components/widget-states";

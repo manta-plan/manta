@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import { useChartHeight } from "./use-chart-height";
 import { formatNumber, timeLabel } from "./spec";

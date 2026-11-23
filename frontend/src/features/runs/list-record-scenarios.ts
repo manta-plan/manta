@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { Revision } from "../project/lib/record-server/types";
 
 /** The record's scenarios, parents first, so a scenario follows the one it starts from. */

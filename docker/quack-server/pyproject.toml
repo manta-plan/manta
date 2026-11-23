@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 [project]
 name = "manta-record-server"
 version = "0.1.0"

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useLevelPage } from "../level-page-context";
 import { useLevelStore } from "../level-store";
 import { Tile } from "./tile";

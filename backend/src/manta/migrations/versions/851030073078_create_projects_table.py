@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 """create projects table
 
 Revision ID: 851030073078

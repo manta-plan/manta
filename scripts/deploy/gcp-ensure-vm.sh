@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 # Prepares the hosting project and makes sure the VM exists and is running.
 # Every step skips what is already there, so this is safe to re-run.
 #

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Minimal WKT parsing for the two geometry shapes topology.json actually
 // contains (LINESTRING for backdrop lines/links/transformers) — not a
 // general WKT library, just enough for this dataset.

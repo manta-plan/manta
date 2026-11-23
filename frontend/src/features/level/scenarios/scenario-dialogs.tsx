@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { DraftChangeDialog } from "./draft-change-dialog";
 import { DraftEntityDialog } from "./draft-entity-dialog";
 import { DraftScenarioDialog } from "./draft-scenario-dialog";

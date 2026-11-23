@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { ECharts } from "echarts";
 
 // One value scale for the charts of a comparison: each chart reports the

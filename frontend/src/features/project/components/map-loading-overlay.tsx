@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Shown over the map while the basemap style/tiles are still loading, so
 // the first paint is an on-brand wave rather than a blank/white flash.
 function WaveTile({ className }: { className: string }) {

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace

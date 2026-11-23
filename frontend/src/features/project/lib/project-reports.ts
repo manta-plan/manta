@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { Report } from "../data/reports";
 
 const PROJECT_REPORTS_STORAGE_KEY = "manta-project-reports-v1";

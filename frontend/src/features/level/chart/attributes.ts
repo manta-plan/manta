@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { Manifest } from "../../project/lib/record-server/types";
 import type { LevelQueryScope } from "../level-sql";
 import type { PickedSeries } from "../level-store";

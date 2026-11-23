@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # Build-context allowlist for images built from the repo root
 # (docker/block-image.Dockerfile and docker/runner-image.Dockerfile): everything is
 # excluded except the packages those images install, so local venvs, the

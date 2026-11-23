@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useProjectStore } from "../../project/store/project-store";
 import { useShownDraft } from "../../project/lib/use-shown-draft";
 

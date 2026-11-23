@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState } from "react";
 import { LuCheck, LuCopy } from "react-icons/lu";
 import { toChangeSet } from "../../project/lib/draft-scenarios";

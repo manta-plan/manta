@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { create } from "zustand";
 import type { ExpandableBlock } from "./fullscreen/fullscreen-context";
 

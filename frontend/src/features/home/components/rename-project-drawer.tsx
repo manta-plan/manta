@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState } from "react";
 import { LuFolderPen, LuX } from "react-icons/lu";
 import { updateProject } from "../api";

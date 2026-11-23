@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Tooltip } from "@base-ui/react/tooltip";
 import { LuListFilter, LuPlus } from "react-icons/lu";
 

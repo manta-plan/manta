@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useShownData } from "../../project/lib/record-data";
 import type { DraftChangeTarget } from "../../project/lib/draft-scenarios";
 import type { Level } from "../level";

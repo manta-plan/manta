@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { StyleSpecification } from "maplibre-gl";
 import type { BasemapId } from "../../../project/store/types";
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { createContext, useCallback, useContext, useState } from "react";
 import { DUMMY_RESULT_RUNS } from "../data/inspect-results";
 import type { WidgetData, WidgetDataCell } from "./widget-data";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { LuWifi, LuWifiOff, LuLoaderCircle, LuCloud, LuCircleUser } from "react-icons/lu";
 import { useSessionUser } from "../../auth/session";
 import { useAppStore } from "../../home/store";

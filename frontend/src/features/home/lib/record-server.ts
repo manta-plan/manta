@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // The record server serves datarecord stores that an admin uploads to its
 // bucket. Only its catalogue is read here: the list of records a project can
 // be created from.

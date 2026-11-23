@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { create } from "zustand";
 import { removeProjectInspections } from "../project/lib/project-inspections";
 import { removeProjectReports } from "../project/lib/project-reports";

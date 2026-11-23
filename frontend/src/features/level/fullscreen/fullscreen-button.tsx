@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { LuMaximize2, LuMinimize2 } from "react-icons/lu";
 import { useLevelStore } from "../level-store";
 import { useInFullscreen, type ExpandableBlock } from "./fullscreen-context";

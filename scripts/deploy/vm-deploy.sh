@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 # Runs on the VM as root: checks out a commit and (re)starts the whole stack
 # from docker/compose-dev-fullstack.yaml, with the frontend on port 80 and the
 # temporary record server (quack-server) behind it.

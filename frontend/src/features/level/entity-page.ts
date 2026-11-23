@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // One entity's page id, where an inspection's would go (the level page reads it).
 
 // ------------------------------------------------------------ Page ids

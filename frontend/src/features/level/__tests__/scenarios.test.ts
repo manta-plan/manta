@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyChanges,

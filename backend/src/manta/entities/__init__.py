@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from manta.entities.base import Base
 from manta.entities.project import Project
 from manta.entities.run import Run

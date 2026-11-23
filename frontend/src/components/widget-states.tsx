@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { CSSProperties, ReactNode } from "react";
 import { LuMapPinOff, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import { skeletonWidth } from "../features/project/lib/skeleton";

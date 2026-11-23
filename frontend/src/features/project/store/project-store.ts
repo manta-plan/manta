@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { create } from "zustand";
 import { useAppStore } from "../../home/store";
 import type { ProjectState } from "./types";

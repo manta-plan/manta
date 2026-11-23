@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { NodeApi } from "react-arborist";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 

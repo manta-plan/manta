@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Dummy pre-configured report widgets — stands in for a future
 // "add/configure widget" builder wired to real run output. Each Report owns
 // its own widgets array (see Report.widgets in reports.ts); these arrays are

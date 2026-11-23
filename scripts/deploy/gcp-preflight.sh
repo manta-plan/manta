@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 # Lists which of the permissions a deployment needs the current identity is
 # missing, in the hosting project and in the load balancer project. Changes
 # nothing, so it is safe to run at any time, also locally:

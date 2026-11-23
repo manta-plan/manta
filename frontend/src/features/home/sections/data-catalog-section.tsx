@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { LuDatabase } from "react-icons/lu";
 import { useRecordCatalogue } from "../lib/use-record-catalogue";
 import type { RecordSummary } from "../lib/record-server";

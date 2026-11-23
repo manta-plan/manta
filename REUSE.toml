@@ -1,0 +1,54 @@
+version = 1
+SPDX-PackageName = "Manta"
+SPDX-PackageSupplier = "Manta contributors"
+SPDX-PackageDownloadLocation = "https://github.com/manta-plan/manta"
+
+[[annotations]]
+path = ["**/uv.lock", "**/pixi.lock", "frontend/pnpm-lock.yaml"]
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = [
+    "frontend/.oxfmtrc.json",
+    "frontend/.oxlintrc.json",
+    "frontend/tsconfig*.json",
+    "docker/conf/*.json",
+]
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = [
+    "frontend/package.json",
+    "docs/reference/backend/openapi.json",
+    "playbook/src/playbook/playbooks/playbook.schema.json",
+    "playbook-library/src/playbook_library/catalogue.json",
+]
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["frontend/public/*.jpg", "frontend/public/*.png", "frontend/src/assets/*.png"]
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = "frontend/src/assets/lottie/*.json"
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = "frontend/src/features/playbook-config/__fixtures__/*.json"
+SPDX-FileCopyrightText = ["2026 Manta contributors", "2026 Manta Blocks contributors"]
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = "graphify-out/**"
+SPDX-FileCopyrightText = "2026 Manta contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = ".github/pull_request_template.md"
+SPDX-FileCopyrightText = "Manta contributors"
+SPDX-License-Identifier = "CC-BY-4.0"

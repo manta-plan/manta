@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState, type FormEvent } from "react";
 import { FiLoader } from "react-icons/fi";
 import { LuHistory, LuPlus, LuX } from "react-icons/lu";

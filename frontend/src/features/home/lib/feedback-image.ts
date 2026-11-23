@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Screenshot attachments for the feedback form. The sheet's Apps Script
 // accepts PNG, JPEG, WebP or GIF up to 5 MB (see its doPost); anything
 // larger is re-encoded here first, since full-screen retina PNGs routinely

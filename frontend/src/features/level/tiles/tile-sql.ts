@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { serverName, sqlString } from "../../project/lib/record-server/client";
 import { levelFilter, type Level } from "../level";
 import { levelCtes, spanCondition, type LevelQueryScope } from "../level-sql";

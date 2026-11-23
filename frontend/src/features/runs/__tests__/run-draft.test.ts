@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { describe, expect, it } from "vitest";
 import fixture from "../../playbook-config/__fixtures__/cluster-expand-dispatch.json";
 import { setAtPath } from "../../playbook-config/conditions";

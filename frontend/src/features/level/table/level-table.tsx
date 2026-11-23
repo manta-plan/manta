@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useMemo } from "react";
 import { useShownData } from "../../project/lib/record-data";
 import type { LoadedRecord } from "../../project/store/types";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, type ReactNode } from "react";
 import { useLocation, useParams } from "wouter";
 import { getActiveProjectTab } from "../lib/project-route";

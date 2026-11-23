@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Menu } from "@base-ui/react/menu";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { Tooltip } from "@base-ui/react/tooltip";

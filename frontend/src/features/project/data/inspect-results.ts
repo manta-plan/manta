@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { Run } from "./runs";
 
 // The inspection flow is fully dummy for the demo: it picks from these

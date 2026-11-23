@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import type { BlockConfigSchema, PlaybookStep } from "../../utils/playbookTypes";
 import { exactlyOneErrors, exactlyOneOf } from "./exclusiveSettings";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { createContext, useContext } from "react";
 import type { InspectResult } from "../project/lib/record-results";
 import type { Level } from "./level";

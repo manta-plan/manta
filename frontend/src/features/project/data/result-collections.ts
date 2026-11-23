@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Dummy per-run result tables for the Result Inspector — stands in for the
 // real solver output tables a succeeded run would produce. Each collection
 // is one selectable "table" in the collection switcher.

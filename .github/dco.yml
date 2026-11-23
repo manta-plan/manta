@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # configuration file for https://github.com/dcoapp/app
 
 allowRemediationCommits:

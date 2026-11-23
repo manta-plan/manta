@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation, useParams } from "wouter";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { PointerEventHandler, ReactNode } from "react";
 import type { IconType } from "react-icons";
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { FieldError } from "../features/playbook-config/validation";
 import type { ResolvedSchema, SchemaGroup } from "./jsonSchema";
 import type { BlockConfigSchema, Defs, JsonSchemaProperty } from "./playbookTypes";

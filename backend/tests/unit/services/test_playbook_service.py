@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 import pytest
 from fastapi import HTTPException
 from playbook.playbooks.yaml_io import parse_doc

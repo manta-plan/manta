@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
 import type { LngLat } from "./map-geo";

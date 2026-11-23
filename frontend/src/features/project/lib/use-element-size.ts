@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useRef, useState } from "react";
 
 export function useElementSize<T extends HTMLElement>() {

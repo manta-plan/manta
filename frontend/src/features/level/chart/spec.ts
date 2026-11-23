@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // What the chart drawer draws, whatever it charts: a time series over the
 // window (lines, stacked areas, or a distribution band), a duration curve,
 // or bars. Statistics and attributes both end in one of these; SpecChart

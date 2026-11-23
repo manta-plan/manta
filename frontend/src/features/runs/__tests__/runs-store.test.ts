@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../../playbook-config/__fixtures__/cluster-expand-dispatch.json";
 import type { PlaybookDetail } from "../../../utils/playbookTypes";

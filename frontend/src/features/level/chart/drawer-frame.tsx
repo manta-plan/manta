@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Segmented } from "../../../components/segmented";
 import { FullscreenButton } from "../fullscreen/fullscreen-button";
 import type { ReactNode } from "react";

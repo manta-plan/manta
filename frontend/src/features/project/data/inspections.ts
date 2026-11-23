@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { InspectFilters } from "../lib/inspect-filters";
 import type { WidgetSetItem } from "../lib/widget-sets";
 

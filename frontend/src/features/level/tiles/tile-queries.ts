@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useShownData, type ShownData } from "../../project/lib/record-data";
 import { serverQuery } from "../../project/lib/record-server/client";
 import { scopeKey, type LevelQueryScope } from "../level-sql";

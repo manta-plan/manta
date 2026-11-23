@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { Menubar } from "@base-ui/react/menubar";

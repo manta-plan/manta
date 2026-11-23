@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useProjectStore } from "../store/project-store";
 import { defaultQuery } from "./custom-query";
 import { newCustomItem, type CustomItem } from "./widget-sets";

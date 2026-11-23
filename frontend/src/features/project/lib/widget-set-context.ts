@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { createContext, useContext, useEffect, type RefObject } from "react";
 import type { WidgetSetItem } from "./widget-sets";
 

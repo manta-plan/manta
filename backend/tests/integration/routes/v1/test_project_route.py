@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4

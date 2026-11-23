@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
 import { useAppStore } from "../../home/store";

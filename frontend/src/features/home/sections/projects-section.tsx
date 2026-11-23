@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState } from "react";
 import { LuEllipsis, LuFolder, LuFolderPlus, LuPencil, LuTrash2 } from "react-icons/lu";
 import { Menu } from "@base-ui/react/menu";

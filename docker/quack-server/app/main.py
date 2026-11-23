@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 """FastAPI front for the record server.
 
 Quack listens on localhost only. This app is what the browser talks to:

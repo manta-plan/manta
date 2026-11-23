@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // Decorative, non-interactive wash for otherwise-empty background space on
 // the landing page — soft blurred glows in the brand's primary / secondary
 // / accent colors, anchored to corners at low opacity so the palette shows

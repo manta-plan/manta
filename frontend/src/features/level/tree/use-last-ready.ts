@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import type { ShownData } from "../../project/lib/record-data";
 

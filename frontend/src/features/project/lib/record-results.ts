@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { isRunResult } from "./record-scenarios";
 import type { RecordInfo } from "./record-server/types";
 

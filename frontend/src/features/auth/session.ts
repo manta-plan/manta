@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useSyncExternalStore } from "react";
 
 import type { RefreshResponse, TokenResponse } from "./types";

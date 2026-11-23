@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 export type TokenResponse = {
   access_token: string;
   token_type: "bearer";

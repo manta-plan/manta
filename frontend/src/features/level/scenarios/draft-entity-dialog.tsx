@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { LuPlus, LuX } from "react-icons/lu";

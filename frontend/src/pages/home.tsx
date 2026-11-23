@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useLocation } from "wouter";
 import { HomeLayout } from "../features/home/components/home-layout";
 import { getHomeRoute } from "../features/home/routes";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { createContext, useContext } from "react";
 
 /** The blocks of a level page that open full screen. */

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useCallback } from "react";
 import { useLocation, useParams } from "wouter";
 import { getActiveProjectTab, projectRecordPageHref } from "./project-route";

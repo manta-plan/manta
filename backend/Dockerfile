@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
 
 FROM python:3.14-slim
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 """Example data for local development and the integration tests.
 
 TODO: temporary, until projects can get real data in some other way. It is deliberately

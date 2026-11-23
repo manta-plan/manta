@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from typing import Any
 
 from playbook.playbooks import PlaybookIssueKind

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useCallback, useState } from "react";
 
 // Hidden columns, remembered by header across levels in this browser.

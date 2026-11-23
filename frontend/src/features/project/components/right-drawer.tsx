@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import clsx from "clsx";
 import type { IconType } from "react-icons";
 import {

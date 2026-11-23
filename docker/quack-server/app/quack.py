@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 """Run DuckDB's Quack server inside this process, restricted to read-only queries.
 
 Quack hands every client the full SQL surface of the server. Two guards:

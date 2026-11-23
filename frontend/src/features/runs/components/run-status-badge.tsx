@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { formatRunStatus, getStatusBadgeMeta } from "../status";
 import type { RunStatus } from "../types";
 

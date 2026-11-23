@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Manta contributors
+
+SPDX-License-Identifier: MIT
+-->
+
 # How the record server exposes a record over SQL
 
 As of 2026-10-30 (records and catalogs updated the same day). A proposal, open to change: nothing outside this repo

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # The whole app: the frontend (frontend/Dockerfile) on top of everything in
 # compose-dev-backend.yaml (the backend plus every service in
 # compose-dev-services.yaml).

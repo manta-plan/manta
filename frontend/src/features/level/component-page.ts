@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 // A component type's page id (Generator, or one carrier of it: Generator ›
 // Solar), and what each type shows: its capacity attribute and output.
 

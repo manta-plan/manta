@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useChartHeight } from "./use-chart-height";
 import type { ReactNode } from "react";
 import { Select } from "@base-ui/react/select";

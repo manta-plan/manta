@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Button } from "@base-ui/react/button";
 import { Fragment } from "react";
 import { FiChevronDown } from "react-icons/fi";

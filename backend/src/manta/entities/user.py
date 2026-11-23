@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped
 

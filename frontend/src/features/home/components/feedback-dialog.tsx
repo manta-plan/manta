@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation } from "wouter";

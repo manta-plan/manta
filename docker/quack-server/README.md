@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Manta contributors
+
+SPDX-License-Identifier: MIT
+-->
+
 # Record server (temporary)
 
 > **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Build / Inspect / Analyse tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, 8010; token `QUACK_TOKEN`, `devtoken`; both set in `backend/.env`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.

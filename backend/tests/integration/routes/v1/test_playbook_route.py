@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 import httpx2
 from keycloak.openid_connection import KeycloakOpenID
 from playbook_library import library_catalogue

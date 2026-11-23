@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { driver, type DriveStep } from "driver.js";
 
 function startAfterRender(steps: DriveStep[]) {

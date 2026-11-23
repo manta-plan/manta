@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { ProjectStoreSet, BasemapId, CursorPosition, ToolId, ViewState } from "../types";
 
 // The theme the home store keeps (features/home/store.ts); the vector basemap

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { LuBoxes, LuHistory, LuLayers, LuPlus } from "react-icons/lu";

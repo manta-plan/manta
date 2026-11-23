@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { INITIAL_RUNS, type Run } from "../data/runs";
 
 const PROJECT_RUNS_STORAGE_KEY = "manta-project-runs-v1";

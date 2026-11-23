@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useMemo } from "react";
 import { useLevelPage } from "../../level-page-context";
 import { useBranches, useBuses, type BusRow } from "../map-graph-data";

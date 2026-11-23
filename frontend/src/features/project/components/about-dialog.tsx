@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Dialog } from "@base-ui/react/dialog";
 import { LuX } from "react-icons/lu";
 import { MantaLogo } from "../../home/components/manta-logo";

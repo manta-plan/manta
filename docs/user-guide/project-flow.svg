@@ -1,3 +1,7 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
 <svg class="mpf" viewBox="0 0 1180 400" width="100%" role="img" aria-labelledby="mpf-title mpf-desc" xmlns="http://www.w3.org/2000/svg">
   <title id="mpf-title">How a project moves through Manta</title>
   <desc id="mpf-desc">Seven stages run left to right: sign in, project, bring in a model, model, run, inspect and report. Underneath, the project's data record grows in layers: a model layer, scenario patch layers, a result layer per block and a final result layer. Bringing in a model adds the model layer. The Model stage adds the patch layers and reads the layers below. The Run stage reads the scenario, adds a result layer per block and adds the final result layer. Inspect and Report read the final result layer.</desc>

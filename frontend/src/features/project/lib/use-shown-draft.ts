@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { useProjectStore } from "../store/project-store";

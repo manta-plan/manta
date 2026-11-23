@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState } from "react";
 import { getRecordCatalogue } from "./record-server";
 import type { RecordCatalogue } from "./record-server";

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Text, func

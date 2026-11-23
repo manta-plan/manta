@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { serverName, serverQuery, sqlString } from "../../project/lib/record-server/client";
 import { entitiesSql } from "../level-sql";
 

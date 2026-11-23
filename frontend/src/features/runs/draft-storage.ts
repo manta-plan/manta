@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import type { RunDraft } from "./types";
 
 // Drafts by project, so a reload keeps them. localStorage can throw or be empty (private

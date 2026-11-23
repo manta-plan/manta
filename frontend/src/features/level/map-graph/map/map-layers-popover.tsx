@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { Popover } from "@base-ui/react/popover";
 import { useState, type ReactNode } from "react";
 import { LuLayers } from "react-icons/lu";

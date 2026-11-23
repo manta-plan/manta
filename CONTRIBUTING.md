@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Manta contributors
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 # Contributing to Manta
 
 Manta is a monorepo containing a Python backend (`backend/`), a Javascript
@@ -55,6 +60,22 @@ states. Add the trailer when you commit with `git commit -s`, or add it to an
 existing commit with `git commit --amend -s`. A
 [GitHub check](https://github.com/dcoapp/app) enforces this on every PR. To
 sign off an open PR, you can add an empty commit with just the trailer.
+
+### Licence headers
+
+Manta follows the [REUSE specification](https://reuse.software/spec-3.3/), and
+CI checks it on every PR. Every new file needs an SPDX header with its
+copyright holder and licence. Code and configuration use MIT, and documentation
+prose uses CC-BY-4.0. Add the header with
+[`reuse annotate`](https://reuse.readthedocs.io/en/stable/man/reuse-annotate.html):
+
+```sh
+uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --year 2026 --license MIT <file>
+```
+
+A file that cannot take a comment, such as JSON, an image or a lock file,
+needs an entry in `REUSE.toml` instead. Check the whole repository with
+`uvx --from 'reuse[charset-normalizer]' reuse lint`.
 <!-- --8<-- [end:docs-general] -->
 
 ## Backend (Python)

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
 # Runs on the VM as root: installs what a deployment needs, which is only
 # Docker (with Compose) and git, since the whole stack runs in containers.
 # Safe to re-run; the deploy workflow runs it before every deployment, so a

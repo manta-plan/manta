@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { createContext, useContext } from "react";
 
 // Shared filters for the inspection page: one set of bus, snapshot and

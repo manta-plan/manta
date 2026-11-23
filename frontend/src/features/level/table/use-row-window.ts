@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState, type RefObject } from "react";
 
 // Which rows of a long table are in view: only those (and a few around them)
