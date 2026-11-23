@@ -1,5 +1,4 @@
 import { busLabel, entityLabel } from "../../project/lib/record-format";
-import { zoneLevels } from "../../project/lib/record-geo";
 import type { LoadedRecord } from "../../project/store/types";
 import { ALL_ENTITIES, ALL_LOCATIONS, type Level } from "../level";
 import {
@@ -20,6 +19,18 @@ import {
 // then it holds placeholder children (skeleton rows), so the tree can show
 // it as openable. A node lists at most LEAF_CAP entities, then a row saying
 // how many more the table has.
+
+// The zone levels worth offering: those that actually group locations
+// (busmap_all keeps one zone per location, which is just nodal).
+function zoneLevels(record: LoadedRecord): { level: string; zones: number }[] {
+  const zonesByLevel = new Map<string, Set<string>>();
+  for (const { level, zone } of record.zones)
+    zonesByLevel.set(level, (zonesByLevel.get(level) ?? new Set()).add(zone));
+  return [...zonesByLevel]
+    .map(([level, zones]) => ({ level, zones: zones.size }))
+    .filter(({ zones }) => zones < record.locations.length)
+    .sort((a, b) => a.zones - b.zones);
+}
 
 export type TreeNodeKind =
   | "category"

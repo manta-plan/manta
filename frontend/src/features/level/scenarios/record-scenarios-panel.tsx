@@ -19,7 +19,7 @@ import { isRunResult, runResultsOf, shortLabel } from "../../project/lib/record-
 import { skeletonWidth } from "../../project/lib/skeleton";
 import { useProjectStore } from "../../project/store/project-store";
 import { SidebarEmptyState } from "../../project/components/sidebar-empty-state";
-import { ConfirmDialog } from "../../home/components/confirm-dialog";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 import {
   describeNewEntity,
   describeOp,
@@ -77,7 +77,7 @@ export function RecordScenariosPanel({
   const record = useProjectStore((s) => s.record);
   const drafts = useRecordDrafts();
   const shownDraft = useShownDraft();
-  const tableDrawer = useProjectStore((s) => s.tableDrawer);
+  const shownChange = useProjectStore((s) => s.scenarioChange);
   const openScenarioChange = useProjectStore((s) => s.openScenarioChange);
   const showScenario = useProjectStore((s) => s.showScenario);
   const switchingScenario = useProjectStore((s) => s.switchingScenario);
@@ -210,9 +210,8 @@ export function RecordScenariosPanel({
                 changes.map((change) => {
                   const spec = info.manifest.attributes[change.attribute];
                   const isSelected =
-                    tableDrawer?.kind === "scenario-change" &&
-                    tableDrawer.scenario === scenario.name &&
-                    tableDrawer.attribute === change.attribute;
+                    shownChange?.scenario === scenario.name &&
+                    shownChange.attribute === change.attribute;
                   const noun =
                     change.dim === "bus"
                       ? change.subjects === 1

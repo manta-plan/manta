@@ -7,7 +7,7 @@ import { deleteProject, listProjects } from "../api";
 import { useAppStore } from "../store";
 import { HomeSectionFrame } from "../components/home-primitives";
 import { SectionHeader } from "../components/section-header";
-import { ConfirmDialog } from "../components/confirm-dialog";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 
 export function ProjectsSection() {
   const projects = useAppStore((s) => s.projects);

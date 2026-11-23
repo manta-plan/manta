@@ -57,15 +57,3 @@ export function formatValue(
 export function formatRatio(ratio: number | null): string {
   return ratio === null || !Number.isFinite(ratio) ? "—" : `×${Number(ratio.toPrecision(3))}`;
 }
-
-export function formatTimestamp(value: unknown): string {
-  if (typeof value === "number")
-    return new Date(value).toISOString().slice(0, 16).replace("T", " ").replace(" 00:00", "");
-  return String(value ?? "—");
-}
-
-export function formatCapacity(megawatts: number, unit = "MW"): string {
-  if (Math.abs(megawatts) >= 1000)
-    return `${formatNumber(Math.round(megawatts / 100) / 10)} G${unit.slice(1)}`;
-  return `${formatNumber(Math.round(megawatts))} ${unit}`;
-}

@@ -13,7 +13,7 @@ import {
 import { useInputData } from "../../project/lib/record-data";
 import { useShownDraft } from "../../project/lib/use-shown-draft";
 import { useProjectStore } from "../../project/store/project-store";
-import { FormSelect } from "../../home/components/form-select";
+import { FormSelect } from "../../../components/form-select";
 import {
   DialogShell,
   Field,

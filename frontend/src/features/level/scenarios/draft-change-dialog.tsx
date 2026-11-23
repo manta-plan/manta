@@ -22,7 +22,7 @@ import { loadMatches } from "./change-sql";
 import { opWords, plural } from "./change-wording";
 import { ChangeDialogShell } from "./change-dialog-shell";
 import { DEFAULT_CTYPE, levelFilterTarget } from "./level-target";
-import { FormSelect } from "../../home/components/form-select";
+import { FormSelect } from "../../../components/form-select";
 import { Field, INPUT_CLASS, PRIMARY_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from "./dialog-parts";
 
 // One change of a draft scenario: an attribute, for one entity or every

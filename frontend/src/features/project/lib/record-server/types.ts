@@ -117,22 +117,6 @@ export interface LocationZone {
   zone: string;
 }
 
-// One input → output pair of a line, link or transformer between two locations.
-export interface Branch {
-  entity: string;
-  ctype: string;
-  carrier: string | null;
-  location0: string;
-  location1: string;
-}
-
-export interface Region {
-  entity: string;
-  bus: string | null;
-  location: string | null;
-  wkt: string;
-}
-
 export interface EntityListItem {
   entity: string;
   // Where it is: its bus's location, a branch's input location, or a Shape's.
@@ -173,67 +157,9 @@ export interface EntityDetail {
   attributes: EntityAttribute[];
 }
 
-export interface SeriesPoint {
-  snapshot: number;
-  period: number | null;
-  timestep: string | null;
-  value: number | null;
-}
-
-export interface DimensionLabel {
-  // DuckDB's text for the label: unique even for a struct label such as a
-  // connection's {entity, bus}, and what getLabelDetail matches on.
-  label: string;
-  value: unknown;
-  properties: Record<string, unknown>;
-}
-
 export interface LabelDetail {
   dim: string;
   label: string;
   properties: Record<string, unknown>;
   attributes: EntityAttribute[];
-}
-
-// One stored attribute value of one entity, for the entity table.
-export interface EntityValue {
-  entity: string;
-  attribute: string;
-  bus: string | null;
-  constant: string | null;
-  seriesRows: number;
-}
-
-export interface GraphBus {
-  bus: string;
-  carrier: string;
-  location: string;
-}
-
-export interface GraphAttached {
-  entity: string;
-  ctype: string;
-  carrier: string | null;
-  bus: string;
-  // p_nom (e_nom for stores) when stored as a constant.
-  capacity: number | null;
-}
-
-export interface GraphBranch {
-  entity: string;
-  ctype: string;
-  carrier: string | null;
-  bus0: string;
-  bus1: string;
-  location0: string;
-  location1: string;
-  scope: "within" | "between" | "virtual";
-  // p_nom for links, s_nom for lines and transformers, when stored.
-  capacity: number | null;
-}
-
-export interface LocationGraphRows {
-  buses: GraphBus[];
-  attached: GraphAttached[];
-  branches: GraphBranch[];
 }

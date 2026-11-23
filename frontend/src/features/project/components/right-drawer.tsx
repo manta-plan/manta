@@ -1,19 +1,8 @@
 import clsx from "clsx";
 import type { IconType } from "react-icons";
-import {
-  LuX,
-  LuShare2,
-  LuCopy,
-  LuMail,
-  LuLink,
-  LuGlobe,
-  LuLock,
-  LuDownload,
-  LuLayers,
-} from "react-icons/lu";
+import { LuX, LuShare2, LuCopy, LuMail, LuLink, LuGlobe, LuLock, LuDownload } from "react-icons/lu";
 import { useProjectStore, type UtilityDrawerFlow } from "../store/project-store";
 import { AiChatView } from "./ai-chat-view";
-import { MapLayersPanel } from "./map-layers-panel";
 import { RaiAnimated } from "./rai-mascot";
 
 // Rai idles once each time the drawer opens.
@@ -96,11 +85,10 @@ function SharePanel() {
   );
 }
 
+// The right drawer: Rai and Share, anchored to the right edge.
 export function RightDrawer() {
   const utilityDrawerFlow = useProjectStore((s) => s.utilityDrawerFlow);
   const closeUtilityDrawer = useProjectStore((s) => s.closeUtilityDrawer);
-  const isMapLayersDrawerOpen = useProjectStore((s) => s.isMapLayersDrawerOpen);
-  const toggleMapLayersDrawer = useProjectStore((s) => s.toggleMapLayersDrawer);
 
   const isUtilityOpen = utilityDrawerFlow !== null;
   const utilityMeta = utilityDrawerFlow ? UTILITY_META[utilityDrawerFlow] : null;
@@ -108,35 +96,6 @@ export function RightDrawer() {
 
   return (
     <>
-      {/* Layer 2 (detail): page-specific panels. Only the map layers for now;
-          the widget and run node config forms arrive with their tabs. Stacks
-          just inside layer 1 when it's open, otherwise hugs the right edge. */}
-      <aside
-        className={clsx(
-          "absolute top-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-all duration-200 ease-out",
-          isUtilityOpen ? "right-72" : "right-0",
-          isMapLayersDrawerOpen
-            ? "translate-x-0 pointer-events-auto"
-            : "translate-x-full pointer-events-none",
-        )}
-      >
-        <div className="border-surface-600/60 flex h-8 shrink-0 items-center justify-between border-b px-3">
-          <div className="text-surface-200 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-            <LuLayers size={12} />
-            Layers
-          </div>
-          <button
-            onClick={toggleMapLayersDrawer}
-            className="text-surface-400 hover:text-surface-100 outline-none"
-          >
-            <LuX size={14} />
-          </button>
-        </div>
-        {isMapLayersDrawerOpen && <MapLayersPanel />}
-      </aside>
-
-      {/* Layer 1 (utility): AI chat, share. Always anchored to the true
-          right edge, independent of whether the detail layer is open. */}
       <aside
         className={clsx(
           "absolute top-0 right-0 z-20 flex h-full w-72 flex-col border-l border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-transform duration-200 ease-out",

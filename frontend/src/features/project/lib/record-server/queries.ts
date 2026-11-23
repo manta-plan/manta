@@ -1,27 +1,20 @@
 import { fetchApi, recordCatalog, serverName, serverQuery, sqlName, sqlString } from "./client";
 import type {
   AttributeSpec,
-  Branch,
   Carrier,
-  DimensionLabel,
   EntityAttribute,
   EntityConnection,
   EntityCount,
   EntityDetail,
-  EntityListItem,
   EntityPlace,
-  EntityValue,
   LabelDetail,
   Location,
-  LocationGraphRows,
   LocationZone,
   Manifest,
   RecordInfo,
-  Region,
   ScenarioChange,
   ScenarioChangeSummary,
   ScenarioChangeValue,
-  SeriesPoint,
 } from "./types";
 
 // Typed reads of the record, in the active scenario's catalog (serverName).
@@ -53,33 +46,6 @@ export function getLocations(): Promise<Location[]> {
 
 export function getLocationZones(): Promise<LocationZone[]> {
   return serverQuery<LocationZone>(`FROM ${serverName("manta.location_zones")}`);
-}
-
-// What the map draws: branches whose ends are at two different real locations.
-export function getMapBranches(): Promise<Branch[]> {
-  return serverQuery<Branch>(
-    `SELECT DISTINCT entity, ctype, carrier, location0, location1 FROM ${serverName("manta.branches")} WHERE scope = 'between'`,
-  );
-}
-
-export function getRegions(): Promise<Region[]> {
-  return serverQuery<Region>(
-    `SELECT entity, bus, location, wkt FROM ${serverName("manta.regions")}`,
-  );
-}
-
-export function getEntities(ctype: string, carrier: string | null): Promise<EntityListItem[]> {
-  return serverQuery<EntityListItem>(`
-    SELECT e.entity,
-           coalesce(a.location, b.location0, g.location) AS location,
-           coalesce(b.outputs, []) AS outputs
-    FROM ${serverName("properties.entity")} e
-    LEFT JOIN ${serverName("manta.attached")} a USING (entity)
-    LEFT JOIN (SELECT entity, any_value(location0) AS location0, list(DISTINCT location1 ORDER BY location1) AS outputs
-               FROM ${serverName("manta.branches")} GROUP BY entity) b USING (entity)
-    LEFT JOIN ${serverName("manta.regions")} g USING (entity)
-    WHERE e.ctype = ${sqlString(ctype)} AND e.carrier IS NOT DISTINCT FROM ${carrier === null ? "NULL" : sqlString(carrier)}
-    ORDER BY e.entity`);
 }
 
 // Entities with where each is: its bus's location, a branch's input location
@@ -174,37 +140,6 @@ export async function getEntity(entity: string, manifest: Manifest): Promise<Ent
     (a, b) => a.name.localeCompare(b.name) || (a.bus ?? "").localeCompare(b.bus ?? ""),
   );
   return { entity, properties, connections, attributes };
-}
-
-// One attribute's snapshot values for an entity (and, for attributes over
-// `connection`, one of its outputs), with each snapshot's period and timestep.
-export function getSeries(
-  attribute: string,
-  spec: AttributeSpec,
-  entity: string,
-  bus: string | null,
-): Promise<SeriesPoint[]> {
-  const subject = spec.dims.includes("connection")
-    ? `a.connection.entity = ${sqlString(entity)}${bus ? ` AND a.connection.bus = ${sqlString(bus)}` : ""}`
-    : `a.entity = ${sqlString(entity)}`;
-  return serverQuery<SeriesPoint>(`
-    SELECT a.snapshot, s.period, strftime(s.timestep, '%Y-%m-%d %H:%M') AS timestep, TRY_CAST(a.value AS DOUBLE) AS value
-    FROM ${serverName(`attributes.${sqlName(attribute)}`)} a
-    LEFT JOIN ${serverName("properties.snapshot")} s USING (snapshot)
-    WHERE ${subject} AND a.snapshot IS NOT NULL
-    ORDER BY a.snapshot`);
-}
-
-// A dimension's labels with their properties, where the record has any.
-export async function getDimension(name: string, info: RecordInfo): Promise<DimensionLabel[]> {
-  const hasProperties = info.views.properties?.includes(name);
-  const rows = await serverQuery<Record<string, unknown>>(
-    `SELECT *, ${sqlName(name)}::VARCHAR AS "__label" FROM ${serverName(`${hasProperties ? "properties" : "dims"}.${sqlName(name)}`)}`,
-  );
-  return rows.map((row) => {
-    const { [name]: value, __label: label, ...properties } = row;
-    return { label: String(label), value, properties };
-  });
 }
 
 function summaryAttributes(
@@ -318,37 +253,4 @@ export async function getLabelDetail(
     };
   }
   return { dim, label, properties, attributes: summaryAttributes(values, info.manifest) };
-}
-
-// Every stored value of the entities of one ctype (and carrier), for the table.
-export function getEntityValues(ctype: string, carrier: string | null): Promise<EntityValue[]> {
-  return serverQuery<EntityValue>(`
-    SELECT s.label AS entity, s.attribute, s.bus, s.constant, s.series_rows AS "seriesRows"
-    FROM ${serverName("manta.attribute_summary")} s JOIN ${serverName("properties.entity")} e ON e.entity = s.label
-    WHERE s.dim = 'entity' AND e.ctype = ${sqlString(ctype)}
-      AND e.carrier IS NOT DISTINCT FROM ${carrier === null ? "NULL" : sqlString(carrier)}`);
-}
-
-// What a location (or a zone's locations) holds: its buses, what's attached
-// to them, and every branch with an end there.
-export async function getLocationGraph(locations: string[]): Promise<LocationGraphRows> {
-  const inside = locations.map(sqlString).join(", ");
-  const capacity = (attribute: string) => `
-    LEFT JOIN ${serverName("manta.attribute_summary")} c
-      ON c.dim = 'entity' AND c.label = x.entity AND c.bus IS NULL AND c.attribute = ${attribute}`;
-  const [buses, attached, branches] = await Promise.all([
-    serverQuery<LocationGraphRows["buses"][number]>(
-      `SELECT bus, carrier, location FROM ${serverName("manta.bus_location")} WHERE location IN (${inside}) ORDER BY bus`,
-    ),
-    serverQuery<LocationGraphRows["attached"][number]>(`
-      SELECT x.entity, x.ctype, x.carrier, x.bus, TRY_CAST(c.constant AS DOUBLE) AS capacity
-      FROM ${serverName("manta.attached")} x ${capacity("CASE x.ctype WHEN 'Store' THEN 'e_nom' ELSE 'p_nom' END")}
-      WHERE x.location IN (${inside})`),
-    serverQuery<LocationGraphRows["branches"][number]>(`
-      SELECT x.entity, x.ctype, x.carrier, x.bus0, x.bus1, x.location0, x.location1, x.scope,
-             TRY_CAST(c.constant AS DOUBLE) AS capacity
-      FROM ${serverName("manta.branches")} x ${capacity("CASE x.ctype WHEN 'Link' THEN 'p_nom' ELSE 's_nom' END")}
-      WHERE x.location0 IN (${inside}) OR x.location1 IN (${inside})`),
-  ]);
-  return { buses, attached, branches };
 }

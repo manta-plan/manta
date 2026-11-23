@@ -20,7 +20,7 @@ import { usePeriods } from "../periods";
 import { treeCounts, treeLocations } from "./tree-queries";
 import { useLastReady } from "./use-last-ready";
 import { RecordSearchBox, RecordSearchResults } from "./record-search";
-import { ShownScenarioNote } from "../../project/components/record-scenarios-panel";
+import { ShownScenarioNote } from "../scenarios/shown-scenario-note";
 import {
   RecordTreeSkeletonHeader,
   RecordTreeSkeletonRows,

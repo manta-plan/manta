@@ -9,9 +9,7 @@ import {
   getEntityCounts,
   getLocationZones,
   getLocations,
-  getMapBranches,
   openRecord,
-  getRegions,
   getScenarioChanges,
   getScenarioChangeValues,
 } from "../../lib/record-server/queries";
@@ -23,14 +21,7 @@ import {
   writeScenarioToUrl,
 } from "../../lib/record-scenarios";
 import type { RecordInfo } from "../../lib/record-server/types";
-import {
-  NODAL,
-  type ProjectStoreGet,
-  type ProjectStoreSet,
-  type LoadedRecord,
-  type RecordItem,
-  type Resolution,
-} from "../types";
+import { type ProjectStoreGet, type ProjectStoreSet, type LoadedRecord } from "../types";
 
 type ScenarioParts = Omit<LoadedRecord, "info" | "scenarioChanges">;
 
@@ -45,13 +36,11 @@ async function withRevisionOpen(info: RecordInfo, name: string | null): Promise<
 // reads too.
 async function fetchScenario(info: RecordInfo, scenario: string | null): Promise<ScenarioParts> {
   setRecordCatalog(scenarioCatalog(info, scenario));
-  const [carriers, entityCounts, locations, zones, branches, regions, changes] = await Promise.all([
+  const [carriers, entityCounts, locations, zones, changes] = await Promise.all([
     getCarriers(),
     getEntityCounts(),
     getLocations(),
     getLocationZones(),
-    getMapBranches(),
-    getRegions(),
     scenario ? getScenarioChangeValues(scenario) : Promise.resolve(new Map()),
   ]);
   return {
@@ -59,8 +48,6 @@ async function fetchScenario(info: RecordInfo, scenario: string | null): Promise
     entityCounts,
     locations,
     zones,
-    branches,
-    regions,
     scenario,
     changes,
   };
@@ -112,10 +99,7 @@ export function createRecordSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
         recordError: null,
         record: null,
         switchingScenario: null,
-        selectedItem: null,
-        itemDrawer: null,
-        tableDrawer: null,
-        resolution: NODAL,
+        scenarioChange: null,
       });
       fetchRecord(id)
         .then((record) => {
@@ -155,15 +139,5 @@ export function createRecordSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
           set({ switchingScenario: null });
         });
     },
-
-    resolution: NODAL,
-    setResolution: (resolution: Resolution) => set({ resolution, selectedItem: null }),
-
-    selectedItem: null,
-    selectItem: (item: RecordItem | null) => set({ selectedItem: item }),
-    itemDrawer: null,
-    openItemDrawer: (item: RecordItem) =>
-      set({ itemDrawer: item, selectedItem: item, isNewScenarioDrawerOpen: false }),
-    closeItemDrawer: () => set({ itemDrawer: null }),
   };
 }
