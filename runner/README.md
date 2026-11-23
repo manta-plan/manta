@@ -47,11 +47,11 @@ Each step is dispatched at the `run-block` deployment on a **docker** work pool
 as child flow runs of the playbook's flow run, named `<step>[<block>]`, which is
 what groups a run's steps under it in Prefect.
 
-A step's output record travels back as a Prefect table artifact
+A step's output revision travels back as a Prefect table artifact
 (`OUTPUT_ARTIFACT_KEY`), published by `run-block` and read through the Prefect
 API, rather than through a shared volume, which would be the one thing tying
 every container to a single machine. Manta's backend reads the same artifact to
-report each step's output. Only the small record pointers go that way; model
+report each step's output. Only the small revision pointers go that way; model
 data never passes through Prefect or the orchestrator at all. This is an MVP
 shortcut: once data records are tracked in Manta's own database, both the
 orchestrator and the backend should consider reading step outputs from there

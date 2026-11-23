@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
+from playbook.blocks.run import open_revision
 from pydantic import Field
 
 from playbook_library.pypsa_configs import PyPSAOptimizeRollingHorizonConfig
@@ -19,7 +21,7 @@ class RollingHorizonDispatchConfig(ConfigSchema):
     optimize_config: PyPSAOptimizeRollingHorizonConfig = Field(
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
-    capacity_source: DataRecord | None = Field(default=None, title="Capacity data source")
+    capacity_source: RevisionRef | None = Field(default=None, title="Capacity data source")
     """Where the capacities to dispatch against come from.
 
     Normally wired to a capacity-expansion block earlier in the playbook. Left unset,
@@ -59,10 +61,11 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
                 c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
-    def run(self, record: DataRecord) -> DataRecord:
-        n_new = to_network(record)
+    def run(self, base: Revision) -> Revision:
+        n_new = to_network(base)
         if self.config.capacity_source is not None:
-            self.apply_optimised_capacities(n_new, to_network(self.config.capacity_source))
+            source = open_revision(base.store.workspace, self.config.capacity_source)
+            self.apply_optimised_capacities(n_new, to_network(source))
 
         n_new = self.optimize(n_new)
-        return write_network(n_new, record)
+        return write_network(n_new, base)

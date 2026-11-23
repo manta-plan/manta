@@ -94,4 +94,12 @@ Build and serve the production output locally:
 pnpm build
 pnpm preview
 ```
+
+## Record server
+
+The data records (the New Project drawer, the Data Catalog and the data record of a run) come
+from the quack record server in `docker/quack-server`. The dev server proxies `/api`, `/quack` and `/ext`
+to it, like the Caddy in the deployed frontend, so the app reaches it on its own origin. The server's
+port and token come from `QUACK_SERVER_PORT` and `QUACK_TOKEN` in `backend/.env`, so nothing is needed in
+`.env.local`.
 <!-- --8<-- [end:docs-dev] -->

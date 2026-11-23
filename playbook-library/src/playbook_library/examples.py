@@ -19,9 +19,12 @@ suite builds the same network, so what this demonstrates is what is tested.
 
 import sys
 import tempfile
+from contextlib import closing
 
 import pandas as pd
 import pypsa
+from datarecord import Workspace
+from playbook.blocks.core import RevisionRef
 from playbook.playbooks.yaml_io import playbook_from_doc
 
 from playbook_library.playbooks import library_playbooks
@@ -52,11 +55,14 @@ def main(argv: list[str]) -> int:
 
     entry = library_playbooks()[EXAMPLE_PLAYBOOK]
     playbook = playbook_from_doc(entry.doc)
-    record = store_network(build_example_network(), url)
+    with closing(Workspace()) as workspace:
+        ref = RevisionRef.from_revision(
+            store_network(build_example_network(), workspace.store(url))
+        )
 
-    print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {record.uuid} of {record.url}")
-    result = playbook.run(record, entry.default_config)
-    print(f"Done. Final result: revision {result.uuid} of {result.url}")
+    print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {ref.id} of {ref.store}")
+    result = playbook.run(ref, entry.default_config)
+    print(f"Done. Final result: revision {result.id} of {result.store}")
     return 0
 
 

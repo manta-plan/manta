@@ -455,16 +455,21 @@
       "block_summary": "Decide how to run a system, a stretch of time at a time.",
       "block_config_schema": {
         "$defs": {
-          "DataRecord": {
-            "description": "Where a block's data lives.\n\nOnly ever a pointer - never the data itself - because a record is passed between\nprocesses and machines, which a loaded model could not survive. The URL is either\na local path or an `s3://bucket/key` address; `playbook.blocks.storage` turns both into\nbytes.",
+          "RevisionRef": {
+            "description": "Where a block's data lives, as it travels between processes.\n\nOnly ever a pointer - never the data itself - because it is passed between\nprocesses and machines, which a loaded model could not survive. `store` names a\ndatarecord store, either a local directory or an `s3://` address, and `id` names\none revision in that store: the fields a datarecord `Revision` serialises to.",
             "properties": {
-              "url": {
-                "title": "Url",
+              "store": {
+                "title": "Store",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "title": "Id",
                 "type": "string"
               }
             },
-            "required": ["url"],
-            "title": "DataRecord",
+            "required": ["store", "id"],
+            "title": "RevisionRef",
             "type": "object"
           },
           "LinopyModelSchema": {
@@ -658,7 +663,7 @@
           "capacity_source": {
             "anyOf": [
               {
-                "$ref": "#/$defs/DataRecord"
+                "$ref": "#/$defs/RevisionRef"
               },
               {
                 "type": "null"

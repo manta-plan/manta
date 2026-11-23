@@ -4,7 +4,7 @@
 
 """What a playbook is: an ordered list of steps, and how they are wired together.
 
-A playbook hands one record along from each step to the next. On top of that, a step
+A playbook hands one revision along from each step to the next. On top of that, a step
 can pull a specific earlier step's result into one of its settings, which is how a
 block gets a second data source without it having to be the step immediately before.
 
@@ -24,8 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from playbook.blocks import (
     BlockDims,
     BlockSpec,
-    DataRecord,
     MantaBlock,
+    RevisionRef,
     describe_block,
     resolve_block,
 )
@@ -290,17 +290,17 @@ class Playbook(BaseModel):
 
     def run(
         self,
-        record: DataRecord,
+        revision: RevisionRef,
         config: dict,
         runner: "BlockRunner | None" = None,
-    ) -> DataRecord:
+    ) -> RevisionRef:
         """Check this playbook against `config`, then run it.
 
         Without a `runner`, every block runs in this process.
         """
         from playbook.playbooks.execution import execute_playbook
 
-        return execute_playbook(self, record, config, runner=runner)
+        return execute_playbook(self, revision, config, runner=runner)
 
 
 def as_block_spec(

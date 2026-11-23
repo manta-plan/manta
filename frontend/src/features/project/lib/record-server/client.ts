@@ -16,7 +16,7 @@ import type { RecordServerConfig } from "../../../home/lib/record-server";
 // which the project catalogue reads too.
 
 export function serverUrl(path: string, config = recordServerConfig()): string {
-  return `${isSecure(config.server) ? "https" : "http"}://${config.server}${path}`;
+  return `${isSecure() ? "https" : "http"}://${config.server}${path}`;
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -48,7 +48,7 @@ const HEARTBEAT_TIMEOUT_S = 3_600;
 
 async function attach(connection: duckdb.AsyncDuckDBConnection, config: RecordServerConfig) {
   const [host, port] = config.server.split(":");
-  const secure = isSecure(config.server);
+  const secure = isSecure();
   await connection.query(
     `ATTACH 'quack:${host}:${port ?? (secure ? 443 : 80)}' AS r ` +
       `(TOKEN '${config.token.replaceAll("'", "''")}', DISABLE_SSL ${!secure}, HEARTBEAT_TIMEOUT ${HEARTBEAT_TIMEOUT_S})`,

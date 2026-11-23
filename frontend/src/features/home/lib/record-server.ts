@@ -25,32 +25,29 @@ export type RecordCatalogue = {
 };
 
 export type RecordServerConfig = {
-  // host:port of the record server.
+  // host[:port] of the record server: the app's own origin.
   server: string;
   // Shared dev token: it ships in the static bundle, so it is not a secret.
   token: string;
 };
 
 export function recordServerConfig(): RecordServerConfig {
-  const server = import.meta.env.VITE_RECORD_SERVER;
-
-  // The Manta backend does not serve a record catalogue, so there is no
-  // sensible default: the catalogue stays unreachable until this is set.
-  if (!server) {
-    throw new Error("VITE_RECORD_SERVER is not set.");
-  }
-
-  return { server, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
+  // The record server is on the app's own origin: the deployed frontend's
+  // Caddy (frontend/Caddyfile) and the Vite dev server proxy it there, so one
+  // build works on any host, port or domain, with no CORS.
+  return { server: window.location.host, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
 }
 
-export function isSecure(server: string) {
-  const host = server.split(":")[0];
-  return window.location.protocol === "https:" || !["localhost", "127.0.0.1"].includes(host);
+// The record server is reached over the page's own protocol: an https page
+// can't call http (mixed content), and an http page, e.g. a VM by IP address
+// without a certificate, has no https to call.
+export function isSecure() {
+  return window.location.protocol === "https:";
 }
 
 async function recordServerGet<T>(path: string): Promise<T> {
   const config = recordServerConfig();
-  const protocol = isSecure(config.server) ? "https" : "http";
+  const protocol = isSecure() ? "https" : "http";
   const response = await fetch(`${protocol}://${config.server}${path}`, {
     headers: { Authorization: `Bearer ${config.token}` },
   });
