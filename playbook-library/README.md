@@ -50,9 +50,10 @@ src/playbook_library/
 ```
 
 ## Getting started
+<!-- --8<-- [start:docs-setup] -->
 
 ```bash
-pixi run -e dev test     # packaging, registration and the catalogue, without PyPSA
+pixi run -e dev test     # packaging, registration, and the catalogue, without PyPSA
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 
@@ -74,8 +75,10 @@ pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
     --source playbook_library --config '{"n_hours": 6}' \
     --revision '{"store": "<store>", "id": "<revision>"}'
 ```
+<!-- --8<-- [end:docs-setup] -->
 
 ## Environments
+<!-- --8<-- [start:docs-environments] -->
 
 Each block declares the environment it needs (`ENV = "pypsa"`), and that name is what
 picks the environment it later runs in. The environments themselves are pixi's:
@@ -89,6 +92,7 @@ picks the environment it later runs in. The environments themselves are pixi's:
 
 That `dev` has no PyPSA and its tests still pass is the check that a block's
 dependencies stay its own.
+<!-- --8<-- [end:docs-environments] -->
 
 ## Adding a block
 
@@ -145,6 +149,7 @@ silently.
 committed file being refreshed by hand. -->
 
 ## Testing your contribution
+<!-- --8<-- [start:docs-testing] -->
 
 ```bash
 pixi run -e dev test     # must pass without PyPSA
@@ -165,6 +170,7 @@ Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry
 `pytestmark = pytest.mark.pypsa`, so they skip rather than fail in `dev`. A new block
 needs at least a case in `test_library.py` showing it produces a usable network as a
 new revision in the store it read from — keep the networks tiny, so the suite stays quick.
+<!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
 
