@@ -7,6 +7,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 Status: draft 9 for team discussion, 2026-11-18, with the MVP step of the BE in the [MVP backend note](backend-mvp.md). This page is the entry. It describes the flows through the system, step by step, and links to the detail in the design notes. Reference material (terms, facts, measurements, requests to datarecord, decisions, known issues, phases) is in the [appendix](appendix.md).
 
+The part that the team builds first, without the write path, is in the [work plan](read-path-first.md).
+
 Terms: **BE** = main FastAPI backend. **FE** = frontend (prototype in `baby-manta`, product in `manta/frontend`). **DR** = the datarecord library. **Session** = the new service of this plan. **Store** = one dataset of a project, a folder in S3 that holds layers. **Revision** = a committed state of a store, named by a UUID. Each revision is one layer on top of its parent. **Registration** = a revision that a session exposes to SQL under a name. **WR** = working record, DR's editable record on top of a revision.
 
 ## 1. Goal

@@ -141,6 +141,7 @@ nav:
       - Open questions: explanation/open-questions.md
       - Design of the datarecord session:
           - explanation/datarecord-session/index.md
+          - Work plan, read path first: explanation/datarecord-session/read-path-first.md
           - MVP backend: explanation/datarecord-session/backend-mvp.md
           - Backend: explanation/datarecord-session/backend.md
           - Session service: explanation/datarecord-session/session.md
