@@ -9,7 +9,7 @@ What the BE does in the MVP, in line with issue #283. It lists stores, revisions
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md). This note describes the MVP step that comes before sections 1 and 2 of the [backend note](backend.md).
 
-In the MVP the BE keeps no copy of stores, revisions or references. It lists stores with one S3 listing per project. It lists revisions with DR's `Store.revisions()` and `Store.claims()`, and keeps the manifests in a DR workspace in its memory. Revision facts live in the commit `meta` under `manta.` keys. References live in `store.json`, which only the BE writes. The BE moves a reference by a conditional PUT of `store.json` with `If-Match`, which detects a concurrent commit. The fork point comes from `Revision.ancestry()` of both sides. Runs keep finding their revisions through Prefect, as today. The public routes, the response shapes, the `store.json` form and the `meta` keys are those of the later index. So `sync_store` can fill the index from what the MVP wrote, and the FE does not change. The MVP step is good for one owner per project, few revisions per store and one BE host. Move to the index on one of three triggers: several writers per project, a cold listing above its time budget, or queries across stores and projects.
+In the MVP the BE keeps no copy of stores, revisions or references. It lists stores with one S3 listing per project. It lists revisions with DR's `Store.revisions()` and `Store.claims()`. A DR workspace in its memory caches the manifests to make listings fast; claims and commits need none of it. Revision facts live in the commit `meta` under `manta.` keys. References live in `store.json`, which only the BE writes. The BE moves a reference by a conditional PUT of `store.json` with `If-Match`, which detects a concurrent commit. The fork point comes from `Revision.ancestry()` of both sides. Runs keep finding their revisions through Prefect, as today. The public routes, the response shapes, the `store.json` form and the `meta` keys are those of the later index. So `sync_store` can fill the index from what the MVP wrote, and the FE does not change. The MVP step is good for one owner per project, few revisions per store and one BE host. Move to the index on one of three triggers: several writers per project, a cold listing above its time budget, or queries across stores and projects.
 
 Conventions of this note: "read" means verified in code, with file and line. DR lines are at the pinned commit `468f69b0` (D19), paths under `src/datarecord/`. "Inferred" means not verified. "Unverified" marks a fact that needs a test.
 
@@ -36,7 +36,7 @@ Scope, as the text says it:
 | Stores, revisions, references (names, labels, kinds, parents) | Yes: no new tables in the MVP. |
 | Run to revision links | Yes: through Prefect, as today. |
 | Postgres index later | Yes: named as the long-run target. |
-| Session tables (`datarecord_sessions`, `datarecord_session_registrations`) | Not mentioned. They hold runtime state, not scenario or revision context. See [session management](#10-session-management). |
+| Session tables (`datarecord_sessions`, `datarecord_session_registrations`) | Not mentioned. They hold the running sessions and the revisions the FE asked to access, not scenario or revision context. See [session management](#10-session-management). |
 
 So #283 does not reject the index. It orders it after the MVP. This note is that order.
 
@@ -50,7 +50,7 @@ The MVP step is phase 2 of the [phases](appendix.md#4-phases). The phases that i
 |---|---|
 | 0. DR stack | Merge and new export. The new export writes `store.json` in the form of [the shared contract](#3-the-shared-contract), with `base`. |
 | 2. BE store routes over DR | The import reads `store.json`. The routes of [the shared contract](#3-the-shared-contract) answer from DR and `store.json`. No table, no `sync_store`. |
-| 4. BE sessions | Session tables, launcher, `ensure`, relay. The two session tables stay ([session management](#10-session-management)). |
+| 4. BE sessions | Session tables, launcher, `ensure_datarecord_session`, relay. The two session tables stay ([session management](#10-session-management)). |
 | 5. FE | Port the record client to the BE routes. The routes and shapes are those of [the shared contract](#3-the-shared-contract). |
 | 6. Commit path | Claim, token and changeset. The reference moves by a conditional PUT of `store.json` ([references](#6-references-in-storejson)). |
 | 8. Later | WR, Kubernetes, claim flow for blocks, shared sessions, and the revision index: the tables of [revision index](backend.md#1-revision-index), filled by `sync_store` from what the MVP wrote ([path to the index](#14-path-to-the-index)). |
@@ -71,12 +71,12 @@ The MVP and the later index serve one contract. The FE sees no difference.
 
 | Route | MVP source | Index source |
 |---|---|---|
-| `GET /v1/projects/{id}/stores` | S3 listing and `store.json` | `datarecord_stores` |
-| `GET /v1/projects/{id}/stores/{store}/revisions` | `Store.revisions()`, `Store.claims()`, `store.json` | `datarecord_revisions`, `datarecord_references` |
-| `POST /v1/projects/{id}/stores/{store}/revisions` | commit flow, `store.json` by `If-Match` | commit flow, SQL compare-and-set |
-| `POST /v1/projects/{id}/stores/{store}/references` | `store.json` by `If-Match` | SQL insert, then `store.json` |
-| `PATCH`, `DELETE /v1/projects/{id}/stores/{store}/references/{name}` | `store.json` by `If-Match` | SQL update, then `store.json` |
-| `GET /v1/projects/{id}/session/changes`, diff registrations | fork point from `Revision.ancestry()` | fork point from `parent_id` |
+| `GET /v1/projects/{id}/datarecord-stores` | S3 listing and `store.json` | `datarecord_stores` |
+| `GET /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` | `Store.revisions()`, `Store.claims()`, `store.json` | `datarecord_revisions`, `datarecord_references` |
+| `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` | commit flow, `store.json` by `If-Match` | commit flow, SQL compare-and-set |
+| `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-references` | `store.json` by `If-Match` | SQL insert, then `store.json` |
+| `PATCH`, `DELETE /v1/projects/{id}/datarecord-stores/{store}/datarecord-references/{name}` | `store.json` by `If-Match` | SQL update, then `store.json` |
+| `GET /v1/projects/{id}/datarecord-session/changes`, diff registrations | fork point from `Revision.ancestry()` | fork point from `parent_id` |
 
 Both steps need the three reference routes, to create a scenario, change its label and delete it. The [routes table](backend.md#5-routes-and-quack-relay) lists them.
 
@@ -92,7 +92,7 @@ Both steps need the three reference routes, to create a scenario, change its lab
   ],
   "references": [
     {"name": "patch", "kind": "scenario", "revision": "07b0661e-…", "base": "inputs",
-     "label": "Patch", "description": "…", "updated_at": null}
+     "label": "Patch", "description": "…"}
   ]
 }
 ```
@@ -116,8 +116,6 @@ The form of the [revision index](backend.md#1-revision-index), unchanged:
   }
 }
 ```
-
-One optional addition: `updated_at` per reference, an ISO time that the BE sets at each change. Readers ignore an unknown key, as far as PR #281's reader goes (inferred). The index fills its column `updated_at` from it.
 
 ### The `meta` keys
 
@@ -151,7 +149,11 @@ Today the BE has no store route. The FE reads the catalogue from quack-server (r
 
 ### Listing
 
-The BE holds one DR `Workspace` per process, in memory, with the backend key. Its tables `revisions` and `schemas` cache each manifest that it reads. The cache gains rows only, so it can be incomplete but never stale (read: DR `docs/reference/store.md:98`).
+The BE reads and writes no layer itself: it delegates that to the datarecord session. It lists the available stores and their revisions for the FE, and it claims new revisions to hand to the datarecord session or to blocks.
+
+A claim needs no state in memory. It is one create-only PUT of `claim.json`, and the BE builds the parent as a `Revision` without reading S3 ([moving a reference](#moving-a-reference-at-commit-confirmation)). The commit runs in the datarecord session or the block, which rebuilds what it needs from S3. S3 alone keeps claims unique.
+
+The memory is a read cache only. The BE keeps one DR `Workspace` per process, on an in-memory DuckDB, with the backend key. Its tables `revisions` and `schemas` cache each manifest that it reads. The cache gains rows only, so it can be incomplete but never stale (read: DR `docs/reference/store.md:98`). A restart loses only speed: the first listing reads every manifest again, and the first fork point reads its chains again. The workspace also saves the setup of DuckDB's S3 extension per request.
 
 For each listing:
 
@@ -187,7 +189,7 @@ A manifest is create-only (read: `store/manifest.py:128-136`). So `meta` holds o
 | A Manta user that must become null on user deletion (`users.id`, `ON DELETE SET NULL` in [decisions](appendix.md#2-decisions)) | The manifest cannot be edited. | `manta.created_by` holds the user's UUID, never the username. After user deletion the UUID points to nothing. In the MVP a project has one owner and cascades with it, so its folder goes too (inferred: #139 does not specify the S3 side yet). |
 | Facts learned after the commit (run outcome, "promoted", "archived") | Too late. | Prefect for runs. Nothing else in the MVP. |
 | A corrected `kind` | Claimed `meta` is fixed. | A new export. |
-| Who moved a reference, and when | It is not a fact of a revision. | `updated_at` in `store.json`. The user is not recorded. |
+| Who moved a reference, and when | It is not a fact of a revision. | Not recorded in the MVP. |
 
 ## 6. References in `store.json`
 
@@ -203,7 +205,7 @@ The request names the reference R and the revision E that the FE expects there. 
 2. The BE claims, mints the token, calls the session, and compares the returned manifest with its claim ([commit flow](storage-commit.md#1-commit-flow)). The new revision is N.
 3. The BE reads `store.json` again, with its ETag T.
 4. The BE checks two conditions. R points to E. The `manta.kind` of N equals the `manta.kind` of E. If one fails, it answers 409.
-5. The BE sets R to N and `updated_at` to now. It writes the file with `PUT` and the header `If-Match: T`.
+5. The BE sets R to N. It writes the file with `PUT` and the header `If-Match: T`.
 6. On 200 the move is done. The BE answers 201 with N and R.
 7. On 412 another writer changed the file after step 3. The BE goes back to step 3. After five tries it answers 503.
 
@@ -320,11 +322,11 @@ N is the number of revisions in a store, P the pending claims, S the stores of a
 
 | Route | Requests, cold | Requests, warm | Payload |
 |---|---|---|---|
-| `GET .../stores` | 1 LIST, S GET `store.json` | 1 LIST, S conditional GET (304) | `store.json` is small |
-| `GET .../stores/{store}/revisions` | 2 LIST, N GET manifest, N GET `claim.json`, P × (GET manifest miss, HEAD and LIST for `exists`, GET claim), 1 GET `store.json` | 2 LIST, 1 conditional GET, the new layers only | a manifest holds the full schema: 46 to 93 KB per layer (measured on the local copies of folder `2026-11-13/`) |
-| `POST .../revisions` (commit) | 1 GET `store.json`, 1 GET parent manifest, 1 PUT `claim.json`, the session's commit, 1 GET and 1 PUT `store.json` | the same without the manifest | |
+| `GET .../datarecord-stores` | 1 LIST, S GET `store.json` | 1 LIST, S conditional GET (304) | `store.json` is small |
+| `GET .../datarecord-stores/{store}/datarecord-revisions` | 2 LIST, N GET manifest, N GET `claim.json`, P × (GET manifest miss, HEAD and LIST for `exists`, GET claim), 1 GET `store.json` | 2 LIST, 1 conditional GET, the new layers only | a manifest holds the full schema: 46 to 93 KB per layer (measured on the local copies of folder `2026-11-13/`) |
+| `POST .../datarecord-revisions` (commit) | 1 GET `store.json`, 1 PUT `claim.json`, the session's commit, 1 GET and 1 PUT `store.json` | the same | |
 | Reference changes | 1 GET, 1 PUT `store.json` | the same | |
-| `GET .../session/changes`, diff registration | 1 GET `store.json`, the manifests of both chains | 1 conditional GET | |
+| `GET .../datarecord-session/changes`, diff registration | 1 GET `store.json`, the manifests of both chains | 1 conditional GET | |
 | Run pages | Prefect, as today | Prefect, as today | |
 
 Example: the store `BEL-pre-aggregated-incl-patches-incl-results` has N = 8. A cold listing is 2 LIST and 17 GET, with 714 KB of manifests (measured on the local copy). The example project has six or seven stores with 14 revisions in all. A cold project page that lists every store is then about 50 requests and 1.3 MB.
@@ -358,7 +360,7 @@ The home page lists projects from Postgres and the data catalogue from the examp
 
 ## 10. Session management
 
-The two session tables stay in the MVP: `datarecord_sessions` and `datarecord_session_registrations`, as in [session tables](backend.md#session-tables). Issue #283 does not mention them. They hold runtime state: which container serves a user, its tokens, its activity, and which revisions the user registered. A registration row names a revision, but only as the user's current view. The tables hold no scenario or revision context, so #283 does not cover them.
+The two session tables stay in the MVP: `datarecord_sessions` and `datarecord_session_registrations`, as in [session tables](backend.md#session-tables). Issue #283 does not mention them. `datarecord_sessions` holds which container serves a user, its tokens and its activity. A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. The FE removes a registration by unregistering. The registrations are not an audit log. Neither table records which revision a scenario points to or where a revision came from, so #283 does not cover them.
 
 No `datarecord_stores` exists in the MVP. So a registration row names its store by name.
 
@@ -372,7 +374,7 @@ The session state could live in the containers instead, with no table. The table
 |---|---|---|
 | Sessions | `datarecord_sessions` as in [session tables](backend.md#session-tables). Registrations name the store by name. | Container labels: user, project, generation, endpoint. The BE rebuilds its map from `launcher.list()`. |
 | Secrets | In the row. | Derived: HMAC of a BE key over user, project and generation. Nothing to store. |
-| Registrations | Rows, replayed by `ensure`. | The running session holds them (`GET /registrations`). After a stop, the FE registers again on the error. |
+| Registrations | Rows, replayed by `ensure_datarecord_session`. | The running session holds them (`GET /registrations`). After a stop, the FE registers again on the error. |
 | Single start | Row lock. | A container name per user and project. Docker refuses a second container of that name (unverified as a lock). |
 | Activity | `last_used_at` in the row. | The session counts its own last request; the BE asks it. |
 | Several BE replicas | Works. | Works on one Docker host only if the name lock and the activity query hold. In-process locks alone start two containers. |
@@ -380,13 +382,13 @@ The session state could live in the containers instead, with no table. The table
 | Container stop | Registrations come back. | Registrations are lost. The FE needs a re-register path besides re-attach. |
 | WR (phase 8) | The edit log needs a table anyway ([working records](session.md#6-working-records)). | Same: a table then. |
 
-State in the container is lighter on one VM (#276). The session tables are robust and already designed, and they hold no scenario or revision context. So the tables stay.
+State in the container is lighter on one VM (#276). The session tables are robust and already designed, and they record no scenario or revision context. So the tables stay.
 
 ## 11. Comparison with the revision index
 
 | Concern | MVP step (DR and `store.json`) | Revision index (Postgres) |
 |---|---|---|
-| Source of truth | S3 only. No mirror. | S3, with a mirror in Postgres that `sync_store` repairs. |
+| Source of truth | S3 only. | S3. Postgres holds `store.json` and the manifests' metadata for queries, and `sync_store` repairs it. |
 | Stores of a project | 1 LIST and S GET. | 1 query. |
 | Revision listing, cold | 2N + 3 requests, 46 to 93 KB per manifest. Grows with every commit. | 1 query. |
 | Revision listing, warm | 2 LIST and 1 conditional GET. | 1 query. |
@@ -400,13 +402,13 @@ State in the container is lighter on one VM (#276). The session tables are robus
 | Cleanup of claims | A BE task runs `Store.cleanup` per store of every project. | The same, plus the `claimed` rows. |
 | Repair | Nothing to repair, except a reference to a missing revision. | `sync_store`. |
 | User deletion | An opaque UUID stays in `meta`. Fine while a project has one owner. | `user_id` set to null. |
-| Audit of reference moves | Only the last `updated_at`. Bucket versioning could keep old `store.json` files (not checked with conditional writes). | Rows can keep `user_id` and `updated_at`. A history table is easy. |
+| Audit of reference moves | None. Bucket versioning could keep old `store.json` files (not checked with conditional writes). | Rows keep `user_id`. A history table is easy. |
 | Queries across stores and projects | A scan of every store. | SQL. |
 | Several BE replicas | Correct. Each replica has its own cache. | Correct. |
 | BE restart | Cold caches. | No effect. |
 | Object store needs | `If-Match` and `If-None-Match` on PutObject. | `If-None-Match` only (DR). |
 | Export of a store | `store.json` is always current. | `store.json` is a copy, written after each change. |
-| Build effort | Listing over DR, `store.json` writer with retry, cache. No migration. | Three tables, migrations, `sync_store`, mirror writes, the `store.json` writer. |
+| Build effort | Listing over DR, `store.json` writer with retry, cache. No migration. | Three tables, migrations, `sync_store`, writes to Postgres, the `store.json` writer. |
 
 ## 12. What the MVP step cannot do, or does worse
 
@@ -437,18 +439,18 @@ Move to the revision index when one of these holds:
 
 ## 14. Path to the index
 
-The index is a mirror of what the MVP writes. `sync_store` fills it with no migration of data:
+The index holds the contents of `store.json` and the manifests' metadata, which the MVP already writes. `sync_store` fills it with no migration of data:
 
 | Column | Filled from |
 |---|---|
 | `datarecord_stores.name`, `label`, `description` | folder and `store.json` |
-| `datarecord_revisions.id`, `parent_id`, `meta` | manifest |
+| `datarecord_revisions.uuid`, `meta` (without the schema data) | manifest |
 | `status` | `revisions()` and `claims()` |
 | `kind`, `created_by` | `manta.kind`, `manta.created_by` |
 | `created_at`, `committed_at` | `claim.json`, `manta.committed_at` |
 | `run_id`, `step` | `manta.run` (through `runs.uuid`), `manta.step`. Else from Prefect, while it keeps the runs. |
 | `user_id` | the user whose UUID is in `manta.created_by`, if any |
-| `datarecord_references.*` | `store.json`, with `kind` from the revision and `updated_at` from the file |
+| `datarecord_references.*` | `store.json`, with `kind` from the revision |
 | `datarecord_references.user_id` | not recorded in the MVP: null |
 
 Steps of the switch:
@@ -483,6 +485,5 @@ No request is needed beyond the stack. Optional ones, none of them sent:
 | How long does a cold listing take, per store and per project page? | Measure from the BE to SeaweedFS and to the target bucket, with 10 parallel GETs. |
 | How long does Prefect keep flow runs and artifacts? | Read the server's retention settings. It bounds how long the run to revision link lasts without `manta.run`. |
 | `store.json` form: PR #281 has no `base` and uses slugs. | Agree on the form of [the shared contract](#3-the-shared-contract) before the new export of phase 0. |
-| Optional `updated_at` per reference in `store.json`. | Agree, and add it to the `store.json` list of the [revision index](backend.md#1-revision-index). |
 | Does the BE image ship DuckDB's `httpfs`? | Install it at build time. |
 | Who names the result of a run? | Proposal: nobody in the MVP. The run pages show results. A "save as named result" action comes later. |

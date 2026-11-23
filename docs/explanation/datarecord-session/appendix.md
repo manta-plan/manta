@@ -30,15 +30,15 @@ Taken:
 
 | Topic | Result |
 |---|---|
-| MVP backend step | The BE keeps no Postgres table for stores, revisions or references. It reads them from DR and `store.json`, and moves a reference by a conditional write of `store.json` with `If-Match`. This follows #283. A revision index in Postgres is the later step. It mirrors what the MVP step writes, with the same routes, response shapes, `store.json` and `manta.` keys ([MVP backend note](backend-mvp.md)). |
-| Session tables in the MVP | `datarecord_sessions` and `datarecord_session_registrations` stay in the MVP. They hold runtime state, no scenario or revision context, so #283 does not cover them. A registration names its store by name ([session management](backend-mvp.md#10-session-management)). |
+| MVP backend step | The BE keeps no Postgres table for stores, revisions or references. It reads them from DR and `store.json`, and moves a reference by a conditional write of `store.json` with `If-Match`. This follows #283. A revision index in Postgres is the later step. It is filled from what the MVP step writes, with the same routes, response shapes, `store.json` and `manta.` keys ([MVP backend note](backend-mvp.md)). |
+| Session tables in the MVP | `datarecord_sessions` and `datarecord_session_registrations` stay in the MVP. They hold the running sessions and the revisions the FE asked to access, which are replayed after a suspend. They record no scenario or revision context, so #283 does not cover them. A registration names its store by name ([session management](backend-mvp.md#10-session-management)). |
 | Launcher | Interface in the BE, Docker first, Kubernetes next year. Sub-process execution stays possible, not planned. |
 | Revision list | Central in the BE, read from DR with `Store.revisions()` and `Store.claims()`. The BE caches the manifests in memory ([revisions](backend-mvp.md#5-revisions)). Later in a Postgres index. |
-| Revision names and labels | References in `store.json` (name, label, description, pointer, base), written only by the BE and moved by a conditional write with `If-Match`. Not in the commit `meta`. Later mirrored in Postgres and moved by compare-and-set ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). |
+| Revision names and labels | References in `store.json` (name, label, description, pointer, base), written only by the BE and moved by a conditional write with `If-Match`. Not in the commit `meta`. Later held in Postgres and moved by compare-and-set ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). |
 | Reference base | Each reference records its base reference as `base` in `store.json`, set at creation and fixed. For a scenario it is the scenario it was created from; for a result, the scenario reference that was solved. The root scenario has none ([the `store.json` form](backend-mvp.md#the-storejson-form)). |
 | Diff baseline | The default diff of a reference compares its current revision with the fork point: the last revision that its history shares with that of its base. The BE finds it from `Revision.ancestry()` of both sides ([fork point](backend-mvp.md#7-the-fork-point)). An explicit compare of two references uses the current revisions of both. A scenario does not see later edits of its base; the plan has no rebase ([changes between revisions](frontend.md#3-changes-between-revisions)). |
 | Change summary | Belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. An explicit compare of two references uses the current revisions of both. It is not in the commit `meta` and not stored in the BE. The BE resolves the two revisions and passes each request to the session ([changes between revisions](frontend.md#3-changes-between-revisions)). |
-| Revision kind, author | Commit `meta` (`manta.kind`, `manta.created_by`; every Manta key has the prefix `manta.`), read by the BE from the manifest. Later mirrored in Postgres as `kind` and `created_by`. The base inputs have `kind = scenario`. `created_by` of a run is the name of the block; of a session commit, the user. |
+| Revision kind, author | Commit `meta` (`manta.kind`, `manta.created_by`; every Manta key has the prefix `manta.`), read by the BE from the manifest. Later held in Postgres as `kind` and `created_by`. The base inputs have `kind = scenario`. `created_by` of a run is the name of the block; of a session commit, the user. |
 | Write access | The session has none of its own. The BE claims and hands out a credential for one layer. |
 | Idle policy | Two stages. Keep-alive queries do not count as activity. |
 | Commit credential | Two credentials at once: read secret and a layer-scoped secret (R2). Commit token lifetime 900 s. No revocation. |
@@ -92,7 +92,7 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 1. **Spikes** S1, S2, S4, S6. Then S3. S2 and S3 run again on the stack ([what the DR stack changes](#83-what-the-dr-stack-changes)).
 2. **BE store routes over DR**, the MVP backend step ([MVP backend note](backend-mvp.md)). First, alone: the example data import reads `store.json` instead of `revisions.json` and moves to folder `2026-11-13`. Then the store, revision and reference routes answer from DR and `store.json`, and the BE moves references by a conditional write of `store.json`. No table. The FE home page can drop `record-server.ts` here.
 3. **Session service.** Package, Quack, guard, registration with `Record.register`, view packs. One fixed instance in compose in place of quack-server.
-4. **BE sessions.** Session tables, launcher (Docker), `ensure`, registration routes, Quack relay, lifetime policy.
+4. **BE sessions.** Session tables, launcher (Docker), `ensure_datarecord_session`, registration routes, Quack relay, lifetime policy.
 5. **FE.** Port `baby-manta`'s record client to the BE routes: session client, registration, presence call.
 6. **Commit path.** Claim, write credential, changeset format, verification, and the move of the reference by a conditional write of `store.json`. The DR side exists (PRs 151 to 153).
 7. **Remove** `docker/quack-server`. Move the WASM build scripts.
@@ -321,7 +321,7 @@ Consequences:
 | `GET /api/records` (store list) | `main.py:121-131` | BE | From an S3 listing and `store.json`. Later from Postgres. |
 | `POST /api/records/{id}/open` | `main.py:134-151`, `stores.py:215-304` | split | Revision list: BE. Registration: S. Manifest and view list: S, per registered revision. |
 | Revision list, parents (`manta.revisions`) | `scenarios.py:145-153` | BE | Read from DR ([revisions](backend-mvp.md#5-revisions)). Later the Postgres revision index. Not a table in each of today's scenario catalogs. |
-| Names, labels, descriptions (side files) | `scenarios.py:90-104` | BE, in `store.json` ([references in `store.json`](backend-mvp.md#6-references-in-storejson)) | Only the BE writes the file. Later a reference table mirrors it. |
+| Names, labels, descriptions (side files) | `scenarios.py:90-104` | BE, in `store.json` ([references in `store.json`](backend-mvp.md#6-references-in-storejson)) | Only the BE writes the file. Later a reference table holds its contents. |
 | Kind `scenario` or `result` (heuristic) | `scenarios.py:91-96` | commit `meta`, read by the BE | A fact about the revision. The writer records it. Heuristic dropped. |
 | Today one catalog per scenario (`ATTACH ':memory:' AS <record>__<scenario>`), each with the DuckDB schemas `dims`, `properties`, `attributes` and `manta` | `stores.py:290-299`, `record.py:24-45` | DR `Record.register(name)`: one DuckDB schema per registration in the session's one catalog ([names in DuckDB](session.md#4-names-in-duckdb)) | Any revision can be registered, results too. |
 | `manta` views and tables (today's DuckDB schema `manta` in each scenario catalog) | `manta_views.py`, `scenarios.py` | see [replacing the manta objects](session.md#5-replacing-the-manta-objects) | Decision D4. |
@@ -349,7 +349,7 @@ Read with the table of [issues that the plan touches](index.md#11-issues-that-th
 - Phase 0: review and merge of DR PR 144 and the stack (I11), and the new export of all stores into a new bucket folder (I9, F30).
 - Phase 2: the store, revision and reference routes over DR and `store.json`, with the conditional write of `store.json`.
 - Phase 3: the `datarecord-session` package (Quack, guard, registration, view packs) as one fixed instance in compose.
-- Phase 4: session tables, Docker launcher, `ensure`, registration routes, Quack relay, idle and suspend policy.
+- Phase 4: session tables, Docker launcher, `ensure_datarecord_session`, registration routes, Quack relay, idle and suspend policy.
 - Phase 5: port of `baby-manta`'s record client to the BE routes, with the presence call in place of `SELECT 1`.
 - Phase 6: implementation of the commit path; #267 is the design only.
 - The FE settle function, with `vitest`, a DuckDB for Node and a pinned copy of `settle_cases.json` in CI (F23).

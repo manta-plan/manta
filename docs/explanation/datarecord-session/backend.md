@@ -9,36 +9,40 @@ What the BE gains: the session tables and routes, the launcher, the lifetime pol
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack relay](#5-routes-and-quack-relay) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
+This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack relay](#5-routes-and-quack-relay) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure_datarecord_session`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
 
-Two sections describe the step after the MVP: [revision index](#1-revision-index) and [runs and blocks](#2-runs-and-blocks). In that step the BE keeps an index of stores, revisions and references in Postgres. The index mirrors the manifests in S3, which stay the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. In the MVP the BE reads stores, revisions and references from DR and `store.json` instead ([MVP backend note](backend-mvp.md)).
+Two sections describe the step after the MVP: [revision index](#1-revision-index) and [runs and blocks](#2-runs-and-blocks). In that step the BE keeps an index of stores, revisions and references in Postgres. Postgres holds the contents of `store.json` and the metadata of the manifests, without the schema data, so that API requests can query and filter them. The data in S3 stays the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. In the MVP the BE reads stores, revisions and references from DR and `store.json` instead ([MVP backend note](backend-mvp.md)).
 
 ## 1. Revision index
 
-This section describes the step after the MVP. The MVP step is in the [MVP backend note](backend-mvp.md). It reads stores, revisions and references from DR and `store.json`, with the same routes, response shapes, `store.json` and `manta.` keys. The index mirrors what the MVP step writes. The [triggers for the move](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) are listed there.
+This section describes the step after the MVP. The MVP step is in the [MVP backend note](backend-mvp.md). It reads stores, revisions and references from DR and `store.json`, with the same routes, response shapes, `store.json` and `manta.` keys. The index is filled from what the MVP step writes. The [triggers for the move](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) are listed there.
 
 ### Tables
 
 | Table | Columns | Unique |
 |---|---|---|
-| `datarecord_stores` | `project_id`, `name`, `label`, `description` | `project_id`, `name` |
-| `datarecord_revisions` | `id` (the DR revision UUID), `store_id`, `parent_id`, `status` (`claimed`, `committed`), `kind` (`scenario`, `result`), `meta` (JSON), `created_by`, `user_id`, `run_id`, `step`, `created_at`, `committed_at` | |
-| `datarecord_references` | `store_id`, `name`, `kind` (`scenario`, `result`), `revision_id`, `base`, `label`, `description`, `user_id`, `updated_at` | `store_id`, `name` |
+| `datarecord_stores` | `id`, `uuid`, `project_id`, `name`, `label`, `description` | `project_id`, `name` |
+| `datarecord_revisions` | `id`, `uuid` (the DR revision UUID), `store_id`, `parent_id`, `status` (`claimed`, `committed`), `kind` (`scenario`, `result`), `meta` (JSON), `created_by`, `user_id`, `run_id`, `step`, `created_at`, `committed_at` | `uuid` |
+| `datarecord_references` | `id`, `uuid`, `store_id`, `name`, `kind` (`scenario`, `result`), `revision_id`, `base_id`, `label`, `description`, `user_id` | `store_id`, `name` |
 
-`runs` gains the column `input_revision_id`: the revision the run started from.
+Every table has an integer primary key `id` and a column `uuid` that other systems use to refer to a row. Every `*_id` column is a foreign key to the `id` of the table it names: `project_id` to `projects`, `store_id` to `datarecord_stores`, `revision_id` and `parent_id` to `datarecord_revisions`, `user_id` to `users` and `run_id` to `runs`.
+
+`runs` gains the columns `input_revision_id` and `output_revision_id`: the revision the run started from, and the last revision it wrote.
+
+`parent_id` copies the parent from the revision's manifest, so the BE can answer ancestry questions in SQL without opening the store in DR. Postgres holds no owner maps. An owner map exists only as Parquet in S3, read through Quack.
 
 A reference is a named pointer to one revision, like a branch in Git.
 
 The columns of `datarecord_revisions`:
 
-- `kind` and `created_by` mirror the manifest's `manta.kind` and `manta.created_by`. `created_by` names the writing program for a run.
-- `meta` holds the manifest's other entries.
+- `kind` and `created_by` are the manifest's `manta.kind` and `manta.created_by`. `created_by` names the writing program for a run.
+- `meta` holds the manifest's other entries, without the schema data.
 - `run_id` links a revision to the run that wrote it (`runs.id`). It is empty for imported revisions and for edits committed through the session. A run can write several revisions, one per block or per investment period. All of them carry its `run_id`.
 - `step` is the name of the playbook step whose block wrote the revision. With `run_id` it tells two uses of the same block apart.
 
-`user_id` is the Manta user who caused the row (`users.id`). It is in `datarecord_revisions` and in `datarecord_references`. In `datarecord_revisions` it is the user who imported the store, started the run, or committed the edit. `created_by` stays beside it as the mirror of the manifest entry. In `datarecord_references`, `user_id` is the user who last moved or renamed the reference.
+`user_id` is the Manta user who caused the row (`users.id`). It is in `datarecord_revisions` and in `datarecord_references`. In `datarecord_revisions` it is the user who imported the store, started the run, or committed the edit. `created_by` stays beside it as the copy of the manifest entry. In `datarecord_references`, `user_id` is the user who last moved or renamed the reference.
 
-`base` in `datarecord_references` is the name of another reference of the same store, or empty. It is the reference this reference was made from:
+`base_id` in `datarecord_references` is a foreign key to another reference of the same store (`datarecord_references.id`), or empty. It is the reference this reference was made from:
 
 - For a scenario it is the scenario it was created from.
 - For a result it is the scenario reference that was solved.
@@ -46,7 +50,7 @@ The columns of `datarecord_revisions`:
 
 ### Rules
 
-**S3 and Postgres.** The S3 manifest stays the truth. Postgres is a mirror. The BE writes it at claim and at commit confirmation.
+**S3 and Postgres.** The S3 manifest stays the truth. Postgres holds what API requests query and filter on. The BE writes it at claim and at commit confirmation.
 
 **Names.** A name is not part of a revision. It lives in the reference table only. So a name can move, be renamed and be deleted without a new revision.
 
@@ -58,11 +62,11 @@ The columns of `datarecord_revisions`:
 
 Writers add `manta.committed_at` at commit. An import of a revision without it falls back to the claim time in `claim.json`. The change summary is not part of the commit `meta`.
 
-**The base of a reference.** The BE sets `base` when it creates a reference. `base` never changes afterwards. A move of the reference keeps it.
+**The base of a reference.** The BE sets `base_id` when it creates a reference. `base_id` never changes afterwards. A move of the reference keeps it.
 
-**The fork point.** The default diff of a reference R with base B compares two revisions. `after` is the current revision of R. `before` is the *fork point*: the last revision that the histories of R and B share. The BE finds it through `parent_id` in `datarecord_revisions`. It walks the parents of both current revisions and takes the nearest common ancestor. The fork point stays the same when B moves later.
+**The fork point.** The default diff of a reference R with base B compares two revisions. `after` is the current revision of R. `before` is the *fork point*: the last revision that the histories of R and B share. The BE finds it with a recursive query over `parent_id` in `datarecord_revisions`. It walks the parents of both current revisions and takes the nearest common ancestor. The MVP uses DR's `Revision.ancestry()` instead ([fork point](backend-mvp.md#7-the-fork-point)). The fork point stays the same when B moves later.
 
-**Change summaries.** A change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. An explicit compare of two references uses the current revisions of both. The BE does not store it. For each request the BE resolves the baseline to two revision ids and passes them to the session (`POST /summaries` in the [session service](session.md#3-session-service)). The scenario panel is part of the record view, where the session runs anyway.
+**Change summaries.** A change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. An explicit compare of two references uses the current revisions of both. The BE does not store it. For each request the BE resolves the baseline to two revision ids and passes them to the session (`POST /summaries` in the [session service](session.md#3-session-service)). The BE runs `ensure_datarecord_session` first, so the session runs when the FE's panel asks.
 
 **Moving a reference.** A reference moves by compare-and-set:
 
@@ -77,7 +81,7 @@ WHERE store_id = :s AND name = :n AND revision_id = :expected
 - The move happens at commit confirmation, never at claim.
 - Promotion of a result to a scenario is parked. It would create a new reference, not retype one.
 
-**Results of a run.** The BE finds the results of a run through `parent_id`. A reference for a result is optional.
+**Results of a run.** The BE finds the results of a run through `run_id`. A reference for a result is optional.
 
 ### `store.json`
 
@@ -86,7 +90,7 @@ A store that travels without the BE carries its references in a file `store.json
 - the store's `label` and `description`;
 - per reference: `name`, `revision`, `base`, `label`, `description`.
 
-The BE reads the file at import. The BE writes the file again after each change of a reference or of the store's label, under the backend key. So the names survive a lost database, and an export needs no extra step. Postgres stays the truth; the file is a copy.
+The file names the base by its reference name. The BE translates between that name and `base_id` when it reads and writes the file. The BE reads the file at import. The BE writes the file again after each change of a reference or of the store's label, under the backend key. So the names survive a lost database, and an export needs no extra step. For references and the store's label, Postgres is the source of truth and the file is a copy. For layer contents, S3 stays the source of truth.
 
 `store.json` replaces `revisions.json`. Today the BE reads `revisions.json` for two uses (`example_data_service.py:47, 93, 147-171`):
 
@@ -111,60 +115,60 @@ The BE gains a dependency on `datarecord[remote]`. It uses it for `claim`, `revi
 
 ### Public routes
 
-`GET /v1/projects/{id}/stores` and `GET /v1/projects/{id}/stores/{store}/revisions` answer from Postgres. Stores, revisions and references need no session. The full list of routes is in [routes and Quack relay](#5-routes-and-quack-relay).
+`GET /v1/projects/{id}/datarecord-stores` and `GET /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` answer from Postgres. Stores, revisions and references need no session. The full list of routes is in [routes and Quack relay](#5-routes-and-quack-relay).
 
-The listing carries no change summary. The scenario panel asks for it through the session route `GET /v1/projects/{id}/session/changes` ([routes and Quack relay](#5-routes-and-quack-relay)).
+The listing carries no change summary. The scenario panel asks for it through the session route `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack relay](#5-routes-and-quack-relay)).
 
 ### Example
 
 The example shows the shared store `BEL-pre-aggregated-incl-patches-incl-results` after its import into a project.
 
-- Ids are cut to eight characters.
-- Ids, parents and `created_at` are the store's real values. `created_at` comes from `claim.json`.
+- UUIDs are cut to eight characters for illustration (they are PK or FK).
+- The UUIDs of the revisions and `created_at` are the store's real values. The integer ids, the other UUIDs and `project_id` are examples. `created_at` comes from `claim.json`.
 - Labels, descriptions and `created_by` are examples, because the store carries none yet.
 - The manifest holds no commit time yet. So `committed_at` shows the time of the import here.
 
 `datarecord_stores`
 
-| id | project_id | name                                         | label                                | description                        |
-|----|------------|----------------------------------------------|--------------------------------------|------------------------------------|
-| 17 | 4f1c2a9e   | BEL-pre-aggregated-incl-patches-incl-results | Belgium, pre-aggregated, every solve | Inputs, one patch and six results. |
+| id | uuid | project_id | name | label | description |
+|----|------|------------|------|-------|-------------|
+| 17 | c41e9b07 | 5 | BEL-pre-aggregated-incl-patches-incl-results | Belgium, pre-aggregated, every solve | Inputs, one patch and six results. |
 
 `datarecord_revisions`
 
-| id | store_id | parent_id | status | kind | meta | created_by | user_id | run_id | step | created_at | committed_at |
-| ---------- | ---------- | ----------- | ----------- | ---------- | ------ | ------------------ | ------- | ------ | ---- | --------------------- | --------------------- |
-| 9ec88f52 | 17 |  | committed | scenario | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:48 | 2026-11-13 18:02:11 |
-| 07b0661e | 17 | 9ec88f52 | committed | scenario | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:52 | 2026-11-13 18:02:11 |
-| 830c3226 | 17 | 9ec88f52 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:52 | 2026-11-13 18:02:11 |
-| 8e3afa3a | 17 | 9ec88f52 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:54 | 2026-11-13 18:02:11 |
-| 639bdb70 | 17 | 9ec88f52 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:56 | 2026-11-13 18:02:11 |
-| e2a674f6 | 17 | 07b0661e | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:53 | 2026-11-13 18:02:11 |
-| 7b68a9ca | 17 | 07b0661e | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:55 | 2026-11-13 18:02:11 |
-| d147af69 | 17 | 07b0661e | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:58 | 2026-11-13 18:02:11 |
+| id | uuid | store_id | parent_id | status | kind | meta | created_by | user_id | run_id | step | created_at | committed_at |
+| -- | ---- | -------- | --------- | ------ | ---- | ---- | ---------- | ------- | ------ | ---- | ---------- | ------------ |
+| 101 | 9ec88f52 | 17 |  | committed | scenario | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:48 | 2026-11-13 18:02:11 |
+| 102 | 07b0661e | 17 | 101 | committed | scenario | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:52 | 2026-11-13 18:02:11 |
+| 103 | 830c3226 | 17 | 101 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:52 | 2026-11-13 18:02:11 |
+| 104 | 8e3afa3a | 17 | 101 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:54 | 2026-11-13 18:02:11 |
+| 105 | 639bdb70 | 17 | 101 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:56 | 2026-11-13 18:02:11 |
+| 106 | e2a674f6 | 17 | 102 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:53 | 2026-11-13 18:02:11 |
+| 107 | 7b68a9ca | 17 | 102 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:55 | 2026-11-13 18:02:11 |
+| 108 | d147af69 | 17 | 102 | committed | result | {} | playbook-library | 3 |  |  | 2026-11-10 17:54:58 | 2026-11-13 18:02:11 |
 
 `run_id` and `step` are empty, because all revisions are imported.
 
 `datarecord_references`
 
-| store_id | name | kind | revision_id | base | label | description | user_id | updated_at |
-| ---------- | --------------------- | ---- | ------------- | ------ | -------------------------- | --------------------------------------- | ------- | --------------------- |
-| 17 | inputs | scenario | 9ec88f52 |  | Base case |  | 3 | 2026-11-13 18:02:11 |
-| 17 | patch | scenario | 07b0661e | inputs | Patch | The scenario patch on the base case. | 3 | 2026-11-13 18:02:11 |
-| 17 | perfect | result | 830c3226 | inputs | Perfect foresight |  | 3 | 2026-11-13 18:02:11 |
-| 17 | myopic | result | 8e3afa3a | inputs | Myopic |  | 3 | 2026-11-13 18:02:11 |
-| 17 | overnight2050 | result | 639bdb70 | inputs | Overnight 2050 |  | 3 | 2026-11-13 18:02:11 |
-| 17 | patch/perfect | result | e2a674f6 | patch | Perfect foresight, patch |  | 3 | 2026-11-13 18:02:11 |
-| 17 | patch/myopic | result | 7b68a9ca | patch | Myopic, with patch | Myopic solve of the patched inputs. | 3 | 2026-11-13 18:02:11 |
-| 17 | patch/overnight2050 | result | d147af69 | patch | Overnight 2050, patch |  | 3 | 2026-11-13 18:02:11 |
+| id | uuid | store_id | name | kind | revision_id | base_id | label | description | user_id |
+| -- | ---- | -------- | ---- | ---- | ----------- | ------- | ----- | ----------- | ------- |
+| 201 | 5d0e7a21 | 17 | inputs | scenario | 101 |  | Base case |  | 3 |
+| 202 | b83f14c9 | 17 | patch | scenario | 102 | 201 | Patch | The scenario patch on the base case. | 3 |
+| 203 | 2a96d0e4 | 17 | perfect | result | 103 | 201 | Perfect foresight |  | 3 |
+| 204 | e17c5b38 | 17 | myopic | result | 104 | 201 | Myopic |  | 3 |
+| 205 | 90f4a6d2 | 17 | overnight2050 | result | 105 | 201 | Overnight 2050 |  | 3 |
+| 206 | 3c28e9f1 | 17 | patch/perfect | result | 106 | 202 | Perfect foresight, patch |  | 3 |
+| 207 | f6b1d047 | 17 | patch/myopic | result | 107 | 202 | Myopic, with patch | Myopic solve of the patched inputs. | 3 |
+| 208 | 48ae2c95 | 17 | patch/overnight2050 | result | 108 | 202 | Overnight 2050, patch |  | 3 |
 
 `inputs` is the root scenario and has no base. `patch` was created from `inputs`. The three results without a prefix solve `inputs`, and the three `patch/...` results solve `patch`.
 
 A user edits `patch` and commits. Then:
 
-1. One row is added to `datarecord_revisions`, with parent `07b0661e` and kind `scenario`.
-2. The `patch` row of `datarecord_references` moves to the new id. Its `base` stays `inputs`.
-3. The three `patch/...` results keep their parent `07b0661e`. So they show as results of the earlier state.
+1. One row is added to `datarecord_revisions`, with `parent_id` 102 (`07b0661e`) and kind `scenario`.
+2. The `patch` row of `datarecord_references` moves to the new id. Its `base_id` stays 201 (`inputs`).
+3. The three `patch/...` results keep their `parent_id` 102. So they show as results of the earlier state.
 4. The fork point of `patch` with `inputs` stays `9ec88f52`. The default diff of `patch` therefore covers both of its layers, not only the new one.
 
 ## 2. Runs and blocks
@@ -173,7 +177,7 @@ This section describes the step after the MVP. The MVP step is in the [MVP backe
 
 ### The reported revision
 
-A block reports its output revision. The BE upserts it with `kind=result` and the `run_id` of its run. The BE also sets `input_revision_id` on the run. This replaces the lookups in Prefect's flow parameters and artifacts (`run_service.py:121-166`). The code marks these lookups as a shortcut until revisions are tracked.
+A block reports its output revision. The BE upserts it with `kind=result` and the `run_id` of its run. The BE also sets `input_revision_id` and `output_revision_id` on the run. This replaces the lookups in Prefect's flow parameters and artifacts (`run_service.py:121-166`). The code marks these lookups as a shortcut until revisions are tracked.
 
 ### Several revisions per block
 
@@ -232,15 +236,15 @@ Two questions are open, with Kristijan:
 ### States
 
 ```
-stopped --ensure--> starting --healthy + replay--> active --no activity for T1--> idle --no activity for T2--> suspending --> stopped
-                                                     ^                             |  |
-                                                     +--------- activity ----------+  +-- capacity needed --> suspending
+stopped --ensure_datarecord_session--> starting --healthy + replay--> active --no activity for T1--> idle --no activity for T2--> suspending --> stopped
+                                                                        ^                             |  |
+                                                                        +--------- activity ----------+  +-- capacity needed --> suspending
 ```
 
 ### Activity and presence
 
 - **Activity** is any proxied API call or Quack request. It sets `last_used_at`.
-- **Presence** is an explicit FE call, `POST /v1/projects/{id}/session/heartbeat`. The BE answers it alone.
+- **Presence** is an explicit FE call, `POST /v1/projects/{id}/datarecord-session/heartbeat`. The BE answers it alone.
 
 The FE's `SELECT 1` link check (F7) is removed. The relay cannot tell it from a query.
 
@@ -262,17 +266,17 @@ A session with unsaved edits and a live presence is exempt from both stages. Thi
 1. The BE calls `POST /suspend` on the session. For views this is a no-op.
 2. The BE stops the instance.
 
-**Restore:** the next request runs `ensure`. `ensure` starts an instance and replays the registration rows. The FE sees a slow request, not an error.
+**Restore:** the next request runs `ensure_datarecord_session`. `ensure_datarecord_session` starts an instance and replays the registration rows. The FE sees a slow request, not an error.
 
 ### Generation
 
 Each start increases `generation`. The Quack token stays the same across starts.
 
-After a restart, every query of an attached client fails with `Invalid connection id`. This lasts until the client runs `DETACH` and `ATTACH` (tested, S1). On that error the FE calls `POST .../session` and attaches again.
+After a restart, every query of an attached client fails with `Invalid connection id`. This lasts until the client runs `DETACH` and `ATTACH` (tested, S1). On that error the FE calls `POST .../datarecord-session` and attaches again.
 
 ### Single start
 
-`ensure` locks the session row. So parallel requests and several BE replicas start one instance.
+`ensure_datarecord_session` locks the session row. So parallel requests and several BE replicas start one instance.
 
 ### Orphans
 
@@ -280,7 +284,7 @@ Instances carry labels. A BE task stops labelled instances that have no active r
 
 ## 4. Launcher
 
-`SessionLauncher` in the BE has three calls:
+`DatarecordSessionLauncher` in the BE has three calls:
 
 - `start(spec) -> endpoint`
 - `stop(ref)`
@@ -290,11 +294,11 @@ The first implementation uses Docker. Kubernetes follows next year. A sub-proces
 
 ## 5. Routes and Quack relay
 
-### Opening the session and `ensure`
+### Opening the session and `ensure_datarecord_session`
 
-`POST /v1/projects/{id}/session` opens the project's session. It is a call of its own, apart from login and from reading the project. Pages that only list or configure a project do not start an instance.
+`POST /v1/projects/{id}/datarecord-session` opens the project's session. It is a call of its own, apart from login and from reading the project. Pages that only list or configure a project do not start an instance.
 
-`ensure` means "start the session if none runs". It locks the session row, starts an instance when needed, and replays the registration rows (see [session lifetime](#3-session-lifetime)). The open call runs `ensure`. The registration routes, the commit route and every Quack request run it too. So a stopped session comes back by itself. Two routes do not run it: the heartbeat, which the BE answers alone, and `DELETE .../session`, which suspends.
+`ensure_datarecord_session` means "start the session if none runs". It locks the session row, starts an instance when needed, and replays the registration rows (see [session lifetime](#3-session-lifetime)). The open call runs `ensure_datarecord_session`. The registration routes, the commit route and every Quack request run it too. So a stopped session comes back by itself. Two routes do not run it: the heartbeat, which the BE answers alone, and `DELETE .../datarecord-session`, which suspends.
 
 ### Routes
 
@@ -302,16 +306,16 @@ All routes are behind Keycloak auth and a project ownership check.
 
 | Route | Effect |
 |---|---|
-| `GET /v1/projects/{id}/stores` | The project's stores, with name, label and description. In the MVP from an S3 listing and `store.json` ([stores of a project](backend-mvp.md#4-stores-of-a-project)). |
-| `GET /v1/projects/{id}/stores/{store}/revisions` | The store's revisions and references. In the MVP from DR (`Store.revisions()`, `Store.claims()`) and `store.json` ([revisions](backend-mvp.md#5-revisions)). |
-| `POST /v1/projects/{id}/stores/{store}/revisions` | The [commit flow](storage-commit.md#1-commit-flow). The request names the reference to move and the revision expected there. The BE moves the reference by a conditional write of `store.json`. Optional `register_as`: a name under which the BE registers the new revision in the session at once, so the FE needs no second call. |
-| `POST /v1/projects/{id}/stores/{store}/references` | Create a reference. The name must be free, and `base` names an existing reference. The new reference points to the current revision of its base. |
-| `PATCH`, `DELETE /v1/projects/{id}/stores/{store}/references/{name}` | Change the label or description, rename, or delete a reference. A rename updates the `base` of every reference that names the old name. A delete empties the `base` of its dependents. |
-| `POST /v1/projects/{id}/session` | Open the project's session: runs `ensure`. Returns `{status, generation, quack: {uri, token}}`. |
-| `DELETE /v1/projects/{id}/session` | Suspend now. |
-| `POST /v1/projects/{id}/session/heartbeat` | Presence. |
-| `GET`, `PUT`, `DELETE /v1/projects/{id}/session/registrations/{name}` | Write the row, then apply it to the session. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
-| `GET /v1/projects/{id}/session/changes` with `store`, `after`, optional `before` | The change summary of the reference `after` against the fork point with its base reference. With `before`, an explicit compare. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
+| `GET /v1/projects/{id}/datarecord-stores` | The project's stores, with name, label and description. In the MVP from an S3 listing and `store.json` ([stores of a project](backend-mvp.md#4-stores-of-a-project)). |
+| `GET /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` | The store's revisions and references. In the MVP from DR (`Store.revisions()`, `Store.claims()`) and `store.json` ([revisions](backend-mvp.md#5-revisions)). |
+| `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` | The [commit flow](storage-commit.md#1-commit-flow). The request names the reference to move and the revision expected there. The BE moves the reference by a conditional write of `store.json`. Optional `register_as`: a name under which the BE registers the new revision in the session at once, so the FE needs no second call. |
+| `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-references` | Create a reference. The name must be free, and `base` names an existing reference. The new reference points to the current revision of its base. |
+| `PATCH`, `DELETE /v1/projects/{id}/datarecord-stores/{store}/datarecord-references/{name}` | Change the label or description, rename, or delete a reference. A rename changes only the name, because dependents point to their base by `base_id`. A delete empties the `base_id` of its dependents. |
+| `POST /v1/projects/{id}/datarecord-session` | Open the project's session: runs `ensure_datarecord_session`. Returns `{status, generation, quack: {uri, token}}`. |
+| `DELETE /v1/projects/{id}/datarecord-session` | Suspend now. |
+| `POST /v1/projects/{id}/datarecord-session/heartbeat` | Presence. |
+| `GET`, `PUT`, `DELETE /v1/projects/{id}/datarecord-session/registrations/{name}` | Write the row, then apply it to the session. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
+| `GET /v1/projects/{id}/datarecord-session/changes` with `store`, `after`, optional `before` | The change summary of the reference `after` against the fork point with its base reference. With `before`, an explicit compare. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure_datarecord_session`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
 | `POST /quack` (server root) | Quack relay, see below. |
 
 In the MVP the store, revision and reference routes read from DR and `store.json`. They change `store.json` by one read, one check and one conditional PUT ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). Later, with the revision index, they read from Postgres and write SQL first, then `store.json`. Only the source changes; the responses stay the same ([the shared contract](backend-mvp.md#3-the-shared-contract)).
@@ -320,7 +324,7 @@ In the MVP the store, revision and reference routes read from DR and `store.json
 
 A registration of the kind `diff` takes `after` and `before`. Each names a reference or a revision id. By default it compares the current revision of the `after` reference with the fork point with its base reference.
 
-- Without `before`, the BE uses the fork point of the `after` reference with its base. It refuses the request if `after` is not a reference with a base. In the MVP the BE takes the fork point from `Revision.ancestry()` of both sides ([fork point](backend-mvp.md#7-the-fork-point)). Later, with the revision index, it walks `parent_id`.
+- Without `before`, the BE uses the fork point of the `after` reference with its base. It refuses the request if `after` is not a reference with a base. In the MVP the BE takes the fork point from `Revision.ancestry()` of both sides ([fork point](backend-mvp.md#7-the-fork-point)). With the revision index, it walks `parent_id`.
 - With two references, the diff compares their current revisions.
 - The BE resolves both sides to revision ids before it calls the session. The session receives revision ids only ([session service](session.md#3-session-service)).
 
@@ -328,15 +332,16 @@ A registration of the kind `diff` takes `after` and `before`. Each names a refer
 
 `datarecord_sessions`:
 
+- `id`, `uuid`
 - `user_id`, `project_id`
 - `status`, `generation`
 - `quack_token`, `api_secret`
 - `instance_ref`, `endpoint`
 - `started_at`, `last_used_at`, `last_seen_at`
 
-`datarecord_session_registrations`: `session_id`, `name`, `kind`, `store`, `revision_id`, `before_revision_id`, `packs`. A row of the kind `diff` holds its two resolved revisions: `revision_id` is `after`, `before_revision_id` is `before`. For the other kinds `before_revision_id` is empty.
+`datarecord_session_registrations`: `id`, `uuid`, `datarecord_session_id`, `name`, `kind`, `store`, `revision_uuid`, `before_revision_uuid`, `packs`. A row of the kind `diff` holds its two resolved revisions: `revision_uuid` is `after`, `before_revision_uuid` is `before`. For the other kinds `before_revision_uuid` is empty.
 
-Both tables are part of the MVP. They hold runtime state, no scenario or revision context ([session management](backend-mvp.md#10-session-management)). The MVP has no store table, so `store` is the store's name. The revision columns hold DR revision ids.
+A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. The FE removes a registration by unregistering. The registrations are not an audit log. Both tables are part of the MVP ([session management](backend-mvp.md#10-session-management)). The MVP has no store or revision table, so `store` is the store's name and the revision columns hold DR revision UUIDs. With the revision index they become `store_id`, `revision_id` and `before_revision_id`, foreign keys to `datarecord_stores` and `datarecord_revisions`.
 
 ### Quack relay
 
@@ -355,7 +360,7 @@ For each request the BE:
 
 1. authenticates the bearer token as on every route;
 2. finds the session by user and project;
-3. runs `ensure`;
+3. runs `ensure_datarecord_session`;
 4. streams the body to the instance unchanged.
 
 The Quack token still travels inside the body. The session checks it. It is a second factor and plays no part in routing.
@@ -376,6 +381,6 @@ Fallback if headers fail in WASM: the BE reads the token from the first request 
 | Can a block reach the BE on the network? | Open with Kristijan. |
 | Does DR accept a layer id from the caller (way 2)? | Not agreed with DR and not requested yet. |
 | How does a result become a scenario? | Parked. A new reference, not a retyped one. |
-| What happens to `base` when the base reference is deleted? | `base` becomes empty, and the reference has no default diff. |
+| What happens to `base_id` when the base reference is deleted? | `base_id` becomes empty (`ON DELETE SET NULL`), and the reference has no default diff. |
 | The session computes a change summary again at each request. Is that fast enough for a panel with many scenarios? | Measure first. If it is slow, the session keeps a cache keyed by the two revision ids. No table in the BE. |
 | Do the Quack secret's headers work in WASM, also after a token refresh (I3)? | Verify in the browser. Fallback: the BE reads token and `connection_id` from the body. |

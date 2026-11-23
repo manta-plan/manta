@@ -202,11 +202,11 @@ A scenario does not see later edits of its base, because its parent chain is fix
 
 The change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. Per attribute it holds the number of changed subjects, the changed series rows and the median ratio. The scenario panel shows the summary of each scenario against its default baseline.
 
-1. The FE asks the BE for the changes of a reference: `GET /v1/projects/{id}/session/changes` ([routes and Quack relay](backend.md#5-routes-and-quack-relay)).
+1. The FE asks the BE for the changes of a reference: `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack relay](backend.md#5-routes-and-quack-relay)).
 2. The BE resolves the baseline to two revision ids. Without an explicit `before`, this is the fork point with the base.
 3. The BE calls the session's `POST /summaries` with the two revision ids ([session service](session.md#3-session-service)) and passes the answer through.
 
-Nothing is stored. The scenario panel is part of the record view, so the project's session runs when the panel asks.
+Nothing is stored. The BE runs `ensure_datarecord_session` first, so the project's session runs when the panel asks.
 
 The session computes the summary from the two revisions in Python, with DR's own `settle`. It does not use the SQL views of the diff, which are raw and do not apply the broadcast rule.
 
@@ -217,7 +217,7 @@ The summary is not part of the commit `meta`. It is computed at each request, so
 A diff is a third kind of registration, beside `view` and `edit`. The FE asks the BE for it by reference:
 
 ```
-PUT /v1/projects/{id}/session/registrations/{name}   {"kind": "diff", "store": "<store>", "after": "<reference or revision id>", "before": "<reference or revision id>"}
+PUT /v1/projects/{id}/datarecord-session/registrations/{name}   {"kind": "diff", "store": "<store>", "after": "<reference or revision id>", "before": "<reference or revision id>"}
 ```
 
 - `after` and `before` each name a reference or a revision id.
@@ -272,7 +272,7 @@ The owner map of a WR is part of its registered view (F21). Its staged rows carr
 - For series, the FE aggregates over `series_<dtype>` in SQL (changed rows, median ratio).
 - Where `before` or `after` is empty and the flags in `map_rows` allow a broader row, the FE settles that coordinate ([settling in the FE](#4-settling-in-the-fe)).
 
-A diff row in `session_registrations` names its two revisions, as the BE resolved them. On restore the BE replays views, then working records, then diffs ([session lifetime](backend.md#3-session-lifetime)).
+A diff row in `datarecord_session_registrations` names its two revisions, as the BE resolved them. On restore the BE replays views, then working records, then diffs ([session lifetime](backend.md#3-session-lifetime)).
 
 ### Cost
 

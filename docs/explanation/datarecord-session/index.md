@@ -24,18 +24,19 @@ Browser                       BE (FastAPI)                            Session (o
 -------                       ------------                            --------------------------------
 DuckDB-WASM --POST quack----> quack relay ---------------------------> Quack server (read-only SQL)
 session client --/v1/...----> session routes ------------------------> session API
-                              SessionService                              |
-                               - Postgres: sessions, registrations        | reads: token for the
-                               - DR, store.json: stores, revisions,       |   project's folder
-                                 references                               | writes: token for one
-                               - SessionLauncher (Docker)                 |   layer, from the BE
+                              DatarecordSessionService                    |
+                               - Postgres: datarecord_sessions,           | reads: token for the
+                                 datarecord_session_registrations         |   project's folder
+                               - DR, store.json: stores, revisions,       | writes: token for one
+                                 references                               |   layer, from the BE
+                               - DatarecordSessionLauncher (Docker)       |
                                - claims + scoped write tokens             |
                                - idle and suspend policy                  v
                                         |                          S3: <bucket>/<project_uuid>/<store>/
                                         +-- claim.json, store.json ------^
 ```
 
-State: S3 holds the data of every revision and is the truth. In the MVP, Postgres holds the sessions and their registrations. The BE reads stores, revisions and references from S3, through DR and `store.json`. A session holds nothing that cannot be rebuilt from the other two.
+State: S3 holds the data of every revision and is the truth. In the MVP, the only Postgres tables are `datarecord_sessions` and `datarecord_session_registrations`. The BE reads stores, revisions and references from S3, through DR and `store.json`. After the MVP, stores, revisions and references move into Postgres tables too. A session holds nothing that cannot be rebuilt from the other two.
 
 DR session is a subordinate of BE: BE calls the session and receives answers. the session does not need a BE credential. The session can be stopped at any time, because the BE can rebuild it.
 
@@ -65,28 +66,28 @@ Today the BE has no record of a store or a revision. It looks them up in S3 and 
 
 1. A store arrives in the project's folder in S3: example data, a copy, or an import. The file `store.json` at the store's root is written last. It marks the store as complete.
 2. The BE lists the project's folder in S3. Each folder with a `store.json` is a store.
-3. The BE lists the store's revisions with DR: id, parent, kind (`scenario` or `result`), author, times. DR reads the manifests, and the BE keeps them in memory.
+3. The BE lists the store's revisions with DR: id, parent, kind (`scenario` or `result`), author, times. The BE answers the revision routes by calling the store's `revisions()` method. DR lists `layers/` at each call and reads only the manifests it does not hold yet. The BE keeps DR's in-memory DuckDB between requests as a read cache. A claim or a commit needs none of it (flow 7), so a restart loses only speed.
 4. The BE reads `store.json`. It holds the store's label and the *references*.
 
 A reference is a named pointer to one revision, like a branch in Git. It carries the name, the label and the description that the user sees. A name is not part of a revision. A scenario can therefore be renamed, or moved to a newer revision, without a new revision. A reference also records its *base*: the reference it was made from, fixed at creation (flow 6).
 
 S3 stays the only truth. Only the BE writes `store.json`. It changes a reference by a conditional write of the whole file (flow 7). So the names travel with an export.
 
-`GET /v1/projects/{id}/stores` and `GET .../stores/{store}/revisions` answer from these reads. Neither needs a session. A new revision shows at the next listing, and no writer has to tell the BE.
+`GET /v1/projects/{id}/datarecord-stores` and `GET .../datarecord-stores/{store}/datarecord-revisions` answer from these reads. Neither needs a session. A new revision shows at the next listing, and no writer has to tell the BE.
 
-A revision index in Postgres is the later step. It mirrors what S3 holds, behind the same routes and the same `store.json`. The [backend note](backend.md#1-revision-index) describes it, and the [MVP backend note](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) names when it is due.
+A revision index in Postgres is the later step. It holds the contents of `store.json` and the manifests' metadata for queries and filters, behind the same routes and the same `store.json`. The [backend note](backend.md#1-revision-index) describes it, and the [MVP backend note](backend-mvp.md#13-what-the-mvp-step-is-good-for-and-when-to-move-to-the-index) names when it is due.
 
 Detail: [Stores of a project](backend-mvp.md#4-stores-of-a-project), [Revisions](backend-mvp.md#5-revisions), [References in `store.json`](backend-mvp.md#6-references-in-storejson).
 
 ## 4. A user opens a project
 
 1. The FE reads stores, revisions and references from the BE, which reads them from S3 (flow 3). No session runs yet.
-2. The FE opens the project's session: `POST /v1/projects/{id}/session`. This is a call of its own, apart from login and from reading the project. A session belongs to a user and a project, and pages that only list or configure a project must not start a container.
-   - 2.1 The BE checks that the user owns the project and runs `ensure` for the pair of user and project. `ensure` means "start the session if none runs": it locks the session row, starts a container when needed, and repeats the stored registrations. The lock makes parallel requests start one container. Every later session call and every query runs `ensure` too, so a stopped session comes back by itself.
+2. The FE opens the project's session: `POST /v1/projects/{id}/datarecord-session`. This is a call of its own, apart from login and from reading the project. A session belongs to a user and a project, and pages that only list or configure a project must not start a container.
+   - 2.1 The BE checks that the user owns the project and runs `ensure_datarecord_session` for the pair of user and project. `ensure_datarecord_session` means "start the session if none runs": it locks the datarecord session's row, starts a container when needed, and repeats the stored registrations. The BE stores the datarecord session's metadata in that row, so it can recreate the connection and continue operations later. The lock makes parallel requests start one container. Every later session call and every query runs `ensure_datarecord_session` too, so a stopped session comes back by itself.
    - 2.2 If no container runs, the BE's launcher starts one. It passes four inputs: the project's folder `s3://<bucket>/<project_uuid>/`, an S3 token that can only read that folder, a Quack token, and a secret for the API.
    - 2.3 The session opens one DuckDB connection and creates one DR workspace on it, attached as the catalog `manta`. It starts the Quack server on the same connection, installs the SQL guard, and reports ready. This takes under a second.
    - 2.4 The BE returns the Quack address and the Quack token to the FE.
-3. The FE registers the revision of the active scenario: `PUT /v1/projects/{id}/session/registrations/{name}`, with store, revision and view packs.
+3. The FE registers the revision of the active scenario: `PUT /v1/projects/{id}/datarecord-session/registrations/{name}`, with store, revision and view packs.
    - 3.1 The BE writes this as a row, then calls the session. The row is what makes a restart possible (flow 8).
    - 3.2 The session opens the revision with DR and registers it. DR *folds* the revision: it works out, for every value, which layer of the revision's history holds it. The result is the *owner map*. DR creates lazy views in the DuckDB schema `manta.<name>`. No value is read.
    - 3.3 The session adds its own views to the same DuckDB schema, and reads the Parquet metadata ahead of the first query. Steps 3.2 and 3.3 take about 3 seconds for the largest store.
@@ -114,7 +115,7 @@ Detail: [Session service](session.md#3-session-service), [Names in DuckDB](sessi
 
 1. The FE runs a query that names its views in full, with the prefix of the registration, for example `manta.<name>.attributes.p_nom`. DuckDB-WASM sends it as one HTTP request to `/quack` on the BE. A Quack client can only post to `/quack` at the root of a host, so the relay lives there, outside `/v1`.
 2. The request carries two HTTP headers from a Quack secret that the FE created: the user's Keycloak token and the project id.
-3. The BE authenticates the token as on every route, finds the session of that user and project, runs `ensure`, and streams the body to the container unchanged.
+3. The BE authenticates the token as on every route, finds the session of that user and project, runs `ensure_datarecord_session`, and streams the body to the container unchanged.
 4. The session checks the Quack token inside the body. Two guards then apply. DuckDB's settings forbid HTTP file access and lock the configuration. A statement check lets only SELECT pass.
 5. DuckDB runs the query on the views. The views read Parquet files from S3 with the read token. A filter on an entity reaches the Parquet scan, so a query for one entity reads only the matching part of a file.
 6. The rows travel back the same way, raw, as the layers store them.
@@ -153,17 +154,17 @@ A scenario is a reference, and a reference moves with every commit. So the FE sh
 
 The FE has two needs here, with two sources.
 
-The scenario panel shows, per scenario and attribute, how many entities changed. This change summary compares the scenario's current revision with the fork point with the scenario's base.
+The FE's panel, its view of the differences, shows per scenario and attribute how many entities changed. This change summary compares the scenario's current revision with the fork point with the scenario's base.
 
 1. The FE asks the BE for the changes of each scenario.
 2. The BE resolves each scenario to two revision ids: its current revision and its fork point. It reads the current revisions of the scenario and of its base from `store.json`. DR gives the chain of parents of both from the manifests. The fork point is the last revision that the two chains share.
 3. The BE asks the session. The session computes the summary from the two revisions, and the BE passes it to the FE.
 
-Nothing is stored. The panel is part of the record view, so the session runs when the panel asks.
+Nothing is stored. The session computes the summary at each request, and `ensure_datarecord_session` starts the session if none runs.
 
 The change table and the change markers need the values before and after:
 
-1. The FE registers a diff: `PUT .../session/registrations/{name}` with the kind `diff` and the scenario's reference as `after`. Without `before`, the baseline is the fork point with the scenario's base.
+1. The FE registers a diff: `PUT .../datarecord-session/registrations/{name}` with the kind `diff` and the scenario's reference as `after`. Without `before`, the baseline is the fork point with the scenario's base.
 2. The BE resolves both sides to revision ids and calls the session.
 3. The session opens both revisions; neither has to be registered. It creates a DuckDB schema with three lazy views.
 4. The FE reads `static_<dtype>` of the diff for the attributes on screen. It has the same shape as the view of a revision, with `before` and `after` in place of `value`.
@@ -184,16 +185,16 @@ Detail: [Changes between revisions](frontend.md#3-changes-between-revisions), [F
 
 The session can read the project's folder and nothing else. For each commit the BE reserves the new revision and creates a token that can write into that one layer.
 
-1. **The FE sends a changeset** to `POST /v1/projects/{id}/stores/{store}/revisions`. A changeset is an ordered list of operations: `set` (a value at coordinates, or a table of values), `add` (new labels with their properties) and `remove` (labels). It is one multipart request: a JSON part that names the reference to move, a JSON part with the list, and one Parquet part per table.
-2. **The BE checks.** The user must own the project, and the parent revision must be committed. The request names the reference to move and the revision that the FE expects there. The BE reads `store.json` and refuses at once if the reference points elsewhere.
-3. **The BE claims.** It calls DR's `Store.claim` with the parent and the `meta` (kind and author). DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for it.
+1. **The FE sends a changeset** to `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions`. A changeset is an ordered list of operations: `set` (a value at coordinates, or a table of values), `add` (new labels with their properties) and `remove` (labels). It is one multipart request: a JSON part that names the reference to move, a JSON part with the list, and one Parquet part per table.
+2. **The BE checks.** The user must own the project. The move is a compare-and-swap, like moving a branch in Git: the FE asks to move reference A from revision X to the new revision Y. The BE reads `store.json` and refuses at once if A no longer points to X. A reference only points to committed revisions, so this check also proves that the parent X is committed.
+3. **The BE claims.** It calls DR's `Store.claim` with the parent and the `meta` (kind and author). The BE passes the parent as `Revision(id=X, store=store)`, which reads nothing from S3. A claim therefore needs no manifest and no state in the BE's memory. DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for it.
 4. **The BE mints a write token.** It asks the object store for a short-lived token (`sts:AssumeRole`) with a policy that allows put, get and list under `layers/<id>/` only. The token lives 15 minutes.
 5. **The BE calls the session** with the claim, the token and the changeset.
 6. **The session builds the layer.** It opens a WR on the parent and applies the operations in order. The WR completes the layer: a layer must restate every series it touches in full, and only a WR does this. This is why neither the FE nor the BE builds a layer.
 7. **The session commits.** It calls `Claim.commit` with the write token. DR writes the Parquet files and `manifest.json` under `layers/<id>/` with that token. It reads the parent layers with the session's read token.
 8. **The session returns the manifest.**
 9. **The BE confirms.** It compares id, parent and `meta` of the manifest with its claim.
-10. **The BE moves the reference.** It reads `store.json` again and checks that the reference still points to the expected revision. It sets the reference to the new revision and writes `store.json` back with a conditional write. The object store accepts the write only if the file is unchanged since the read. If another change came first, the BE reads again and repeats the check. If another commit moved the reference, the BE reports a conflict; the new revision exists, but no name points to it.
+10. **The BE moves the reference.** It reads `store.json` again and checks that the reference still points to the expected revision. It sets the reference to the new revision and writes `store.json` back with a conditional write. The object store accepts the write only if the file is unchanged since the read. If another change came first, the BE reads again and repeats the check. If another commit moved the reference, the BE reports a conflict; the new revision exists, but no name points to it. A task in the BE should remove such unreachable revisions. That task can come later.
 11. **The FE registers the new revision** and shows it.
 
 The two tokens come from the same mechanism as the storage grants for runs, tested on SeaweedFS:
@@ -217,8 +218,8 @@ Detail: [Commit flow](storage-commit.md#1-commit-flow), [References in `store.js
 2. After 10 minutes without activity the session is idle. The BE may stop it when it needs capacity, and it picks the session that was used least recently.
 3. After 60 minutes without activity the BE stops the session at once.
 4. Nothing is lost, because the session holds only views.
-5. At the next request `ensure` starts a new container and repeats every registration from the rows of flow 4.
-6. The FE's attached client gets the error `Invalid connection id` on its next query. The FE calls `POST /v1/projects/{id}/session` again, detaches, attaches, and repeats the query. The user sees one slow request.
+5. At the next request `ensure_datarecord_session` starts a new container and repeats every registration from the rows of flow 4.
+6. The FE's attached client gets the error `Invalid connection id` on its next query. The FE calls `POST /v1/projects/{id}/datarecord-session` again, detaches, attaches, and repeats the query. The user sees one slow request.
 
 A task in the BE stops containers that no session row claims. A container also exits by itself after a hard limit.
 
@@ -234,7 +235,7 @@ Blocks of a run write revisions too, outside the session.
 4. The run pages find a run's revisions through Prefect, as today. The input revision is a flow parameter, and each block publishes its last output revision as an artifact.
 5. A block can write several revisions and publishes only the last (a myopic solve writes one per investment period). The earlier ones are its parents, and the BE can walk to them from the cached manifests.
 
-Later, with the revision index, the BE records each revision with the id of the run, and the run pages read it there. The target is flow 7 for blocks: the block asks the BE for each claim and commits into it. The BE then knows every revision of a run from its claim on, and the block's write right can shrink to one layer.
+Later, with the revision index, the BE records each revision with the id of the run, and the run pages read it there. The target is flow 7 for blocks: the block asks the BE for each claim and commits into it. The BE then knows every revision of a run from its claim on, and it can hand the block a scoped token that only allows writing a single new layer.
 
 Detail: [Results of runs](backend-mvp.md#8-results-of-runs), [Runs and blocks](backend.md#2-runs-and-blocks).
 
@@ -266,8 +267,8 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 | [#250](https://github.com/manta-plan/manta/issues/250) Design a BE Quack server | solved | The plan is this design. It chooses a separate per-user session service behind a Quack relay in the BE, not a Quack server inside the BE process. | [goal](index.md#1-goal), [session service](session.md#3-session-service), [routes and Quack relay](backend.md#5-routes-and-quack-relay) | 3, 4 |
 | [#245](https://github.com/manta-plan/manta/issues/245) Remove temporary quack server | solved | Phase 7 removes `docker/quack-server` and moves the WASM build scripts. The table of the appendix assigns every function of the server a new home. | [where the quack-server functions move](appendix.md#9-where-the-quack-server-functions-move) | 7 |
 | [#201](https://github.com/manta-plan/manta/issues/201) Integrate the datarecord package | partly | The plan covers parts 2 and 3 of the issue: new scenarios through the commit flow, and data reads through one session per user and project. Part 1 (blocks) stays as today: blocks commit with the global key (I6), and the claim flow for blocks is a later target. | [commit flow](storage-commit.md#1-commit-flow), [runs and blocks](backend.md#2-runs-and-blocks) | 2 to 6, 8 |
-| [#267](https://github.com/manta-plan/manta/issues/267) Design scenario mutation endpoints | solved | The plan specifies the endpoint (`POST .../stores/{store}/revisions`), the changeset, the move of the reference and the rewrite of `store.json`, and the refresh (the FE registers the new revision). It deviates from the issue in one point: the FE sends an ordered list of operations, not serialised layer data, because only a WR in the session can complete a layer. | [commit flow](storage-commit.md#1-commit-flow), [changeset format](storage-commit.md#3-changeset-format), [flow 7](index.md#7-a-user-commits-an-edit) | 6 |
-| [#283](https://github.com/manta-plan/manta/issues/283) Store scenario and revision context in datarecord metadata | prerequisite | The issue records the MVP decision: scenario and revision context stays in DR metadata and `store.json`, with no new Manta tables, and the link from a run to its revisions stays in Prefect. It names the move to the Manta database as a later step. The plan follows this order. The MVP step works without a revision index and writes the same `store.json` and the same `manta.` keys. The revision index comes after it and mirrors what the MVP step already writes. | [MVP backend without a revision index](backend-mvp.md), [revision index](backend.md#1-revision-index) | 2 |
+| [#267](https://github.com/manta-plan/manta/issues/267) Design scenario mutation endpoints | solved | The plan specifies the endpoint (`POST .../datarecord-stores/{store}/datarecord-revisions`), the changeset, the move of the reference and the rewrite of `store.json`, and the refresh (the FE registers the new revision). It deviates from the issue in one point: the FE sends an ordered list of operations, not serialised layer data, because only a WR in the session can complete a layer. | [commit flow](storage-commit.md#1-commit-flow), [changeset format](storage-commit.md#3-changeset-format), [flow 7](index.md#7-a-user-commits-an-edit) | 6 |
+| [#283](https://github.com/manta-plan/manta/issues/283) Store scenario and revision context in datarecord metadata | prerequisite | The issue records the MVP decision: scenario and revision context stays in DR metadata and `store.json`, with no new Manta tables, and the link from a run to its revisions stays in Prefect. It names the move to the Manta database as a later step. The plan follows this order. The MVP step works without a revision index and writes the same `store.json` and the same `manta.` keys. The revision index comes after it and is filled from what the MVP step already writes. | [MVP backend without a revision index](backend-mvp.md), [revision index](backend.md#1-revision-index) | 2 |
 | [#284](https://github.com/manta-plan/manta/issues/284) Performance test of a large datarecord + quack + FE | partly | The plan measured the server side on DR main and lists the stack's numbers (register about 3 s, one entity's series 0.23 s). The end-to-end test from SeaweedFS through the relay into the browser is left, as is the rerun of S2 and S3 on the stack. | [spikes and measurements](appendix.md#8-spikes-and-measurements) | 1, after 5 |
 | [#271](https://github.com/manta-plan/manta/issues/271) Figure out S3 permissions for blocks | partly | The plan aligns its tokens with the storage grants for runs (F25) and proposes the claim flow through the BE, so a block could get a write right for one layer. How a block authenticates to the BE and whether it can reach the BE are open with Kristijan. | [runs and blocks](backend.md#2-runs-and-blocks), [the two tokens](storage-commit.md#2-the-two-tokens) | 8 |
 | [#193](https://github.com/manta-plan/manta/issues/193) S3 security | partly | Sessions get no S3 key of their own: a read token for the project's folder and a 15-minute write token per layer. Blocks keep the global key (I6) until the claim flow for blocks. | [the two tokens](storage-commit.md#2-the-two-tokens), [known issues](appendix.md#5-known-issues) | 6, 8 |

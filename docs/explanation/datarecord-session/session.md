@@ -33,12 +33,12 @@ Browser                       BE (FastAPI)                            Session (o
 -------                       ------------                            --------------------------------
 DuckDB-WASM --POST quack----> quack relay ---------------------------> Quack server
 session client --/v1/...----> session routes                           session API
-                              SessionService -----------------------------^   |
-                               - Postgres: sessions,                          | read-only credential,
-                                 session_registrations                        | project prefix
+                              DatarecordSessionService -------------------^   |
+                               - Postgres: datarecord_sessions,               | read-only credential,
+                                 datarecord_session_registrations             | project prefix
                                - DR, store.json: stores, revisions,           |
                                  references                                   |
-                               - SessionLauncher (Docker)                     v
+                               - DatarecordSessionLauncher (Docker)           v
                                - claims + scoped write tokens ---------> S3: <bucket>/<project_uuid>/<store>/
                                - idle and suspend policy
 ```
@@ -86,12 +86,12 @@ Only the BE calls this API.
 | later: `POST /registrations/{name}/edits` | operation list ([changeset format](storage-commit.md#3-changeset-format)) | Apply edits to a registration of the kind `edit` ([working records](#6-working-records)). |
 | later: `POST /suspend` | | Hook before the BE stops the instance ([working records](#6-working-records), [session lifetime](backend.md#3-session-lifetime)). |
 
-The `kind` of a registration is the same value that the BE stores in its `session_registrations` row: `view`, `diff`, and later `edit`.
+The `kind` of a registration is the same value that the BE stores in its `datarecord_session_registrations` row: `view`, `diff`, and later `edit`. A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. The FE removes a registration by unregistering. The registrations are not an audit log.
 
 ### Rules
 
 - The session accepts store names, never URIs. It joins a name to its fixed root. It refuses a name with `/` or `..`.
-- The BE's public routes name a store the same way (`/v1/projects/{id}/stores/{store}`). The run API of the storage grants takes the full URL `s3://<bucket>/<project>/<store>` (F25). Both resolve to that one form.
+- The BE's public routes name a store the same way (`/v1/projects/{id}/datarecord-stores/{store}`). The run API of the storage grants takes the full URL `s3://<bucket>/<project>/<store>` (F25). Both resolve to that one form.
 - Quack is read-only. Every write goes through the HTTP API.
 - One thread owns the DR workspace objects (F14). API calls queue onto that thread.
 - The session passes its read credential to DR as `S3Credentials`, with `url_style="path"` and the endpoint as scheme, host and port (F12).
@@ -230,8 +230,8 @@ Working records are planned in 1 to 2 months, and they constrain the design now.
 
 ### How a WR lives
 
-- `session_registrations` has a `kind` column from the start: `view` (a revision) or `edit` (a WR on a base revision). Diffs add the kind `diff` ([changes between revisions](frontend.md#3-changes-between-revisions)).
-- The edit call is a sibling of the registration call. The BE route is `POST .../session/registrations/{name}/edits`, with the operation list of the [changeset format](storage-commit.md#3-changeset-format). The BE passes it to the session's `POST /registrations/{name}/edits`.
+- `datarecord_session_registrations` has a `kind` column from the start: `view` (a revision) or `edit` (a WR on a base revision). Diffs add the kind `diff` ([changes between revisions](frontend.md#3-changes-between-revisions)).
+- The edit call is a sibling of the registration call. The BE route is `POST .../datarecord-session/registrations/{name}/edits`, with the operation list of the [changeset format](storage-commit.md#3-changeset-format). The BE passes it to the session's `POST /registrations/{name}/edits`.
 - Every edit passes the BE. The BE appends it to an *edit log* of that WR. The log holds the operation list in Postgres and the table payloads in S3 under a session prefix.
 - The log is kept in full until the commit (D9). No draft revision is written, so nothing has to be squashed.
 - To watch: the storage cost of large table payloads in a long log.

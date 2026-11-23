@@ -19,7 +19,7 @@ In short: the session has no write access of its own. For each commit the BE cla
 
 ```
 FE --changeset--> BE                                    S                        S3
-                  1. check ownership, parent committed,
+                  1. check ownership,
                      read store.json + ETag, reference  <------------------------ store.json
                      at the expected revision, else 409
                   2. Store.claim(parent, meta)  ------------------------------> layers/<id>/claim.json
@@ -38,8 +38,8 @@ FE --changeset--> BE                                    S                       
 FE <--revision---
 ```
 
-1. The BE checks that the user owns the project and that the parent revision is committed. The FE's request names the reference to move and the revision that the FE expects there. The BE reads `store.json` with its ETag. If the reference does not point to the expected revision, the BE answers 409 before it claims.
-2. The BE calls `Store.claim(parent, meta)`. The claim's `meta` carries `manta.kind` and `manta.created_by`. DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for the claim; `claim.json` is its record.
+1. The BE checks that the user owns the project. The FE's request names the reference to move and the revision that the FE expects there. The BE reads `store.json` with its ETag. If the reference does not point to the expected revision, the BE answers 409 before it claims.
+2. The BE calls `Store.claim(parent, meta)` with `parent = Revision(id=expected, store=store)`. Building that `Revision` reads nothing from S3, and the claim reads no manifest. The check of step 1 already proves the parent is committed, because a reference only points to committed revisions. The claim's `meta` carries `manta.kind` and `manta.created_by`. DR draws the id of the new revision and writes `layers/<id>/claim.json`. The BE keeps no row for the claim; `claim.json` is its record.
 3. The BE mints a write token for `layers/<id>/` (see [the two tokens](#2-the-two-tokens)).
 4. The BE sends `POST /commits` to the session. The request carries the claim, the write token and the changeset (see [changeset format](#3-changeset-format)).
 5. The session opens a WR on the parent and applies the operations in order. The WR does the restatement (F13).
@@ -145,7 +145,7 @@ Open, to agree with Kristijan: how the BE mints. It needs the minter key, or a m
 
 ### Residual risks
 
-- A compromised session could return one manifest and write another. The damage stays inside the user's own project. The BE lists the manifests that S3 holds, so no copy goes stale. Later, with the revision index, `sync_store` repairs the mirror.
+- A compromised session could return one manifest and write another. The damage stays inside the user's own project. The BE lists the manifests that S3 holds, so no copy goes stale. Later, with the revision index, `sync_store` repairs the Postgres tables.
 - Until the commit token expires, the session can overwrite data files of the layer it committed. The 900 s lifetime limits this.
 - Until the storage grants reach the session, it holds the global S3 credential. Code alone confines it to the project prefix (I1).
 
@@ -189,7 +189,7 @@ All statements about DR below refer to the pin `468f69b0` (D19). "Probe" marks a
 
 ### The request
 
-`POST /v1/projects/{id}/stores/{store}/revisions` takes a `multipart/form-data` body. The parts come in this order:
+`POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` takes a `multipart/form-data` body. The parts come in this order:
 
 | # | Part name | Content type | Content | Read by |
 |---|---|---|---|---|
@@ -209,7 +209,7 @@ The envelope holds the fields that the BE needs for the [commit flow](#1-commit-
 | `expected` | UUID string | yes | The revision that the FE expects at `reference`. It is also the parent of the new revision. |
 | `register_as` | string | no | A registration name. The BE registers the new revision under it at once ([routes](backend.md#5-routes-and-quack-relay)). |
 
-The envelope has no parent field, because the parent is the expected revision. It has no base field either. A reference gets its base when `POST .../references` creates it. A new scenario is therefore two calls: create the reference on its base, then commit to it.
+The envelope has no parent field, because the parent is the expected revision. It has no base field either. A reference gets its base when `POST .../datarecord-references` creates it. A new scenario is therefore two calls: create the reference on its base, then commit to it.
 
 The changeset proper is the second part:
 
@@ -591,7 +591,7 @@ The result is deterministic. It reads only the WR at that operation, which the p
 
 ### The same list in live editing
 
-Later the same `changeset` part is the body of `POST .../session/registrations/{name}/edits` for a registration of the kind `edit` ([working records](session.md#6-working-records), [flow 10](index.md#10-later-live-editing)). The differences:
+Later the same `changeset` part is the body of `POST .../datarecord-session/registrations/{name}/edits` for a registration of the kind `edit` ([working records](session.md#6-working-records), [flow 10](index.md#10-later-live-editing)). The differences:
 
 - The body has no `commit` part. The WR already has its base revision, and nothing moves a reference.
 - The BE appends the request to the edit log: the `changeset` part in Postgres, the table parts in S3 under the session prefix. It then passes the request to the session.
