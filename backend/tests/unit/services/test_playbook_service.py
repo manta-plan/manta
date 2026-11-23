@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
 from playbook.blocks.registry import BlockDescription
-from playbook.blocks.tests.fakes import FakeNeedsUpstream
 from playbook.playbooks.yaml_io import parse_doc
 from playbook_library import library_catalogue
 from playbook_library.playbooks import LibraryPlaybook, library_playbooks
@@ -13,6 +13,19 @@ from manta.services.results.playbook_result import (
 )
 
 _LIBRARY_PLAYBOOK = "expand"
+
+
+class _NeedsUpstreamConfig(ConfigSchema):
+    source: RevisionRef | None = None
+
+
+class _NeedsUpstream(MantaBlock[_NeedsUpstreamConfig]):
+    """Takes another step's output as a setting; only its description is used."""
+
+    ENV = "default"
+    CONFIG = _NeedsUpstreamConfig
+    DIMS = BlockDims()
+    INPUTS = frozenset({"source"})
 
 
 def _library_service() -> PlaybookService:
@@ -82,7 +95,7 @@ def test_get_playbook_reports_a_step_wired_to_another_steps_output() -> None:
             ],
         }
     )
-    needs = BlockDescription.for_block(FakeNeedsUpstream, "fake_needs_upstream")
+    needs = BlockDescription.for_block(_NeedsUpstream, "fake_needs_upstream")
     catalogue = library_catalogue()
     service = PlaybookService(
         playbooks={"wired": LibraryPlaybook(doc=doc, default_config={})},
