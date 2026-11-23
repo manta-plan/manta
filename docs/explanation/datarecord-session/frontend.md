@@ -202,7 +202,7 @@ A scenario does not see later edits of its base, because its parent chain is fix
 
 The change summary belongs to a reference, not to a commit. By default it compares the reference's current revision with the fork point with its base reference. Per attribute it holds the number of changed subjects, the changed series rows and the median ratio. The scenario panel shows the summary of each scenario against its default baseline.
 
-1. The FE asks the BE for the changes of a reference: `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack relay](backend.md#5-routes-and-quack-relay)).
+1. The FE asks the BE for the changes of a reference: `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack auth check](backend.md#5-routes-and-quack-auth-check)).
 2. The BE resolves the baseline to two revision ids. Without an explicit `before`, this is the fork point with the base.
 3. The BE calls the session's `POST /summaries` with the two revision ids ([session service](session.md#3-session-service)) and passes the answer through.
 
@@ -223,7 +223,7 @@ PUT /v1/projects/{id}/datarecord-session/registrations/{name}   {"kind": "diff",
 - `after` and `before` each name a reference or a revision id.
 - Without `before`, the BE uses the fork point of the `after` reference with its base. It refuses the request if `after` is not a reference with a base.
 - With two references, the diff is an explicit compare of their current revisions.
-- The BE resolves both sides to revision ids before it calls the session ([routes and Quack relay](backend.md#5-routes-and-quack-relay)).
+- The BE resolves both sides to revision ids before it calls the session ([routes and Quack auth check](backend.md#5-routes-and-quack-auth-check)).
 
 The session always receives two revision ids:
 

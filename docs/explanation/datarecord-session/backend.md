@@ -5,11 +5,11 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Design note: backend
 
-What the BE gains: the session tables and routes, the launcher, the lifetime policy and the Quack relay. Later: the revision index in Postgres.
+What the BE gains: the session tables and routes, the launcher, the lifetime policy and the Quack auth check. Later: the revision index in Postgres.
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack relay](#5-routes-and-quack-relay) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure_datarecord_session`, so a stopped session comes back by itself. The FE reaches the session only through the BE: through the session routes, and through a Quack relay at `/quack`.
+This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack auth check](#5-routes-and-quack-auth-check) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure_datarecord_session`, so a stopped session comes back by itself. The FE reaches the session API only through the BE. Quack requests go from Caddy straight to the session, after the BE has checked them.
 
 Two sections describe the step after the MVP: [revision index](#1-revision-index) and [runs and blocks](#2-runs-and-blocks). In that step the BE keeps an index of stores, revisions and references in Postgres. Postgres holds the contents of `store.json` and the metadata of the manifests, without the schema data, so that API requests can query and filter them. The data in S3 stays the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. In the MVP the BE reads stores, revisions and references from DR and `store.json` instead ([MVP backend note](backend-mvp.md)).
 
@@ -115,9 +115,9 @@ The BE gains a dependency on `datarecord[remote]`. It uses it for `claim`, `revi
 
 ### Public routes
 
-`GET /v1/projects/{id}/datarecord-stores` and `GET /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` answer from Postgres. Stores, revisions and references need no session. The full list of routes is in [routes and Quack relay](#5-routes-and-quack-relay).
+`GET /v1/projects/{id}/datarecord-stores` and `GET /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` answer from Postgres. Stores, revisions and references need no session. The full list of routes is in [routes and Quack auth check](#5-routes-and-quack-auth-check).
 
-The listing carries no change summary. The scenario panel asks for it through the session route `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack relay](#5-routes-and-quack-relay)).
+The listing carries no change summary. The scenario panel asks for it through the session route `GET /v1/projects/{id}/datarecord-session/changes` ([routes and Quack auth check](#5-routes-and-quack-auth-check)).
 
 ### Example
 
@@ -246,7 +246,7 @@ stopped --ensure_datarecord_session--> starting --healthy + replay--> active --n
 - **Activity** is any proxied API call or Quack request. It sets `last_used_at`.
 - **Presence** is an explicit FE call, `POST /v1/projects/{id}/datarecord-session/heartbeat`. The BE answers it alone.
 
-The FE's `SELECT 1` link check (F7) is removed. The relay cannot tell it from a query.
+The FE's `SELECT 1` link check (F7) is removed. The auth check cannot tell it from a query.
 
 ### Two stages
 
@@ -292,7 +292,7 @@ Instances carry labels. A BE task stops labelled instances that have no active r
 
 The first implementation uses Docker. Kubernetes follows next year. A sub-process implementation stays possible, because the interface names no container concept beyond an opaque `ref`. It is not planned.
 
-## 5. Routes and Quack relay
+## 5. Routes and Quack auth check
 
 ### Opening the session and `ensure_datarecord_session`
 
@@ -316,7 +316,7 @@ All routes are behind Keycloak auth and a project ownership check.
 | `POST /v1/projects/{id}/datarecord-session/heartbeat` | Presence. |
 | `GET`, `PUT`, `DELETE /v1/projects/{id}/datarecord-session/registrations/{name}` | Write the row, then apply it to the session. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
 | `GET /v1/projects/{id}/datarecord-session/changes` with `store`, `after`, optional `before` | The change summary of the reference `after` against the fork point with its base reference. With `before`, an explicit compare. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure_datarecord_session`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
-| `POST /quack` (server root) | Quack relay, see below. |
+| `GET /v1/datarecord-session/quack-auth` | Caddy's auth check for a Quack request, for the project in `X-Manta-Project`. Runs `ensure_datarecord_session` and returns the session's address in `X-Session-Upstream`, see below. |
 
 In the MVP the store, revision and reference routes read from DR and `store.json`. They change `store.json` by one read, one check and one conditional PUT ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). Later, with the revision index, they read from Postgres and write SQL first, then `store.json`. Only the source changes; the responses stay the same ([the shared contract](backend-mvp.md#3-the-shared-contract)).
 
@@ -343,11 +343,11 @@ A registration of the kind `diff` takes `after` and `before`. Each names a refer
 
 A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. The FE removes a registration by unregistering. The registrations are not an audit log. Both tables are part of the MVP ([session management](backend-mvp.md#10-session-management)). The MVP has no store or revision table, so `store` is the store's name and the revision columns hold DR revision UUIDs. With the revision index they become `store_id`, `revision_id` and `before_revision_id`, foreign keys to `datarecord_stores` and `datarecord_revisions`.
 
-### Quack relay
+### Quack auth check
 
-The relay design comes from spike S1.
+Quack requests go from the frontend Caddy (`frontend/Caddyfile`) straight to the session. The BE checks each request first, but it never carries query or result bytes. The design of the headers comes from spike S1, the Caddy part from spike S8.
 
-A Quack client always posts to `/quack` at the root of a host and port. It cannot address a path. So the relay lives at `/quack`, outside `/v1`, and Caddy forwards it to the BE.
+In production a request takes the path browser, GCP load balancer, frontend Caddy, then BE or session container. A Quack client always posts to `/quack` at the root of a host and port. It cannot address a path. So the route lives at `/quack` in `frontend/Caddyfile`, outside `/v1`, on the same origin as the app.
 
 The FE creates a Quack secret that adds HTTP headers to every request:
 
@@ -356,21 +356,45 @@ CREATE OR REPLACE SECRET manta (TYPE quack, SCOPE 'quack:<host>:<port>', TOKEN '
   EXTRA_HTTP_HEADERS MAP {'Authorization': 'Bearer <keycloak token>', 'X-Manta-Project': '<project id>'})
 ```
 
-For each request the BE:
+For each `POST /quack`, Caddy and the BE act in four steps:
 
-1. authenticates the bearer token as on every route;
-2. finds the session by user and project;
-3. runs `ensure_datarecord_session`;
-4. streams the body to the instance unchanged.
+1. Caddy receives the request with the two headers from the secret.
+2. Caddy removes any `X-Session-Upstream` header that the client sent. It then sends a subrequest without the body to `GET /v1/datarecord-session/quack-auth` on the BE (Caddy's `forward_auth`). The BE sees the original method and path in `X-Forwarded-Method` and `X-Forwarded-Uri`.
+3. The BE authenticates the bearer token as on every route and finds the session by user and project. It runs `ensure_datarecord_session` and sets `last_used_at`. It answers 204 with `X-Session-Upstream: <host:port>` of the session container. On a bad token or a foreign project it answers 401 or 403, and Caddy passes that answer to the client.
+4. Caddy copies `X-Session-Upstream` into the original request and proxies it, body unchanged, to that address.
+
+```caddyfile
+route /quack {
+	request_header -X-Session-Upstream
+	forward_auth {$BACKEND_URL} {
+		uri /v1/datarecord-session/quack-auth
+		copy_headers X-Session-Upstream
+	}
+	@badup not header_regexp X-Session-Upstream <launcher address pattern>
+	respond @badup "no session upstream" 502
+	reverse_proxy {header.X-Session-Upstream}
+}
+```
+
+The pattern in `header_regexp` must match the addresses that the launcher returns as `endpoint`, and nothing else. When the header has any other form, Caddy answers 502 and proxies nothing. Caddy 2.11 already removes a client's `X-Session-Upstream` when the auth answer has none (S8). The `request_header` line and the pattern keep the route safe even if that behaviour changes.
+
+Caddy must reach the session containers on the network, as the BE does. With the Docker launcher, the session containers join a network that Caddy and the BE share.
 
 The Quack token still travels inside the body. The session checks it. It is a second factor and plays no part in routing.
 
-The headers are confirmed with the native client. The WASM path is read from source only (I3). Two checks in the browser remain:
+Wake-up and activity stay per request, because every Quack request passes the auth check. So the FE needs no keep-alive of its own. The BE handles one small request per query, with headers only.
 
-- the headers reach the BE from WASM;
-- a refreshed Keycloak token reaches later requests after `CREATE OR REPLACE SECRET`.
+A relay in the BE was the alternative: the BE would stream every body to the session and every result back. Caddy does the same work without the BE in the data path, so large results put no load on the BE's workers. The BE keeps every decision: who may query, which session, and when it wakes.
 
-Fallback if headers fail in WASM: the BE reads the token from the first request body. It reads the `connection_id` from the fixed offset of later bodies. This is possible, but it ties the BE to the binary format.
+Five checks remain:
+
+- The headers from WASM reach Caddy and the BE. The WASM path is read from source only (I3).
+- A refreshed Keycloak token reaches later requests after `CREATE OR REPLACE SECRET`.
+- A real DuckDB-WASM Quack client works through Caddy. S8 used plain HTTP clients.
+- The Caddy container sets no `HTTP_PROXY` or similar variable, because Caddy's proxy transport honours them.
+- The image runs Caddy 2.11 or later, because 2.10.2 routes to a spoofed upstream (S8).
+
+Fallback if headers fail in WASM: the BE relays the body itself and reads the token from the first request body. It reads the `connection_id` from the fixed offset of later bodies. This is possible, but it puts the BE back in the data path and ties it to the binary format.
 
 ## 6. Open points
 

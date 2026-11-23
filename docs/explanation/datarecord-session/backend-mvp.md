@@ -50,7 +50,7 @@ The MVP step is phase 2 of the [phases](appendix.md#4-phases). The phases that i
 |---|---|
 | 0. DR stack | Merge and new export. The new export writes `store.json` in the form of [the shared contract](#3-the-shared-contract), with `base`. |
 | 2. BE store routes over DR | The import reads `store.json`. The routes of [the shared contract](#3-the-shared-contract) answer from DR and `store.json`. No table, no `sync_store`. |
-| 4. BE sessions | Session tables, launcher, `ensure_datarecord_session`, relay. The two session tables stay ([session management](#10-session-management)). |
+| 4. BE sessions | Session tables, launcher, `ensure_datarecord_session`, Quack auth check in Caddy. The two session tables stay ([session management](#10-session-management)). |
 | 5. FE | Port the record client to the BE routes. The routes and shapes are those of [the shared contract](#3-the-shared-contract). |
 | 6. Commit path | Claim, token and changeset. The reference moves by a conditional PUT of `store.json` ([references](#6-references-in-storejson)). |
 | 8. Later | WR, Kubernetes, claim flow for blocks, shared sessions, and the revision index: the tables of [revision index](backend.md#1-revision-index), filled by `sync_store` from what the MVP wrote ([path to the index](#14-path-to-the-index)). |
@@ -78,7 +78,7 @@ The MVP and the later index serve one contract. The FE sees no difference.
 | `PATCH`, `DELETE /v1/projects/{id}/datarecord-stores/{store}/datarecord-references/{name}` | `store.json` by `If-Match` | SQL update, then `store.json` |
 | `GET /v1/projects/{id}/datarecord-session/changes`, diff registrations | fork point from `Revision.ancestry()` | fork point from `parent_id` |
 
-Both steps need the three reference routes, to create a scenario, change its label and delete it. The [routes table](backend.md#5-routes-and-quack-relay) lists them.
+Both steps need the three reference routes, to create a scenario, change its label and delete it. The [routes table](backend.md#5-routes-and-quack-auth-check) lists them.
 
 ### Response of the revision listing
 
@@ -364,7 +364,7 @@ The two session tables stay in the MVP: `datarecord_sessions` and `datarecord_se
 
 No `datarecord_stores` exists in the MVP. So a registration row names its store by name.
 
-[Session lifetime](backend.md#3-session-lifetime), the [launcher](backend.md#4-launcher), and the [routes and Quack relay](backend.md#5-routes-and-quack-relay) apply to the MVP unchanged.
+[Session lifetime](backend.md#3-session-lifetime), the [launcher](backend.md#4-launcher), and the [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check) apply to the MVP unchanged.
 
 ### Not taken: state in the container
 

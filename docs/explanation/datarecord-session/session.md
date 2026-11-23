@@ -29,23 +29,26 @@ Today each session has one instance.
 ## 2. Components
 
 ```
-Browser                       BE (FastAPI)                            Session (one per user + project)
--------                       ------------                            --------------------------------
-DuckDB-WASM --POST quack----> quack relay ---------------------------> Quack server
-session client --/v1/...----> session routes                           session API
-                              DatarecordSessionService -------------------^   |
-                               - Postgres: datarecord_sessions,               | read-only credential,
-                                 datarecord_session_registrations             | project prefix
-                               - DR, store.json: stores, revisions,           |
-                                 references                                   |
-                               - DatarecordSessionLauncher (Docker)           v
-                               - claims + scoped write tokens ---------> S3: <bucket>/<project_uuid>/<store>/
-                               - idle and suspend policy
+Browser                       Frontend Caddy      BE (FastAPI)                            Session (one per user + project)
+-------                       --------------      ------------                            --------------------------------
+DuckDB-WASM --POST /quack---> route /quack -----> quack-auth: checks token,
+                              forward_auth <----- ensure_datarecord_session,
+                                    |             204 + X-Session-Upstream
+                                    +-- body unchanged, not through the BE --------------> Quack server
+session client --/v1/...----> /v1/* ------------> session routes                           session API
+                                                  DatarecordSessionService -------------------^   |
+                                                   - Postgres: datarecord_sessions,               | read-only credential,
+                                                     datarecord_session_registrations             | project prefix
+                                                   - DR, store.json: stores, revisions,           |
+                                                     references                                   |
+                                                   - DatarecordSessionLauncher (Docker)           v
+                                                   - claims + scoped write tokens ---------> S3: <bucket>/<project_uuid>/<store>/
+                                                   - idle and suspend policy
 ```
 
 The BE calls the session. The session never calls the BE. The session is therefore a plain server without BE credentials.
 
-The BE side (stores and revisions, lifetime, launcher, routes) is in the [MVP backend note](backend-mvp.md), [session lifetime](backend.md#3-session-lifetime), [launcher](backend.md#4-launcher) and [routes and Quack relay](backend.md#5-routes-and-quack-relay).
+The BE side (stores and revisions, lifetime, launcher, routes) is in the [MVP backend note](backend-mvp.md), [session lifetime](backend.md#3-session-lifetime), [launcher](backend.md#4-launcher) and [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check).
 
 ## 3. Session service
 
@@ -75,7 +78,7 @@ Only the BE calls this API.
 |---|---|---|
 | `GET /health` | | Ready when Quack serves. |
 | `PUT /registrations/{name}` | `{kind: "view", store, revision, packs}` | Register the revision as the DuckDB schema `manta.<name>`. Add the `static_<dtype>` views to it and the requested view packs below it. Prewarm. Idempotent. Answers the SQL prefix of the registration, `manta.<name>`. |
-| `PUT /registrations/{name}` | `{kind: "diff", store, after, before}` | Expose the diff of two revisions as the DuckDB schema `manta.<name>` ([changes between revisions](frontend.md#3-changes-between-revisions)). By default `after` is a reference's current revision and `before` the fork point with its base reference. `after` and `before` are revision ids, both required. The BE resolves the reference and its fork point to them before the call ([routes and Quack relay](backend.md#5-routes-and-quack-relay)). Later `after` can name a registration of the kind `edit`, with its base revision as `before` ([working records](#6-working-records)). |
+| `PUT /registrations/{name}` | `{kind: "diff", store, after, before}` | Expose the diff of two revisions as the DuckDB schema `manta.<name>` ([changes between revisions](frontend.md#3-changes-between-revisions)). By default `after` is a reference's current revision and `before` the fork point with its base reference. `after` and `before` are revision ids, both required. The BE resolves the reference and its fork point to them before the call ([routes and Quack auth check](backend.md#5-routes-and-quack-auth-check)). Later `after` can name a registration of the kind `edit`, with its base revision as `before` ([working records](#6-working-records)). |
 | `POST /summaries` | `{store, after, before}` | Compute the change summary of two revision ids and answer it as JSON. By default `after` is a reference's current revision and `before` the fork point with its base reference; the BE resolves both ([changes between revisions](frontend.md#3-changes-between-revisions)). Registers nothing. |
 | `GET /registrations` | | The registered names. |
 | `GET /registrations/{name}` | | The manifest and view list of one registration. |

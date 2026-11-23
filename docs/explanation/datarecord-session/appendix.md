@@ -92,7 +92,7 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 1. **Spikes** S1, S2, S4, S6. Then S3. S2 and S3 run again on the stack ([what the DR stack changes](#83-what-the-dr-stack-changes)).
 2. **BE store routes over DR**, the MVP backend step ([MVP backend note](backend-mvp.md)). First, alone: the example data import reads `store.json` instead of `revisions.json` and moves to folder `2026-11-13`. Then the store, revision and reference routes answer from DR and `store.json`, and the BE moves references by a conditional write of `store.json`. No table. The FE home page can drop `record-server.ts` here.
 3. **Session service.** Package, Quack, guard, registration with `Record.register`, view packs. One fixed instance in compose in place of quack-server.
-4. **BE sessions.** Session tables, launcher (Docker), `ensure_datarecord_session`, registration routes, Quack relay, lifetime policy.
+4. **BE sessions.** Session tables, launcher (Docker), `ensure_datarecord_session`, registration routes, Quack auth check in Caddy, lifetime policy.
 5. **FE.** Port `baby-manta`'s record client to the BE routes: session client, registration, presence call.
 6. **Commit path.** Claim, write credential, changeset format, verification, and the move of the reference by a conditional write of `store.json`. The DR side exists (PRs 151 to 153).
 7. **Remove** `docker/quack-server`. Move the WASM build scripts.
@@ -124,7 +124,7 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 | F4 | The real WASM client is `baby-manta/src/lib/recordServer/client.ts`. `manta/frontend` only lists records. | baby-manta |
 | F5 | Quack is plain HTTP, `POST /quack` at the server root. The client addresses `quack:<host>:<port>` with a `TOKEN` option. | `client.ts:76-81` |
 | F6 | The FE runs every query as `quack_query_by_name('r', $$...$$)`. Such a query sees catalogs and DuckDB schemas created after ATTACH, so a new registration needs no re-attach (S1, [results of S2 and S3](#81-results-of-s2-and-s3-on-dr-main)). | `queries.ts:3-6` |
-| F7 | The WASM client cannot run Quack's heartbeat thread. The FE sets `HEARTBEAT_TIMEOUT 3600` and sends `SELECT 1` every 15 s while the tab is visible. At the relay this keep-alive looks like any query. | `client.ts:56-63, 154-195` |
+| F7 | The WASM client cannot run Quack's heartbeat thread. The FE sets `HEARTBEAT_TIMEOUT 3600` and sends `SELECT 1` every 15 s while the tab is visible. At the BE's Quack auth check this keep-alive looks like any query. | `client.ts:56-63, 154-195` |
 | F8 | DR exposes a revision as views: `Record.register(name)`, `Workspace.unregister(name)`, `Workspace(con=..., name=...)`. A registered WR's views follow its edits. `register` also adds the view `<name>.owner_map` (F21). | DR `resolve/record.py:611`, DEP 34, PR 149 |
 | F9 | DR has no branch, tag or head. A revision is a UUID with a parent and a `meta` of JSON values. Nested values are allowed, null is refused at any depth (PR 154). Claimed `meta` is fixed; a commit may only add entries. `Store.revisions(meta=...)` matches by containment. | DR `store/manifest.py:33, 221`, PR 154 |
 | F10 | `Store.claim` writes only `layers/<id>/claim.json`. A commit writes only under `layers/<id>/`. The single conditional PUT is `manifest.json`. A commit also reads all ancestor manifests and data. | DR `store/store.py:608-639, 1095-1162` |
@@ -188,13 +188,14 @@ Dropped:
 
 | # | Question | Why it matters |
 |---|---|---|
-| S1 | **Done.** No path. Headers through a Quack secret work (native client). Token in the first body only, then a `connection_id`. Restart needs re-attach. `quack_query_by_name` sees new DuckDB schemas at once. Result in [routes and Quack relay](backend.md#5-routes-and-quack-relay). Left over: the browser check of the headers. | |
+| S1 | **Done.** No path. Headers through a Quack secret work (native client). Token in the first body only, then a `connection_id`. Restart needs re-attach. `quack_query_by_name` sees new DuckDB schemas at once. Result in [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check). Left over: the browser check of the headers. | |
 | S2 | **Done** on DR main, results in [results of S2 and S3](#81-results-of-s2-and-s3-on-dr-main). To run again on the stack ([what the DR stack changes](#83-what-the-dr-stack-changes)). | |
 | S3 | **Done** for local disk, results in [results of S2 and S3](#81-results-of-s2-and-s3-on-dr-main). Left over: the same on the stack and on SeaweedFS, and the duration of a large commit against the 900 s token. | |
 | S4 | **Done.** After a server restart every query of an attached client fails with `Invalid connection id`, on both query paths, also when the token changed. `DETACH` and `ATTACH` recover. | |
 | S7 | **Done**, results in [results of S7](#82-results-of-s7-quack-oauth). `quack-oauth` is not adopted now. | |
 | S5 | Shared session per project. Known from S1: the server accepts several tokens through an authentication callback `(connection_id, client token, server token)`, and an authorization callback `(connection_id, query)` that may rewrite the query. Nothing ties a connection to a user yet (open upstream), a Python callback would have to keep that map. `quack-oauth` exists as a third-party project. Open: separation of the users' registrations in one DuckDB. | D1. Run after the rest of the design is fixed. |
 | S6 | **Done** for DuckDB (tested). SeaweedFS 4.53 tested by Kristijan for the runs (F25). Left over: an STS session token passed as `S3Credentials` against SeaweedFS, for the workspace and for a commit (F12). | |
+| S8 | **Done** 2026-11-23, Caddy 2.11.9, compared with 2.10.2. `forward_auth` with an upstream per user works: a 5 MiB binary body arrives byte-identical, and a 50 MiB response streams back. The auth subrequest has no body. A 401 reaches the client, and no upstream receives the request. A placeholder upstream needs no extra module. Spoofing: 2.11 removes a client's `X-Session-Upstream` when the auth answer has none. 2.10.2 keeps it and routes to the spoofed upstream. An auth value always replaces the client's. Caddy's proxy transport honours `HTTP_PROXY` variables. Not tested: a real DuckDB-WASM Quack client through this path (the sandbox blocked the extension install). Result in [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check). | Keeps query and result bytes out of the BE. |
 
 ### 8.1 Results of S2 and S3 on DR main
 
@@ -283,7 +284,7 @@ Consequences:
 
 - The SQL macro stays as the guard for now. Argued, not measured: the attack of issue 325 needs a statement that our macro rejects, since it allows SELECT only. One test on DuckDB 2.0.0 settles this.
 - To look at again when a 2.0.0 binary exists and nested DuckDB schema paths are supported. What it would add then: login by JWT, rules per user for a shared session (S5), and an audit table.
-- The relay's design ([routes and Quack relay](backend.md#5-routes-and-quack-relay)) is unchanged: the Keycloak token travels in a header to the BE, the Quack token in the body to the session.
+- The token split of the [Quack auth check](backend.md#5-routes-and-quack-auth-check) is unchanged: the Keycloak token travels in a header to Caddy and the BE, the Quack token in the body to the session.
 
 ### 8.3 What the DR stack changes
 
@@ -316,7 +317,7 @@ Consequences:
 | Quack server start and stop | `app/quack.py:84-104` | S | |
 | Quack token (one shared token) | `main.py:46` | BE issues, S enforces | One per session. |
 | Read-only SQL guard | `quack.py:54-99` | S | Two layers: DuckDB settings (HTTP file systems off, configuration locked) and a statement check as a SQL macro. The settings move as is. The macro moves and stays for now; `quack-oauth` was evaluated and does not fit today ([results of S7](#82-results-of-s7-quack-oauth)). |
-| `POST /quack` relay and CORS | `main.py:175-196` | BE | Same origin, so CORS goes away. |
+| `POST /quack` relay and CORS | `main.py:175-196` | frontend Caddy, checked by the BE | Caddy proxies `/quack` to the session after the BE's auth check. Same origin, so CORS goes away. |
 | Bearer auth on `/api/*` | `main.py:106` | BE | Keycloak. |
 | `GET /api/records` (store list) | `main.py:121-131` | BE | From an S3 listing and `store.json`. Later from Postgres. |
 | `POST /api/records/{id}/open` | `main.py:134-151`, `stores.py:215-304` | split | Revision list: BE. Registration: S. Manifest and view list: S, per registered revision. |
@@ -349,7 +350,7 @@ Read with the table of [issues that the plan touches](index.md#11-issues-that-th
 - Phase 0: review and merge of DR PR 144 and the stack (I11), and the new export of all stores into a new bucket folder (I9, F30).
 - Phase 2: the store, revision and reference routes over DR and `store.json`, with the conditional write of `store.json`.
 - Phase 3: the `datarecord-session` package (Quack, guard, registration, view packs) as one fixed instance in compose.
-- Phase 4: session tables, Docker launcher, `ensure_datarecord_session`, registration routes, Quack relay, idle and suspend policy.
+- Phase 4: session tables, Docker launcher, `ensure_datarecord_session`, registration routes, Quack auth check in Caddy, idle and suspend policy.
 - Phase 5: port of `baby-manta`'s record client to the BE routes, with the presence call in place of `SELECT 1`.
 - Phase 6: implementation of the commit path; #267 is the design only.
 - The FE settle function, with `vitest`, a DuckDB for Node and a pinned copy of `settle_cases.json` in CI (F23).

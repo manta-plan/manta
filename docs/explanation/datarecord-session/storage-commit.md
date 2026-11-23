@@ -207,7 +207,7 @@ The envelope holds the fields that the BE needs for the [commit flow](#1-commit-
 |---|---|---|---|
 | `reference` | string | yes | The reference to move, a key of `store.json`. |
 | `expected` | UUID string | yes | The revision that the FE expects at `reference`. It is also the parent of the new revision. |
-| `register_as` | string | no | A registration name. The BE registers the new revision under it at once ([routes](backend.md#5-routes-and-quack-relay)). |
+| `register_as` | string | no | A registration name. The BE registers the new revision under it at once ([routes](backend.md#5-routes-and-quack-auth-check)). |
 
 The envelope has no parent field, because the parent is the expected revision. It has no base field either. A reference gets its base when `POST .../datarecord-references` creates it. A new scenario is therefore two calls: create the reference on its base, then commit to it.
 

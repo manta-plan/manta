@@ -13,27 +13,30 @@ Terms: **BE** = main FastAPI backend. **FE** = frontend (prototype in `baby-mant
 
 Each logged-in user reads and edits the data of a project through a private, short-lived service, the datarecord-session.
 The session reads the project's stores from S3, serves selected revisions over the Quack protocol to the DuckDB-WASM client in the FE, and writes edits as new revisions.
-All FE traffic goes through the BE. The BE lists stores and revisions and owns every write permission.
+FE API calls go through the BE. Quack data goes from the frontend Caddy straight to the session, after the BE has checked the request. The BE lists stores and revisions and owns every write permission.
 
 The session replaces `docker/quack-server` (issue #223). That server has one shared token for all users, no isolation between users, and no write path.
 
 ## 2. Schematic overview
 
 ```
-Browser                       BE (FastAPI)                            Session (one per user + project)
--------                       ------------                            --------------------------------
-DuckDB-WASM --POST quack----> quack relay ---------------------------> Quack server (read-only SQL)
-session client --/v1/...----> session routes ------------------------> session API
-                              DatarecordSessionService                    |
-                               - Postgres: datarecord_sessions,           | reads: token for the
-                                 datarecord_session_registrations         |   project's folder
-                               - DR, store.json: stores, revisions,       | writes: token for one
-                                 references                               |   layer, from the BE
-                               - DatarecordSessionLauncher (Docker)       |
-                               - claims + scoped write tokens             |
-                               - idle and suspend policy                  v
-                                        |                          S3: <bucket>/<project_uuid>/<store>/
-                                        +-- claim.json, store.json ------^
+Browser                       Frontend Caddy      BE (FastAPI)                            Session (one per user + project)
+-------                       --------------      ------------                            --------------------------------
+DuckDB-WASM --POST /quack---> route /quack -----> quack-auth: checks token,
+                              forward_auth <----- ensure_datarecord_session,
+                                    |             204 + X-Session-Upstream
+                                    +-- body unchanged, not through the BE --------------> Quack server (read-only SQL)
+session client --/v1/...----> /v1/* ------------> session routes ------------------------> session API
+                                                  DatarecordSessionService                    |
+                                                   - Postgres: datarecord_sessions,           | reads: token for the
+                                                     datarecord_session_registrations         |   project's folder
+                                                   - DR, store.json: stores, revisions,       | writes: token for one
+                                                     references                               |   layer, from the BE
+                                                   - DatarecordSessionLauncher (Docker)       |
+                                                   - claims + scoped write tokens             |
+                                                   - idle and suspend policy                  v
+                                                            |                          S3: <bucket>/<project_uuid>/<store>/
+                                                            +-- claim.json, store.json ------^
 ```
 
 State: S3 holds the data of every revision and is the truth. In the MVP, the only Postgres tables are `datarecord_sessions` and `datarecord_session_registrations`. The BE reads stores, revisions and references from S3, through DR and `store.json`. After the MVP, stores, revisions and references move into Postgres tables too. A session holds nothing that cannot be rebuilt from the other two.
@@ -43,9 +46,9 @@ DR session is a subordinate of BE: BE calls the session and receives answers. th
 | Component | What it is | Design note |
 |---|---|---|
 | Session | A new service, `datarecord-session/`. One container per user and project. A Quack server for SQL, and an HTTP API that only the BE calls. | [session.md](session.md) |
-| BE | Gains store and revision routes over DR and `store.json`, the session management, and the Quack relay. Later a revision index. | [backend.md](backend.md), [backend-mvp.md](backend-mvp.md) for the MVP step |
+| BE | Gains store and revision routes over DR and `store.json`, the session management, and the Quack auth check. Later a revision index. | [backend.md](backend.md), [backend-mvp.md](backend-mvp.md) for the MVP step |
 | S3 and tokens | The session reads with a token for the project's folder. It writes with a token for one layer. | [storage-commit.md](storage-commit.md) |
-| FE | Keeps DuckDB-WASM and SQL. Talks to the BE only. | [frontend.md](frontend.md) |
+| FE | Keeps DuckDB-WASM and SQL. Talks to the BE, and sends Quack queries through the frontend Caddy to the session. | [frontend.md](frontend.md) |
 
 The flows below, in the order a user meets them:
 
@@ -92,7 +95,7 @@ Detail: [Stores of a project](backend-mvp.md#4-stores-of-a-project), [Revisions]
    - 3.2 The session opens the revision with DR and registers it. DR *folds* the revision: it works out, for every value, which layer of the revision's history holds it. The result is the *owner map*. DR creates lazy views in the DuckDB schema `manta.<name>`. No value is read.
    - 3.3 The session adds its own views to the same DuckDB schema, and reads the Parquet metadata ahead of the first query. Steps 3.2 and 3.3 take about 3 seconds for the largest store.
    - 3.4 The BE returns the SQL prefix of the registration, for example `manta.<name>`. The FE puts it in front of every view name.
-4. The FE attaches DuckDB-WASM to the BE's `/quack` address.
+4. The FE attaches DuckDB-WASM to the `/quack` address on the app's own origin.
 
 What a registration `manta.<name>` holds after step 3.3:
 
@@ -107,20 +110,20 @@ What a registration `manta.<name>` holds after step 3.3:
 
 The launcher behind step 2.2 is an interface with three calls: start, stop, list. The first implementation uses Docker. Kubernetes follows next year.
 
-Detail: [Session service](session.md#3-session-service), [Names in DuckDB](session.md#4-names-in-duckdb), [View packs](session.md#5-replacing-the-manta-objects), [Launcher](backend.md#4-launcher), [Backend routes](backend.md#5-routes-and-quack-relay).
+Detail: [Session service](session.md#3-session-service), [Names in DuckDB](session.md#4-names-in-duckdb), [View packs](session.md#5-replacing-the-manta-objects), [Launcher](backend.md#4-launcher), [Backend routes](backend.md#5-routes-and-quack-auth-check).
 
 ## 5. The FE reads data
 
 ### One query
 
-1. The FE runs a query that names its views in full, with the prefix of the registration, for example `manta.<name>.attributes.p_nom`. DuckDB-WASM sends it as one HTTP request to `/quack` on the BE. A Quack client can only post to `/quack` at the root of a host, so the relay lives there, outside `/v1`.
+1. The FE runs a query that names its views in full, with the prefix of the registration, for example `manta.<name>.attributes.p_nom`. DuckDB-WASM sends it as one HTTP request to `/quack` on the app's origin, where the frontend Caddy receives it. A Quack client can only post to `/quack` at the root of a host, so the route lives there, outside `/v1`.
 2. The request carries two HTTP headers from a Quack secret that the FE created: the user's Keycloak token and the project id.
-3. The BE authenticates the token as on every route, finds the session of that user and project, runs `ensure_datarecord_session`, and streams the body to the container unchanged.
+3. Caddy asks the BE with a subrequest that has the headers but no body. The BE authenticates the token, finds the session of that user and project, and runs `ensure_datarecord_session`. It answers with the container's address, and Caddy proxies the request there, body unchanged.
 4. The session checks the Quack token inside the body. Two guards then apply. DuckDB's settings forbid HTTP file access and lock the configuration. A statement check lets only SELECT pass.
 5. DuckDB runs the query on the views. The views read Parquet files from S3 with the read token. A filter on an entity reaches the Parquet scan, so a query for one entity reads only the matching part of a file.
-6. The rows travel back the same way, raw, as the layers store them.
+6. The rows travel back through Caddy, raw, as the layers store them. They do not pass the BE.
 
-Detail: [Quack relay](backend.md#5-routes-and-quack-relay), [Rules of the session service](session.md#3-session-service), [measurements](appendix.md#8-spikes-and-measurements).
+Detail: [Quack auth check](backend.md#5-routes-and-quack-auth-check), [Rules of the session service](session.md#3-session-service), [measurements](appendix.md#8-spikes-and-measurements).
 
 ### A component table
 
@@ -214,7 +217,7 @@ Detail: [Commit flow](storage-commit.md#1-commit-flow), [References in `store.js
 
 ## 8. A session stops and comes back
 
-1. Every relayed request counts as activity and sets a time on the session row. Presence is a separate call that the FE sends while the tab is open. Today's `SELECT 1` every 15 seconds goes away, because the BE cannot tell it from a real query.
+1. Every Quack request that the BE checks counts as activity and sets a time on the session row. Presence is a separate call that the FE sends while the tab is open. Today's `SELECT 1` every 15 seconds goes away, because the BE cannot tell it from a real query.
 2. After 10 minutes without activity the session is idle. The BE may stop it when it needs capacity, and it picks the session that was used least recently.
 3. After 60 minutes without activity the BE stops the session at once.
 4. Nothing is lost, because the session holds only views.
@@ -264,18 +267,18 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 
 | Issue | Relation | How the plan addresses it | Where | Phase |
 |---|---|---|---|---|
-| [#250](https://github.com/manta-plan/manta/issues/250) Design a BE Quack server | solved | The plan is this design. It chooses a separate per-user session service behind a Quack relay in the BE, not a Quack server inside the BE process. | [goal](index.md#1-goal), [session service](session.md#3-session-service), [routes and Quack relay](backend.md#5-routes-and-quack-relay) | 3, 4 |
+| [#250](https://github.com/manta-plan/manta/issues/250) Design a BE Quack server | solved | The plan is this design. It chooses a separate per-user session service behind a Quack auth check in the BE, with the data proxied by the frontend Caddy. It rejects a Quack server inside the BE process. | [goal](index.md#1-goal), [session service](session.md#3-session-service), [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check) | 3, 4 |
 | [#245](https://github.com/manta-plan/manta/issues/245) Remove temporary quack server | solved | Phase 7 removes `docker/quack-server` and moves the WASM build scripts. The table of the appendix assigns every function of the server a new home. | [where the quack-server functions move](appendix.md#9-where-the-quack-server-functions-move) | 7 |
 | [#201](https://github.com/manta-plan/manta/issues/201) Integrate the datarecord package | partly | The plan covers parts 2 and 3 of the issue: new scenarios through the commit flow, and data reads through one session per user and project. Part 1 (blocks) stays as today: blocks commit with the global key (I6), and the claim flow for blocks is a later target. | [commit flow](storage-commit.md#1-commit-flow), [runs and blocks](backend.md#2-runs-and-blocks) | 2 to 6, 8 |
 | [#267](https://github.com/manta-plan/manta/issues/267) Design scenario mutation endpoints | solved | The plan specifies the endpoint (`POST .../datarecord-stores/{store}/datarecord-revisions`), the changeset, the move of the reference and the rewrite of `store.json`, and the refresh (the FE registers the new revision). It deviates from the issue in one point: the FE sends an ordered list of operations, not serialised layer data, because only a WR in the session can complete a layer. | [commit flow](storage-commit.md#1-commit-flow), [changeset format](storage-commit.md#3-changeset-format), [flow 7](index.md#7-a-user-commits-an-edit) | 6 |
 | [#283](https://github.com/manta-plan/manta/issues/283) Store scenario and revision context in datarecord metadata | prerequisite | The issue records the MVP decision: scenario and revision context stays in DR metadata and `store.json`, with no new Manta tables, and the link from a run to its revisions stays in Prefect. It names the move to the Manta database as a later step. The plan follows this order. The MVP step works without a revision index and writes the same `store.json` and the same `manta.` keys. The revision index comes after it and is filled from what the MVP step already writes. | [MVP backend without a revision index](backend-mvp.md), [revision index](backend.md#1-revision-index) | 2 |
-| [#284](https://github.com/manta-plan/manta/issues/284) Performance test of a large datarecord + quack + FE | partly | The plan measured the server side on DR main and lists the stack's numbers (register about 3 s, one entity's series 0.23 s). The end-to-end test from SeaweedFS through the relay into the browser is left, as is the rerun of S2 and S3 on the stack. | [spikes and measurements](appendix.md#8-spikes-and-measurements) | 1, after 5 |
+| [#284](https://github.com/manta-plan/manta/issues/284) Performance test of a large datarecord + quack + FE | partly | The plan measured the server side on DR main and lists the stack's numbers (register about 3 s, one entity's series 0.23 s). The end-to-end test from SeaweedFS through Caddy into the browser is left, as is the rerun of S2 and S3 on the stack. | [spikes and measurements](appendix.md#8-spikes-and-measurements) | 1, after 5 |
 | [#271](https://github.com/manta-plan/manta/issues/271) Figure out S3 permissions for blocks | partly | The plan aligns its tokens with the storage grants for runs (F25) and proposes the claim flow through the BE, so a block could get a write right for one layer. How a block authenticates to the BE and whether it can reach the BE are open with Kristijan. | [runs and blocks](backend.md#2-runs-and-blocks), [the two tokens](storage-commit.md#2-the-two-tokens) | 8 |
 | [#193](https://github.com/manta-plan/manta/issues/193) S3 security | partly | Sessions get no S3 key of their own: a read token for the project's folder and a 15-minute write token per layer. Blocks keep the global key (I6) until the claim flow for blocks. | [the two tokens](storage-commit.md#2-the-two-tokens), [known issues](appendix.md#5-known-issues) | 6, 8 |
 | [#273](https://github.com/manta-plan/manta/issues/273) Harden the user register endpoint | prerequisite | The plan names this as I5: with sessions, any registered identity can start containers. The fix must land before session containers run in a public deployment. | [known issues](appendix.md#5-known-issues) | 4 |
 | [#53](https://github.com/manta-plan/manta/issues/53) Deploy Production S3 Store | affected | The production store must support `sts:AssumeRole` with inline policies for the two tokens. SeaweedFS, AWS S3 and MinIO do; GCS does not, so a GCS bucket cannot serve sessions. | [the two tokens](storage-commit.md#2-the-two-tokens) | 6 |
 | [#276](https://github.com/manta-plan/manta/issues/276) Create GH workflow files along with GCP configurations for MVP deployment | affected | The deployment runs Docker Compose on a VM. With the Docker launcher the BE must reach the Docker daemon to start session containers, and the session image must be built and deployed beside FE and BE. | [launcher](backend.md#4-launcher) | 4 |
-| [#285](https://github.com/manta-plan/manta/issues/285) Cache keycloak signing keys | affected | The Quack relay authenticates the Keycloak token on every query. Without a cached JWKS each SQL query from the FE also costs a request to Keycloak, so this issue gains weight. | [routes and Quack relay](backend.md#5-routes-and-quack-relay) | 4 |
+| [#285](https://github.com/manta-plan/manta/issues/285) Cache keycloak signing keys | affected | The BE authenticates the Keycloak token on every Quack auth subrequest, so once per query. Without a cached JWKS each SQL query from the FE also costs a request to Keycloak, so this issue gains weight. | [routes and Quack auth check](backend.md#5-routes-and-quack-auth-check) | 4 |
 | [#249](https://github.com/manta-plan/manta/issues/249) Add CI check to ensure we're using same datarecord package version everywhere | affected | The plan decides one DR commit hash for session, BE and blocks, moved together (D19). The check gains two more places: the session package and the BE's new dependency on `datarecord[remote]`. | [decisions](appendix.md#2-decisions), [revision index](backend.md#1-revision-index) | 0 |
 | [#298](https://github.com/manta-plan/manta/issues/298) Seed built-in projects for each user | affected | Seeding copies stores into a project. A copy is a store of the project once its `store.json` is written. The references of `store.json` (such as `inputs`) are the project's scenarios. No sync step runs. | [stores of a project](backend-mvp.md#4-stores-of-a-project), [flow 3](index.md#3-a-store-enters-a-project) | 2 |
 | [#221](https://github.com/manta-plan/manta/issues/221) Provide a example project with completed runs for each guest user | affected | Copied results show in the store listing as `result` revisions and as references of `store.json`, without a run row. Completed example runs that show as runs need a `runs` row and a link to their revisions. In the MVP the run pages find revisions through Prefect, which has no flow run for a copy; this link is open. Later, with the revision index, `input_revision_id` and `run_id` give it. | [results of runs](backend-mvp.md#8-results-of-runs), [runs and blocks](backend.md#2-runs-and-blocks) | 2 |
