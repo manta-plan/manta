@@ -27,6 +27,8 @@ WORKDIR /app/backend
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
+RUN uv run --no-sync python -c "import duckdb; duckdb.execute('INSTALL httpfs')"
+
 ENV APP_HOST=0.0.0.0
 
 EXPOSE 8000

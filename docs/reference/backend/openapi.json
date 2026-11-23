@@ -183,6 +183,113 @@
         }
       }
     },
+    "/v1/projects/{project_uuid}/datarecord-stores": {
+      "get": {
+        "tags": [
+          "datarecord-stores"
+        ],
+        "summary": "List Datarecord Stores",
+        "operationId": "list_datarecord_stores_v1_projects__project_uuid__datarecord_stores_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDatarecordStoresResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_uuid}/datarecord-stores/{store}/datarecord-revisions": {
+      "get": {
+        "tags": [
+          "datarecord-stores"
+        ],
+        "summary": "List Datarecord Revisions",
+        "operationId": "list_datarecord_revisions_v1_projects__project_uuid__datarecord_stores__store__datarecord_revisions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          },
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "title": "Store"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDatarecordRevisionsResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "summary": "Get Health",
@@ -1161,6 +1268,206 @@
         ],
         "title": "DataRecordResult"
       },
+      "DatarecordReferenceResult": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "revision": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision"
+          },
+          "base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "revision",
+          "base",
+          "label",
+          "description"
+        ],
+        "title": "DatarecordReferenceResult"
+      },
+      "DatarecordRevisionResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "committed"
+            ],
+            "title": "Status"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "committed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed At"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "parent",
+          "status",
+          "kind",
+          "created_by",
+          "run",
+          "step",
+          "created_at",
+          "committed_at",
+          "meta"
+        ],
+        "title": "DatarecordRevisionResult"
+      },
+      "DatarecordStoreResult": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "label",
+          "description"
+        ],
+        "title": "DatarecordStoreResult"
+      },
       "GetPlaybookResult": {
         "properties": {
           "name": {
@@ -1321,6 +1628,51 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ListDatarecordRevisionsResult": {
+        "properties": {
+          "store": {
+            "type": "string",
+            "title": "Store"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/DatarecordRevisionResult"
+            },
+            "type": "array",
+            "title": "Revisions"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/DatarecordReferenceResult"
+            },
+            "type": "array",
+            "title": "References"
+          }
+        },
+        "type": "object",
+        "required": [
+          "store",
+          "revisions",
+          "references"
+        ],
+        "title": "ListDatarecordRevisionsResult"
+      },
+      "ListDatarecordStoresResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatarecordStoreResult"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ListDatarecordStoresResult"
       },
       "ListPlaybooksResult": {
         "properties": {
