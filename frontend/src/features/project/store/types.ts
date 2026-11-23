@@ -22,6 +22,12 @@ import type {
   ScenarioMutation,
   ScenarioRule,
 } from "../data/scenarios";
+import type {
+  ChangeDialogSeed,
+  DraftChangeInput,
+  DraftScenario,
+  EntityDialogSeed,
+} from "../lib/draft-scenarios";
 
 export type { InspectionCanvas } from "../data/inspections";
 export type { Report } from "../data/reports";
@@ -341,6 +347,33 @@ export interface ProjectState {
 
   cursorPosition: CursorPosition | null;
   setCursorPosition: (c: CursorPosition | null) => void;
+
+  // Draft scenarios, made on the Build tab and kept in the browser (see
+  // lib/draft-scenarios and slices/draft-slice).
+  draftScenarios: DraftScenario[];
+  loadProjectDrafts: (projectId: string) => void;
+  createDraft: (input: {
+    recordId: string;
+    parent: string;
+    name: string;
+    description: string;
+  }) => DraftScenario;
+  updateDraft: (id: string, patch: { name?: string; description?: string }) => void;
+  deleteDraft: (id: string) => void;
+  saveDraftChange: (draftId: string, change: DraftChangeInput) => void;
+  removeDraftChange: (draftId: string, changeId: string) => void;
+  // The draft the Build tab shows (over its parent, which the record shows).
+  shownDraftId: string | null;
+  showDraft: (id: string) => void;
+  scenarioDialog: { mode: "new" } | { mode: "edit"; draftId: string } | null;
+  openScenarioDialog: (dialog: { mode: "new" } | { mode: "edit"; draftId: string }) => void;
+  closeScenarioDialog: () => void;
+  changeDialog: ChangeDialogSeed | null;
+  openChangeDialog: (seed: ChangeDialogSeed) => void;
+  closeChangeDialog: () => void;
+  entityDialog: EntityDialogSeed | null;
+  openEntityDialog: (seed: EntityDialogSeed) => void;
+  closeEntityDialog: () => void;
 }
 
 export type ProjectStoreSet = (

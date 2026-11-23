@@ -4,6 +4,7 @@ import { useProjectStore } from "../store/project-store";
 import { formatRatio } from "../lib/record-format";
 import type { Revision } from "../lib/record-server/types";
 import { selectableScenarios } from "../lib/record-scenarios";
+import { useShownDraft } from "../lib/use-shown-draft";
 import { SidebarEmptyState } from "./sidebar-empty-state";
 
 // Which scenario the map, tree and drawers currently show; sits under the
@@ -11,6 +12,7 @@ import { SidebarEmptyState } from "./sidebar-empty-state";
 export function ShownScenarioNote() {
   const record = useProjectStore((s) => s.record);
   const switchingScenario = useProjectStore((s) => s.switchingScenario);
+  const shownDraft = useShownDraft();
   if (!record) return null;
   const shown = record.info.revisions.find((revision) => revision.name === record.scenario);
   const switching = record.info.revisions.find((revision) => revision.name === switchingScenario);
@@ -23,6 +25,11 @@ export function ShownScenarioNote() {
       {switching ? (
         <>
           Loading <span className="text-surface-300">{switching.label}</span>…
+        </>
+      ) : shownDraft ? (
+        <>
+          Showing: <span className="text-surface-300">{shown.label}</span> ›{" "}
+          <span className="text-warn-500">{shownDraft.name}</span> (draft)
         </>
       ) : (
         <>

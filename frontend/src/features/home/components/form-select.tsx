@@ -5,6 +5,8 @@ import { LuCheck, LuChevronDown } from "react-icons/lu";
 export interface FormSelectOption {
   value: string;
   label: string;
+  /** Listed, but can't be picked. */
+  disabled?: boolean;
 }
 
 /**
@@ -65,7 +67,8 @@ export function FormSelect({
                 <Select.Item
                   key={option.value}
                   value={option.value}
-                  className="text-surface-200 data-[highlighted]:bg-surface-700 data-[selected]:text-surface-50 flex h-8 cursor-default items-center gap-2 rounded px-2 text-[12px] outline-none"
+                  disabled={option.disabled}
+                  className="text-surface-200 data-[highlighted]:bg-surface-700 data-[selected]:text-surface-50 flex h-8 cursor-default items-center gap-2 rounded px-2 text-[12px] outline-none data-[disabled]:opacity-40"
                 >
                   <Select.ItemText className="min-w-0 flex-1 truncate">
                     {option.label}
