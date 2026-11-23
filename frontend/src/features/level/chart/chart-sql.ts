@@ -5,6 +5,7 @@ import {
   sqlString,
 } from "../../project/lib/record-server/client";
 import { levelCtes, spanCondition, type LevelQueryScope } from "../level-sql";
+import { OUTPUT } from "../table/table-queries";
 
 // The chart drawer's reads. Every time series comes back as one list per
 // key (a carrier, an entity, a quantile), aligned to the window's snapshots
@@ -329,17 +330,6 @@ export function loadAvailable(
   );
 }
 
-/** How a type's power counts as output: a generator's own p, a storage unit's discharge, a link's delivery at its output, a line's flow at its input. */
-const OUTPUT: Record<string, { role: string; value: string }> = {
-  Generator: { role: "attached", value: "p.value" },
-  StorageUnit: { role: "attached", value: "p.value" },
-  Store: { role: "attached", value: "p.value" },
-  Load: { role: "attached", value: "p.value" },
-  Link: { role: "input", value: "p.value" },
-  Line: { role: "input", value: "p.value" },
-  Transformer: { role: "input", value: "p.value" },
-};
-
 /** Rows of (entity, carrier, ctype, bus, snapshot, p) for the level's members of `ctypes` in the window (a run result's p). */
 function powerSql(scope: LevelQueryScope, ctypes: string[], extra = ""): string {
   const roles = ctypes
@@ -348,8 +338,12 @@ function powerSql(scope: LevelQueryScope, ctypes: string[], extra = ""): string 
         `(m.ctype = ${sqlString(ctype)} AND c.role = ${sqlString(OUTPUT[ctype]?.role ?? "attached")})`,
     )
     .join(" OR ");
+  // The table's rule for what counts as output (a storage unit's discharge, a line's flow in absolute value...), so both agree.
+  const value = `CASE ${ctypes
+    .map((ctype) => `WHEN m.ctype = ${sqlString(ctype)} THEN ${OUTPUT[ctype]?.value ?? "p.value"}`)
+    .join(" ")} END`;
   return `
-    SELECT m.entity, m.carrier, m.ctype, m.bus, p.snapshot, ${"p.value"} AS p
+    SELECT m.entity, m.carrier, m.ctype, m.bus, p.snapshot, ${value} AS p
     FROM ${N("attributes.p")} p
     JOIN ${N("properties.connection")} c ON c.connection = p.connection
     JOIN members m ON m.entity = p.connection.entity

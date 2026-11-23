@@ -4,7 +4,7 @@ import type { LoadedRecord } from "../../project/store/types";
 import { useProjectStore } from "../../project/store/project-store";
 import type { Level } from "../level";
 import { useLevelPage } from "../level-page-context";
-import { scopeKey, type LevelQueryScope } from "../level-sql";
+import { scopeKey, windowKey, type LevelQueryScope } from "../level-sql";
 import { AttributesTable } from "./attributes-table";
 import { useCarrierInfo } from "./format";
 import type { TableColumn } from "./columns";
@@ -95,7 +95,7 @@ export function LevelTable() {
 
   const hoursData = useShownData(
     "level-table-hours",
-    scope ? [scope.period, scope.timeWindow?.start ?? null, scope.timeWindow?.end ?? null] : null,
+    scope ? [scope.period, ...windowKey(scope.timeWindow)] : null,
     () => loadSpanHours(scope!, hasView),
   );
   const hours = hoursData.status === "ready" ? hoursData.data : 0;

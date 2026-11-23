@@ -31,6 +31,21 @@ describe("level SQL", () => {
     expect(condition).toContain("snapshot.timestep < '2030-01-08T00:00:00Z'::TIMESTAMP");
   });
 
+  it("keeps only a season's months inside its bounds, and tells windows apart in cache keys", () => {
+    const winter = {
+      start: "2030-01-01T00:00:00Z",
+      end: "2031-01-01T00:00:00Z",
+      label: "Winter",
+      months: [11, 0, 1],
+    };
+    expect(spanCondition("snapshot", "2030", winter)).toContain(
+      "month(snapshot.timestep) IN (12, 1, 2)",
+    );
+    const plain = { ...winter, months: undefined };
+    const scope = { level: ALL_ENTITIES, period: "2030", timeWindow: winter };
+    expect(scopeKey(scope)).not.toBe(scopeKey({ ...scope, timeWindow: plain }));
+  });
+
   it("qualifies every relation with the shown catalog, read when the SQL is built", () => {
     const scope = { level: ALL_ENTITIES, period: "2030", timeWindow: null };
     expect(levelCtes(scope)).not.toContain("rec__base.");

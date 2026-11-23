@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useLocation, useParams } from "wouter";
 import { getActiveProjectTab } from "../lib/project-route";
+import { useLevelStore } from "../../level/level-store";
 import { ScenarioChangeDrawer } from "../../level/scenarios/scenario-change-drawer";
 import { ScenarioDialogs } from "../../level/scenarios/scenario-dialogs";
 import { useProjectStore } from "../store/project-store";
@@ -22,6 +23,7 @@ export function ProjectLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     setCurrentProjectId(projectId);
     loadProjectDrafts(projectId);
+    useLevelStore.getState().resetForProject();
   }, [projectId, setCurrentProjectId, loadProjectDrafts]);
 
   // The scenario change table belongs to the tab that opened it; leaving the tab (or project) shouldn't carry it along.

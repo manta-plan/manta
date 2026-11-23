@@ -2,15 +2,12 @@ import { useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { LuClock3, LuX } from "react-icons/lu";
 import { useLevelStore, type TimeWindow } from "./level-store";
-import { usePeriods, type PeriodSpan } from "./periods";
+import { usePeriods } from "./periods";
+import { DAY_MS, HOUR_MS, MIN_HOURS, iso, seasonWindow } from "./seasons";
 
 // The time window inside the investment period: its full span, a
 // meteorological season, or a custom range of at least two hours. It slices
 // every time series and what's summed over hours. Global, like the period.
-
-const DAY_MS = 24 * 3600 * 1000;
-const HOUR_MS = 3600 * 1000;
-const MIN_HOURS = 2;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -35,30 +32,9 @@ function rangeLabel(start: number, end: number) {
     : `${dayLabel(start)} – ${dayLabel(last)}`;
 }
 
-const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 /** For a datetime-local input (UTC shown as is). */
 const inputValue = (ms: number) => new Date(ms).toISOString().slice(0, 16);
 const fromInput = (value: string) => Date.parse(`${value}:00Z`);
-
-/** The season inside the period's span, as one window from its first to its last hour there; null when the span has none of it. */
-function seasonWindow(
-  span: PeriodSpan,
-  months: readonly number[],
-  label: string,
-): TimeWindow | null {
-  const start = Date.parse(span.start);
-  const end = Date.parse(span.end) + HOUR_MS;
-  // Winter wraps the year: from December of the span's first year, else the span's start.
-  let first: number | null = null;
-  let last: number | null = null;
-  for (let day = Math.floor(start / DAY_MS) * DAY_MS; day < end; day += DAY_MS) {
-    if (!months.includes(new Date(day).getUTCMonth())) continue;
-    first ??= Math.max(day, start);
-    last = Math.min(day + DAY_MS, end);
-  }
-  if (first === null || last === null || last - first < MIN_HOURS * HOUR_MS) return null;
-  return { start: iso(first), end: iso(last), label };
-}
 
 export function TimeWindowButton() {
   const { span } = usePeriods();

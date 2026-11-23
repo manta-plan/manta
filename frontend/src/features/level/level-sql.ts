@@ -99,6 +99,10 @@ export function spanCondition(
   if (timeWindow) {
     conditions.push(`${column}.timestep >= ${sqlString(timeWindow.start)}::TIMESTAMP`);
     conditions.push(`${column}.timestep < ${sqlString(timeWindow.end)}::TIMESTAMP`);
+    if (timeWindow.months)
+      conditions.push(
+        `month(${column}.timestep) IN (${timeWindow.months.map((m) => m + 1).join(", ")})`,
+      );
   }
   return conditions.join(" AND ");
 }
@@ -117,13 +121,21 @@ export function levelCtes(scope: LevelQueryScope): string {
   ].join(",\n");
 }
 
+/** A stable cache key part for a time window. */
+export function windowKey(timeWindow: TimeWindow | null): (string | null)[] {
+  return [
+    timeWindow?.start ?? null,
+    timeWindow?.end ?? null,
+    timeWindow?.months?.join(",") ?? null,
+  ];
+}
+
 /** A stable cache key part for a scope (SWR args). */
 export function scopeKey(scope: LevelQueryScope): string {
   return JSON.stringify([
     scope.level,
     scope.period,
-    scope.timeWindow?.start ?? null,
-    scope.timeWindow?.end ?? null,
+    ...windowKey(scope.timeWindow),
     scope.locations ?? [],
   ]);
 }

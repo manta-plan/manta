@@ -171,7 +171,7 @@ export function loadMemberValues(scope: LevelQueryScope): Promise<MemberValue[]>
 }
 
 /** What counts as output, per type: its connection role and how power counts (as componentPage's kinds). */
-const OUTPUT: Record<string, { role: string; value: string }> = {
+export const OUTPUT: Record<string, { role: string; value: string }> = {
   Generator: { role: "attached", value: "p.value" },
   StorageUnit: { role: "attached", value: "greatest(p.value, 0)" },
   Link: { role: "input", value: "p.value" },

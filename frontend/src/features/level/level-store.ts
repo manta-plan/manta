@@ -13,6 +13,8 @@ export interface TimeWindow {
   end: string;
   /** What the window button says, e.g. "Winter" or "Mon 7 Jan – Sun 13 Jan". */
   label: string;
+  /** A season: only these months (0 = January) count inside start..end, so Winter is not the months between its first and last day. */
+  months?: readonly number[];
 }
 
 /** One column's filter in the table: a number range, a set of values, or a substring. */
@@ -102,6 +104,8 @@ interface LevelState {
 
   /** On opening another level: what belongs to the last one goes. */
   resetForLevel: () => void;
+  /** On opening another project: the period, window and selection belong to the last one. */
+  resetForProject: () => void;
 }
 
 const sameSeries = (a: PickedSeries, b: PickedSeries) =>
@@ -109,7 +113,8 @@ const sameSeries = (a: PickedSeries, b: PickedSeries) =>
 
 export const useLevelStore = create<LevelState>((set) => ({
   period: null,
-  setPeriod: (period) => set({ period }),
+  // A window is absolute: the other period has none of its timesteps.
+  setPeriod: (period) => set({ period, timeWindow: null }),
   timeWindow: null,
   setTimeWindow: (timeWindow) => set({ timeWindow }),
 
@@ -178,6 +183,17 @@ export const useLevelStore = create<LevelState>((set) => ({
 
   resetForLevel: () =>
     set({
+      columnFilters: {},
+      columnSort: null,
+      mapFocus: null,
+      pickedSeries: [],
+      expandedBlock: null,
+    }),
+  resetForProject: () =>
+    set({
+      period: null,
+      timeWindow: null,
+      selectedLocations: [],
       columnFilters: {},
       columnSort: null,
       mapFocus: null,

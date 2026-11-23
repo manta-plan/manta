@@ -21,6 +21,7 @@ import {
   loadAxis,
   loadOptimisedMix,
   loadPicked,
+  loadPower,
 } from "../chart/chart-sql";
 
 const scope: LevelQueryScope = { level: ALL_ENTITIES, period: "2030", timeWindow: null };
@@ -114,5 +115,13 @@ describe("chart SQL", () => {
       "bus",
     );
     expect(queries[0]).toContain("'it''s'");
+  });
+
+  it("counts power as the table does: a storage unit's discharge, a line's flow in absolute value", async () => {
+    await loadPower(scope, ["StorageUnit", "Line", "Generator"], { byCarrier: true });
+    const sql = queries.at(-1)!;
+    expect(sql).toContain("WHEN m.ctype = 'StorageUnit' THEN greatest(p.value, 0)");
+    expect(sql).toContain("WHEN m.ctype = 'Line' THEN abs(p.value)");
+    expect(sql).toContain("WHEN m.ctype = 'Generator' THEN p.value");
   });
 });
