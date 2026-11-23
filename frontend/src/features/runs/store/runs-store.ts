@@ -8,6 +8,7 @@ import type {
   PlaybookSummary,
 } from "../../../utils/playbookTypes";
 import { createRun, getProjectRun, getRun, getRunLogs, getRunSummary, listRuns } from "../api";
+import { loadDrafts, saveDrafts } from "../draft-storage";
 import { describeStepErrors, getStepErrors, toMessage } from "../run-draft";
 import { normalizeRunStatus } from "../status";
 import { splitStatusFilter } from "../status-groups";
@@ -38,9 +39,9 @@ export type NewDraftInput = {
 type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 export type RunsState = {
-  /** Who started the runs listed; the backend does not say. */
   /** The project the Run tab is open in; null until init. */
   projectId: string | null;
+  /** Who started the runs listed; the backend does not say. */
   owner: string;
 
   // The backend page: the source of truth for runs. The sidebar, stats and table all read it.
@@ -218,7 +219,7 @@ export const useRunsStore = create<RunsState>((set, get) => {
     playbookDetails: {},
     playbookDetailErrors: {},
 
-    drafts: [],
+    drafts: loadDrafts(),
     selectedScenario: null,
     selectedPlaybook: null,
     newRunSession: 0,
@@ -229,7 +230,24 @@ export const useRunsStore = create<RunsState>((set, get) => {
     startIssues: [],
 
     init: async (projectId, owner) => {
-      set({ projectId, owner });
+      if (get().projectId !== projectId) {
+        // Another project: it starts on its first page, with no filter, search or open run
+        // of the last one. (The tab is not remounted when only the project changes.)
+        set({
+          projectId,
+          owner,
+          runsOffset: 0,
+          selectedStatuses: [],
+          searchRunId: "",
+          activeSearchRunId: "",
+          expandedRunId: null,
+          expandedRuns: {},
+          lookedUpRun: null,
+        });
+      } else {
+        set({ owner });
+      }
+
       await get().refresh();
     },
 
@@ -411,7 +429,14 @@ export const useRunsStore = create<RunsState>((set, get) => {
       try {
         const response = await listPlaybooks();
 
-        set({ playbooks: response.items, playbooksStatus: "ready" });
+        // A saved draft of a playbook that is gone cannot be run: drop it.
+        const names = new Set(response.items.map((item) => item.name));
+
+        set((state) => ({
+          playbooks: response.items,
+          playbooksStatus: "ready",
+          drafts: state.drafts.filter((draft) => names.has(draft.playbook)),
+        }));
       } catch (error) {
         set({
           playbooksStatus: "error",
@@ -569,4 +594,11 @@ export const useRunsStore = create<RunsState>((set, get) => {
 
     clearStartError: () => set({ startError: null, startIssues: [] }),
   };
+});
+
+// Every change to the drafts (create, edit, delete, start) is saved, so a reload keeps them.
+useRunsStore.subscribe((state, previous) => {
+  if (state.drafts !== previous.drafts) {
+    saveDrafts(state.drafts);
+  }
 });

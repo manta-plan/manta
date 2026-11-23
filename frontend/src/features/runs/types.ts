@@ -70,7 +70,8 @@ export type ExpandedRunState = {
 
 /**
  * A run that has been set up but not started. The backend has no draft, so it
- * lives in memory in the runs store only and is lost on reload; Start sends it as a run.
+ * lives in the runs store and in the browser's localStorage (see draft-storage.ts);
+ * Start sends it as a run and removes it.
  */
 export type RunDraft = {
   id: string;

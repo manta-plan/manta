@@ -106,17 +106,7 @@ The frontend needs more than `pnpm dev`. Set these up first, in order.
    with `up -d --force-recreate --no-deps quack-server` and the same flags.
    More in [docker/quack-server/README.md](../docker/quack-server/README.md).
 
-3. **Point the app at it.** Create `frontend/.env.local`:
-
-   ```bash
-   VITE_RECORD_SERVER=localhost:8010
-   VITE_RECORD_TOKEN=devtoken
-   ```
-
-   Without `VITE_RECORD_SERVER` the data catalogue and the New Project drawer show
-   "Can't reach the record server." Restart `pnpm dev` after changing it.
-
-4. **Data records in every project's S3 path.** A run reads its data record from
+3. **Data records in every project's S3 path.** A run reads its data record from
    `s3://manta/<project_uuid>/<store>`.
    - The "Example project" already has copies of every record (step 1).
    - Every newly registered user also gets an "Example project" of their own, when
@@ -127,7 +117,16 @@ The frontend needs more than `pnpm dev`. Set these up first, in order.
      `s3://manta/<project_uuid>/BEL-pre-aggregated`. You can browse and upload in the SeaweedFS
      dashboard at <http://localhost:23646>.
 
-5. **Check in the app.** With the record server running and the records in S3, the data
+4. **Check in the app.** With the record server running and the records in S3, the data
    catalogue lists the records (their metadata is read from the record server), and you can
    create a project from one. Open the project, create a run, pick a playbook and its
-   data record, and run it.
+   data record, and run it. If the app shows "Can't reach the record server.", the record
+   server is not running or not on the port in `backend/.env`. See [Record server](#record-server).
+
+## Record server
+
+The data records (the New Project drawer, the Data Catalog and the data record of a run) come
+from the quack record server in `docker/quack-server`. The dev server proxies `/api`, `/quack` and `/ext`
+to it, like the Caddy in the deployed frontend, so the app reaches it on its own origin. The server's
+port and token come from `QUACK_SERVER_PORT` and `QUACK_TOKEN` in `backend/.env`, so nothing is needed in
+`.env.local`.

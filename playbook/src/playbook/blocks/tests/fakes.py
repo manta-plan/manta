@@ -2,45 +2,81 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Stand-in blocks for testing, which need nothing installed.
+"""Stand-in blocks for testing, which need nothing but datarecord installed.
 
-Each one just adds its name to the record's url, so a finished run reads as a record
-of which blocks ran and in what order. None of them writes a file.
+Each one commits an empty revision on top of the one it was given, labelled with its
+name, so the lineage of a finished run reads as a record of which blocks ran and in
+what order.
 
 They are registered here, once, and shared by the tests for both packages: a block
 name can only be claimed once per process, so registering them in two places would
 clash.
 """
 
-from uuid import UUID, uuid5
+from contextlib import closing
 
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision, Schema, WorkingRecord, Workspace
+
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
 from playbook.blocks.registry import BlockSpec, register
-
-STORE = "s3://bucket/store"
-RECORD_UUID = UUID(int=0)
+from playbook.blocks.run import open_revision
 
 
-def revision_of(record: DataRecord) -> DataRecord:
-    return DataRecord(url=record.url, uuid=uuid5(record.uuid, "revision"))
+class _Empty:
+    """A record holding nothing, to root a store on."""
+
+    schema = Schema()
+
+    def axes(self) -> set:
+        return set()
+
+    def axis(self, dim: str) -> None:
+        return None
+
+    def attributes(self) -> set:
+        return set()
+
+    def attribute(self, name: str) -> None:
+        return None
+
+
+def commit_root(store: str) -> RevisionRef:
+    """A fresh root revision in `store`, with no steps behind it."""
+    with closing(Workspace()) as workspace:
+        root = workspace.store(store).commit(_Empty(), parent=None, meta={"label": "root"})
+        return RevisionRef.from_revision(root)
+
+
+def commit_step(base: Revision, label: str) -> Revision:
+    """A new, empty revision on top of `base`, labelled as the step that made it."""
+    return base.store.commit(WorkingRecord(base.record), meta={"label": label})
+
+
+def _steps(revision: Revision) -> list[str]:
+    return [revision.store.revision(id).meta["label"] for id in revision.ancestry()[1:]]
+
+
+def steps(ref: RevisionRef) -> list[str]:
+    """The labels of the steps that led from the root to `ref`, oldest first."""
+    with closing(Workspace()) as workspace:
+        return _steps(open_revision(workspace, ref))
 
 
 class FakeConfig(ConfigSchema):
     label: str = ""
-    source: DataRecord | None = None
+    source: RevisionRef | None = None
 
 
 class FakeBlock(MantaBlock[FakeConfig]):
-    """Adds a label to the record's url, and nothing else."""
+    """Commits a labelled revision on top of its input, and nothing else."""
 
     ENV = "default"
     CONFIG = FakeConfig
     DIMS = BlockDims()
     INPUTS = frozenset()
 
-    def run(self, record: DataRecord) -> DataRecord:
-        suffix = self.config.label or type(self).__name__
-        return DataRecord(url=f"{record.url}+{suffix}", uuid=record.uuid)
+    def run(self, base: Revision) -> Revision:
+        return commit_step(base, self.config.label or type(self).__name__)
 
 
 @register("fake_passthrough")
@@ -70,9 +106,11 @@ class FakeRemovesInvestmentPeriod(FakeBlock):
 class FakeNeedsUpstream(FakeBlock):
     INPUTS = frozenset({"source"})
 
-    def run(self, record: DataRecord) -> DataRecord:
-        source_url = self.config.source.url if self.config.source else "none"
-        return DataRecord(url=f"{record.url}+needs({source_url})", uuid=record.uuid)
+    def run(self, base: Revision) -> Revision:
+        if self.config.source is None:
+            return commit_step(base, "needs(none)")
+        source = open_revision(base.store.workspace, self.config.source)
+        return commit_step(base, f"needs({'+'.join(_steps(source))})")
 
 
 class StrictConfig(ConfigSchema):
@@ -83,10 +121,8 @@ class StrictConfig(ConfigSchema):
 class FakeStrictConfig(FakeBlock):
     CONFIG = StrictConfig
 
-    def run(self, record: DataRecord) -> DataRecord:
-        return DataRecord(
-            url=f"{record.url}+strict({self.config.required_field})", uuid=record.uuid
-        )
+    def run(self, base: Revision) -> Revision:
+        return commit_step(base, f"strict({self.config.required_field})")
 
 
 class OptionalGroupConfig(ConfigSchema):
@@ -104,14 +140,6 @@ class FakeNestedSettings(FakeBlock):
     CONFIG = NestedSettingsConfig
 
 
-@register("fake_writes_output")
-class FakeWritesOutput(FakeBlock):
-    """Writes its result as a new revision in the input record's store, like a real block."""
-
-    def run(self, record: DataRecord) -> DataRecord:
-        return revision_of(record)
-
-
 @register("fake_other_env")
 class FakeOtherEnv(FakeBlock):
     """Claims an environment nothing runs in, for testing hand-off between them."""
@@ -123,12 +151,12 @@ class FakeOtherEnv(FakeBlock):
 class FakeExplodes(FakeBlock):
     """Fails if it is ever run, to prove that something never runs it."""
 
-    def run(self, record: DataRecord) -> DataRecord:
+    def run(self, base: Revision) -> Revision:
         raise AssertionError("this block should never have been run")
 
 
 class RecordingRunner:
-    """Hands back made-up records, and keeps every call for the test to inspect."""
+    """Hands back made-up revisions without opening a store, keeping every call."""
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -139,16 +167,16 @@ class RecordingRunner:
         *,
         step_name: str,
         config: dict,
-        record: DataRecord,
-        inputs: dict[str, DataRecord],
-    ) -> DataRecord:
+        revision: RevisionRef,
+        inputs: dict[str, RevisionRef],
+    ) -> RevisionRef:
         self.calls.append(
             {
                 "block": block.name,
                 "step_name": step_name,
                 "config": config,
-                "record": record,
+                "revision": revision,
                 "inputs": inputs,
             }
         )
-        return DataRecord(url=f"{record.url}/{step_name}", uuid=record.uuid)
+        return RevisionRef(store=f"{revision.store}/{step_name}", id=revision.id)
