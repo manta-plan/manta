@@ -30,7 +30,8 @@ export async function login({ username, password, remember }: LoginParams) {
   startSession(tokens, remember);
 }
 
-// TEMPORARY: backs the test-only guest button on the login page.
+// Creates a fresh guest account on the backend (user record included, so no
+// register call is needed) and signs into it.
 export async function loginAsGuest() {
   const tokens = await postJson<LoginResponse>("/v1/auth/guest", {});
   startSession(tokens, true);

@@ -154,13 +154,11 @@ class AuthService:
             with _translate_keycloak_errors():
                 token = self.kc_client.token(username, password)
                 idp_source = well_known(self.kc_client)["issuer"]
-            user = self._add_user(username, idp_subject, idp_source)
+            self._create_user(username, idp_subject, idp_source)
         except Exception:
             # Don't leave behind a Keycloak account nobody can use.
             self._delete_keycloak_user(idp_subject)
             raise
-
-        self._create_example_project(user)
 
         return LoginResult(
             access_token=token["access_token"],
@@ -188,7 +186,8 @@ class AuthService:
 
     def _create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
         user = self._add_user(username, idp_subject, idp_source)
-        self._create_example_project(user)
+        if example_project_for_new_users_enabled():
+            self.example_data.create_project(owner=user)
         return user
 
     def _add_user(self, username: str, idp_subject: str, idp_source: str) -> User:
@@ -197,10 +196,6 @@ class AuthService:
         self.db.commit()
         logger.info("Registered new user %r (uuid=%s)", user.username, user.uuid)
         return user
-
-    def _create_example_project(self, user: User) -> None:
-        if example_project_for_new_users_enabled():
-            self.example_data.create_project(owner=user)
 
     def _delete_keycloak_user(self, idp_subject: str) -> None:
         try:

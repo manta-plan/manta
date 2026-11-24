@@ -1,6 +1,6 @@
 import type { SubmitEvent } from "react";
 import { useState } from "react";
-import { FiAlertCircle, FiRefreshCw } from "react-icons/fi";
+import { FiAlertCircle, FiRefreshCw, FiUser } from "react-icons/fi";
 import { ApiError } from "../api/manta";
 import { login, loginAsGuest } from "../features/auth/api";
 import { AuthButton } from "../features/auth/components/auth-button";
@@ -13,14 +13,17 @@ const authBackgroundColor = "#42645e";
 
 export function LoginPage() {
   const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  // Which sign-in is in flight, so only its button shows a spinner while both
+  // are disabled.
+  const [pendingSignIn, setPendingSignIn] = useState<"password" | "guest" | null>(null);
+  const isSigningIn = pendingSignIn !== null;
   const [signInError, setSignInError] = useState<string | null>(null);
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
 
-    setIsSigningIn(true);
+    setPendingSignIn("password");
     setSignInError(null);
 
     try {
@@ -33,7 +36,20 @@ export function LoginPage() {
       });
     } catch (error) {
       setSignInError(getSignInErrorMessage(error));
-      setIsSigningIn(false);
+      setPendingSignIn(null);
+    }
+  }
+
+  async function handleGuestSignIn() {
+    setPendingSignIn("guest");
+    setSignInError(null);
+
+    try {
+      // Like a password login, the session update moves the router on.
+      await loginAsGuest();
+    } catch (error) {
+      setSignInError(getGuestSignInErrorMessage(error));
+      setPendingSignIn(null);
     }
   }
 
@@ -101,25 +117,35 @@ export function LoginPage() {
             disabled={isSigningIn}
             className="mt-2"
             icon={
-              isSigningIn ? (
+              pendingSignIn === "password" ? (
                 <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
               ) : undefined
             }
           >
-            {isSigningIn ? "Signing in..." : "Log In"}
+            {pendingSignIn === "password" ? "Signing in..." : "Log In"}
           </AuthButton>
         </form>
 
-        {/* TEMPORARY: test-only guest login. Remove with loginAsGuest in features/auth/api.ts. */}
-        <button
-          type="button"
-          className="mt-3 w-full text-[12px] text-slate-500 underline"
-          onClick={() => {
-            loginAsGuest().catch(() => setSignInError("Guest login failed."));
-          }}
+        <div className="my-4 flex items-center gap-3 text-[11px] tracking-wide text-slate-400 uppercase">
+          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+          or
+          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+        </div>
+
+        <AuthButton
+          variant="secondary"
+          disabled={isSigningIn}
+          onClick={handleGuestSignIn}
+          icon={
+            pendingSignIn === "guest" ? (
+              <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FiUser className="size-4" aria-hidden="true" />
+            )
+          }
         >
-          Continue as guest (test)
-        </button>
+          {pendingSignIn === "guest" ? "Signing in..." : "Continue as guest"}
+        </AuthButton>
       </section>
     </main>
   );
@@ -131,4 +157,12 @@ function getSignInErrorMessage(error: unknown) {
   }
 
   return "Unable to sign in right now. Please try again.";
+}
+
+function getGuestSignInErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 429) {
+    return "Too many guest sign-ins. Please wait a moment and try again.";
+  }
+
+  return "Unable to continue as guest right now. Please try again.";
 }
