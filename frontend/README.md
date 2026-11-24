@@ -171,7 +171,7 @@ The frontend needs more than `pnpm dev`. Set these up first, in order.
 ## Record server
 
 The data records (the New Project drawer, the Data Catalog and the data record of a run) come
-from the quack record server in `docker/quack-server`. The dev server proxies `/api`, `/quack` and `/ext`
+from the quack record server in `docker/quack-server`. The dev server proxies `/api` and `/quack`
 to it, like the Caddy in the deployed frontend, so the app reaches it on its own origin. The server's
 port and token come from `QUACK_SERVER_PORT` and `QUACK_TOKEN` in `backend/.env`, so nothing is needed in
 `.env.local`.

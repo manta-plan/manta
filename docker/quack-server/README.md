@@ -13,9 +13,7 @@
    cp -R <baby-manta>/server/data/records/. docker/quack-server/data/records/
    ```
 
-2. **Browser extensions (only for browser access).** `static/ext` is git-ignored too. Build it (see "The browser (DuckDB-Wasm)" below) or copy `<baby-manta>/server/static/ext` into `docker/quack-server/static/`. Without it, only `/api/*` works.
-
-3. **Start it** from `docker/`:
+2. **Start it** from `docker/`:
 
    ```sh
    docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile temporary-quack-setup up --build quack-server
@@ -23,9 +21,9 @@
 
    The service is in the opt-in compose profile `temporary-quack-setup`, so a plain `up` (and the integration tests) don't build or start it. To run the whole stack with it, drop the service name: `… --profile temporary-quack-setup up --build`.
 
-   Rebuild with `--build` after changing `static/ext` or the app.
+   Rebuild with `--build` after changing the app.
 
-4. **Check it.** The explorer is at <http://localhost:8010/?token=devtoken>, and:
+3. **Check it.** The explorer is at <http://localhost:8010/?token=devtoken>, and:
 
    ```sh
    curl -H 'Authorization: Bearer devtoken' localhost:8010/api/records
@@ -154,25 +152,8 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 
 ## The browser (DuckDB-Wasm)
 
-There is no stable duckdb-wasm release for DuckDB 2 yet. The newest dev build is `1.33.1-dev110.0` (2026-10-22), and its engine is exactly DuckDB v2.0.0: commit `d54cbbe3df`, the `v2.0.0` tag. It reports itself as `v2.0.0-dev88614` because it was built without the release tag. That breaks extension loading in two ways:
-- It looks for Quack under `extensions.duckdb.org/d54cbbe3df/…`, where nothing is published.
-- It refuses the `v2.0.0` build by its version field, even with `allow_extensions_metadata_mismatch`.
-
-Workaround for the proof of concept only:
-
-```sh
-scripts/build_quack_wasm.sh                        # prints the path of the build
-uv run python scripts/prepare_wasm.py --quack <it>  # -> static/ext/…, static/duckdb-wasm/…
-```
-
-The explorer uses that dev build. Confirmed 2026-10-25: Quack loads, ATTACH works, remote reads and joins work, and writes and file reads are refused.
-
-1. **Relabelled extensions.** `prepare_wasm.py` copies the v2.0.0 Wasm builds of `quack`, `httpfs` and `json` with their version field set to the commit. `json` is needed since datarecord's own tables have `JSON` columns: the client autoloads it while it reads the server's catalog, and without it ATTACH fails with `c is not a function`. Without `--quack`, a Quack already in `static/ext/` is kept. That voids the signature, so the explorer opens DuckDB with `allowUnsignedExtensions` and sets `custom_extension_repository` to this server's `/ext`.
-2. **Quack built from main.** The published Quack (2026-10-19) predates [duckdb-quack 438dfe3](https://github.com/duckdb/duckdb-quack/commit/438dfe3004) ("Do not start the heartbeat thread on single-threaded wasm"). With it, ATTACH fails with `thread constructor failed`. `build_quack_wasm.sh` builds `wasm_eh` from main the way Quack's CI does: Emscripten 3.1.71, plus vcpkg for OpenSSL. It also links with `-sWASM_BIGINT`. Without that, every 64-bit parameter is split into two `i32`s and loading fails with `LinkError: … imported function does not match the expected type`. The published builds pass them whole.
-3. **The threaded build doesn't help.** The published `wasm_threads` Quack fails to load into `1.33.1-dev110.0`'s threaded module, with an empty error. It also needs cross-origin isolation, so it was dropped.
-
-Drop all of this once duckdb-wasm publishes a v2.0.0 release and Quack republishes its Wasm builds with the fix.
+There is no stable duckdb-wasm release for DuckDB 2 yet, so the explorer and the app use a dev build, `1.33.1-dev121.0` (2026-11-20). It reports DuckDB `v2.0.1` and loads the signed Quack extension from DuckDB's own extension repository, with no relabelled or self-built extensions. Confirmed 2026-11-24 against a 2.0.0 server: `LOAD quack`, ATTACH and `quack_query_by_name` work. Move to a stable release once duckdb-wasm publishes one for DuckDB 2.
 
 Older clients can't connect to a 2.0 server:
-- DuckDB 1.4.3 (duckdb-wasm 1.32.0, the app's current version) has no Quack ATTACH.
+- DuckDB 1.4.3 (duckdb-wasm 1.32.0, the app's version before the dev builds) has no Quack ATTACH.
 - DuckDB 1.5.5 fails to deserialize the 2.0 wire format.

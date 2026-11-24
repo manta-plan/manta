@@ -35,11 +35,9 @@ export default defineConfig(({ mode }) => {
         "/v1": "http://127.0.0.1:8000",
         // TEMPORARY: the record server (docker/quack-server), proxied like
         // frontend/Caddyfile does in a deploy, so the app reaches it on its
-        // own origin in dev too: the catalogue API, the Quack relay and the
-        // DuckDB-Wasm extensions.
+        // own origin in dev too: the catalogue API and the Quack relay.
         "/api": quackUrl,
         "/quack": quackUrl,
-        "/ext": quackUrl,
       },
     },
   };
