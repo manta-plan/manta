@@ -24,7 +24,7 @@ from duckdb import ConstantExpression as lit
 from duckdb import DuckDBPyRelation
 from duckdb import FunctionExpression as fn
 from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from scipy.sparse import diags
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import MinMaxScaler
@@ -257,14 +257,14 @@ class TimePartitionConfig(ConfigSchema):
     be `period` or `timestep`, which describe the snapshots themselves.
     """
 
-    segments: int | None = None
+    segments: int | None = Field(default=None, gt=0)
     """Group the time series into this many stretches of similar conditions.
 
     Stretches can be of different lengths, so a few hours of unusual weather are kept
     apart from a long stretch of ordinary weather.
     """
 
-    n_hours: int | None = None
+    n_hours: int | None = Field(default=None, gt=0)
     """Group the time series into even blocks of this many hours."""
 
     @field_validator("name")

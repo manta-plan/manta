@@ -235,14 +235,15 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
 
     def run(self, base: Revision) -> Revision:
         periods = self.selected_periods(base)
-        if self.config.load_shedding is not None:
-            base = self.with_load_shedding(base)
         n_new = to_network(base, select={"period": periods}) if periods else to_network(base)
         if self.config.capacity_source is not None:
             source = open_revision(base.store.workspace, self.config.capacity_source)
             self.fix_capacities(n_new, source, periods)
         if self.config.time_aggregation is not None:
             self.refuse_restarting_storage(n_new)
+        if self.config.load_shedding is not None:
+            n_new.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
+            base = self.with_load_shedding(base)
 
         return solve_and_write(
             n_new,

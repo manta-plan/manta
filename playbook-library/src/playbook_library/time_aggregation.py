@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from datarecord import Flags, PropertySpec, RecordLike, Relations, Schema, settle
+from duckdb import ColumnExpression as col
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 
@@ -64,10 +65,8 @@ def settled(record: RecordLike, attribute: str, axis: TimeAxis) -> DuckDBPyRelat
 
     A row without a step reaches every step that no row of its own coordinates names.
     """
-    over = frozenset({axis.dim})
-    return settle(
-        record.attributes[attribute], {axis.dim: record.dims[axis.dim]}, Flags(over, over)
-    )
+    labels = {axis.dim: record.dims[axis.dim]}
+    return settle(record.attributes[attribute], labels, record.flags()[attribute])
 
 
 def widened(schema: Schema, axis: TimeAxis, properties: dict[str, PropertySpec]) -> Schema:
@@ -178,13 +177,11 @@ def cluster_members(
     return members.assign(progress=clusters.cumsum() / totals)
 
 
-def _restated(
-    expanded: DuckDBPyRelation, rel: DuckDBPyRelation, axis: TimeAxis
-) -> DuckDBPyRelation:
-    """Return `expanded` in the columns of `rel`, with the time dim and `value` cast as there."""
-    types = dict(zip(rel.columns, rel.types, strict=True))
-    casts = {c: f'CAST("{c}" AS {types[c]}) AS "{c}"' for c in (axis.dim, "value")}
-    return expanded.project(", ".join(casts.get(c, f'"{c}"') for c in rel.columns))
+def _restated(expanded: DuckDBPyRelation, rel: DuckDBPyRelation) -> DuckDBPyRelation:
+    """Return `expanded` in the columns of `rel`, each cast to its type there."""
+    return expanded.select(
+        *(col(c).cast(t).alias(c) for c, t in zip(rel.columns, rel.types, strict=True))
+    )
 
 
 def _paired(rel: DuckDBPyRelation, members: DuckDBPyRelation, axis: TimeAxis) -> DuckDBPyRelation:
@@ -195,9 +192,7 @@ def _paired(rel: DuckDBPyRelation, members: DuckDBPyRelation, axis: TimeAxis) ->
 def held(rel: DuckDBPyRelation, members: DuckDBPyRelation, axis: TimeAxis) -> DuckDBPyRelation:
     """Repeat each row of `rel` at a representative at every step of its cluster."""
     dim = axis.dim
-    return _restated(
-        _paired(rel, members, axis).project(f"r.* REPLACE (m.{dim} AS {dim})"), rel, axis
-    )
+    return _restated(_paired(rel, members, axis).project(f"r.* REPLACE (m.{dim} AS {dim})"), rel)
 
 
 def interpolated(
@@ -216,7 +211,7 @@ def interpolated(
     )
     value = "s.previous + (r.value - s.previous) * m.progress"
     expanded = paired.project(f"r.* REPLACE (m.{dim} AS {dim}, {value} AS value)")
-    return _restated(expanded, rel, axis)
+    return _restated(expanded, rel)
 
 
 SHAPED = """
@@ -274,4 +269,4 @@ def shaped(
     expanded = _paired(gathered, members, axis).project(
         f"r.* EXCLUDE (demand, profile), m.{dim} AS member, {found}"
     )
-    return _restated(expanded.project(f"* REPLACE (member AS {dim}, {SHAPED} AS value)"), rel, axis)
+    return _restated(expanded.project(f"* REPLACE (member AS {dim}, {SHAPED} AS value)"), rel)

@@ -16,8 +16,11 @@ import numpy as np
 import pandas as pd
 import pypsa
 from datarecord import LazyRelations, RecordLike, Revision, Schema
+from datarecord.resolve.owner_keys import cast_declared
 from datarecord.tools.pypsa import PyPSA
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb import CaseExpression, DuckDBPyConnection, DuckDBPyRelation
+from duckdb import ColumnExpression as col
+from duckdb import FunctionExpression as fn
 from duckdb.sqltypes import DuckDBPyType
 
 from playbook_library.time_aggregation import (
@@ -107,11 +110,7 @@ def snapshot_axis(schema: Schema, con: DuckDBPyConnection, frame: pd.DataFrame) 
         frame = frame.assign(
             **{n: frame[n].map(lambda s: s[1], na_action="ignore") for n in aggregations}
         )
-    step = schema.duck_type(schema.dimensions[axis.step])
-    types = {"snapshot": schema.duck_type(schema.dimensions["snapshot"])}
-    return _typed(
-        con, _packed(schema, frame, ["snapshot"]), types | dict.fromkeys(aggregations, step)
-    )
+    return cast_declared(schema, con.from_df(_packed(schema, frame, ["snapshot"])), "snapshot")
 
 
 def snapshot_frame(record: RecordLike) -> pd.DataFrame:
@@ -122,15 +121,19 @@ def snapshot_frame(record: RecordLike) -> pd.DataFrame:
     investment periods, every snapshot has `period` 0 and is its own timestep.
     """
     schema = record.schema
-    frame = time_relation(record, PYPSA_TIME).df()
+    rel = time_relation(record, PYPSA_TIME)
     if not has_periods(schema):
+        frame = rel.df()
         return frame.assign(period=0, timestep=frame["snapshot"])
-    frame = frame.assign(**pd.DataFrame(frame["snapshot"].tolist()))
-    frame["snapshot"] = snapshot_labels(schema, frame["snapshot"])
-    for name in time_aggregations(schema, PYPSA_TIME):
-        pairs = zip(frame["period"], frame[name], strict=True)
-        frame[name] = pd.Series(list(pairs), dtype=object).where(frame[name].notna())
-    return frame
+    period = col("snapshot")["period"]
+    timestep = col("snapshot")["timestep"]
+    pairs = {"snapshot": fn("row", period, timestep)}
+    pairs |= {
+        n: CaseExpression(col(n).isnotnull(), fn("row", period, col(n)))
+        for n in time_aggregations(schema, PYPSA_TIME)
+    }
+    columns = [pairs.get(c, col(c)).alias(c) for c in rel.columns]
+    return rel.select(*columns, period.alias("period"), timestep.alias("timestep")).df()
 
 
 def series_frame(record: RecordLike, attribute: str) -> pd.DataFrame:
