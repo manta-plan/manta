@@ -40,6 +40,9 @@ class FakeDatarecordSessionLauncher:
     def stop(self, ref: str) -> None:
         self.running.pop(ref, None)
 
+    def list(self) -> set[str]:
+        return set(self.running)
+
     def _handle(self, request: httpx2.Request) -> httpx2.Response:
         session = self.running.get(request.url.host)
         if session is None or not self.healthy:

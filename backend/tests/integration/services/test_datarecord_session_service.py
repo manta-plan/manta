@@ -1,6 +1,8 @@
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,16 +10,18 @@ import httpx2
 import pytest
 from datarecord_session_fake import FakeDatarecordSessionLauncher
 from dotenv import dotenv_values
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
+from manta.config.datarecord_session_config import datarecord_session_max_idle
 from manta.entities import (
     DatarecordSession,
     DatarecordSessionRegistration,
+    DatarecordSessionStatus,
     Project,
     User,
 )
-from manta.services.datarecord_session_service import DatarecordSessionService
+from manta.services.datarecord_session_service import DatarecordSessionService, idle_cutoff
 from manta.services.user_service import UserService
 
 BUCKET = dotenv_values(Path(__file__).resolve().parents[3] / ".env")["S3_BUCKET"]
@@ -41,6 +45,34 @@ def _service(
 ) -> Iterator[DatarecordSessionService]:
     with Session(db_engine) as db:
         yield DatarecordSessionService(db, UserService(db), launcher, launcher.http, BUCKET)
+
+
+def _open(
+    db_engine: Engine, launcher: FakeDatarecordSessionLauncher, project: Project, user: User
+) -> int:
+    with _service(db_engine, launcher) as service:
+        return service.open(project.uuid, user).generation
+
+
+def _sweep(db_engine: Engine, launcher: FakeDatarecordSessionLauncher) -> None:
+    with _service(db_engine, launcher) as service:
+        service.sweep(idle_cutoff())
+
+
+def _last_used(db_engine: Engine, project: Project, user: User, ago: timedelta) -> None:
+    with Session(db_engine) as db:
+        db.execute(
+            update(DatarecordSession)
+            .filter_by(user_id=user.id, project_id=project.id)
+            .values(last_used_at=datetime.now(UTC) - ago)
+        )
+        db.commit()
+
+
+def _status(db_engine: Engine, project: Project, user: User) -> DatarecordSessionStatus:
+    with Session(db_engine) as db:
+        query = db.query(DatarecordSession).filter_by(user_id=user.id, project_id=project.id)
+        return query.one().status
 
 
 def _suspended_with_registrations(
@@ -119,15 +151,112 @@ def test_parallel_opens_start_one_instance(
             service.open(project.uuid, owner)
             service.suspend(project.uuid, owner)
 
-    def open_session(_: int) -> int:
-        with _service(db_engine, launcher) as service:
-            return service.open(project.uuid, owner).generation
-
     # When eight requests open the session at once
     with ThreadPoolExecutor(max_workers=8) as pool:
-        generations = list(pool.map(open_session, range(8)))
+        generations = list(pool.map(lambda _: _open(db_engine, launcher, project, owner), range(8)))
 
     # Then one instance started for them, and every request got it
     assert generations == [1 + suspended] * 8
     assert len(launcher.started) == 1 + suspended
     assert len(launcher.running) == 1
+
+
+@pytest.mark.parametrize(
+    ("unused", "in_use", "status"),
+    [
+        (timedelta(minutes=2), False, DatarecordSessionStatus.STOPPED),
+        (timedelta(seconds=30), False, DatarecordSessionStatus.ACTIVE),
+        (timedelta(minutes=-1), False, DatarecordSessionStatus.ACTIVE),
+        (timedelta(minutes=2), True, DatarecordSessionStatus.ACTIVE),
+    ],
+    ids=["expired", "within-touch-interval", "fresh", "expired-in-use"],
+)
+def test_sweep_stops_a_session_unused_for_longer_than_the_limit(
+    db_engine: Engine,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    project_and_owner: tuple[Project, User],
+    unused: timedelta,
+    in_use: bool,
+    status: DatarecordSessionStatus,
+) -> None:
+    # Given an open session, last used before or after the limit
+    launcher = datarecord_session_launcher
+    project, owner = project_and_owner
+    _open(db_engine, launcher, project, owner)
+    _last_used(db_engine, project, owner, datarecord_session_max_idle() + unused)
+
+    # When the sessions are swept, maybe while a request uses the session
+    with _service(db_engine, launcher) as request:
+        if in_use:
+            request.ensure_datarecord_session(project.uuid, owner)
+        _sweep(db_engine, launcher)
+
+    # Then only the expired session without a request is stopped
+    assert _status(db_engine, project, owner) == status
+    assert len(launcher.running) == (status == DatarecordSessionStatus.ACTIVE)
+
+
+def test_open_after_a_forced_stop_restarts_the_session_with_its_registrations(
+    db_engine: Engine,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    project_and_owner: tuple[Project, User],
+) -> None:
+    # Given a session with a registration, stopped by the sweep after the limit
+    launcher = datarecord_session_launcher
+    project, owner = project_and_owner
+    store = next(iter(launcher.stores))
+    with _service(db_engine, launcher) as service:
+        service.put_registration(project.uuid, owner, "base", "view", store, uuid4(), [])
+    _last_used(db_engine, project, owner, datarecord_session_max_idle() + timedelta(minutes=2))
+    _sweep(db_engine, launcher)
+
+    # When the session opens again
+    generation = _open(db_engine, launcher, project, owner)
+
+    # Then a new instance of the next generation runs, with the registration replayed
+    (instance,) = launcher.running.values()
+    assert generation == 2
+    assert instance.registrations["base"]["store"] == store
+
+
+def test_sweep_removes_orphaned_containers_and_keeps_active_ones(
+    db_engine: Engine,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    project_and_owner: tuple[Project, User],
+) -> None:
+    # Given an active session and a second, orphaned container of it
+    launcher = datarecord_session_launcher
+    project, owner = project_and_owner
+    _open(db_engine, launcher, project, owner)
+    active = set(launcher.running)
+    launcher.start(launcher.started[0])
+
+    # When the sessions are swept
+    _sweep(db_engine, launcher)
+
+    # Then only the active session's container runs
+    assert set(launcher.running) == active
+
+
+def test_sweep_keeps_the_container_of_a_session_that_is_starting(
+    db_engine: Engine, project_and_owner: tuple[Project, User]
+) -> None:
+    # Given a session whose container runs but is not healthy yet
+    launcher = FakeDatarecordSessionLauncher(stores=set(), healthy=False)
+    project, owner = project_and_owner
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        opening = pool.submit(_open, db_engine, launcher, project, owner)
+        deadline = time.monotonic() + 5
+        while not launcher.running:
+            assert time.monotonic() < deadline, "the session container never started"
+            time.sleep(0.01)
+
+        # When the sessions are swept, and then the container becomes healthy
+        _sweep(db_engine, launcher)
+        starting = set(launcher.running)
+        launcher.healthy = True
+
+        # Then the container survived the sweep and became the session's instance
+        assert opening.result() == 1
+    assert set(launcher.running) == starting
+    assert len(starting) == 1

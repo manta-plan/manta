@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from functools import lru_cache
 
 import docker
@@ -24,6 +25,16 @@ def datarecord_session_network() -> str:
 def datarecord_session_s3_endpoint() -> str:
     load_dotenv()
     return os.environ["MANTA_JOB_S3_ENDPOINT"]
+
+
+def datarecord_session_max_idle() -> timedelta:
+    load_dotenv()
+    return timedelta(minutes=int(os.environ.get("DATARECORD_SESSION_MAX_IDLE_MINUTES", "10")))
+
+
+def datarecord_session_sweep_enabled() -> bool:
+    load_dotenv()
+    return os.environ.get("DATARECORD_SESSION_SWEEP", "true").lower() == "true"
 
 
 @lru_cache

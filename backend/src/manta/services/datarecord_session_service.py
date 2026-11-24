@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 import time
@@ -7,12 +8,13 @@ from uuid import UUID
 
 import httpx2
 from fastapi import Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from manta.config.database_config import get_db_session
+from manta.config.database_config import get_db_session, get_engine
 from manta.config.datarecord_session_config import (
+    datarecord_session_max_idle,
     get_datarecord_session_http,
     get_datarecord_session_launcher,
 )
@@ -45,7 +47,9 @@ QUACK_URI = "/quack"
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.2
 _PASSED_THROUGH_STATUS_CODES = (404, 422)
+SWEEP_INTERVAL = 60.0
 QUACK_TOUCH_INTERVAL = timedelta(minutes=1)
+_STARTING_LOCK = 4_172_903_516
 
 
 class DatarecordSessionService:
@@ -166,6 +170,10 @@ class DatarecordSessionService:
                     raise
         self.db.commit()
 
+    def sweep(self, unused_since: datetime) -> None:
+        self._stop_unused(unused_since)
+        self._remove_orphans()
+
     def ensure_datarecord_session(
         self, project_uuid: UUID, user: User
     ) -> tuple[DatarecordSession, list[str]]:
@@ -205,7 +213,40 @@ class DatarecordSessionService:
         )
         return query.one()
 
+    def _stop_unused(self, unused_since: datetime) -> None:
+        query = (
+            self.db.query(DatarecordSession)
+            .filter(
+                DatarecordSession.status == DatarecordSessionStatus.ACTIVE,
+                DatarecordSession.last_used_at < unused_since,
+            )
+            .with_for_update(skip_locked=True)
+            .populate_existing()
+            .limit(1)
+        )
+        while (session := query.one_or_none()) is not None:
+            self._stop(session)
+            logger.info(
+                "Stopped datarecord session %s, unused since %s",
+                session.uuid,
+                session.last_used_at,
+            )
+            self.db.commit()
+
+    def _remove_orphans(self) -> None:
+        if not self.db.scalar(select(func.pg_try_advisory_xact_lock(_STARTING_LOCK))):
+            logger.info("A session is starting or another sweep runs, leaving orphans for later")
+            return
+        active = select(DatarecordSession.instance_ref).filter_by(
+            status=DatarecordSessionStatus.ACTIVE
+        )
+        for ref in self.launcher.list() - set(self.db.scalars(active)):
+            self.launcher.stop(ref)
+            logger.info("Removed orphaned datarecord session container %s", ref)
+        self.db.commit()
+
     def _start(self, session: DatarecordSession, project: Project, user: User) -> list[str]:
+        self.db.execute(select(func.pg_advisory_xact_lock_shared(_STARTING_LOCK)))
         spec = DatarecordSessionSpec(
             session_uuid=session.uuid,
             user_uuid=user.uuid,
@@ -226,7 +267,7 @@ class DatarecordSessionService:
             raise
         session.status = DatarecordSessionStatus.ACTIVE
         session.generation += 1
-        session.started_at = datetime.now(UTC)
+        session.started_at = session.last_used_at = datetime.now(UTC)
         logger.info(
             "Started datarecord session %s (generation %d)", session.uuid, session.generation
         )
@@ -319,6 +360,31 @@ class DatarecordSessionService:
         if registration is None:
             raise HTTPException(status_code=404, detail=f"Registration {name!r} not found")
         return registration
+
+
+async def run_datarecord_session_sweeps() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(_sweep_datarecord_sessions)
+        except Exception:
+            logger.exception("Sweeping datarecord sessions failed")
+        await asyncio.sleep(SWEEP_INTERVAL)
+
+
+def _sweep_datarecord_sessions() -> None:
+    with Session(get_engine()) as db:
+        service = DatarecordSessionService(
+            db,
+            UserService(db),
+            get_datarecord_session_launcher(),
+            get_datarecord_session_http(),
+            s3_bucket_name(),
+        )
+        service.sweep(idle_cutoff())
+
+
+def idle_cutoff() -> datetime:
+    return datetime.now(UTC) - datarecord_session_max_idle() - QUACK_TOUCH_INTERVAL
 
 
 def _instance(session: DatarecordSession) -> tuple[str, str]:
