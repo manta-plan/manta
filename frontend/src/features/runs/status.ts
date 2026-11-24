@@ -23,6 +23,11 @@ export function normalizeRunStatus(status: string): RunStatus {
   return status.trim().toUpperCase() || "UNKNOWN";
 }
 
+/** A finished run: its status will not change again, so there is nothing left to poll. */
+export function isRunFinished(status: string) {
+  return ["COMPLETED", "FAILED", "CRASHED", "CANCELLED"].includes(normalizeRunStatus(status));
+}
+
 export function formatRunStatus(status: string) {
   return normalizeRunStatus(status)
     .toLowerCase()
