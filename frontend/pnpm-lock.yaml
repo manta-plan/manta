@@ -20,6 +20,9 @@ importers:
       '@fontsource-variable/google-sans-flex':
         specifier: ^5.3.1
         version: 5.3.1
+      '@markerjs/markerjs3':
+        specifier: ^3.10.0
+        version: 3.10.0
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0))
@@ -32,6 +35,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.12.1
         version: 12.12.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@zumer/snapdom':
+        specifier: ^3.8.2
+        version: 3.8.2
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -333,6 +339,9 @@ packages:
 
   '@maplibre/vt-pbf@4.3.3':
     resolution: {integrity: sha512-dEe5XUd64RQbxNxy2OzIkJnwNDWjVmSXjCd0A7zLirm7QJ/WWbmtDFIkfsiM4yt1cplqzG6oSivRYeWx1SM1yg==}
+
+  '@markerjs/markerjs3@3.10.0':
+    resolution: {integrity: sha512-SvrnRjK5mvOZ+PowsGKf8D4qRjbXkR9NSI+QPt2qRu8YczQt/sWWxSKI40WW7X4lKMAzRXddsuGh9PdF0XTnzA==}
 
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
@@ -1047,6 +1056,9 @@ packages:
 
   '@xyflow/system@0.0.84':
     resolution: {integrity: sha512-96zfGFjH3oZ3T0MRdH4gJ0SlXuCIxbBuHVevZ4xry5UTxqjzjt010+LRdholgepq7jhrcaz1JNtzrETscwnkEA==}
+
+  '@zumer/snapdom@3.8.2':
+    resolution: {integrity: sha512-TONdpVPmzkaK/GOQe6NsH3GWog74oRxenePZKv0AeL6s5o0GPuOZT2UzA0W9Hgnaq/96XjkzOr5VjB5gJz1tCA==}
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
@@ -2750,6 +2762,8 @@ snapshots:
       '@types/geojson': 7946.0.16
       pbf: 5.1.2
 
+  '@markerjs/markerjs3@3.10.0': {}
+
   '@mermaid-js/parser@1.2.1':
     dependencies:
       '@chevrotain/types': 11.1.2
@@ -3295,6 +3309,8 @@ snapshots:
       d3-interpolate: 3.0.2
       d3-selection: 3.0.1
       d3-zoom: 3.0.1
+
+  '@zumer/snapdom@3.8.2': {}
 
   ajv@8.20.0:
     dependencies:
