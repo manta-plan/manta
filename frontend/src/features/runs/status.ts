@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { FiActivity, FiRefreshCw } from "react-icons/fi";
+import { FiActivity, FiCheckCircle, FiClock, FiRefreshCw, FiXCircle } from "react-icons/fi";
 import type { RunStatus } from "./types";
 
 export const prefectStateOptions = [
@@ -35,12 +35,22 @@ export function getStatusBadgeMeta(status: RunStatus): {
   icon: IconType;
   iconClassName?: string;
 } {
-  return {
-    badgeClassName:
-      normalizeRunStatus(status) === "RUNNING"
-        ? "bg-secondary/10 text-secondary"
-        : "bg-surface-alt text-text-secondary",
-    icon: normalizeRunStatus(status) === "RUNNING" ? FiRefreshCw : FiActivity,
-    iconClassName: normalizeRunStatus(status) === "RUNNING" ? "animate-spin" : undefined,
-  };
+  switch (normalizeRunStatus(status)) {
+    case "COMPLETED":
+      return { badgeClassName: "bg-ok-500/10 text-ok-500", icon: FiCheckCircle };
+    case "FAILED":
+    case "CRASHED":
+      return { badgeClassName: "bg-danger-500/10 text-danger-500", icon: FiXCircle };
+    case "RUNNING":
+      return {
+        badgeClassName: "bg-accent-500/10 text-accent-400",
+        icon: FiRefreshCw,
+        iconClassName: "animate-spin",
+      };
+    case "SCHEDULED":
+    case "PENDING":
+      return { badgeClassName: "bg-surface-700 text-surface-300", icon: FiClock };
+    default:
+      return { badgeClassName: "bg-surface-700 text-surface-300", icon: FiActivity };
+  }
 }

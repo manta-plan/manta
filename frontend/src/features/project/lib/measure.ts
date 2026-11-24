@@ -7,11 +7,6 @@ export type MeasureMode = "distance" | "area";
 export const MEASURE_FILL_LAYER_ID = "measure-fill";
 export const MEASURE_LINE_LAYER_ID = "measure-line";
 export const MEASURE_VERTEX_LAYER_ID = "measure-vertices";
-export const MEASURE_LAYER_IDS = [
-  MEASURE_FILL_LAYER_ID,
-  MEASURE_LINE_LAYER_ID,
-  MEASURE_VERTEX_LAYER_ID,
-];
 
 export type LngLat = [number, number];
 

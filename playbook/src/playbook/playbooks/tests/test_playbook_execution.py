@@ -2,22 +2,20 @@
 #
 # SPDX-License-Identifier: MIT
 
+from uuid import UUID
+
 import pytest
+from datarecord import Revision
 from pydantic import ValidationError, computed_field
 
-from playbook.blocks.core import ConfigSchema, DataRecord, MantaBlock
-from playbook.blocks.tests.fakes import (
-    RECORD_UUID,
-    STORE,
-    FakeNeedsUpstream,
-    FakePassthrough,
-    FakeWritesOutput,
-    revision_of,
-)
+from playbook.blocks.core import ConfigSchema, MantaBlock, RevisionRef
+from playbook.blocks.tests.fakes import FakeNeedsUpstream, FakePassthrough, steps
 from playbook.playbooks.playbook import Playbook, When
 
+UPSTREAM = RevisionRef(store="s3://bucket/upstream", id=UUID(int=0))
 
-def test_a_wired_input_is_separate_from_the_record_handed_along(initial_record):
+
+def test_a_wired_input_is_separate_from_the_revision_handed_along(initial_revision):
     pb = Playbook(name="exec-wiring")
     cluster = pb.add("cluster", FakePassthrough)
     pb.add("expand", FakePassthrough)
@@ -28,14 +26,14 @@ def test_a_wired_input_is_separate_from_the_record_handed_along(initial_record):
         "expand": {"label": "expand"},
         "dispatch": {},
     }
-    result = pb.run(initial_record, config)
+    result = pb.run(initial_revision, config)
 
-    # `dispatch` gets the record from `expand` as usual, and separately the result of
-    # `cluster` specifically, from before `expand` ran.
-    assert result.url == f"{STORE}+cluster+expand+needs({STORE}+cluster)"
+    # `dispatch` gets the revision from `expand` as usual, and separately the result
+    # of `cluster` specifically, from before `expand` ran.
+    assert steps(result) == ["cluster", "expand", "needs(cluster)"]
 
 
-def test_only_the_matching_branch_runs(initial_record):
+def test_only_the_matching_branch_runs(initial_revision):
     pb = Playbook(name="exec-cond")
     pb.add("branch_a", FakePassthrough, when=When(config="globals.mode", equals="a"))
     pb.add("branch_b", FakePassthrough, when=When(config="globals.mode", equals="b"))
@@ -45,50 +43,49 @@ def test_only_the_matching_branch_runs(initial_record):
         "branch_a": {"label": "A"},
         "branch_b": {"label": "B"},
     }
-    assert pb.run(initial_record, config).url == f"{STORE}+A"
+    assert steps(pb.run(initial_revision, config)) == ["A"]
 
     config["globals"]["mode"] = "b"
-    assert pb.run(initial_record, config).url == f"{STORE}+B"
+    assert steps(pb.run(initial_revision, config)) == ["B"]
 
 
-def test_a_step_that_does_not_run_passes_the_record_straight_on(initial_record):
+def test_a_step_that_does_not_run_passes_the_revision_straight_on(initial_revision):
     pb = Playbook(name="exec-skip")
     pb.add("maybe", FakePassthrough, when=When(config="globals.mode", equals="on"))
 
-    result = pb.run(initial_record, {"globals": {"mode": "off"}})
-    assert result.url == STORE
+    assert pb.run(initial_revision, {"globals": {"mode": "off"}}) == initial_revision
 
 
-def test_the_same_playbook_can_be_run_more_than_once(initial_record):
+def test_the_same_playbook_can_be_run_more_than_once(initial_revision):
     # A block is built fresh each time it runs, so no run can be affected by an
     # earlier one.
     pb = Playbook(name="exec-reuse")
     pb.add("a", FakePassthrough)
 
     config = {"a": {"label": "a"}}
-    assert pb.run(initial_record, config).url == f"{STORE}+a"
-    assert pb.run(initial_record, config).url == f"{STORE}+a"
+    first, second = (pb.run(initial_revision, config) for _ in range(2))
+    assert steps(first) == steps(second) == ["a"]
+    assert first != second
 
 
-def test_a_steps_result_is_a_new_revision_of_its_input(initial_record):
+def test_a_steps_result_is_a_new_revision_in_its_inputs_store(initial_revision):
     pb = Playbook(name="exec-outputs")
-    pb.add("first", FakeWritesOutput)
+    pb.add("first", FakePassthrough)
 
-    assert pb.run(initial_record, {"first": {}}) == revision_of(initial_record)
+    result = pb.run(initial_revision, {"first": {}})
+    assert result.store == initial_revision.store
+    assert result.id != initial_revision.id
 
 
 def test_a_wired_input_is_checked_against_the_setting_it_goes_into():
-    # `label` is text, so a record wired into it cannot work. It is checked, rather
-    # than quietly leaving a record where text was expected.
+    # `label` is text, so a revision wired into it cannot work. It is checked, rather
+    # than quietly leaving a revision where text was expected.
     with pytest.raises(ValidationError, match="label"):
-        FakeNeedsUpstream.merge_config({}, {"label": DataRecord(url=STORE, uuid=RECORD_UUID)})
+        FakeNeedsUpstream.merge_config({}, {"label": UPSTREAM})
 
 
 def test_a_wired_input_reaches_the_setting_it_is_meant_for():
-    config = FakeNeedsUpstream.merge_config(
-        {}, {"source": DataRecord(url="s3://bucket/upstream", uuid=RECORD_UUID)}
-    )
-    assert config.source.url == "s3://bucket/upstream"
+    assert FakeNeedsUpstream.merge_config({}, {"source": UPSTREAM}).source == UPSTREAM
 
 
 class _DerivedSettingConfig(ConfigSchema):
@@ -103,8 +100,8 @@ class _DerivedSettingBlock(MantaBlock[_DerivedSettingConfig]):
     ENV = "default"
     CONFIG = _DerivedSettingConfig
 
-    def run(self, record: DataRecord) -> DataRecord:
-        return record
+    def run(self, base: Revision) -> Revision:
+        return base
 
 
 def test_settings_given_as_an_object_can_be_merged_again():
@@ -114,13 +111,13 @@ def test_settings_given_as_an_object_can_be_merged_again():
     assert config.size == 3
 
 
-def test_settings_reach_the_block_that_needs_them(initial_record):
+def test_settings_reach_the_block_that_needs_them(initial_revision):
     pb = Playbook(name="exec-config")
     pb.add("first", FakePassthrough)
     pb.add("second", FakePassthrough)
 
     result = pb.run(
-        initial_record,
+        initial_revision,
         {"first": {"label": "one"}, "second": {"label": "two"}},
     )
-    assert result.url == f"{STORE}+one+two"
+    assert steps(result) == ["one", "two"]

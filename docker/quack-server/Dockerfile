@@ -1,7 +1,5 @@
 # Temporary Quack record server for the dev stack (docker/compose-dev-services.yaml).
 # No records in the image: the compose service mounts them at /srv/data/records.
-# static/ext (the relabelled DuckDB-Wasm extensions) is git-ignored; build it as
-# the README describes, or the browser can't load Quack.
 FROM python:3.12-slim
 
 # git: datarecord and mathspec install from GitHub.

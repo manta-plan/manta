@@ -4,11 +4,12 @@
 
 """What a block is: its data handle, its dimension bookkeeping, and its base class.
 
-A block is one unit of work on a model. It reads a `DataRecord` (a pointer to where
-the data lives), does something with it, and returns a new `DataRecord` pointing at
-the result. Everything a block declares about itself - the environment it needs, the
-settings it accepts, the dimensions it works on - lives on the class, so that other
-tools can read it without running the block.
+A block is one unit of work on a model. It reads a datarecord `Revision`, does
+something with it, and returns the new `Revision` holding the result. Between
+processes a revision travels as a `RevisionRef`, a pointer that needs no datarecord
+installed to pass along. Everything a block declares about itself - the environment
+it needs, the settings it accepts, the dimensions it works on - lives on the class, so
+that other tools can read it without running the block.
 
 Blocks are deliberately unaware of whatever runs them. Running one is a plain method
 call; the thing that schedules that call - a workflow engine, a container, a test -
@@ -16,11 +17,14 @@ lives outside this package and can be swapped without touching a single block.
 """
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, cast, get_args
+from typing import TYPE_CHECKING, ClassVar, cast, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.dataclasses import dataclass
+
+if TYPE_CHECKING:
+    from datarecord import Revision
 
 
 class BlockDefinitionError(Exception):
@@ -44,30 +48,35 @@ class SolveError(BlockRunError):
 
 
 class DataRecordError(BlockRunError):
-    """Raised when a block could not read a model from, or write one to, a record."""
+    """Raised when a block could not read a model from, or write one to, a revision."""
 
 
-@dataclass
-class DataRecord:
-    """Where a block's data lives.
+@dataclass(frozen=True)
+class RevisionRef:
+    """Where a block's data lives, as it travels between processes.
 
-    Only ever a pointer - never the data itself - because a record is passed between
-    processes and machines, which a loaded model could not survive. The URL names a
-    datarecord store, either a local directory or an `s3://` address, and the uuid
-    names one revision in that store.
+    Only ever a pointer - never the data itself - because it is passed between
+    processes and machines, which a loaded model could not survive. `store` names a
+    datarecord store, either a local directory or an `s3://` address, and `id` names
+    one revision in that store: the fields a datarecord `Revision` serialises to.
     """
 
-    url: str
-    uuid: UUID
+    store: str
+    id: UUID
 
     def to_dict(self) -> dict:
-        """Turn this record into plain data, for sending to another process."""
-        return {"url": self.url, "uuid": str(self.uuid)}
+        """Turn this pointer into plain data, for sending to another process."""
+        return {"store": self.store, "id": str(self.id)}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "DataRecord":
-        """Rebuild a record from the plain data `to_dict` produced."""
+    def from_dict(cls, data: dict) -> "RevisionRef":
+        """Rebuild a pointer from the plain data `to_dict` produced."""
         return cls(**data)
+
+    @classmethod
+    def from_revision(cls, revision: "Revision") -> "RevisionRef":
+        """The pointer that carries `revision` to another process."""
+        return cls(store=revision.store.uri, id=revision.id)
 
 
 class BlockDims(BaseModel):
@@ -99,11 +108,9 @@ class ConfigSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-def _accepts_record(annotation: object) -> bool:
-    """Whether a settings field can hold a `DataRecord`."""
-    if annotation is DataRecord:
-        return True
-    return any(arg is DataRecord for arg in get_args(annotation))
+def _accepts_ref(annotation: object) -> bool:
+    """Whether a settings field can hold a `RevisionRef`."""
+    return annotation is RevisionRef or RevisionRef in get_args(annotation)
 
 
 class MantaBlock[CONFIG_T: ConfigSchema](ABC):
@@ -136,9 +143,9 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
     INPUTS: ClassVar[frozenset[str]] = frozenset()
     """Settings that are filled in by another block's output rather than by the user.
 
-    Each name here must be a field of `CONFIG` that can hold a `DataRecord` and has a
+    Each name here must be a field of `CONFIG` that can hold a `RevisionRef` and has a
     default, since the block also has to be usable with nothing wired to it. These are
-    extra data sources, on top of the record handed along from the previous step.
+    extra data sources, on top of the revision handed along from the previous step.
     """
 
     OUTPUTS: ClassVar[frozenset[str]] = frozenset({"output"})
@@ -176,10 +183,10 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
                     f"filled into a setting of the same name (settings: "
                     f"{sorted(fields)})."
                 )
-            if not _accepts_record(field.annotation):
+            if not _accepts_ref(field.annotation):
                 raise BlockDefinitionError(
                     f"{cls.__name__} lists {input_name!r} in INPUTS, so that setting "
-                    f"has to be able to hold a DataRecord, but "
+                    f"has to be able to hold a RevisionRef, but "
                     f"{cls.CONFIG.__name__}.{input_name} is typed as "
                     f"{field.annotation}."
                 )
@@ -198,11 +205,11 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
 
     @classmethod
     def merge_config(
-        cls, config: "ConfigSchema | dict", inputs: "dict[str, DataRecord]"
+        cls, config: "ConfigSchema | dict", inputs: "dict[str, RevisionRef]"
     ) -> ConfigSchema:
-        """The block's settings with any wired-in records filled into place.
+        """The block's settings with any wired-in revisions filled into place.
 
-        The result is checked in full, so a record wired to the wrong kind of setting
+        The result is checked in full, so a revision wired to the wrong kind of setting
         is reported here rather than surfacing much later inside the block.
         """
         # `round_trip` leaves out computed fields: they are worked out from the
@@ -212,9 +219,11 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
         return cls.CONFIG.model_validate({**base, **inputs})
 
     @abstractmethod
-    def run(self, record: DataRecord) -> DataRecord:
-        """Do this block's work, returning a record pointing at the result.
+    def run(self, base: "Revision") -> "Revision":
+        """Do this block's work on `base`, returning the revision holding the result.
 
-        The result is written alongside `record`, as a new revision in the input
-        record's own store, so the caller never has to say where it should go.
+        The result is committed through `base.store`, as a new revision in the input's
+        own store, so the caller never has to say where it should go. Revisions wired
+        in through `INPUTS` arrive as `RevisionRef`s and open on the same workspace
+        with `playbook.blocks.run.open_revision(base.store.workspace, ref)`.
         """

@@ -50,9 +50,10 @@ src/playbook_library/
 ```
 
 ## Getting started
+<!-- --8<-- [start:docs-setup] -->
 
 ```bash
-pixi run -e dev test     # packaging, registration and the catalogue, without PyPSA
+pixi run -e dev test     # packaging, registration, and the catalogue, without PyPSA
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 
@@ -64,7 +65,7 @@ pixi run -e full python -m playbook_library.examples
 
 That seeds a tiny network — one bus, one generator that can be built, a day of demand
 — as the root revision of a datarecord store, runs the `expand` playbook on it, and
-prints the final record. Pass a directory or an `s3://` URL to choose where the store
+prints the final revision. Pass a directory or an `s3://` URL to choose where the store
 is created.
 
 To run a single block instead, without a playbook around it:
@@ -72,10 +73,12 @@ To run a single block instead, without a playbook around it:
 ```bash
 pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
     --source playbook_library --config '{"n_hours": 6}' \
-    --record '{"url": "<store>", "uuid": "<revision>"}'
+    --revision '{"store": "<store>", "id": "<revision>"}'
 ```
+<!-- --8<-- [end:docs-setup] -->
 
 ## Environments
+<!-- --8<-- [start:docs-environments] -->
 
 Each block declares the environment it needs (`ENV = "pypsa"`), and that name is what
 picks the environment it later runs in. The environments themselves are pixi's:
@@ -89,6 +92,7 @@ picks the environment it later runs in. The environments themselves are pixi's:
 
 That `dev` has no PyPSA and its tests still pass is the check that a block's
 dependencies stay its own.
+<!-- --8<-- [end:docs-environments] -->
 
 ## Adding a block
 
@@ -98,8 +102,9 @@ dependencies stay its own.
 2. Register it in `__init__.py` with `register_lazy("your_block",
    "playbook_library.your_module:YourBlock")`. Registering the location rather than
    importing the class is what keeps this package importable without PyPSA.
-3. Read and write data through `pypsa_helpers`: `to_network(record)` in,
-   `write_network(n, record)` out, as a new revision in the input record's store. Blocks never open files themselves, which is
+3. Read and write data through `pypsa_helpers`: `to_network(base)` in,
+   `write_network(n, base)` out, as a new revision in the store of the `base` revision
+   the block's `run` was given. Blocks never open files themselves, which is
    what lets the same block run against a local file or object storage unchanged.
    A helper only one block needs is a method on that block's class; `pypsa_helpers`
    holds only what blocks share.
@@ -144,6 +149,7 @@ silently.
 committed file being refreshed by hand. -->
 
 ## Testing your contribution
+<!-- --8<-- [start:docs-testing] -->
 
 ```bash
 pixi run -e dev test     # must pass without PyPSA
@@ -164,10 +170,11 @@ Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry
 `pytestmark = pytest.mark.pypsa`, so they skip rather than fail in `dev`. A new block
 needs at least a case in `test_library.py` showing it produces a usable network as a
 new revision in the store it read from — keep the networks tiny, so the suite stays quick.
+<!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
 
-- Records point at revisions in a datarecord store, and reading and writing them is
-  confined to `pypsa_helpers.py`.
+- Blocks read and write revisions of a datarecord store, and turning them into PyPSA
+  networks and back is confined to `pypsa_helpers.py`.
 - The settings models in `pypsa_configs.py` mirror PyPSA's `optimize` options by hand,
   and have to be updated when those change.

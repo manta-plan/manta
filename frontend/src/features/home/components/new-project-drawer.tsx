@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { createProject } from "../api";
 import { useAppStore } from "../store";
 import { useRecordCatalogue } from "../lib/use-record-catalogue";
-import { FormSelect } from "./form-select";
+import { FormSelect } from "../../../components/form-select";
 
 export function NewProjectDrawer() {
   const [location] = useLocation();

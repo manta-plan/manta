@@ -6,17 +6,10 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
   {
     title: "Navigation",
     items: [
-      { keys: ["1"], label: "Model" },
+      { keys: ["1"], label: "Build" },
       { keys: ["2"], label: "Run" },
-    ],
-  },
-  {
-    title: "Map (Model tab)",
-    items: [
-      { keys: ["L"], label: "Show or hide Map Layers" },
-      { keys: ["+"], label: "Zoom in" },
-      { keys: ["-"], label: "Zoom out" },
-      { keys: ["Esc"], label: "Stop measuring" },
+      { keys: ["3"], label: "Inspect" },
+      { keys: ["4"], label: "Analyse" },
     ],
   },
   { title: "Help", items: [{ keys: ["?"], label: "Keyboard shortcuts" }] },

@@ -13,7 +13,6 @@ driven, so the contract an orchestrator relies on is pinned down here.
 import pytest
 
 from playbook.blocks.tests.fakes import (
-    STORE,
     FakeNeedsUpstream,
     FakePassthrough,
     FakeStrictConfig,
@@ -24,7 +23,7 @@ from playbook.playbooks.playbook import Playbook
 from playbook.playbooks.validation import PlaybookHasIssuesError
 
 
-def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_record):
+def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_revision):
     pb = Playbook(name="p")
     cluster = pb.add("cluster", FakePassthrough)
     pb.add("dispatch", FakeNeedsUpstream, inputs={"source": cluster.output})
@@ -32,7 +31,7 @@ def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_recor
     runner = RecordingRunner()
     result = execute_playbook(
         pb,
-        initial_record,
+        initial_revision,
         {"cluster": {"label": "c"}, "dispatch": {}},
         runner=runner,
     )
@@ -41,16 +40,16 @@ def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_recor
     assert first["block"] == "fake_passthrough"
     assert first["step_name"] == "cluster"
     assert first["config"] == {"label": "c"}
-    assert first["record"] is initial_record
+    assert first["revision"] is initial_revision
 
-    # The next step receives the record the runner returned for the previous one,
+    # The next step receives the revision the runner returned for the previous one,
     # and the wired input points at that same result.
-    assert second["record"].url == f"{STORE}/cluster"
-    assert second["inputs"] == {"source": second["record"]}
-    assert result.url == f"{STORE}/cluster/dispatch"
+    assert second["revision"].store == f"{initial_revision.store}/cluster"
+    assert second["inputs"] == {"source": second["revision"]}
+    assert result.store == f"{initial_revision.store}/cluster/dispatch"
 
 
-def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_record):
+def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_revision):
     inner = Playbook(name="inner")
     inner.add("leaf", FakePassthrough)
 
@@ -60,7 +59,7 @@ def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_record):
     runner = RecordingRunner()
     execute_playbook(
         outer,
-        initial_record,
+        initial_revision,
         {"regional": {"leaf": {"label": "deep"}}},
         runner=runner,
     )
@@ -68,7 +67,7 @@ def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_record):
     assert runner.calls[0]["config"] == {"label": "deep"}
 
 
-def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_record):
+def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_revision):
     inner = Playbook(name="inner")
     inner.add("leaf", FakeNeedsUpstream)
 
@@ -79,15 +78,15 @@ def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_re
     runner = RecordingRunner()
     execute_playbook(
         outer,
-        initial_record,
+        initial_revision,
         {"upstream": {}, "regional": {"leaf": {}}},
         runner=runner,
     )
 
-    assert runner.calls[1]["inputs"]["source"].url == f"{STORE}/upstream"
+    assert runner.calls[1]["inputs"]["source"].store == f"{initial_revision.store}/upstream"
 
 
-def test_a_playbook_with_issues_never_reaches_the_runner(initial_record):
+def test_a_playbook_with_issues_never_reaches_the_runner(initial_revision):
     # The second step's settings are wrong, so not even the first step runs: a run
     # that cannot finish is refused whole, rather than failing partway through.
     pb = Playbook(name="p")
@@ -96,5 +95,5 @@ def test_a_playbook_with_issues_never_reaches_the_runner(initial_record):
 
     runner = RecordingRunner()
     with pytest.raises(PlaybookHasIssuesError, match="required_field"):
-        execute_playbook(pb, initial_record, {"first": {}, "second": {}}, runner=runner)
+        execute_playbook(pb, initial_revision, {"first": {}, "second": {}}, runner=runner)
     assert runner.calls == []

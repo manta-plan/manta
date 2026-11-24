@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.14.*"
 
 [[package]]
@@ -1132,13 +1132,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "datarecord", marker = "extra == 'run'", git = "https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d" },
     { name = "jsonschema", specifier = ">=4.18" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
+provides-extras = ["run"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "playbook", extras = ["run"] },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.16.0" },
 ]
@@ -1819,6 +1822,7 @@ provides-extras = ["docker"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "playbook", extras = ["run"], editable = "../playbook" },
     { name = "prefect-docker", specifier = ">=0.6" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.16.0" },
