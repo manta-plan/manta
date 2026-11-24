@@ -1,24 +1,24 @@
-import { useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useState, type ClipboardEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation } from "wouter";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import clsx from "clsx";
 import type { IconType } from "react-icons";
 import {
   LuBug,
   LuCircleCheck,
-  LuImagePlus,
+  LuCrop,
   LuLightbulb,
   LuLoaderCircle,
   LuMessageSquareText,
+  LuPencil,
   LuX,
 } from "react-icons/lu";
 import { sendFeedback, type FeedbackKind } from "../lib/send-feedback";
-import {
-  FEEDBACK_IMAGE_TYPES,
-  FeedbackImageError,
-  formatImageSize,
-  prepareFeedbackImage,
-} from "../lib/feedback-image";
+import { FeedbackImageError, prepareFeedbackImage } from "../lib/feedback-image";
+import { captureRegion, type Rect } from "../lib/capture-region";
+import { RegionSelector } from "./region-selector";
+import { ScreenshotEditor } from "./screenshot-editor";
 import { useAppStore } from "../store";
 import { useFeedbackDraft } from "../lib/feedback-draft";
 
@@ -55,8 +55,11 @@ export function FeedbackDialog({
   const [isSent, setIsSent] = useState(false);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [isDraggingImage, setIsDraggingImage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  // While the snip overlay or editor is up, the dialog hides and must ignore
+  // the outside-press / Escape closes they would otherwise trigger.
+  const overlayActive = isSelecting || isEditing;
 
   const activeKind = KINDS.find((k) => k.value === kind) ?? KINDS[0];
   const canSend = message.trim().length > 0 && !isSending && !isPreparingImage;
@@ -86,11 +89,21 @@ export function FeedbackDialog({
     void attachImage(file);
   };
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDraggingImage(false);
-    const file = event.dataTransfer.files[0];
-    if (file) void attachImage(file);
+  const handleSelect = async (rect: Rect) => {
+    setIsSelecting(false);
+    setImageError(null);
+    setIsPreparingImage(true);
+    try {
+      // Let the overlay unmount before the page is rendered.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      setImage(await prepareFeedbackImage(await captureRegion(rect)));
+    } catch (err) {
+      setImageError(
+        err instanceof FeedbackImageError ? err.message : "Couldn't capture the screen.",
+      );
+    } finally {
+      setIsPreparingImage(false);
+    }
   };
 
   const submit = async () => {
@@ -122,6 +135,7 @@ export function FeedbackDialog({
   };
 
   const handleOpenChange = (next: boolean) => {
+    if (!next && overlayActive) return;
     onOpenChange(next);
     if (!next) {
       // The draft stays so the dialog can be reopened to carry on; only a
@@ -135,10 +149,19 @@ export function FeedbackDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange} modal={!overlayActive}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/50" />
-        <Dialog.Popup className="border-surface-600 bg-surface-800 fixed top-1/2 left-1/2 z-40 w-[440px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border p-5 shadow-2xl shadow-black/50 outline-none">
+        <Dialog.Backdrop
+          data-capture-exclude
+          className={clsx("fixed inset-0 z-40 bg-black/50", overlayActive && "invisible")}
+        />
+        <Dialog.Popup
+          data-capture-exclude
+          className={clsx(
+            "border-surface-600 bg-surface-800 fixed top-1/2 left-1/2 z-40 w-[440px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border p-5 shadow-2xl shadow-black/50 outline-none",
+            overlayActive && "invisible",
+          )}
+        >
           <div className="mb-1 flex items-center justify-between">
             <Dialog.Title className="text-surface-50 text-[14px] font-semibold">
               Send Feedback
@@ -214,70 +237,66 @@ export function FeedbackDialog({
               </label>
 
               <div className="mt-3 flex flex-col gap-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={FEEDBACK_IMAGE_TYPES.join(",")}
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    // Reset so picking the same file again still fires onChange.
-                    event.target.value = "";
-                    if (file) void attachImage(file);
-                  }}
-                />
                 {image ? (
-                  <div className="border-surface-600 bg-surface-900 flex items-center gap-2 rounded border p-1.5">
-                    <img
-                      src={image.previewUrl}
-                      alt="Attached screenshot"
-                      className="h-10 w-14 shrink-0 rounded-sm object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-surface-100 truncate text-[12px]">{image.name}</div>
-                      <div className="text-surface-500 text-[11px]">
-                        {formatImageSize(image.size)}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setImage(null)}
-                      aria-label="Remove screenshot"
-                      title="Remove screenshot"
-                      className="text-surface-400 hover:bg-surface-700 hover:text-surface-50 flex h-6 w-6 shrink-0 items-center justify-center rounded outline-none"
+                  <div className="border-surface-600 bg-surface-900 relative h-48 overflow-hidden rounded border p-1.5">
+                    {/* Fitted on load; wheel zooms, drag pans, double-click resets.
+                        The key refits it for every new or re-edited image. */}
+                    <TransformWrapper
+                      key={image.previewUrl}
+                      centerOnInit
+                      minScale={1}
+                      maxScale={6}
+                      wheel={{ step: 0.15 }}
+                      doubleClick={{ mode: "reset" }}
                     >
-                      <LuX size={13} />
-                    </button>
+                      <TransformComponent
+                        wrapperClass="h-full! w-full!"
+                        contentClass="h-full! w-full!"
+                      >
+                        <img
+                          src={image.previewUrl}
+                          alt="Attached screenshot"
+                          draggable={false}
+                          className="h-full w-full rounded-sm object-contain"
+                        />
+                      </TransformComponent>
+                    </TransformWrapper>
+                    <div className="absolute top-2.5 right-2.5 z-10 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(true)}
+                        aria-label="Edit screenshot"
+                        title="Edit screenshot"
+                        className="flex h-6 w-6 items-center justify-center rounded bg-black/60 text-white outline-none hover:bg-black/80"
+                      >
+                        <LuPencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImage(null)}
+                        aria-label="Remove screenshot"
+                        title="Remove screenshot"
+                        className="flex h-6 w-6 items-center justify-center rounded bg-black/60 text-white outline-none hover:bg-black/80"
+                      >
+                        <LuX size={13} />
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setIsDraggingImage(true);
-                    }}
-                    onDragLeave={() => setIsDraggingImage(false)}
-                    onDrop={handleDrop}
-                    className={clsx(
-                      "flex items-center gap-2 rounded border border-dashed px-2 py-1.5 text-[12px] transition-colors",
-                      isDraggingImage ? "border-accent-400 bg-accent-600/10" : "border-surface-600",
-                    )}
-                  >
+                  <div className="border-surface-600 flex items-center gap-2 rounded border border-dashed px-2 py-1.5 text-[12px]">
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => setIsSelecting(true)}
                       disabled={isPreparingImage}
                       className="text-surface-200 hover:text-surface-50 flex shrink-0 items-center gap-1.5 rounded px-1 py-0.5 font-medium outline-none disabled:opacity-50"
                     >
                       {isPreparingImage ? (
                         <LuLoaderCircle size={14} className="animate-spin" />
                       ) : (
-                        <LuImagePlus size={14} />
+                        <LuCrop size={14} />
                       )}
-                      {isPreparingImage ? "Preparing…" : "Attach screenshot"}
+                      {isPreparingImage ? "Preparing…" : "Take a Screen Shot"}
                     </button>
-                    <span className="text-surface-500 min-w-0 truncate text-[11px]">
-                      or drop / paste an image · optional
-                    </span>
                   </div>
                 )}
                 {imageError && (
@@ -354,6 +373,22 @@ export function FeedbackDialog({
           )}
         </Dialog.Popup>
       </Dialog.Portal>
+      {isSelecting && (
+        <RegionSelector
+          onSelect={(rect) => void handleSelect(rect)}
+          onCancel={() => setIsSelecting(false)}
+        />
+      )}
+      {isEditing && image && (
+        <ScreenshotEditor
+          src={image.previewUrl}
+          onCancel={() => setIsEditing(false)}
+          onDone={(file) => {
+            setIsEditing(false);
+            void attachImage(file);
+          }}
+        />
+      )}
     </Dialog.Root>
   );
 }
