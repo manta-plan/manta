@@ -1,12 +1,13 @@
 import logging
 import secrets
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import httpx2
 from fastapi import Depends, HTTPException
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from manta.entities import (
 )
 from manta.services.datarecord_session_launcher import (
     DATARECORD_SESSION_API_PORT,
+    DATARECORD_SESSION_QUACK_PORT,
     DatarecordSessionLauncher,
     DatarecordSessionSpec,
 )
@@ -33,6 +35,7 @@ from manta.services.results.datarecord_session_result import (
     DatarecordSessionRegistrationResult,
     OpenDatarecordSessionResult,
     QuackConnectionResult,
+    QuackUpstreamResult,
 )
 from manta.services.user_service import UserService
 
@@ -42,6 +45,7 @@ QUACK_URI = "/quack"
 HEALTH_TIMEOUT = 30.0
 HEALTH_INTERVAL = 0.2
 _PASSED_THROUGH_STATUS_CODES = (404, 422)
+QUACK_TOUCH_INTERVAL = timedelta(minutes=1)
 
 
 class DatarecordSessionService:
@@ -69,6 +73,37 @@ class DatarecordSessionService:
         )
         self.db.commit()
         return result
+
+    def quack_upstream(self, project_uuid: UUID, user: User) -> QuackUpstreamResult:
+        project = self.user_service.get_owned_project(project_uuid, user)
+        session = (
+            self.db.query(DatarecordSession)
+            .filter_by(
+                user_id=user.id, project_id=project.id, status=DatarecordSessionStatus.ACTIVE
+            )
+            .one_or_none()
+        )
+        if session is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"No active datarecord session for project {project_uuid}, "
+                f"open it with POST /v1/projects/{project_uuid}/datarecord-session",
+            )
+        now = datetime.now(UTC)
+        unlocked = (
+            select(DatarecordSession.id)
+            .filter_by(id=session.id)
+            .where(DatarecordSession.last_used_at < now - QUACK_TOUCH_INTERVAL)
+            .with_for_update(skip_locked=True)
+        )
+        self.db.execute(
+            update(DatarecordSession)
+            .where(DatarecordSession.id.in_(unlocked))
+            .values(last_used_at=now)
+        )
+        self.db.commit()
+        _, endpoint = _instance(session)
+        return QuackUpstreamResult(upstream=f"{endpoint}:{DATARECORD_SESSION_QUACK_PORT}")
 
     def suspend(self, project_uuid: UUID, user: User) -> None:
         project = self.user_service.get_owned_project(project_uuid, user)

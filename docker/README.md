@@ -42,8 +42,13 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
 
 The frontend container's Caddy proxies `/api/*` and `/quack` to
 `quack-server:8080`, so the browser reaches it on the frontend's own origin.
-Its settings live in [`backend/.env`](../backend/.env) with the rest:
-`FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN` (`devtoken`).
+A `/quack` request with an `X-Manta-Project` header goes to the user's
+datarecord session instead, after the backend's check. Caddy reaches the
+session containers by name, so the frontend must stay on
+`${MANTA_DOCKER_NETWORK}` (`manta_default`, the compose project's network).
+The record server's settings live in [`backend/.env`](../backend/.env) with
+the rest: `FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN`
+(`devtoken`).
 The token is also built into the public frontend bundle, so only a dev value
 belongs there. The app calls the server on its own origin, over the page's own
 protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets

@@ -1,23 +1,35 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx2
 import pytest
 from datarecord_session_fake import FakeDatarecordSessionLauncher
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, select, update
+from sqlalchemy.orm import Session
 
+from manta.entities import DatarecordSession, Project
 from manta.services import datarecord_session_service
 
 STORE = "ac-dc-meshed"
 REGISTRATION = {"kind": "view", "store": STORE, "revision": str(uuid4()), "packs": ["pypsa-eur"]}
 
 
+QUACK_AUTH_URL = "/v1/datarecord-session/quack-auth"
+
+
 @pytest.fixture
-def session_url(app_server: str, admin_headers: dict[str, str]) -> str:
+def project_uuid(app_server: str, admin_headers: dict[str, str]) -> str:
     response = httpx2.post(
         f"{app_server}/v1/projects", json={"name": "Sessions"}, headers=admin_headers
     )
     assert response.status_code == 201
-    return f"/v1/projects/{response.json()['uuid']}/datarecord-session"
+    return response.json()["uuid"]
+
+
+@pytest.fixture
+def session_url(project_uuid: str) -> str:
+    return f"/v1/projects/{project_uuid}/datarecord-session"
 
 
 def test_open_starts_one_instance_and_returns_the_quack_connection(
@@ -277,3 +289,137 @@ def test_open_unknown_project_returns_404(
 
     # Then it is not found
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "spoofed", [{}, {"X-Session-Upstream": "attacker:9494"}], ids=["plain", "spoofed"]
+)
+@pytest.mark.parametrize("healthy", [True, False], ids=["alive", "dead"])
+def test_quack_auth_returns_the_upstream_of_the_active_session_without_asking_it(
+    datarecord_session_api: TestClient,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    admin_headers: dict[str, str],
+    project_uuid: str,
+    session_url: str,
+    spoofed: dict[str, str],
+    healthy: bool,
+) -> None:
+    # Given an open session, whose instance may have stopped answering
+    datarecord_session_api.post(session_url, headers=admin_headers)
+    datarecord_session_launcher.healthy = healthy
+
+    # When Caddy checks a Quack request for the project
+    response = datarecord_session_api.get(
+        QUACK_AUTH_URL, headers={**admin_headers, "X-Manta-Project": project_uuid, **spoofed}
+    )
+
+    # Then the session's Quack address is the upstream, and no instance was restarted
+    assert response.status_code == 204
+    [endpoint] = datarecord_session_launcher.running
+    assert response.headers["X-Session-Upstream"] == f"{endpoint}:9494"
+    assert len(datarecord_session_launcher.started) == 1
+
+
+@pytest.mark.parametrize("suspended", [False, True], ids=["never-opened", "suspended"])
+def test_quack_auth_refuses_a_project_without_an_active_session(
+    datarecord_session_api: TestClient,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    admin_headers: dict[str, str],
+    project_uuid: str,
+    session_url: str,
+    suspended: bool,
+) -> None:
+    # Given a session that was never opened, or opened and suspended
+    if suspended:
+        datarecord_session_api.post(session_url, headers=admin_headers)
+        datarecord_session_api.delete(session_url, headers=admin_headers)
+
+    # When Caddy checks a Quack request for the project
+    response = datarecord_session_api.get(
+        QUACK_AUTH_URL, headers={**admin_headers, "X-Manta-Project": project_uuid}
+    )
+
+    # Then it is refused with a pointer to open the session, and no instance starts
+    assert response.status_code == 409
+    assert f"POST /v1/projects/{project_uuid}/datarecord-session" in response.json()["detail"]
+    assert "X-Session-Upstream" not in response.headers
+    assert len(datarecord_session_launcher.started) == suspended
+    assert datarecord_session_launcher.running == {}
+
+
+@pytest.mark.parametrize(
+    ("ago", "advanced"), [(timedelta(minutes=2), True), (timedelta(seconds=30), False)]
+)
+def test_quack_auth_advances_last_used_at_at_most_once_a_minute(
+    datarecord_session_api: TestClient,
+    db_engine: Engine,
+    admin_headers: dict[str, str],
+    project_uuid: str,
+    session_url: str,
+    ago: timedelta,
+    advanced: bool,
+) -> None:
+    # Given an open session, last used some time ago
+    datarecord_session_api.post(session_url, headers=admin_headers)
+    last_used = datetime.now(UTC) - ago
+    project_id = select(Project.id).filter_by(uuid=project_uuid).scalar_subquery()
+    of_project = DatarecordSession.project_id == project_id
+    with Session(db_engine) as db:
+        db.execute(update(DatarecordSession).where(of_project).values(last_used_at=last_used))
+        db.commit()
+
+    # When Caddy checks a Quack request for the project
+    response = datarecord_session_api.get(
+        QUACK_AUTH_URL, headers={**admin_headers, "X-Manta-Project": project_uuid}
+    )
+
+    # Then the last use advances only when it is older than a minute
+    assert response.status_code == 204
+    with Session(db_engine) as db:
+        stored = db.scalar(select(DatarecordSession.last_used_at).where(of_project))
+    assert (stored > last_used) == advanced
+
+
+@pytest.mark.parametrize(
+    ("auth", "project", "status_code"),
+    [
+        ("none", "own", 401),
+        ("invalid", "own", 401),
+        ("second_user", "own", 403),
+        ("admin", "unknown", 404),
+        ("admin", "missing", 422),
+        ("admin", "malformed", 422),
+    ],
+)
+def test_quack_auth_refuses(
+    datarecord_session_api: TestClient,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+    admin_headers: dict[str, str],
+    second_user_headers: dict[str, str],
+    project_uuid: str,
+    auth: str,
+    project: str,
+    status_code: int,
+) -> None:
+    # Given the request's credentials and project header
+    auth_headers = {
+        "none": {},
+        "invalid": {"Authorization": "Bearer not-a-token"},
+        "second_user": second_user_headers,
+        "admin": admin_headers,
+    }[auth]
+    project_headers = {
+        "own": {"X-Manta-Project": project_uuid},
+        "unknown": {"X-Manta-Project": str(uuid4())},
+        "missing": {},
+        "malformed": {"X-Manta-Project": "not-a-uuid"},
+    }[project]
+    headers = {**auth_headers, **project_headers, "X-Session-Upstream": "attacker:9494"}
+
+    # When Caddy checks a Quack request
+    response = datarecord_session_api.get(QUACK_AUTH_URL, headers=headers)
+
+    # Then it is refused without an upstream, and no session starts
+    assert response.status_code == status_code
+    assert "X-Session-Upstream" not in response.headers
+    assert datarecord_session_launcher.started == []

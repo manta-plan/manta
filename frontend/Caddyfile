@@ -7,6 +7,38 @@
 		reverse_proxy {$BACKEND_URL}
 	}
 
+	# Quack traffic of the user's datarecord session. The app's Quack secret adds
+	# the user's bearer token and X-Manta-Project to every request. The backend
+	# checks both (forward_auth, headers only) and names the container of the
+	# active session in X-Session-Upstream, or answers 409 when there is none;
+	# it never starts a session. Caddy then proxies the body straight to the
+	# container, without these three headers, as the session runs user SQL. When
+	# the container is gone, Caddy answers 502 and the app opens the session
+	# again. A client's
+	# own X-Session-Upstream is dropped first, and only an address of the form
+	# the launcher hands out is proxied. Requests without X-Manta-Project still
+	# go to the temporary record server below.
+	@session_quack {
+		path /quack
+		header X-Manta-Project *
+	}
+	handle @session_quack {
+		route {
+			request_header -X-Session-Upstream
+			forward_auth {$BACKEND_URL} {
+				uri /v1/datarecord-session/quack-auth
+				copy_headers X-Session-Upstream
+			}
+			@badup not header_regexp X-Session-Upstream ^datarecord-session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:9494$
+			respond @badup "no session upstream" 502
+			reverse_proxy {header.X-Session-Upstream} {
+				header_up -Authorization
+				header_up -X-Manta-Project
+				header_up -X-Session-Upstream
+			}
+		}
+	}
+
 	# TEMPORARY: the record server (docker/quack-server), until the backend
 	# serves Quack itself. The app calls its own origin, so the browser
 	# reaches it here, same-origin (no CORS) and over this site's
