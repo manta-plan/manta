@@ -43,13 +43,17 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
 The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
 `quack-server:8080`, so the browser reaches it on the frontend's own origin.
 Its settings live in [`backend/.env`](../backend/.env) with the rest:
-`QUACK_SERVER_PORT` (`8010`), `QUACK_TOKEN` (`devtoken`), and the frontend's
-build args `VITE_RECORD_SERVER` (`localhost:5173`) and `VITE_RECORD_TOKEN`
-(`devtoken`, must match `QUACK_TOKEN`). The build args are baked into the
-public bundle: behind a domain, set `VITE_RECORD_SERVER=manta.example.org` and
-rebuild. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken; it only
-matters for reaching the server directly (e.g. with `pnpm dev`, where
-`VITE_RECORD_SERVER=localhost:8010`).
+`FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN` (`devtoken`).
+The token is also built into the public frontend bundle, so only a dev value
+belongs there. The app calls the server on its own origin, over the page's own
+protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets
+HTTPS from Caddy. No CORS settings are needed.
+
+The frontend is served on `FRONTEND_PORT` (`80`, in `backend/.env`):
+<http://localhost>. `pnpm dev` stays on 5173, and its Vite server proxies the
+same record server paths to `localhost:${QUACK_SERVER_PORT}` (`8010`, published
+on the host's loopback only), reading both that port and the token from
+`backend/.env`. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken.
 
 ## Services
 
@@ -72,8 +76,8 @@ matters for reaching the server directly (e.g. with `pnpm dev`, where
 - **quack-server** — *temporary*, **opt-in** (compose profile
   `temporary-quack-setup`: add `--profile temporary-quack-setup` to the `up`
   command above, or name the service) record server that exposes a datarecord to the
-  browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
-  Inspect / Report tabs before datarecord is integrated into the backend. Copied
+  browser (DuckDB-Wasm) over the Quack protocol, used to port the Build /
+  Inspect / Analyse tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
   Listens on `localhost:${QUACK_SERVER_PORT}`, token `${QUACK_TOKEN}` (both in `backend/.env`).
   It reads the example stores the backend seeds into SeaweedFS

@@ -182,7 +182,7 @@ describe("collectGroups", () => {
 
   it("makes every def its own flat group in dispatch", () => {
     expect(groupsOf("dispatch").map((g) => [g.path.join("/"), groupLabel(g.resolved)])).toEqual([
-      ["capacity_source", "DataRecord Config"],
+      ["capacity_source", "RevisionRef Config"],
       ["optimize_config", "PyPSAOptimizeRollingHorizonConfig Config"],
       ["optimize_config/model_kwargs", "LinopyModelSchema Config"],
       ["optimize_config/transmission_losses", "PyPSAOptimizeTransmissionLossesSchema Config"],
