@@ -101,9 +101,11 @@ on the host's loopback only), reading both that port and the token from
   Set `QUACK_RECORDS_ROOT=/srv/data/records` to serve the git-ignored
   `docker/quack-server/data/records` folder instead.
 - **datarecord-session-image-builder** (in `compose-dev-backend.yaml`) builds
-  the image of the [datarecord session](../datarecord-session/README.md), which
-  the backend will start per user and project, and exits. Nothing uses the
-  image yet.
+  the image `${DATARECORD_SESSION_IMAGE}` of the
+  [datarecord session](../datarecord-session/README.md) and exits. From that
+  image the backend container starts a session per user and project on
+  `${MANTA_DOCKER_NETWORK}`, through the Docker socket. A backend on the host
+  cannot reach those containers by name.
 
 ## Testing
 

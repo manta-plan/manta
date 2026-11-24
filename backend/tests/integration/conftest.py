@@ -13,14 +13,24 @@ import httpx2
 import psycopg
 import pytest
 from botocore.config import Config
+from datarecord_session_fake import FakeDatarecordSessionLauncher
 from dotenv import dotenv_values
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.openid_connection import KeycloakOpenID
 from mypy_boto3_s3.client import S3Client
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
 from testcontainers.compose import DockerCompose
 
+from manta.config.database_config import get_db_session
+from manta.config.datarecord_session_config import (
+    get_datarecord_session_http,
+    get_datarecord_session_launcher,
+)
+from manta.config.keycloak_config import get_keycloak_openid
+from manta.routes.v1 import router as v1_router
 from manta.services.example_data_service import ExampleDataService
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -156,20 +166,27 @@ def s3_client(seaweedfs_service: dict[str, str]) -> S3Client:
 
 
 @pytest.fixture(scope="session")
-def example_store(
-    s3_client: S3Client, postgres_service: dict[str, str], app_server: str
-) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
-    """Returns a function that copies the example datarecord store the app downloaded on
-    startup under a project's own prefix (once per project), the same way new users'
-    example projects are filled, and returns the run payload fields for its `base`
-    revision — a real starting record for tests that run a playbook to completion."""
+def db_engine(postgres_service: dict[str, str], app_server: str) -> Iterator[Engine]:
+    """An engine on the app's database, migrated by the app at startup."""
     env = dotenv_values(BACKEND_ENV_FILE)
     engine = create_engine(
         f"postgresql+psycopg://{env['POSTGRES_USER']}:{env['POSTGRES_PASSWORD']}"
         f"@{postgres_service['host']}:{postgres_service['port']}/{env['POSTGRES_DB']}"
     )
-    with Session(engine) as db:
-        service = ExampleDataService(db, s3_client, env["S3_BUCKET"])
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def example_store(
+    s3_client: S3Client, db_engine: Engine
+) -> Iterator[Callable[[str], dict[str, dict[str, str]]]]:
+    """Returns a function that copies the example datarecord store the app downloaded on
+    startup under a project's own prefix (once per project), the same way new users'
+    example projects are filled, and returns the run payload fields for its `base`
+    revision — a real starting record for tests that run a playbook to completion."""
+    with Session(db_engine) as db:
+        service = ExampleDataService(db, s3_client, dotenv_values(BACKEND_ENV_FILE)["S3_BUCKET"])
 
         @cache
         def copy(project_uuid: str) -> dict[str, dict[str, str]]:
@@ -178,7 +195,6 @@ def example_store(
             return {"data_record": record.model_dump(mode="json")}
 
         yield copy
-    engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -318,3 +334,46 @@ def app_server(
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+
+@pytest.fixture
+def admin_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
+    """manta-admin's auth headers, registered with the app (register is idempotent)."""
+    token = kc_oidc_client.token("manta-admin", "manta-admin")
+    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
+    response = httpx2.post(
+        f"{app_server}/v1/auth/register",
+        json={"username": "manta-admin", "idp_subject": claims["sub"], "idp_source": claims["iss"]},
+    )
+    assert response.status_code == 201
+    return {"Authorization": f"Bearer {token['access_token']}"}
+
+
+@pytest.fixture
+def datarecord_session_launcher() -> FakeDatarecordSessionLauncher:
+    return FakeDatarecordSessionLauncher(stores={EXAMPLE_STORE})
+
+
+@pytest.fixture
+def datarecord_session_api(
+    db_engine: Engine,
+    kc_oidc_client: KeycloakOpenID,
+    datarecord_session_launcher: FakeDatarecordSessionLauncher,
+) -> Iterator[TestClient]:
+    """The app's routes in process, on the test stack, with sessions from
+    datarecord_session_launcher instead of Docker."""
+
+    def db_session() -> Iterator[Session]:
+        with Session(db_engine) as db:
+            yield db
+
+    app = FastAPI()
+    app.include_router(v1_router)
+    app.dependency_overrides = {
+        get_db_session: db_session,
+        get_keycloak_openid: lambda: kc_oidc_client,
+        get_datarecord_session_launcher: lambda: datarecord_session_launcher,
+        get_datarecord_session_http: lambda: datarecord_session_launcher.http,
+    }
+    with TestClient(app) as client:
+        yield client
