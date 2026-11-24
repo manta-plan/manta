@@ -40,7 +40,7 @@ docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
   --profile temporary-quack-setup up --build
 ```
 
-The frontend container's Caddy proxies `/api/*`, `/quack` and `/ext/*` to
+The frontend container's Caddy proxies `/api/*` and `/quack` to
 `quack-server:8080`, so the browser reaches it on the frontend's own origin.
 Its settings live in [`backend/.env`](../backend/.env) with the rest:
 `FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN` (`devtoken`).
