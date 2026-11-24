@@ -252,7 +252,7 @@ def _weighting(base: RecordLike, frame: pd.DataFrame, attribute: str) -> np.ndar
     It is read as PyPSA builds it: rows reach snapshots by the broadcast rule, and a
     snapshot that none reaches weighs 1, PyPSA's default.
     """
-    if attribute not in base.attributes:
+    if attribute not in base.flags():
         return np.ones(len(frame))
     rows = settled(base, attribute, PYPSA_TIME).df()
     labelled = rows.assign(snapshot=snapshot_labels(base.schema, rows["snapshot"]))
@@ -262,10 +262,10 @@ def _weighting(base: RecordLike, frame: pd.DataFrame, attribute: str) -> np.ndar
 def _series_of(base: RecordLike, attribute: str, ctype: str) -> DuckDBPyRelation:
     """Return the rows of input `attribute` over snapshots for the entities of component `ctype`.
 
-    Without `attribute` in `base`, the relation is empty with the same columns.
+    Without rows of `attribute` in `base`, the relation is empty with the same columns.
     """
     entities = base.properties["entity"].filter(f"ctype = '{ctype}'").project("entity")
-    if attribute not in base.attributes:
+    if attribute not in base.flags():
         return entities.filter("false").project(
             "entity, NULL AS snapshot, NULL AS scenario, NULL::DOUBLE AS value"
         )

@@ -995,6 +995,7 @@
           "n_hours": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0,
                 "type": "integer"
               },
               {
@@ -1011,6 +1012,7 @@
           "segments": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0,
                 "type": "integer"
               },
               {
