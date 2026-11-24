@@ -12,6 +12,7 @@ from manta.services.chat_service import (
     chat_slot,
     chat_status,
     check_message_limits,
+    describe_record,
     require_chat_enabled,
     system_prompt,
 )
@@ -32,6 +33,8 @@ def chat_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "CHAT_MAX_MESSAGE_CHARS",
         "CHAT_MAX_HISTORY_CHARS",
         "CHAT_DOCS_MAX_CHARS",
+        "CHAT_SQL_ENABLED",
+        "CHAT_MAX_RECORD_CHARS",
     ):
         monkeypatch.delenv(name, raising=False)
     system_prompt.cache_clear()
@@ -249,6 +252,95 @@ def test_system_prompt_fits_the_default_pages_into_the_default_limit(
 
     # Then
     assert "user-guide/run.md" in prompt
+
+
+COMPONENTS = [
+    {"ctype": "Generator", "carriers": ["solar", "onwind"]},
+    {"ctype": "GlobalConstraint", "carriers": []},
+]
+ATTRIBUTES = [
+    {"name": "p_nom", "unit": "MW", "subject": "entity", "series": False},
+    {"name": "p_max_pu", "unit": "", "subject": "entity", "series": True},
+]
+
+
+def test_describe_record_lists_the_component_types_and_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setenv("CHAT_SQL_ENABLED", "true")
+
+    # When
+    record = describe_record(COMPONENTS, ATTRIBUTES)
+
+    # Then
+    assert record is not None
+    assert "- Generator: solar, onwind" in record
+    assert "- GlobalConstraint: no carrier" in record
+    assert "- p_nom (MW, per entity)" in record
+    assert "- p_max_pu (no unit, per entity, series)" in record
+
+
+def test_describe_record_leaves_out_what_is_beyond_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given room for the component types and the first attribute only
+    monkeypatch.setenv("CHAT_SQL_ENABLED", "true")
+    whole = describe_record(COMPONENTS, ATTRIBUTES)
+    assert whole is not None
+    monkeypatch.setenv("CHAT_MAX_RECORD_CHARS", str(len(whole) - 5))
+
+    # When
+    record = describe_record(COMPONENTS, ATTRIBUTES)
+
+    # Then
+    assert record is not None
+    assert "- p_nom (MW, per entity)" in record
+    assert "p_max_pu" not in record
+
+
+def test_describe_record_is_none_unless_questions_about_data_are_enabled() -> None:
+    # When/Then
+    assert describe_record(COMPONENTS, ATTRIBUTES) is None
+
+
+def test_stream_reply_with_a_record_adds_how_to_query_it_after_the_documentation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setenv("CHAT_SQL_ENABLED", "true")
+    requests: list[httpx2.Request] = []
+    service = _model(_chunk(finish_reason="stop"), requests=requests)
+    record = describe_record(COMPONENTS, ATTRIBUTES)
+
+    # When the question is asked with the project's data described, and without
+    list(service.stream_reply(QUESTION, record))
+    list(service.stream_reply(QUESTION))
+
+    # Then only the first is told how to write a query, in one system message that
+    # ends with the project's own names
+    with_record, without = (json.loads(request.content)["messages"] for request in requests)
+    assert [message["role"] for message in with_record] == ["system", "user"]
+    instructions = with_record[0]["content"]
+    reference = "===== The open project's data ====="
+    assert instructions.index("Click Run to start a run.") < instructions.index(reference)
+    assert instructions.endswith("- p_max_pu (no unit, per entity, series)")
+    assert reference not in without[0]["content"]
+
+
+def test_chat_status_reports_questions_about_data_only_with_the_chat_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setenv("CHAT_SQL_ENABLED", "true")
+    monkeypatch.setenv("CHAT_ENABLED", "false")
+
+    # When/Then
+    assert chat_status().sql_enabled is False
+
+    # And
+    monkeypatch.setenv("CHAT_ENABLED", "true")
+    assert chat_status().sql_enabled is True
 
 
 def test_check_message_limits_accepts_messages_within_the_limits() -> None:

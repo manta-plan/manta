@@ -12,7 +12,7 @@ This page explains that decision, where the documentation comes from, why the ba
 ## What the model can reach
 
 The backend sends the model text and receives text.
-The model has no functions to call (tools), no access to the database, and no view of a user's projects, runs, or results.
+The model has no functions to call (tools), no access to the database, and no view of a user's runs or of the values in their data.
 The backend's outbound connection to the model API is the one new privilege in the system.
 
 The reason is an instruction hidden in a question (prompt injection).
@@ -22,7 +22,7 @@ So the design assumes that the model does whatever its input states, and limits 
 A user who subverts the model changes only the text in their own drawer.
 
 The alternative is a model with tools that read runs, logs, or results on the server.
-Such a chat can answer questions about a user's own work, which this one cannot.
+Such a chat can read a user's runs and logs, and can state a number from their data, which this one cannot.
 Every tool is then something an injected instruction can call with the user's identity, so every tool needs its own checks.
 For a first version, a chat that cannot act is better than a chat that depends on those checks.
 
@@ -125,8 +125,56 @@ A reply is untrusted input to the page, and plain text cannot contain a link, an
 The instructions ask the model for plain text.
 The backend also removes the bold markers from the documentation, because a model repeats the formatting it reads.
 
+## Questions about a project's data
+
+With `CHAT_SQL_ENABLED`, the model can answer a question about the open project's data with one SQL query.
+The browser runs the query and shows the rows as a table.
+The backend never runs the query, and the rows never go to the model.
+
+The model therefore still has no tools.
+A query runs with the access the user's browser already has to the record server, so a subverted model can read nothing the user cannot.
+The alternative is for the backend to run the query, which makes the model's text an input to a server that holds every project.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant BE as Backend
+    participant M as Model API
+    participant R as Record server
+    B->>BE: the turns, and the names in the open project
+    BE->>M: instructions, documentation, how to query, the names
+    M-->>BE: a reply with one SQL query
+    BE-->>B: the reply
+    B->>R: the query, checked and limited
+    R-->>B: rows
+```
+
+The browser sends the names of the project's component types, carriers, and attributes with a question.
+The backend checks each name against a short pattern and writes them into the instructions itself.
+A forged name reaches as far as a forged history does: the sender's own reply.
+
+Before the browser runs a query, it checks that the reply holds one statement that starts as a query.
+It then points each view name at the scenario on screen, wraps the query so that at most 200 rows return, and sends it to the record server.
+The record server refuses everything but reads.
+The browser never runs the query in its own database, which can attach other databases and read from URLs.
+
+When a query fails, the browser sends the error to the model once and runs the corrected query.
+That is the only result the model receives.
+Sending the rows would let the model state numbers, and would send a project's data to the model provider.
+
+The cost of this design is a query that runs and answers a different question.
+The model sees names and no values, so nothing tells it that a query read the wrong attribute.
+On 14 questions about an example project, the default local model wrote 8 correct queries, 4 that ran with a wrong result, and 2 that failed.
+The drawer therefore shows the query with every table.
+
+Three limits come from the record server, which is temporary.
+Every user of a deployment shares one token for it, so a query can read any project's data, as the app's own reads can.
+The record server calls its check for reads a proof of concept.
+The page has one connection to it without a way to cancel, so a slow query delays the app's own reads.
+
 ## What a change has to keep
 
 The design has one guarantee: a subverted model changes only the text that its own user sees.
 A change keeps the guarantee while the model has no tools, the backend stores nothing a model wrote, and no reply reaches another user.
+It also has to keep a model's query out of the backend and out of the browser's own database.
 A change that adds one of those needs the checks this design avoids.

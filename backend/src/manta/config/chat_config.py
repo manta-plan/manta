@@ -54,6 +54,20 @@ def chat_max_history_chars() -> int:
     return int(os.environ.get("CHAT_MAX_HISTORY_CHARS", "6000"))
 
 
+def chat_sql_enabled() -> bool:
+    """Whether the model is also told how to answer a question about the open project's
+    data with a SQL query, which the browser runs."""
+    load_dotenv()
+    return os.environ.get("CHAT_SQL_ENABLED", "false").lower() == "true"
+
+
+def chat_max_record_chars() -> int:
+    """The most characters of a project's component types and attributes the model is
+    given. What is beyond it is left out."""
+    load_dotenv()
+    return int(os.environ.get("CHAT_MAX_RECORD_CHARS", "4000"))
+
+
 def chat_max_concurrent() -> int:
     load_dotenv()
     return int(os.environ.get("CHAT_MAX_CONCURRENT", "2"))

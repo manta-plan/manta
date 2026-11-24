@@ -48,6 +48,22 @@ describe("streamChatReply", () => {
     ]);
   });
 
+  it("sends the description of the project's data along, when given one", async () => {
+    const record = {
+      components: [{ ctype: "Generator", carriers: ["solar"] }],
+      attributes: [{ name: "p_nom", unit: "MW", subject: "entity", series: false }],
+    };
+    mockedPostStream.mockResolvedValue(new Response(""));
+
+    await streamChatReply(question, new AbortController().signal, record).next();
+
+    expect(mockedPostStream).toHaveBeenCalledWith(
+      "/v1/chat/messages",
+      { messages: question, record },
+      expect.any(AbortSignal),
+    );
+  });
+
   it("reports a reply cut off at the output limit", async () => {
     const events = await replyTo('event: done\ndata: {"finish_reason": "length"}\n\n');
 
@@ -85,6 +101,7 @@ describe("streamChatReply", () => {
 describe("fitHistory", () => {
   const limits: ChatStatus = {
     enabled: true,
+    sql_enabled: false,
     max_messages: 3,
     max_message_chars: 10,
     max_history_chars: 20,

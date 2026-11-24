@@ -349,6 +349,7 @@ def app_server(
         "CHAT_ENABLED": "true",
         "CHAT_BASE_URL": chat_model,
         "CHAT_MODEL": "fake-model",
+        "CHAT_SQL_ENABLED": "true",
         # One reply at a time, so a single open reply makes the next request busy.
         "CHAT_MAX_CONCURRENT": "1",
     }

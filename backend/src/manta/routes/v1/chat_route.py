@@ -12,6 +12,7 @@ from manta.services.chat_service import (
     chat_slot,
     chat_status,
     check_message_limits,
+    describe_record,
     require_chat_enabled,
 )
 from manta.services.results.chat_result import GetChatStatusResult
@@ -19,10 +20,9 @@ from manta.services.results.chat_result import GetChatStatusResult
 router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Security(authenticated_user)])
 
 
-def limited_messages(request: ChatRequest) -> list[dict[str, str]]:
-    messages = [message.model_dump() for message in request.messages]
-    check_message_limits(messages)
-    return messages
+def checked_request(request: ChatRequest) -> ChatRequest:
+    check_message_limits([message.model_dump() for message in request.messages])
+    return request
 
 
 @router.get("/status", response_model=GetChatStatusResult)
@@ -40,7 +40,7 @@ def get_chat_status() -> GetChatStatusResult:
     },
 )
 def create_chat_message(
-    messages: list[dict[str, str]] = Depends(limited_messages),
+    request: ChatRequest = Depends(checked_request),
     _slot: None = Depends(chat_slot),
     service: ChatService = Depends(),
     db: Session = Depends(get_db_session),
@@ -56,9 +56,15 @@ def create_chat_message(
     A stream that ends without `done` or `error` was interrupted. The backend keeps no
     conversation: send the earlier turns the model should remember with each question,
     within the limits GET /v1/chat/status reports.
+
+    With `record`, and where the status reports `sql_enabled`, the model may answer a
+    question about the project's data with one SQL query in a ```sql block. The backend
+    never runs it: the client does, with the user's own access to the data.
     """
     # The session authenticated_user() used stays open until the response ends, which
     # here is as long as the model takes. Hand its connection back first.
     db.close()
-    for event in service.stream_reply(messages):
+    record = request.record and describe_record(**request.record.model_dump())
+    messages = [message.model_dump() for message in request.messages]
+    for event in service.stream_reply(messages, record):
         yield ServerSentEvent(event=event.event, data=event.data)

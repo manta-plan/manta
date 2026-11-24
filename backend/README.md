@@ -232,6 +232,17 @@ Afterwards, `ollama ps` lists `manta-chat` with a `CONTEXT` of 8192.
 
 `llama3.2:3b` is a 2 GB download and needs about 2.6 GB of memory while it is loaded.
 
+### Questions about a project's data
+
+With `CHAT_SQL_ENABLED=true` as well, the chat also answers a question about the data of the open project.
+The model writes one SQL query, the browser runs it on the record server, and the drawer shows the rows as a table.
+The backend never runs the query, and the rows never go to the model.
+
+The model sees the names of the project's component types, carriers, and attributes, but no values.
+It can therefore write a query that runs and still answers a different question, so read the query under **Query** before you rely on a table.
+On a set of 14 questions about an example project, `llama3.2:3b` answered 8 correctly.
+[The chat design page](https://github.com/manta-plan/manta/blob/main/docs/design/chat.md) describes what the browser checks before it runs a query.
+
 ### Chat settings
 
 | Variable | Default | Sets |
@@ -244,13 +255,15 @@ Afterwards, `ollama ps` lists `manta-chat` with a `CONTEXT` of 8192.
 | `CHAT_MAX_MESSAGES` | `12` | The most turns in one request. |
 | `CHAT_MAX_MESSAGE_CHARS` | `2000` | The longest turn, in characters. |
 | `CHAT_MAX_HISTORY_CHARS` | `6000` | The most characters in all turns of one request. |
+| `CHAT_SQL_ENABLED` | `false` | Whether the chat answers questions about a project's data with a query. |
+| `CHAT_MAX_RECORD_CHARS` | `4000` | The most characters of a project's names the model is given. The backend leaves out what is beyond it. |
 | `CHAT_MAX_CONCURRENT` | `2` | The most replies written at once. A request beyond that gets a `429`. |
 | `CHAT_TIMEOUT_SECONDS` | `120` | The longest wait for the model's next piece of text, and for a whole reply. |
 | `CHAT_DOCS_DIR` | the repository's `docs/` | Where the documentation pages are. |
 | `CHAT_DOCS_PAGES` | the four `user-guide` pages | The pages the model answers from, comma-separated, in prompt order. |
 | `CHAT_DOCS_MAX_CHARS` | `20000` | The most characters those pages may have. The backend refuses to start beyond it. |
 
-The documentation, the turns, and the reply have to fit the model's context window together.
+The documentation, the turns, the reply, and a project's names have to fit the model's context window together.
 The defaults fit 8,192 tokens, so raise them only for a model with a larger window.
 <!-- --8<-- [end:docs-dev] -->
 

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { getJson, postStream } from "../../api/manta";
+import type { ChatRecord } from "./record-context";
 import { readSseEvents } from "./sse";
 
 /** GET /v1/chat/status: whether this deployment has a model, and its limits. */
 export interface ChatStatus {
   enabled: boolean;
+  /** Whether the model answers a question about the open project's data with a query. */
+  sql_enabled: boolean;
   max_messages: number;
   max_message_chars: number;
   max_history_chars: number;
@@ -66,15 +69,17 @@ export function fitHistory(turns: ChatTurn[], limits: ChatStatus): ChatTurn[] {
 
 /**
  * Asks the model and yields its reply as it is written: `delta` events, then
- * one `done` or `error`. Throws an `ApiError` when the request is refused
+ * one `done` or `error`. With `record`, the model may answer with a SQL query
+ * over the project's data (run-sql.ts). Throws an `ApiError` when the request is refused
  * before the reply starts (e.g. 429 while the model is busy), and whatever
  * `fetch` throws when it is aborted through `signal`.
  */
 export async function* streamChatReply(
   turns: ChatTurn[],
   signal: AbortSignal,
+  record?: ChatRecord,
 ): AsyncGenerator<ChatReplyEvent> {
-  const response = await postStream("/v1/chat/messages", { messages: turns }, signal);
+  const response = await postStream("/v1/chat/messages", { messages: turns, record }, signal);
 
   if (response.body !== null) {
     for await (const { event, data } of readSseEvents(response.body)) {

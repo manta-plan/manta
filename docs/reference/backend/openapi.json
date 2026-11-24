@@ -194,7 +194,7 @@
           "chat"
         ],
         "summary": "Create Chat Message",
-        "description": "Streams the model's reply as server-sent events, each with a JSON payload:\n\n- `delta`, `{\"text\": ...}`: the next piece of the reply.\n- `done`, `{\"finish_reason\": \"stop\" | \"length\"}`: the reply is complete. `length`\n  means it was cut off at the output limit. Always the last event.\n- `error`, `{\"code\": \"model_unavailable\" | \"timeout\", \"message\": ...}`: the model\n  failed part-way. Always the last event.\n\nA stream that ends without `done` or `error` was interrupted. The backend keeps no\nconversation: send the earlier turns the model should remember with each question,\nwithin the limits GET /v1/chat/status reports.",
+        "description": "Streams the model's reply as server-sent events, each with a JSON payload:\n\n- `delta`, `{\"text\": ...}`: the next piece of the reply.\n- `done`, `{\"finish_reason\": \"stop\" | \"length\"}`: the reply is complete. `length`\n  means it was cut off at the output limit. Always the last event.\n- `error`, `{\"code\": \"model_unavailable\" | \"timeout\", \"message\": ...}`: the model\n  failed part-way. Always the last event.\n\nA stream that ends without `done` or `error` was interrupted. The backend keeps no\nconversation: send the earlier turns the model should remember with each question,\nwithin the limits GET /v1/chat/status reports.\n\nWith `record`, and where the status reports `sql_enabled`, the model may answer a\nquestion about the project's data with one SQL query in a ```sql block. The backend\nnever runs it: the client does, with the user's own access to the data.",
         "operationId": "create_chat_message_v1_chat_messages_post",
         "requestBody": {
           "content": {
@@ -1140,6 +1140,89 @@
         ],
         "title": "ChatMessage"
       },
+      "ChatRecord": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ChatRecordComponents"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Components"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/ChatRecordAttribute"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Attributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "components",
+          "attributes"
+        ],
+        "title": "ChatRecord",
+        "description": "What the open project's data contains, for a question the model answers with a\nSQL query: names only, never values."
+      },
+      "ChatRecordAttribute": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{1,40}$",
+            "title": "Name"
+          },
+          "unit": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.+/%\\- ]{0,40}$",
+            "title": "Unit",
+            "default": ""
+          },
+          "subject": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{1,40}$",
+            "title": "Subject"
+          },
+          "series": {
+            "type": "boolean",
+            "title": "Series",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "subject"
+        ],
+        "title": "ChatRecordAttribute"
+      },
+      "ChatRecordComponents": {
+        "properties": {
+          "ctype": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{1,40}$",
+            "title": "Ctype"
+          },
+          "carriers": {
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.+/%\\- ]{0,40}$"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Carriers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ctype",
+          "carriers"
+        ],
+        "title": "ChatRecordComponents"
+      },
       "ChatRequest": {
         "properties": {
           "messages": {
@@ -1149,6 +1232,16 @@
             "type": "array",
             "minItems": 1,
             "title": "Messages"
+          },
+          "record": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1280,6 +1373,10 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "sql_enabled": {
+            "type": "boolean",
+            "title": "Sql Enabled"
+          },
           "max_messages": {
             "type": "integer",
             "title": "Max Messages"
@@ -1296,6 +1393,7 @@
         "type": "object",
         "required": [
           "enabled",
+          "sql_enabled",
           "max_messages",
           "max_message_chars",
           "max_history_chars"
