@@ -1,6 +1,7 @@
 # Manta Frontend
 
 <!-- --8<-- [start:docs-setup] -->
+
 The Manta frontend is a [React](https://react.dev/) app built with
 [Vite](https://vite.dev/), [TypeScript](https://www.typescriptlang.org/), and
 [Tailwind CSS](https://tailwindcss.com/). UI primitives come from
@@ -53,7 +54,31 @@ pnpm dev
 Vite prints the local URL, usually `http://localhost:5173`.
 <!-- --8<-- [end:docs-setup] -->
 
+## Project tabs
+
+A project has four tabs, switched from the header or with the keys `1` to `4`
+(`?` lists the shortcuts):
+
+| Tab     | Route                              | Shows                                                                         |
+| ------- | ---------------------------------- | ----------------------------------------------------------------------------- |
+| Build   | `/project/:id/build[/:pageId]`     | The record and its scenarios: the level pages, plus drafting scenario changes |
+| Run     | `/project/:id/run[/:runId]`        | Runs and playbooks                                                            |
+| Inspect | `/project/:id/inspect[/:pageId]`   | The same level pages over a run result                                        |
+| Analyse | `/project/:id/analyse[/:reportId]` | Reports (a placeholder for now)                                               |
+
+`/project/:id` opens Build. On Build and Inspect the sidebar holds the
+Scenarios panel over the Record tree, and the main area is a **level page**
+(`src/features/level/`): the page head (breadcrumb, title, period switch, time
+window), stat tiles, a split of Table and Map & graph, and the chart drawer.
+Clicking a row of the Record tree, a tile or a table cell opens the page of
+that level; each of the table, the Map & graph and the chart drawer opens full
+screen. Every read of the record goes through `src/features/project/lib/record-server/`
+(`serverName()` names the relations) and the SQL modules next to each block
+(`level-sql.ts`, `tiles/tile-sql.ts`, `table/table-queries.ts`, `chart/chart-sql.ts`,
+`map-graph/map/map-shading.ts`, `scenarios/change-sql.ts`).
+
 <!-- --8<-- [start:docs-dev] -->
+
 ## Design Tokens
 
 Tailwind theme tokens live in `src/index.css` using Tailwind v4's CSS-first

@@ -1,10 +1,40 @@
 import type { RecordInfo, Revision } from "./record-server/types";
 
 // Which of a record's scenarios the project page can show, and which one it
-// shows. Each is read from its own catalog on the server. Run results aren't
-// shown here (the Inspect page, later).
+// shows: its scenarios (Build) and their run results (Inspect), each read from
+// its own catalog on the server.
 
 const URL_PARAM = "scenario";
+
+export function isRunResult(revision: Revision | undefined): boolean {
+  return revision?.kind === "result";
+}
+
+export function runResultsOf(info: RecordInfo, scenario: string): Revision[] {
+  return info.revisions.filter(
+    (revision) => isRunResult(revision) && revision.parent === scenario && revision.catalog,
+  );
+}
+
+// Every revision the page can show: each scenario, then its run results.
+export function showableRevisions(info: RecordInfo): Revision[] {
+  return selectableScenarios(info).flatMap((scenario) => [
+    scenario,
+    ...runResultsOf(info, scenario.name),
+  ]);
+}
+
+// A run result's label without its scenario's ("Base case, myopic" under
+// "Base case" reads "Myopic").
+export function shortLabel(info: RecordInfo, revision: Revision): string {
+  const parent = info.revisions.find((item) => item.name === revision.parent);
+  if (!isRunResult(revision) || !parent) return revision.label;
+  const prefix = `${parent.label}, `;
+  if (!revision.label.startsWith(prefix) || revision.label.length === prefix.length)
+    return revision.label;
+  const rest = revision.label.slice(prefix.length);
+  return rest[0].toUpperCase() + rest.slice(1);
+}
 
 export function selectableScenarios(info: RecordInfo): Revision[] {
   return info.revisions.filter((revision) => revision.kind === "scenario" && revision.catalog);
@@ -24,10 +54,10 @@ export function parentLabel(info: RecordInfo, name: string | null): string {
   return info.revisions.find((revision) => revision.name === parent)?.label ?? "its parent";
 }
 
-// `?scenario=` if it names a scenario that can be shown, else the default.
+// `?scenario=` if it names a revision that can be shown, else the default.
 export function initialScenario(info: RecordInfo): string | null {
   const requested = new URLSearchParams(window.location.search).get(URL_PARAM);
-  return selectableScenarios(info).some((revision) => revision.name === requested)
+  return showableRevisions(info).some((revision) => revision.name === requested)
     ? requested
     : defaultScenario(info);
 }

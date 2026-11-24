@@ -19,11 +19,8 @@ import json
 import sys
 from contextlib import closing
 
-from datarecord import Workspace
-
 from playbook.blocks.core import RevisionRef
 from playbook.blocks.registry import get_block, load_block_sources
-from playbook.blocks.run import open_revision
 
 RESULT_MARKER = "MANTA_BLOCK_RESULT "
 """Prefix of the one stdout line that carries the block's result revision as JSON."""
@@ -74,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+
+    from datarecord import Workspace
+
+    from playbook.blocks.run import open_revision
 
     # Blocks live in libraries this package knows nothing about, so the library
     # holding the one being asked for has to be named before it can be looked up.
