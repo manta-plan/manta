@@ -70,8 +70,10 @@ export function LoginPage() {
       />
       <div className="absolute inset-0 bg-slate-900/25" aria-hidden="true" />
 
-      {/* A fixed light card: the wordmark's dark text needs a guaranteed light backdrop. */}
-      <section className="auth-card-enter relative w-full max-w-sm rounded-lg bg-white/95 p-6 shadow-2xl backdrop-blur-sm">
+      {/* A fixed light card: the wordmark's dark text needs a guaranteed light backdrop.
+          No backdrop-blur: with it, Chrome left the guest button's old label on
+          screen behind "Signing in..." when the button was disabled. */}
+      <section className="auth-card-enter relative w-full max-w-sm rounded-lg bg-white/95 p-6 shadow-2xl">
         <div className="auth-logo-enter mb-6 flex justify-center">
           <MantaLogo markHeight={28} />
         </div>

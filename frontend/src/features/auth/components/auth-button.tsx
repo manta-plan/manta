@@ -29,7 +29,7 @@ export function AuthButton({
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={`flex h-9 w-full items-center justify-center gap-2 rounded text-[13px] font-medium whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-70 ${variantClass} ${className}`}
+      className={`flex h-9 w-full items-center justify-center gap-2 rounded text-[13px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${variantClass} ${className}`}
     >
       {icon}
       {children}

@@ -26,9 +26,10 @@ def _guest_limiters() -> tuple[RateLimiter, RateLimiter]:
 
 
 def limit_guest_logins(request: Request) -> None:
-    # Keyed on the direct peer's address. Behind a reverse proxy that's the
-    # proxy, so run uvicorn with --proxy-headers and --forwarded-allow-ips set
-    # to it; until then the global limit is what actually holds.
+    # Keyed on the client address. Behind a reverse proxy, that is the end
+    # user's address only if FORWARDED_ALLOW_IPS names the proxy (see main.py).
+    # Otherwise every request has the proxy's address and shares one per-client
+    # limit, which then refuses all guest logins before the global one is checked.
     client = request.client.host if request.client is not None else "unknown"
     per_client, everyone = _guest_limiters()
 
