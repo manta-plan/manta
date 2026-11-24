@@ -75,7 +75,8 @@ jobs:
       - run: uv run coverage combine .coverage.unit .coverage.integration
       - run: uv run coverage report -m
       - run: uv run coverage xml
-      - run: >
+      - if: github.event_name == 'pull_request'
+        run: >
           uv run diff-cover coverage.xml
           --compare-branch=origin/${{ github.base_ref }}
           --show-uncovered
