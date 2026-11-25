@@ -43,7 +43,7 @@ export function describePeriod(period: string | null) {
 }
 
 // Carrier groups an analyst would filter by. Each matches the carrier and
-// technology labels the dummy widgets use.
+// technology labels the widgets use.
 export const CARRIER_GROUPS: { id: string; label: string; color: string; match: string[] }[] = [
   {
     id: "solar",

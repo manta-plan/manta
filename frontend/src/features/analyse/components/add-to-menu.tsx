@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { LuCheck, LuPlus, LuSquarePlus } from "react-icons/lu";
 import { useProjectStore } from "../../project/store/project-store";
+import type { BlockContent, Report } from "../data/reports";
+import { lastUsedResultId, placeBlock } from "../lib/report-blocks";
+import { ResultContext } from "../lib/result-comparison";
 import { useInspectionActions, useWidgetItem } from "../lib/widget-set-context";
 import { WidgetTooltipPopup } from "./widget-icon-button";
 
@@ -11,23 +14,64 @@ const itemClassName =
 const groupLabelClassName =
   "px-3 pt-1 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-400";
 
-// Sends a widget to a report (dummy for now: it only confirms) or to one of
-// the user's inspections.
+// Sends a widget to a report (as a copy the report owns) or to one of the
+// user's inspections.
 export function AddToMenu({ widgetName }: { widgetName: string }) {
   const reports = useProjectStore((s) => s.reports);
   const inspections = useProjectStore((s) => s.inspections);
   const widgetItem = useWidgetItem();
   const actions = useInspectionActions();
+  const updateReportBlocks = useProjectStore((s) => s.updateReportBlocks);
+  const addReportPage = useProjectStore((s) => s.addReportPage);
+  const resultId = useContext(ResultContext);
   const [addedTo, setAddedTo] = useState<string | null>(null);
+  const [noRoomIn, setNoRoomIn] = useState<string | null>(null);
   const targets = inspections.filter(
     (inspection) => inspection.id !== actions?.currentInspectionId,
   );
 
   useEffect(() => {
-    if (!addedTo) return;
-    const timeout = setTimeout(() => setAddedTo(null), 2000);
+    if (!addedTo && !noRoomIn) return;
+    const timeout = setTimeout(() => {
+      setAddedTo(null);
+      setNoRoomIn(null);
+    }, 2000);
     return () => clearTimeout(timeout);
-  }, [addedTo]);
+  }, [addedTo, noRoomIn]);
+
+  const addToReport = (report: Report) => {
+    if (!widgetItem) return;
+    const { item } = widgetItem;
+    const content: BlockContent | null =
+      item.kind === "note"
+        ? { kind: "text", text: item.text }
+        : {
+            kind: "widget",
+            ref:
+              item.kind === "preset"
+                ? { source: "built-in", widgetId: item.widgetId }
+                : { source: "detached", item },
+            resultId: resultId || lastUsedResultId(report) || "",
+          };
+    let placement = placeBlock(report, content, null);
+    let target = report;
+    if (!placement) {
+      // Every page is full: the widget goes on a page of its own.
+      addReportPage(report.id);
+      target = useProjectStore.getState().reports.find((item) => item.id === report.id) ?? report;
+      placement = placeBlock(target, content, target.pages.at(-1)?.id ?? null);
+    }
+    if (!placement) {
+      setAddedTo(null);
+      setNoRoomIn(report.name);
+      return;
+    }
+    setNoRoomIn(null);
+    updateReportBlocks(report.id, placement.pageId, (blocks) => [...blocks, placement.block], {
+      label: "Add block",
+    });
+    setAddedTo(report.name);
+  };
 
   return (
     <Tooltip.Root>
@@ -55,7 +99,7 @@ export function AddToMenu({ widgetName }: { widgetName: string }) {
                   reports.map((report) => (
                     <Menu.Item
                       key={report.id}
-                      onClick={() => setAddedTo(report.name)}
+                      onClick={() => addToReport(report)}
                       className={itemClassName}
                     >
                       <span className="min-w-0 flex-1 truncate">{report.name}</span>
@@ -96,7 +140,9 @@ export function AddToMenu({ widgetName }: { widgetName: string }) {
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      <WidgetTooltipPopup label={addedTo ? `Added to ${addedTo}` : "Add to…"} />
+      <WidgetTooltipPopup
+        label={addedTo ? `Added to ${addedTo}` : noRoomIn ? `No room in ${noRoomIn}` : "Add to…"}
+      />
     </Tooltip.Root>
   );
 }

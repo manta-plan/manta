@@ -7,12 +7,7 @@ export interface InspectionCanvas {
   name: string;
   description: string;
   items: WidgetSetItem[];
-  /** Legacy: the result is now picked for the whole Inspect tab, in the toolbar. Older saves may still hold these. */
-  resultId?: string;
-  comparisonResultId?: string;
   filters?: InspectFilters;
-  /** Legacy: the run an inspection reviewed before results went dummy. */
-  runId?: string;
 }
 
 /** What an inspection's page saves as the user works in it. */
