@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """The record catalogue: datarecord stores under one root, opened on demand.
 

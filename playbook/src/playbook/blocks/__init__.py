@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Blocks: single units of work on a model, and everything needed to describe them."""
 

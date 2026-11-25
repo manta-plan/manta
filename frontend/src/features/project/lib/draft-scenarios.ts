@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import type { EntityAttribute, Revision } from "./record-server/types";
 import { serverName, serverQuery, sqlString } from "./record-server/client";

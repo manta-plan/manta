@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useCallback, useContext, useState } from "react";
 import { DUMMY_RESULT_RUNS } from "../data/inspect-results";

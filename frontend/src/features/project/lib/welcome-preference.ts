@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Global "Don't show this again" for the project welcome dialog — per
 // browser, like the theme preference. The per-project "already seen" flag

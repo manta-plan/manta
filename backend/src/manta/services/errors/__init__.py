@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 from manta.services.errors.authentication_error import AuthenticationError
 from manta.services.errors.authorization_error import AuthorizationError

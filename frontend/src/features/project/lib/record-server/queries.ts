@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { fetchApi, recordCatalog, serverName, serverQuery, sqlName, sqlString } from "./client";
 import type {

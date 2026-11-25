@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from "vitest";
 import { ALL_ENTITIES, ALL_LOCATIONS, type Level } from "../../level";

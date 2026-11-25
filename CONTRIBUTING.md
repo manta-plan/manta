@@ -65,12 +65,12 @@ sign off an open PR, you can add an empty commit with just the trailer.
 
 Manta follows the [REUSE specification](https://reuse.software/spec-3.3/), and
 CI checks it on every PR. Every new file needs an SPDX header with its
-copyright holder and licence. Code and configuration use MIT, and documentation
+copyright holder and licence. Code and configuration use Apache-2.0, and documentation
 prose uses CC-BY-4.0. Add the header with
 [`reuse annotate`](https://reuse.readthedocs.io/en/stable/man/reuse-annotate.html):
 
 ```sh
-uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --year 2026 --license MIT <file>
+uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --year 2026 --license Apache-2.0 <file>
 ```
 
 A file that cannot take a comment, such as JSON, an image or a lock file,

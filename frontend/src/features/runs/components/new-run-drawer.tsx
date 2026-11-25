@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState, type FormEvent } from "react";
 import { FiLoader } from "react-icons/fi";

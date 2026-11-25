@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // The record as the app sees it: datarecord's manifest, and the rows the
 // server's `manta` views return (server/app/manta_views.py).

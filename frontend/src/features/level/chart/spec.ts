@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // What the chart drawer draws, whatever it charts: a time series over the
 // window (lines, stacked areas, or a distribution band), a duration curve,

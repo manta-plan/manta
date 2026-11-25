@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 # Temporary Quack record server for the dev stack (docker/compose-dev-services.yaml).
 # No records in the image: the compose service mounts them at /srv/data/records.

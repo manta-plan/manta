@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import mantaMark from "../../../assets/manta-logo.svg";
 import mantaWordmark from "../../../assets/manta-word.png";

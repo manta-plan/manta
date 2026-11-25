@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { LuMaximize2, LuMinimize2 } from "react-icons/lu";
 import { useLevelStore } from "../level-store";

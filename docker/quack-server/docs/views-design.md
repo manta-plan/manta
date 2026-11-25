@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2026 Manta contributors
 
-SPDX-License-Identifier: MIT
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # How the record server exposes a record over SQL

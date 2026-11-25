@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { serverName, serverQuery, sqlString } from "../../project/lib/record-server/client";
 import { levelCtes, spanCondition, type LevelQueryScope } from "../level-sql";

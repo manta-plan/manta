@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import type { InspectionCanvas } from "../data/inspections";
 import type { InspectionContent } from "../data/inspections";

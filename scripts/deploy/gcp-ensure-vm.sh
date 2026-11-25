@@ -2,7 +2,7 @@
 
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 # Prepares the hosting project and makes sure the VM exists and is running.
 # Every step skips what is already there, so this is safe to re-run.

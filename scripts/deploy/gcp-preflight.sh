@@ -2,7 +2,7 @@
 
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 # Lists which of the permissions a deployment needs the current identity is
 # missing, in the hosting project and in the load balancer project. Changes

@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Minimal WKT parsing for the two geometry shapes topology.json actually
 // contains (LINESTRING for backdrop lines/links/transformers) — not a

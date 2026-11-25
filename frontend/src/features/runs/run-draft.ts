@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { isStepActive } from "../playbook-config/conditions";
 import { validateStep, type FieldError } from "../playbook-config/validation";

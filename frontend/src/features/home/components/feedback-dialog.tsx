@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";

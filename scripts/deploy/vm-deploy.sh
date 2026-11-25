@@ -2,7 +2,7 @@
 
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 # Runs on the VM as root: checks out a commit and (re)starts the whole stack
 # from docker/compose-dev-fullstack.yaml, with the frontend on port 80 and the

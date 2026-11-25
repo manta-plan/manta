@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Zones from bus properties and `manta.entity_geometry`, over a small
 in-memory record (no sample record needed): with and without the columns,

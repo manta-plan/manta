@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { busLabel, entityLabel } from "../../project/lib/record-format";
 import type { LoadedRecord } from "../../project/store/types";

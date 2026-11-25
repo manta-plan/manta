@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // What a stored run records about a solve. The in-browser solver that
 // produced these read the browser's project database and is gone; runs keep

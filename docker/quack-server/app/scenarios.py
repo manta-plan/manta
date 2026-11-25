@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """A store's named revisions as scenarios and run results, and what each
 scenario changes: the `manta.revisions` and `manta.scenario_changes` tables.

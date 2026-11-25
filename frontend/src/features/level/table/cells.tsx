@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import type { MouseEvent, ReactNode } from "react";
 import { LuChartLine, LuCheck, LuCopy, LuMapPin } from "react-icons/lu";

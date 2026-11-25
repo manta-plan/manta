@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { useMemo, useState, type ReactNode } from "react";
 import { LuChartLine, LuDownload, LuTable, LuX } from "react-icons/lu";

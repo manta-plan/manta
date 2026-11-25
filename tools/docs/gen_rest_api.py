@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Render `docs/reference/backend/openapi.json` as the Markdown page `rest-api.md` beside it."""
 

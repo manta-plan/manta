@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // A scenario is a set of mutations/patches against the base model — the
 // same concept as a database migration: an ordered set of changes applied

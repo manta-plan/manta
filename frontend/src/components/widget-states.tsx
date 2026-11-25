@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import type { CSSProperties, ReactNode } from "react";
 import { LuMapPinOff, LuRotateCw, LuTriangleAlert } from "react-icons/lu";

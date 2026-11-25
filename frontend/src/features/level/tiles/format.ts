@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Number and unit formatting for the tiles: a value in a base unit (MW, MWh,
 // MVA, MW·km) shown with the prefix that keeps it readable (MW → GW → TW).

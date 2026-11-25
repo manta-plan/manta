@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Dummy pre-configured report widgets — stands in for a future
 // "add/configure widget" builder wired to real run output. Each Report owns

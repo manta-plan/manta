@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta Blocks contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 # yaml-language-server: $schema=../../../../playbook/src/playbook/playbooks/playbook.schema.json
 

@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { useShownData } from "../../project/lib/record-data";
 import type { DraftChangeTarget } from "../../project/lib/draft-scenarios";

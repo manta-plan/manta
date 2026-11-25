@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Manta contributors
 //
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import { Background, BackgroundVariant, ReactFlow, type Edge, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
