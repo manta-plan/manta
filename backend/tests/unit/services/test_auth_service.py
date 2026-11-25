@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from keycloak.exceptions import KeycloakError, KeycloakPostError
 
+from manta.config.keycloak_signing_keys import SigningKeyCache
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
 from manta.services.errors import AuthenticationError, BackendError
@@ -19,7 +20,14 @@ def _stub_well_known(mock_kc_client):
     mock_kc_client.well_known.return_value = {"issuer": ISSUER}
 
 
-def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> None:
+@pytest.fixture
+def mock_signing_keys() -> MagicMock:
+    return MagicMock(spec=SigningKeyCache)
+
+
+def test_authenticate_returns_existing_user(
+    mock_db_class, mock_kc_client, mock_signing_keys
+) -> None:
     # Given
     existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
     existing_user.id = 1
@@ -27,22 +35,22 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
 
     # When
-    user = _authenticate(mock_db, mock_kc_client, "some-token")
+    user = _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
 
     # Then
     assert user is existing_user
 
 
-def test_authenticate_rejects_unregistered_user(mock_db, mock_kc_client) -> None:
+def test_authenticate_rejects_unregistered_user(mock_db, mock_kc_client, mock_signing_keys) -> None:
     # Given
     mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        _authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
 
 
-def test_authenticate_rejects_wrong_issuer(mock_db, mock_kc_client) -> None:
+def test_authenticate_rejects_wrong_issuer(mock_db, mock_kc_client, mock_signing_keys) -> None:
     # Given
     mock_kc_client.decode_token.return_value = {
         "sub": "abc-123",
@@ -51,10 +59,10 @@ def test_authenticate_rejects_wrong_issuer(mock_db, mock_kc_client) -> None:
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        _authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
 
 
-def test_authenticate_rejects_invalid_token(mock_db, mock_kc_client) -> None:
+def test_authenticate_rejects_invalid_token(mock_db, mock_kc_client, mock_signing_keys) -> None:
     # Given
     # ValueError is what jwcrypto actually raises for a malformed/garbage bearer
     # token - not a KeycloakError, but still a client-side authentication failure.
@@ -62,16 +70,47 @@ def test_authenticate_rejects_invalid_token(mock_db, mock_kc_client) -> None:
 
     # When / Then
     with pytest.raises(AuthenticationError):
-        _authenticate(mock_db, mock_kc_client, "bad-token")
+        _authenticate(mock_db, mock_kc_client, mock_signing_keys, "bad-token")
 
 
-def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_client) -> None:
+def test_authenticate_wraps_keycloak_error_as_backend_error(
+    mock_db, mock_kc_client, mock_signing_keys
+) -> None:
     # Given
     mock_kc_client.decode_token.side_effect = KeycloakError("keycloak unavailable")
 
     # When / Then
     with pytest.raises(BackendError):
-        _authenticate(mock_db, mock_kc_client, "some-token")
+        _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
+
+
+def test_authenticate_validates_token_with_cached_signing_keys(
+    mock_db_class, mock_kc_client, mock_signing_keys
+) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
+
+    # When
+    _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
+
+    # Then
+    mock_signing_keys.keys_for.assert_called_once_with("some-token")
+    mock_kc_client.decode_token.assert_called_once_with(
+        "some-token", validate=True, key=mock_signing_keys.keys_for.return_value
+    )
+
+
+def test_authenticate_wraps_signing_key_fetch_error_as_backend_error(
+    mock_db, mock_kc_client, mock_signing_keys
+) -> None:
+    # Given
+    mock_signing_keys.keys_for.side_effect = KeycloakError("keycloak unavailable")
+
+    # When / Then
+    with pytest.raises(BackendError):
+        _authenticate(mock_db, mock_kc_client, mock_signing_keys, "some-token")
 
 
 def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
