@@ -193,10 +193,14 @@ class ExampleDataService:
         return stores
 
     def _public_stores(self, http: httpx2.Client) -> list[str]:
-        listing = http.get(PUBLIC_OBJECTS_URL, params={"delimiter": "/", "prefix": _PUBLIC_PREFIX})
+        """The public folders with a `store.json`."""
+        listing = http.get(
+            PUBLIC_OBJECTS_URL,
+            params={"prefix": _PUBLIC_PREFIX, "matchGlob": f"{_PUBLIC_PREFIX}*/{_MARKER}"},
+        )
         return [
-            prefix.removeprefix(_PUBLIC_PREFIX).removesuffix("/")
-            for prefix in listing.raise_for_status().json()["prefixes"]
+            item["name"].removeprefix(_PUBLIC_PREFIX).removesuffix(f"/{_MARKER}")
+            for item in listing.raise_for_status().json()["items"]
         ]
 
     def _download_store(self, http: httpx2.Client, store: str) -> None:

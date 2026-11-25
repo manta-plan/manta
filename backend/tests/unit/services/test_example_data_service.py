@@ -1,5 +1,6 @@
 import io
 import json
+from fnmatch import fnmatch
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -26,16 +27,20 @@ FILES = {
 }
 
 
+PUBLIC = {**FILES, "plain/manifest.json": b"{}"}
+
+
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
     if str(request.url).startswith(PUBLIC_OBJECTS_URL):
-        if request.url.params.get("delimiter") == "/":
-            return httpx2.Response(200, json={"prefixes": [f"{PUBLIC_DATA_VERSION}/small/"]})
+        params = request.url.params
         items = [
             {"name": f"{PUBLIC_DATA_VERSION}/{name}", "mediaLink": f"https://media/{name}"}
-            for name in FILES
+            for name in PUBLIC
+            if f"{PUBLIC_DATA_VERSION}/{name}".startswith(params["prefix"])
+            and fnmatch(f"{PUBLIC_DATA_VERSION}/{name}", params.get("matchGlob", "*"))
         ]
         return httpx2.Response(200, json={"items": items})
-    return httpx2.Response(200, content=FILES[request.url.path.removeprefix("/")])
+    return httpx2.Response(200, content=PUBLIC[request.url.path.removeprefix("/")])
 
 
 @pytest.fixture
