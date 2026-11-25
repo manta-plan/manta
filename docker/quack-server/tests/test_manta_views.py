@@ -307,14 +307,22 @@ def test_scenario_on_a_run_result(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("meta", "named_in", "error"),
-    [({}, "store.json", f"have no {KIND}"), ({KIND: "scenario"}, "names.json", "store.json")],
-    ids=["no kind", "no store.json"],
+    ("meta", "base", "named_in", "error"),
+    [
+        ({}, "base", "store.json", f"have no {KIND}"),
+        ({KIND: "scenario"}, "base", "names.json", "store.json"),
+        ({KIND: "scenario"}, "original", "store.json", "no 'base' reference"),
+    ],
+    ids=["no kind", "no store.json", "no base"],
 )
-def test_store_without_names(tmp_path, meta, named_in, error):
-    # A named layer without a kind, or a store without `store.json`:
-    # listed with its error, and fails to open; the store beside it opens.
+def test_store_without_names(tmp_path, meta, base, named_in, error):
+    # A named layer without a kind, a store without `store.json`, or one
+    # without a `base` reference: listed with its error, and fails to open;
+    # the store beside it opens.
     add_layer(tmp_path, manifests()["base"]["id"], meta, name="after")
+    store = json.loads((tmp_path / STORE / "store.json").read_text())
+    store["references"][base] = store["references"].pop("base")
+    (tmp_path / STORE / "store.json").write_text(json.dumps(store))
     (tmp_path / STORE / "store.json").rename(tmp_path / STORE / named_in)
     (tmp_path / "healthy").symlink_to(ROOT / STORE, target_is_directory=True)
     ws, catalogue = open_catalogue(str(tmp_path))

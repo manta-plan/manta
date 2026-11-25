@@ -93,7 +93,7 @@ datarecord records:
 - `EU` and the empty name are virtual locations.
 - A zone level is a `busmap_*` attribute.
 - A revision's kind is the `manta.kind` in its manifest's `meta`: `scenario`
-  or `result`. The base scenario is the scenario without a parent.
+  or `result`. The base scenario is the revision `store.json` names `base`.
 
 ## Records and scenario catalogs
 

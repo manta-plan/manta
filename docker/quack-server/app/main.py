@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from . import quack
-from .scenarios import layer_manifest, read_json
+from .scenarios import BASE_NAME, layer_manifest, read_json
 from .stores import Catalogue, configure
 
 log = logging.getLogger("uvicorn.error")
@@ -178,7 +178,7 @@ def record_files(id: str, request: Request) -> dict:
         names = {layer.name: layer.id for layer in store.layers}
         ids = sorted({f.path.split("/")[1] for f in store.files if f.path.startswith("layers/") and f.path.endswith("/manifest.json")})
         layers = {layer: layer_manifest(catalogue.ws, store.uri, layer) for layer in ids}
-        default = store.layers[0].id
+        default = names[BASE_NAME]
     schema = layers[default]["schema"]
     return {
         "name": store.id,

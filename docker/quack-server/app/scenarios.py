@@ -97,7 +97,10 @@ def layer_manifest(ws: Workspace, store: str, revision_id: str) -> dict[str, Any
 
 def named_layers(ws: Workspace, store: str, references: dict[str, dict[str, str]]) -> list[Layer]:
     """The store's named revisions (`references` of its `store.json`): the
-    base scenario first, then the other scenarios, then the run results."""
+    base scenario, named `base`, first, then the other scenarios, then the
+    run results."""
+    if BASE_NAME not in references:
+        raise ValueError(f"{store}: store.json has no {BASE_NAME!r} reference")
     manifests: dict[str, Manifest] = {str(r.id): r.manifest for r in ws.store(store).revisions()}
     names = {reference["revision"]: name for name, reference in references.items()}
     unknown = sorted(name for id, name in names.items() if KIND not in manifests[id].meta)
@@ -123,7 +126,7 @@ def named_layers(ws: Workspace, store: str, references: dict[str, dict[str, str]
                 written=sorted(m.files.attributes),
             )
         )
-    return sorted(layers, key=lambda layer: (layer.kind == "result", layer.parent is not None))
+    return sorted(layers, key=lambda layer: (layer.name != BASE_NAME, layer.kind == "result", layer.parent is not None))
 
 
 def open_revisions(ws: Workspace, store: str, layers: list[Layer]) -> list[Revision]:

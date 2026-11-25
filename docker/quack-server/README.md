@@ -147,7 +147,7 @@ The kind is `scenario` for inputs that a user may edit and run, the base inputs 
 - **A revision's name** is its key in `references` (`base/myopic`). Its catalog is `<record>__<name>`, with the name in lower case and other characters as `_` (`…__base_myopic`).
 - **Names follow a convention:** `base` for the base scenario, and `<scenario>/<playbook>` for a run result (`base/myopic`). Any other scenario has its label as a slug: `wind_and_solar_stress_test` for "Wind and solar stress test". The server does not check the convention.
 - **A revision's parent** is its nearest named ancestor, which the server finds from the parents in the manifests.
-- **The base scenario** is the scenario without a parent. The server does not find it by its name.
+- **The base scenario** is the revision `store.json` names `base`. A store without a `base` reference is listed with an error and does not open.
 
 A store that the server can't read this way is listed with the reason as its `error`, and fails to open. That happens when the store has no `store.json`, when a reference names a revision that the store doesn't have, or when a named revision has no `manta.kind`. After you fix a manifest on disk, restart the server, because datarecord keeps every manifest it has read.
 

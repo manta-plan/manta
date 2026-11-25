@@ -385,7 +385,7 @@ class Catalogue:
             for catalog in attached:
                 con.execute(f"DETACH DATABASE IF EXISTS {catalog}")
             raise
-        default = next(r for r in scenarios if r.parent is None)
+        default = next(r for r in scenarios if r.name == BASE_NAME)
         served = views[default.name]
         served[SCHEMA] += tables
         return OpenStore(
