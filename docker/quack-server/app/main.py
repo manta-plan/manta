@@ -172,10 +172,10 @@ def record_files(id: str, request: Request) -> dict:
         names = None
         layers = {"": read_json(catalogue.ws, f"{store.uri}/manifest.json")}
         default = ""
-    elif store.layers is None:
+    elif store.revisions is None:
         raise HTTPException(status_code=503, detail=f"Record {id!r} failed to open: {catalogue.failed[id]}")
     else:
-        names = {layer.name: layer.id for layer in store.layers}
+        names = {r.name: r.id for r in store.revisions}
         ids = sorted({f.path.split("/")[1] for f in store.files if f.path.startswith("layers/") and f.path.endswith("/manifest.json")})
         layers = {layer: layer_manifest(catalogue.ws, store.uri, layer) for layer in ids}
         default = names[BASE_NAME]

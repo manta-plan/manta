@@ -51,10 +51,9 @@ from .record import create_views
 from .scenarios import (
     BASE_LABEL,
     BASE_NAME,
-    Layer,
     Revision,
     layer_manifest,
-    named_layers,
+    named_revisions,
     open_revisions,
     read_json,
     register_scenarios,
@@ -88,7 +87,7 @@ class StoreSummary:
     description: str
     # Named revisions; none for a plain record, and None when `store.json`
     # and the manifests can't give them (the error is in Catalogue.failed).
-    layers: list[Layer] | None
+    revisions: list[Revision] | None
     files: list[StoreFile] = field(repr=False)
     # A record without revisions, rather than a store.
     plain: bool = False
@@ -98,7 +97,7 @@ class StoreSummary:
             "id": self.id,
             "label": self.label,
             "description": self.description,
-            "revisions": [BASE_LABEL] if self.plain else [layer.label for layer in self.layers or []],
+            "revisions": [BASE_LABEL] if self.plain else [r.label for r in self.revisions or []],
             "size": sum(f.size for f in self.files),
             "modified": max((f.modified for f in self.files), default=None),
             "files": len(self.files),
@@ -205,18 +204,18 @@ class Catalogue:
             if not is_store and not plain:
                 continue
             uri = f"{self.root}/{id}"
-            label, description, layers = id, "", []
+            label, description, revisions = id, "", []
             try:
                 if not plain:
                     named = read_json(self.ws, f"{uri}/store.json")
                     label, description = named["label"], named.get("description", "")
-                    layers = named_layers(self.ws, uri, named["references"])
+                    revisions = named_revisions(self.ws, uri, named["references"])
             except (OSError, LookupError, ValueError) as e:
                 self.failed[id] = f"{type(e).__name__}: {e}"
-                layers = None
-            if layers is not None and id in self._stores and self._stores[id].layers is None:
+                revisions = None
+            if revisions is not None and id in self._stores and self._stores[id].revisions is None:
                 self.failed.pop(id)
-            stores[id] = StoreSummary(plain=plain, id=id, uri=uri, label=label, description=description, layers=layers, files=files)
+            stores[id] = StoreSummary(plain=plain, id=id, uri=uri, label=label, description=description, revisions=revisions, files=files)
         return stores
 
     def stores(self) -> dict[str, StoreSummary]:
@@ -240,7 +239,7 @@ class Catalogue:
         if id in self._open:
             return self._open[id]
         summary = self.get(id)
-        if summary.layers is None:
+        if summary.revisions is None:
             raise RuntimeError(self.failed[id])
         with self._opening:
             if id not in self._open:
@@ -337,7 +336,7 @@ class Catalogue:
 
     def _open_store(self, summary: StoreSummary) -> OpenStore:
         started = time.monotonic()
-        uri = self._download(summary, [layer.id for layer in summary.layers]) if self.remote else summary.uri
+        uri = self._download(summary, [r.id for r in summary.revisions]) if self.remote else summary.uri
         con = self.ws.con
         if summary.plain:
             record = self.ws.at(uri)
@@ -354,7 +353,7 @@ class Catalogue:
                 )
             ]
         else:
-            revisions = open_revisions(self.ws, uri, summary.layers)
+            revisions = open_revisions(self.ws, uri, summary.revisions)
         scenarios = [r for r in revisions if r.kind == "scenario"]
         if not scenarios:
             raise ValueError(f"{summary.id} has no scenario revisions")

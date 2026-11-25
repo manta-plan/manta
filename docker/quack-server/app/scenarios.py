@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import UUID
 
@@ -47,8 +47,9 @@ def slug(text: str) -> str:
 
 
 @dataclass
-class Layer:
-    """A named revision, as `store.json` and its manifest describe it."""
+class Revision:
+    """A named revision, as `store.json` and its manifest describe it;
+    `record`, `catalog`, `open` and `results` are set once the store opens."""
 
     name: str
     id: str
@@ -57,11 +58,7 @@ class Layer:
     label: str
     description: str
     written: list[str] = field(repr=False)
-
-
-@dataclass
-class Revision(Layer):
-    record: Record = field(repr=False)
+    record: Record | None = field(default=None, repr=False)
     # Its catalog's name (scenarios and run results alike), and whether it's
     # attached yet: scenarios are, when the record opens; a run result is
     # when first asked for (Catalogue.open_revision).
@@ -95,7 +92,7 @@ def layer_manifest(ws: Workspace, store: str, revision_id: str) -> dict[str, Any
     return read_json(ws, f"{store}/layers/{revision_id}/manifest.json")
 
 
-def named_layers(ws: Workspace, store: str, references: dict[str, dict[str, str]]) -> list[Layer]:
+def named_revisions(ws: Workspace, store: str, references: dict[str, dict[str, str]]) -> list[Revision]:
     """The store's named revisions (`references` of its `store.json`): the
     base scenario, named `base`, first, then the other scenarios, then the
     run results."""
@@ -112,11 +109,11 @@ def named_layers(ws: Workspace, store: str, references: dict[str, dict[str, str]
             m = manifests[str(m.parent)]
         return None if m.parent is None else names[str(m.parent)]
 
-    layers = []
+    revisions = []
     for name, reference in references.items():
         m = manifests[reference["revision"]]
-        layers.append(
-            Layer(
+        revisions.append(
+            Revision(
                 name=name,
                 id=reference["revision"],
                 parent=parent(m),
@@ -126,19 +123,19 @@ def named_layers(ws: Workspace, store: str, references: dict[str, dict[str, str]
                 written=sorted(m.files.attributes),
             )
         )
-    return sorted(layers, key=lambda layer: (layer.name != BASE_NAME, layer.kind == "result", layer.parent is not None))
+    return sorted(revisions, key=lambda r: (r.name != BASE_NAME, r.kind == "result", r.parent is not None))
 
 
-def open_revisions(ws: Workspace, store: str, layers: list[Layer]) -> list[Revision]:
+def open_revisions(ws: Workspace, store: str, revisions: list[Revision]) -> list[Revision]:
     """The named revisions as records of the store at `store`."""
     opened = ws.store(store)
-    records = {layer.name: opened.revision(UUID(layer.id)).record for layer in layers}
-    revisions = []
-    for layer in layers:
-        before = records[layer.parent].attributes if layer.parent is not None else None
-        new = [a for a in layer.written if before is None or a not in before or not before[a].limit(1).fetchall()]
-        revisions.append(Revision(**vars(layer), record=records[layer.name], results=new if layer.kind == "result" else []))
-    return revisions
+    records = {r.name: opened.revision(UUID(r.id)).record for r in revisions}
+    result = []
+    for r in revisions:
+        before = records[r.parent].attributes if r.parent is not None else None
+        new = [a for a in r.written if before is None or a not in before or not before[a].limit(1).fetchall()]
+        result.append(replace(r, record=records[r.name], results=new if r.kind == "result" else []))
+    return result
 
 
 def _quote(text: str) -> str:

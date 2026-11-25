@@ -391,7 +391,7 @@ def test_copy_to_disk(tmp_path):
     try:
         record = catalogue.open(STORE)
         summary = catalogue.get(STORE)
-        # Layer data only of the layers the shown revisions read (here, every
+        # Data only of the layers the shown revisions read (here, every
         # layer is shown); every layer's manifest, to find them.
         shown = [r.id for r in record.revisions]
         data = {f.split("/")[2] for f in s3.copied if f.split("/")[1] == "layers" and f.count("/") > 3}
@@ -402,7 +402,7 @@ def test_copy_to_disk(tmp_path):
         assert rows(ws.con, f"SELECT count(*) FROM {PATCH}.manta.scenario_changes WHERE scenario = '{PATCH_NAME}'") == [(83,)]
         catalogue.open_revision(STORE, "base/myopic")
         assert rows(ws.con, f"SELECT count(*) > 0 FROM {RESULTS}.attributes.p_nom_opt") == [(True,)]
-        # Layer data copied once isn't copied again; the small files
+        # Data of a layer copied once isn't copied again; the small files
         # (manifests, READMEs), which can change in place, are.
         copied = len(s3.copied)
         catalogue._download(summary, shown)
