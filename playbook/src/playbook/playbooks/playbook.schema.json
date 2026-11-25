@@ -224,6 +224,7 @@
           "$ref": "#/$defs/InitialDataDoc"
         },
         "inputs": {
+          "additionalProperties": false,
           "patternProperties": {
             "^[A-Za-z_]\\w*$": {
               "discriminator": {

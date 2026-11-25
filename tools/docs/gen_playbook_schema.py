@@ -46,9 +46,8 @@ def type_of(schema: dict, nested: bool = False) -> str:
     if "const" in schema:
         return literal(schema["const"])
     options = schema.get("anyOf") or schema.get("oneOf")
-    if options or "enum" in schema:
-        listed = [type_of(option) for option in options] if options else []
-        joined = " or ".join(listed or [literal(value) for value in schema["enum"]])
+    if options:
+        joined = " or ".join(type_of(option) for option in options)
         return f"({joined})" if nested else joined
     kind = schema.get("type")
     if kind == "array":
@@ -73,10 +72,6 @@ def constraints(schema: dict, prefix: str = "") -> list[str]:
         found.append(f"{prefix}at least {schema['minItems']} item{'s' * (schema['minItems'] != 1)}")
     if "items" in schema:
         found.extend(constraints(schema["items"], f"{prefix}each item "))
-    if "exclusiveMinimum" in schema:
-        found.append(f"{prefix}greater than {schema['exclusiveMinimum']}")
-    if "minimum" in schema:
-        found.append(f"{prefix}at least {schema['minimum']}")
     if "discriminator" in schema:
         found.append(f"{prefix}picked by `{schema['discriminator']['propertyName']}`")
     for option in schema.get("anyOf", []) + schema.get("oneOf", []):

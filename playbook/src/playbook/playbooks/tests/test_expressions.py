@@ -20,7 +20,8 @@ SCOPE = {
         "years": 3,
         "target": 0.5,
         "enabled": True,
-        "aggregate": {"snapshot": "resampled", "bus": None},
+        "snapshot": "resampled",
+        "bus": None,
         "quoted": "it's",
     },
 }
@@ -31,9 +32,10 @@ SCOPE = {
     [
         ("${{ inputs.solver }}", "highs"),
         ("${{inputs.solver}}", "highs"),
-        ("${{ inputs.aggregate }}", {"snapshot": "resampled", "bus": None}),
-        ("${{ inputs.aggregate.bus }}", None),
+        ("${{ inputs.bus }}", None),
         ("${{ 'text' }}", "text"),
+        ("${{ '}}' }}", "}}"),
+        ("${{ inputs.quoted != '}}' }}", True),
         ("${{ 'it''s' == inputs.quoted }}", True),
         ("${{ 42 }}", 42),
         ("${{ -1.5 }}", -1.5),
@@ -41,8 +43,8 @@ SCOPE = {
         ("${{ null }}", None),
         ("${{ inputs.solver == 'highs' }}", True),
         ("${{ inputs.solver != 'highs' }}", False),
-        ("${{ inputs.aggregate.snapshot != null }}", True),
-        ("${{ inputs.aggregate.bus == null }}", True),
+        ("${{ inputs.snapshot != null }}", True),
+        ("${{ inputs.bus == null }}", True),
         ("${{ inputs.years > 2 }}", True),
         ("${{ inputs.years <= 2 }}", False),
         ("${{ inputs.target >= 0.5 }}", True),
@@ -51,8 +53,8 @@ SCOPE = {
         ("${{ !inputs.enabled }}", False),
         ("${{ !!inputs.solver }}", True),
         ("${{ inputs.enabled && inputs.years == 3 }}", True),
-        ("${{ inputs.enabled && inputs.aggregate.bus }}", False),
-        ("${{ inputs.aggregate.bus || inputs.solver }}", True),
+        ("${{ inputs.enabled && inputs.bus }}", False),
+        ("${{ inputs.bus || inputs.solver }}", True),
         ("${{ false || false || true }}", True),
         ("${{ true || false && false }}", True),
         ("${{ (true || false) && false }}", False),
@@ -67,7 +69,7 @@ def test_an_expression_evaluates_to_its_value(text, expected):
     ("text", "expected"),
     [
         ("${{ 1 }}", set()),
-        ("${{ inputs.aggregate.snapshot }}", {Ref("inputs", ("aggregate", "snapshot"))}),
+        ("${{ inputs.snapshot }}", {Ref("inputs", ("snapshot",))}),
         (
             "${{ inputs.solver == 'w1' && !inputs.enabled }}",
             {Ref("inputs", ("solver",)), Ref("inputs", ("enabled",))},
@@ -122,7 +124,7 @@ def test_text_around_an_expression_is_named_as_such(text):
     [
         "${{ inputs.missing }}",
         "${{ inputs.solver.name }}",
-        "${{ inputs.aggregate.bus < 1 }}",
+        "${{ inputs.bus < 1 }}",
         "${{ inputs.solver > 1 }}",
     ],
 )
@@ -135,7 +137,7 @@ def test_substitute_evaluates_every_expression_and_keeps_its_type():
     value = {
         "method": "resample",
         "resolution": "${{ inputs.years }}",
-        "aggregation": {"snapshot": "weekly", "bus": "${{ inputs.aggregate.bus }}"},
+        "aggregation": {"snapshot": "weekly", "bus": "${{ inputs.bus }}"},
         "metrics": ["lole", "${{ inputs.solver }}"],
         "enabled": "${{ inputs.enabled }}",
         "size": 4,
@@ -148,10 +150,6 @@ def test_substitute_evaluates_every_expression_and_keeps_its_type():
         "enabled": True,
         "size": 4,
     }
-
-
-def test_substitute_evaluates_an_already_parsed_expression():
-    assert substitute({"solver": parse("${{ inputs.solver }}")}, SCOPE) == {"solver": "highs"}
 
 
 @pytest.mark.parametrize(

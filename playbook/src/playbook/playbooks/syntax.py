@@ -142,7 +142,9 @@ class PlaybookDoc(Strict):
 
     name: str
     initial_data: InitialDataDoc = Field(default_factory=InitialDataDoc)
-    inputs: dict[Identifier, InputSpec] = Field(default_factory=dict)
+    inputs: dict[Identifier, InputSpec] = Field(
+        default_factory=dict, json_schema_extra={"additionalProperties": False}
+    )
     steps: list[StepDoc] = Field(min_length=1)
 
 

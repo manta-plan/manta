@@ -2,7 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 
+import json
+
 import pytest
+from jsonschema import Draft202012Validator
 
 from playbook.playbooks.playbook import Playbook, PlaybookStep
 from playbook.playbooks.schema import SCHEMA_PATH, schema_text
@@ -87,3 +90,14 @@ def test_a_step_is_written_without_the_keys_it_leaves_unset(capacity_expansion):
 
 def test_committed_schema_matches_playbook_doc():
     assert SCHEMA_PATH.read_text() == schema_text()
+
+
+def test_the_schema_refuses_an_input_name_that_parse_doc_refuses():
+    doc = {
+        "name": "x",
+        "inputs": {"bad-name": {"type": "string"}},
+        "steps": [{"id": "a", "block": "b"}],
+    }
+    assert not Draft202012Validator(json.loads(schema_text())).is_valid(doc)
+    with pytest.raises(PlaybookLoadError):
+        parse_doc(doc)

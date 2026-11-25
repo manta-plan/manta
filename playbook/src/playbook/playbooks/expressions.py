@@ -21,7 +21,7 @@ ROOTS = frozenset({"inputs"})
 
 EXPRESSION_START = "${{"
 
-_WHOLE = re.compile(r"^\$\{\{(?P<body>(?:(?!\}\}).)*)\}\}$", re.DOTALL)
+_WHOLE = re.compile(r"^\$\{\{(?P<body>(?:'(?:[^']|'')*'|(?!\}\}).)*)\}\}$", re.DOTALL)
 _GRAMMAR = r"""
 ?start: disjunction
 ?disjunction: conjunction ("||" conjunction)*
@@ -228,8 +228,6 @@ def map_expressions(value: object, function: Callable[[Node], object]) -> object
         return {key: map_expressions(item, function) for key, item in value.items()}
     if isinstance(value, list):
         return [map_expressions(item, function) for item in value]
-    if isinstance(value, Node):
-        return function(value)
     if is_expression(value):
         return function(parse(value))
     return value
