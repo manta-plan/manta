@@ -9,7 +9,7 @@ How the FE reads the data of a session: constant values and the owner map in pla
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers three FE needs. [Constant values and the owner map](#2-constant-values-and-the-owner-map) is the component table, the drawers and the location graph: which attributes exist and which constant values they hold. [Changes between revisions](#3-changes-between-revisions) is the scenario panel and the change markers: what a scenario changes against the scenario it was made from. [Settling in the FE](#4-settling-in-the-fe) is how the FE turns raw rows into one value per coordinate.
+This note covers three FE needs. [Constant values and the owner map](#2-constant-values-and-the-owner-map) is the component table, the drawers and the location graph: which attributes exist and which constant values they hold. [Changes between revisions](#3-changes-between-revisions) is the scenario panel and the change markers: what a scenario changes against the scenario it was made from. [Settling in the FE](#4-settling-in-the-fe) is how the FE turns raw rows into one value per coordinate. [Errors the FE must handle](#5-errors-the-fe-must-handle) lists what the session routes and the Quack path answer when a step fails.
 
 Today quack-server prepares this data at open. It builds the table `attribute_summary` with one full scan over every attribute, and the view `ctype_attributes` over it. It builds the table `scenario_changes` for all scenarios at open. Nothing settles: the FE queries read raw rows and apply partial rules of their own, or none. [Replacing the manta objects](session.md#5-replacing-the-manta-objects) in the session note lists these objects (groups B and C).
 
@@ -342,7 +342,39 @@ The prototype ran against DR's `settle` on 3500 random cases. The cases cover pl
 
 DR ships 20 cases as `datarecord/settle_cases.json` (PR 155, R14). Each case has `columns`, `rows`, `labels`, `filter`, and either `expected` or `error: "crossed"`. The FE runs them in its existing `vitest` suite, with `@duckdb/node-api` added (F23). DR's own `settle` and the FE's function thus run the same cases.
 
-## 5. Open points
+## 5. Errors the FE must handle
+
+The BE's session routes and the Quack auth check answer an error with the body `{"detail": "<text>"}`. A validation error has a list of problems in `detail` instead of a text. A 500 has the plain text `Internal Server Error`, and a 502 comes from Caddy, not from the BE. In the column Source, `test` means that a test of the session stack asserts the status, and the quoted text comes from the code where the test does not check it. `code` means read from the code only. `live run` means seen against a running session in spikes S1 and S4 ([spikes](appendix.md#8-spikes-and-measurements)). No row of the Caddy path has been checked live yet, and how DuckDB-Wasm reports an HTTP status of the Quack path is not checked either.
+
+| Where | Condition | What the FE sees | What the FE should do | Source |
+|---|---|---|---|---|
+| all routes, Quack auth | no bearer token | 401 `Not authenticated` | log in again | test |
+| all routes, Quack auth | invalid or expired token | 401 `Unauthorized` | log in again | test |
+| all routes, Quack auth | valid token of a user the BE does not know | 401 `user is not registered` | log in again | code |
+| all routes, Quack auth | another user's project | 403 `The user does not own the selected project` | show no access | test |
+| all routes, Quack auth | unknown project | 404 `Project <uuid> not found` | show not found | test |
+| all routes, Quack auth | project id not a UUID, or `X-Manta-Project` missing | 422, list | client bug | test |
+| POST session, PUT and GET registration | a new session not healthy within 30 s | 503 `The datarecord session did not become healthy` | retry later | test |
+| POST session, PUT and GET registration | the session answers another error than 404 or 422, at the replay or to the request | 500 `Internal Server Error` | retry, then report | test for the replay, code for the rest |
+| POST session, PUT and GET registration | a registration is skipped at the replay | 200, no mark of the skip | see the last row | test |
+| PUT registration | name outside `[a-z0-9][a-z0-9_-]{0,62}` | 422, list | fix the input | test |
+| PUT registration | unknown store or revision | 404 `<store> has no revision <rev>`, no row kept | tell the user | test |
+| PUT registration | the session refuses the body, for example a reserved name, a store name with `/` or `..`, or an unknown view pack | 422, list from the session | fix the input | code |
+| GET registration | no such row | 404 `Registration '<name>' not found` | PUT it | test |
+| GET registration | row exists, the session lacks it | 404 `<name> is not registered` | PUT again, and on 404 DELETE it | code |
+| DELETE registration | no such row | 404 `Registration '<name>' not found` | ignore | code |
+| DELETE registration | row exists, the session lacks it | 204 | none | test |
+| DELETE session | nothing active | 204 | none | code |
+| Quack via Caddy | no active session: never opened, or stopped by the idle sweep | 409 `No active datarecord session for project <id>, open it with POST /v1/projects/<id>/datarecord-session` | POST session, ATTACH again | test, Caddy part from code |
+| Quack via Caddy | container gone, row active | 502 from Caddy | POST session, ATTACH again | code |
+| Quack, session | wrong Quack token | `Authentication failed` | use the token from POST session | live run |
+| Quack, session | a statement other than SELECT | `Authorization failed` | client bug | test |
+| Quack, session | session restarted | `Invalid connection id` | ATTACH again | live run |
+| Quack, session | catalog of a skipped registration | DuckDB catalog error: schema `manta."<name>"` not found | GET the registration, then PUT or DELETE as above | code |
+
+After a replay skip, POST session answers 200 with no sign of the skip, so the FE learns of it only from a catalog error.
+
+## 6. Open points
 
 | Question | Proposal |
 |---|---|
