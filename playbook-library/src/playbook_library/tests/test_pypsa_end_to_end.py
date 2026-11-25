@@ -22,22 +22,15 @@ pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA install
 from datarecord import Revision, Workspace
 from playbook.blocks.core import RevisionRef
 from playbook.blocks.run import open_revision
-from playbook.playbooks import Playbook
-from playbook.playbooks.yaml_io import playbook_from_doc
 
 from playbook_library.examples import EXAMPLE_PLAYBOOK, build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
-from playbook_library.playbooks import library_playbooks
 from playbook_library.public_data import download_public_store
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
 
 pytestmark = pytest.mark.pypsa
-
-
-def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
-    return playbook_from_doc(library_playbooks()[name])
 
 
 @pytest.fixture
@@ -48,8 +41,8 @@ def network(store_revision) -> Revision:
 SHORT_HORIZON = {"dispatch": {"optimize_config": {"horizon": 4}}}
 
 
-def test_the_example_playbook_runs_from_one_network_to_another(network, workspace):
-    ref = build_playbook().run(RevisionRef.from_revision(network), {})
+def test_the_example_playbook_runs_from_one_network_to_another(network, workspace, tuned_playbook):
+    ref = tuned_playbook(EXAMPLE_PLAYBOOK).run(RevisionRef.from_revision(network), {})
     result = open_revision(workspace, ref)
 
     assert result.store is network.store

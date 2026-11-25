@@ -52,6 +52,11 @@
           "default": null,
           "title": "Description"
         },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
         "type": {
           "const": "boolean",
           "title": "Type",
@@ -90,6 +95,11 @@
           ],
           "default": null,
           "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
         },
         "type": {
           "const": "choice",
@@ -169,6 +179,11 @@
           ],
           "default": null,
           "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
         },
         "type": {
           "const": "number",
@@ -333,6 +348,11 @@
           ],
           "default": null,
           "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
         },
         "type": {
           "const": "string",

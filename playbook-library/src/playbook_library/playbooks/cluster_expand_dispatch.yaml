@@ -15,25 +15,33 @@ inputs:
     options: [overnight, myopic]
     default: overnight
     description: How to optimise capacities. Only overnight expansion is dispatched.
+  solver_name:
+    type: choice
+    options: [highs]
+    default: highs
+    description: The solver that every optimisation of this playbook uses.
 
 steps:
   - id: cluster
     block: cluster_time
-    with:
-      n_hours: 3
 
   - id: expansion_overnight
     block: overnight_capacity_expansion
     if: ${{ inputs.expansion_mode == 'overnight' }}
+    with:
+      optimize_config:
+        solver_name: ${{ inputs.solver_name }}
 
   - id: expansion_myopic
     block: myopic_capacity_expansion
     if: ${{ inputs.expansion_mode == 'myopic' }}
+    with:
+      optimize_config:
+        solver_name: ${{ inputs.solver_name }}
 
   - id: dispatch
     block: rolling_horizon_dispatch
     if: ${{ inputs.expansion_mode == 'overnight' }}
     with:
       optimize_config:
-        horizon: 168
-        overlap: 24
+        solver_name: ${{ inputs.solver_name }}

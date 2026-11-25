@@ -10,7 +10,7 @@ model refuses the other key. Each model accepts the field names `if_` and `with_
 well as the keys `if` and `with`. Dump a model with `by_alias=True` to write the keys.
 """
 
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import (
     AfterValidator,
@@ -39,10 +39,19 @@ class _Input(Strict):
     model_config = ConfigDict(strict=True)
 
     description: str | None = None
+    required: bool = False
 
-    @property
-    def required(self) -> bool:
-        return "default" not in self.model_fields_set
+    if TYPE_CHECKING:
+        default: object
+
+    @model_validator(mode="after")
+    def _required_has_no_default(self) -> "_Input":
+        if self.required and self.default is not None:
+            raise ValueError(
+                f"the input is required and has `default` {self.default!r}. "
+                f"Remove `default`, or set `required: false`."
+            )
+        return self
 
 
 class StringInput(_Input):

@@ -128,7 +128,7 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
     # doesn't persist it itself. It belongs to the run, not to a playbook, so when
     # the playbook entity is defined (see the TODOs on Run.playbook and
     # CreateRunRequest.config), store it on Run itself and read it from there.
-    return config_of_run(flow_run.parameters["playbook"], flow_run.parameters["inputs"])
+    return config_of_run(_flow_run_playbook(flow_run), flow_run.parameters["inputs"])
 
 
 def _flow_run_data_record(flow_run: FlowRun) -> DataRecordResult:
@@ -267,13 +267,15 @@ class RunService:
         self._raise_for_record_issues(project, store_url, revision_uuid)
 
         run_uuid = uuid4()
+        run_playbook = self.playbook_service.run_playbook(playbook, run_config)
+        run_document = run_playbook.to_doc().model_dump(
+            mode="json", by_alias=True, exclude_unset=True
+        )
 
         flow_run = run_deployment(
             PLAYBOOK_DEPLOYMENT,
             parameters={
-                "playbook": self.playbook_service.run_document(playbook, run_config).model_dump(
-                    mode="json", by_alias=True, exclude_unset=True
-                ),
+                "playbook": run_document,
                 "inputs": run_inputs(run_config),
                 "revision": RevisionRef(store=store_url, id=revision_uuid).to_dict(),
                 "catalogue": catalogue_parameter(library_catalogue()),

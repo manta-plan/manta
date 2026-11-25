@@ -51,9 +51,9 @@ The web app does not use these endpoints yet: it starts the `expand` playbook wi
 `POST /v1/runs` does five things, in this order:
 
 1. It finds the project and refuses a user who does not own it.
-2. It finds the playbook by name in `playbook-library`, and takes the playbook's default settings when the request has none.
-3. It checks the playbook against the settings, and refuses the run with HTTP 422 and every issue if any are found.
-4. It starts a `run-playbook` flow run, without waiting for it. The flow run gets the playbook document with the settings merged into each step's `with`, the input values, the starting record, and the catalogue.
+2. It finds the playbook by name in `playbook-library`, and takes the playbook's default config when the request has none. A config has the input values under `inputs`, and the settings of each step under its id.
+3. It merges the settings into each step's `with` with `apply_settings`, and checks the playbook against the input values. It refuses the run with HTTP 422 and every issue if any are found.
+4. It starts a `run-playbook` flow run, without waiting for it. The flow run gets the playbook document with the merged settings, the input values, the starting record, and the catalogue.
 5. It inserts a `runs` row that links the project and the playbook name to the flow run id.
 
 The request names the starting record itself, as a store URL and a revision uuid.
@@ -77,8 +77,8 @@ Manta checks a run's playbook and settings in three places, each with what it ca
 | The `run-block` flow run   | The block's own settings model             | Rules the block states in code                                                            |
 
 The backend checks first so that a run which cannot work is refused before anything is queued.
-Settings decide which steps run, and so which checks apply.
-A check without the run's exact settings could pass a run that then fails, so the backend checks the settings the run carries.
+The input values decide which steps run, and so which checks apply.
+A check without the run's exact config could pass a run that then fails, so the backend checks the config the run carries.
 
 `run-playbook` checks again because `execute_playbook` always checks before it runs anything.
 So any caller that dispatches a playbook gets the same check, whether or not it is Manta's backend.
@@ -144,7 +144,7 @@ Both live on the object store, because a shared volume would tie every container
 
 `GET /v1/runs/{run_uuid}/steps` returns the state of each step.
 The backend reads the run's child flow runs from Prefect and matches each to a step by the step name it was started with.
-A step that the settings switch off is `SKIPPED`, and a step with no flow run yet is `NOT_STARTED`.
+A step that the input values switch off is `SKIPPED`, and a step with no flow run yet is `NOT_STARTED`.
 Because each step keeps the name it has in the playbook, a drawing of the playbook can show the state of each step.
 
 `GET /v1/runs/{run_uuid}/logs` returns the log of the `run-playbook` flow run, with the run's state, so a caller knows whether the log is still growing.

@@ -9,8 +9,9 @@ class PlaybookRequest(BaseModel):
     keys by this), not a file path or deployment name."""
 
     config: dict | None = None
-    """The settings of the playbook: its inputs under `globals`, and the settings of
-    each step under its id, merged over the `with` of that step. Omitted means the library's own
+    """The settings of the playbook: its input values under `inputs`, and the settings
+    of each step under its id. The settings of a step are merged into its `with`, and
+    cannot change a setting that the `with` sets. Omitted means the library's own
     default_config is used. Either way it is checked before anything is dispatched,
     and a config the playbook cannot run with is refused with a 422 listing every
     issue (see PlaybookIssueResult).

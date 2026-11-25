@@ -25,7 +25,7 @@ import pandas as pd
 import pypsa
 from datarecord import Workspace
 from playbook.blocks.core import RevisionRef
-from playbook.playbooks.yaml_io import playbook_from_doc
+from playbook.playbooks import apply_settings, playbook_from_doc
 
 from playbook_library.playbooks import library_playbooks
 from playbook_library.pypsa_helpers import store_network
@@ -53,7 +53,8 @@ def build_example_network() -> pypsa.Network:
 def main(argv: list[str]) -> int:
     url = argv[0] if argv else tempfile.mkdtemp(prefix="playbook-example-")
 
-    playbook = playbook_from_doc(library_playbooks()[EXAMPLE_PLAYBOOK])
+    example = library_playbooks()[EXAMPLE_PLAYBOOK]
+    playbook = apply_settings(playbook_from_doc(example.doc), example.default_settings)
     with closing(Workspace()) as workspace:
         ref = RevisionRef.from_revision(
             store_network(build_example_network(), workspace.store(url))

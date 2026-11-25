@@ -8,7 +8,7 @@ initial_data:
   dims: [snapshot]
 
 inputs:
-  dispatch_resolution: {type: string, default: 1w}
+  dispatch_resolution: {type: string, required: true}
 
 steps:
   - id: plan

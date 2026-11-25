@@ -30,7 +30,7 @@ class ListPlaybooksResult(BaseModel):
 
 class PlaybookStepConditionResult(BaseModel):
     """A step only runs when the config value at `config` (a dotted path, e.g.
-    `globals.expansion_mode`) equals `equals`."""
+    `inputs.expansion_mode`) equals `equals`."""
 
     config: str
     equals: Any
@@ -61,7 +61,9 @@ class GetPlaybookResult(BaseModel):
     name: str
     default_config: dict
     """The config a run uses when it is created without one. It has the default of each
-    input of the playbook under `globals`, and the `with` of each step under its name."""
+    input of the playbook that is not required under `inputs`, and the default settings
+    of each step under its name. The settings that the `with` of a step sets are not in
+    it, since a run cannot change them."""
 
     steps: list[PlaybookStepResult]
 
@@ -72,8 +74,9 @@ class PlaybookIssueResult(BaseModel):
 
     kind: PlaybookIssueKind
     """What sort of problem it is: `structure`, `reference` (an expression reads an
-    input that does not exist), `inputs` (a value under `globals` does not fit), `dims`
-    (a dimension a step needs is missing), `config`, or `environment`."""
+    input that does not exist), `inputs` (a value under `inputs` does not fit, or an
+    expression cannot be evaluated with the values), `dims` (a dimension a step needs
+    is missing), `config`, or `environment`."""
 
     message: str
 

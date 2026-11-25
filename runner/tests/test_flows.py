@@ -344,7 +344,7 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     )
     doc = PlaybookDoc(
         name="single-step",
-        inputs={"label": {"type": "string", "default": "tidy"}},
+        inputs={"label": {"type": "string", "required": True}},
         steps=[
             BlockStepDoc(
                 id="cluster", block="catalogue_only_fake", with_={"label": "${{ inputs.label }}"}
@@ -354,7 +354,7 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
 
     # When
     result = run_playbook.fn(
-        playbook=doc.model_dump(mode="json", by_alias=True),
+        playbook=doc.model_dump(mode="json", by_alias=True, exclude_unset=True),
         inputs={"label": "given"},
         revision={"store": STORE, "id": REVISION_ID},
         catalogue=catalogue_parameter(catalogue),

@@ -15,9 +15,11 @@ PlaybookIssueKind = Literal["structure", "reference", "inputs", "dims", "config"
   taken, or a playbook contains itself
 - `reference`: an expression reads an input that does not exist, or a step sets an
   input that its nested playbook does not declare
-- `inputs`: an input value is unknown, missing, of the wrong type, or not an option
+- `inputs`: an input value is unknown, missing, null where it cannot be, of the wrong
+  type, or not an option, or an expression cannot be evaluated with the input values
 - `dims`: a step requires a dimension that the data does not have when the step runs
-- `config`: a setting does not fit what its block accepts
+- `config`: a setting does not fit what its block accepts, or a setting a run gives
+  cannot be applied (see `settings`)
 - `environment`: two blocks describe the same environment differently
 """
 
@@ -48,7 +50,7 @@ class PlaybookIssue(BaseModel):
         where = f"step {'/'.join(self.step_path)!r}" if self.step_path else "playbook"
         if self.input_path is not None:
             where += f", input {'.'.join(self.input_path)!r}"
-        if self.setting_path is not None:
+        if self.setting_path:
             where += f", setting {'.'.join(str(part) for part in self.setting_path)!r}"
         return f"[{self.kind}] {where}: {self.message}"
 

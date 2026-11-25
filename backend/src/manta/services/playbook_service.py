@@ -2,20 +2,24 @@ from fastapi import Depends, HTTPException
 from playbook.blocks import Catalogue
 from playbook.playbooks import (
     BlockStepDoc,
+    Playbook,
     PlaybookDoc,
+    PlaybookHasIssuesError,
     PlaybookIssue,
     StepDoc,
+    apply_settings,
     effective_inputs,
     find_playbook_issues,
     playbook_from_doc,
+    resolve_inputs,
 )
-from playbook.playbooks.expressions import Compare, Const, Ref, parse
+from playbook.playbooks.expressions import Compare, Const, Ref, parse, substitute
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
 # MVP corner-cut, not the intended shape — see the TODO on these two
 # dependencies in backend/pyproject.toml.
 from playbook_library import library_catalogue
-from playbook_library.playbooks import library_playbooks
+from playbook_library.playbooks import LibraryPlaybook, library_playbooks
 
 from manta.services.results.playbook_result import (
     GetPlaybookResult,
@@ -33,7 +37,7 @@ def _config_path(issue: PlaybookIssue) -> list[str | int] | None:
     if issue.setting_path is not None:
         return [*issue.step_path, *issue.setting_path]
     if issue.input_path is not None:
-        return [*(issue.step_path or ("globals",)), *issue.input_path]
+        return [*(issue.step_path or ("inputs",)), *issue.input_path]
     return None
 
 
@@ -52,7 +56,7 @@ def _when(playbook_name: str, step: StepDoc) -> PlaybookStepConditionResult | No
         return None
     match parse(step.if_):
         case Compare("==", Ref("inputs", (name,)), Const(value)):
-            return PlaybookStepConditionResult(config=f"globals.{name}", equals=value)
+            return PlaybookStepConditionResult(config=f"inputs.{name}", equals=value)
     raise HTTPException(
         status_code=501,
         detail=(
@@ -63,20 +67,29 @@ def _when(playbook_name: str, step: StepDoc) -> PlaybookStepConditionResult | No
     )
 
 
-def run_inputs(config: dict) -> dict:
-    """Return the inputs of a run with `config` (see `PlaybookService.run_document`)."""
-    return config.get("globals", {})
+def run_inputs(config: dict) -> object:
+    """Return the inputs of a run with `config` (see `PlaybookService.run_playbook`)."""
+    return config.get("inputs", {})
 
 
-def config_of_run(doc: dict, inputs: dict) -> dict:
-    """Return the config a run started with, from the document and the inputs of its dispatch."""
-    return {"globals": inputs, **{step["id"]: step.get("with", {}) for step in doc["steps"]}}
+def config_of_run(playbook: Playbook, inputs: dict) -> dict:
+    """Return the config a run started with, from its playbook and the inputs of its dispatch.
+
+    The inputs are given with their defaults filled in, and each step under its id
+    with its `with`, every expression in it evaluated against those inputs.
+
+    Raises:
+        PlaybookHasIssuesError: If `inputs` do not fit the inputs of `playbook`.
+    """
+    resolved = resolve_inputs(effective_inputs(playbook), inputs)
+    settings = {step.id: substitute(step.with_, {"inputs": resolved}) for step in playbook.steps}
+    return {"inputs": resolved, **settings}
 
 
 class PlaybookService:
     def __init__(
         self,
-        playbooks: dict[str, PlaybookDoc] = Depends(library_playbooks),
+        playbooks: dict[str, LibraryPlaybook] = Depends(library_playbooks),
         catalogue: Catalogue = Depends(library_catalogue),
     ) -> None:
         self.playbooks = playbooks
@@ -88,10 +101,10 @@ class PlaybookService:
                 name=name,
                 steps=[
                     PlaybookStepSummaryResult(name=step.id, block=_block_name(step))
-                    for step in doc.steps
+                    for step in playbook.doc.steps
                 ],
             )
-            for name, doc in self.playbooks.items()
+            for name, playbook in self.playbooks.items()
         ]
         return ListPlaybooksResult(items=items, total=len(items))
 
@@ -104,22 +117,29 @@ class PlaybookService:
         )
 
     def default_config(self, playbook_name: str) -> dict:
-        """Return the config of a run that is created without one: the default of each
-        input under `globals`, and the `with` of each step under its id."""
+        """Return the config of a run that is created without one.
+
+        The config has the default of each input that is not required under `inputs`,
+        and the default settings of each step under its id.
+        """
         doc = self._get_doc(playbook_name)
         inputs = effective_inputs(playbook_from_doc(doc, catalogue=self.catalogue))
         defaults = {name: spec.default for name, spec in inputs.items() if not spec.required}
-        return config_of_run(doc.model_dump(by_alias=True), defaults)
+        settings = self.playbooks[playbook_name].default_settings
+        return {"inputs": defaults, **{step.id: settings.get(step.id, {}) for step in doc.steps}}
 
-    def run_document(self, playbook_name: str, config: dict) -> PlaybookDoc:
-        """Return the document of `playbook_name`, with the entry of each step in `config`
-        merged over the `with` of that step."""
+    def run_playbook(self, playbook_name: str, config: dict) -> Playbook:
+        """Return the playbook a run of `playbook_name` with `config` uses.
+
+        Every key of `config` but `inputs` gives the settings of a step, applied to the
+        playbook with `apply_settings`.
+
+        Raises:
+            PlaybookHasIssuesError: If a setting cannot be applied.
+        """
         doc = self._get_doc(playbook_name)
-        steps = [
-            step.model_copy(update={"with_": {**step.with_, **config.get(step.id, {})}})
-            for step in doc.steps
-        ]
-        return doc.model_copy(update={"steps": steps})
+        settings = {key: value for key, value in config.items() if key != "inputs"}
+        return apply_settings(playbook_from_doc(doc, catalogue=self.catalogue), settings)
 
     def find_config_issues(self, playbook_name: str, config: dict) -> list[PlaybookIssueResult]:
         """Every reason `playbook_name` cannot run with exactly `config`.
@@ -129,20 +149,22 @@ class PlaybookService:
         caught, but a rule a block only expresses in code is not, and still fails when
         that block runs.
         """
-        doc = self.run_document(playbook_name, config)
-        unknown = [
-            PlaybookIssueResult(
-                kind="config",
-                message=f"there is no step called {key!r}, and it is not 'globals'",
-                step_path=[],
-                config_path=[key],
-                input=None,
+        inputs = run_inputs(config)
+        if not isinstance(inputs, dict):
+            message = (
+                f"the inputs are a mapping of input name to value, not {inputs!r}. "
+                "Write them as a mapping"
             )
-            for key in config.keys() - {"globals", *(step.id for step in doc.steps)}
-        ]
-        playbook = playbook_from_doc(doc, catalogue=self.catalogue)
-        issues = find_playbook_issues(playbook, run_inputs(config))
-        return [*unknown, *map(_build_issue_result, issues)]
+            return [
+                PlaybookIssueResult(
+                    kind="inputs", message=message, step_path=[], config_path=["inputs"], input=None
+                )
+            ]
+        try:
+            playbook = self.run_playbook(playbook_name, config)
+        except PlaybookHasIssuesError as exc:
+            return list(map(_build_issue_result, exc.issues))
+        return list(map(_build_issue_result, find_playbook_issues(playbook, inputs)))
 
     def raise_for_config_issues(self, playbook_name: str, config: dict) -> None:
         """Refuse with a 422, listing every issue, if `playbook_name` cannot run with
@@ -171,12 +193,20 @@ class PlaybookService:
         return ValidatePlaybookConfigResult(valid=not issues, issues=issues)
 
     def _get_doc(self, playbook_name: str) -> PlaybookDoc:
-        doc = self.playbooks.get(playbook_name)
-        if doc is None:
+        playbook = self.playbooks.get(playbook_name)
+        if playbook is None:
             raise HTTPException(status_code=404, detail=f"Playbook {playbook_name!r} not found")
-        for step in doc.steps:
+        for step in playbook.doc.steps:
+            if step.id == "inputs":
+                raise HTTPException(
+                    status_code=501,
+                    detail=(
+                        f"Playbook {playbook_name!r} has a step called 'inputs', which the web "
+                        "app cannot tell apart from the inputs of a run. Rename the step."
+                    ),
+                )
             _when(playbook_name, step)
-        return doc
+        return playbook.doc
 
     def _build_step_result(self, playbook_name: str, step: StepDoc) -> PlaybookStepResult:
         # A step running a nested playbook has no block of its own to describe. No

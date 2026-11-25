@@ -50,7 +50,13 @@ def test_a_nested_playbooks_step_is_addressed_through_the_step_nesting_it(
         {
             "name": "p",
             "initial_data": {"dims": ["snapshot"]},
-            "steps": [{"id": "plan", "playbook": "capacity_expansion"}],
+            "steps": [
+                {
+                    "id": "plan",
+                    "playbook": "capacity_expansion",
+                    "with": {"snapshot": "resampled"},
+                }
+            ],
         },
         spec_catalogue,
     )

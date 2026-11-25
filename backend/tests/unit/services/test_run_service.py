@@ -14,7 +14,7 @@ from runner.flows import OUTPUT_ARTIFACT_KEY, catalogue_parameter
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
-from manta.services.playbook_service import PlaybookService, config_of_run
+from manta.services.playbook_service import PlaybookService
 from manta.services.results.run_result import DataRecordResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -50,29 +50,27 @@ def _library_playbook_service() -> PlaybookService:
 
 
 _DEFAULT_CONFIG = _library_playbook_service().default_config(_LIBRARY_PLAYBOOK)
-_MYOPIC_CONFIG = {**_DEFAULT_CONFIG, "globals": {"expansion_mode": "myopic"}}
+_MYOPIC_CONFIG = {**_DEFAULT_CONFIG, "inputs": {"expansion_mode": "myopic"}}
 
 
 def _dispatched(config: dict) -> dict:
     """The playbook and inputs a run of the library playbook with `config` is dispatched
     with (see RunService.create_run)."""
-    doc = _library_playbook_service().run_document(_LIBRARY_PLAYBOOK, config)
+    playbook = _library_playbook_service().run_playbook(_LIBRARY_PLAYBOOK, config)
     return {
-        "playbook": doc.model_dump(mode="json", by_alias=True, exclude_unset=True),
-        "inputs": config["globals"],
+        "playbook": playbook.to_doc().model_dump(mode="json", by_alias=True, exclude_unset=True),
+        "inputs": config["inputs"],
     }
 
 
 def _fake_flow_run(state_type: str, config: dict = _DEFAULT_CONFIG):
     # `_flow_run_status` reads `flow_run.state.type.value`, and `_flow_run_config`
     # reads the config back from the parameters Prefect stored on the flow run.
-    return SimpleNamespace(
-        state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
-        parameters={
-            **_dispatched(config),
-            "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
-        },
-    )
+    return _fake_playbook_flow_run(state_type, _dispatched(config))
+
+
+def _config_read_back(parameters: dict) -> dict:
+    return run_service_module._flow_run_config(SimpleNamespace(parameters=parameters))
 
 
 def _existing_user(user_id: int = 1, username: str = "alice") -> User:
@@ -164,7 +162,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"]["name"] == _LIBRARY_PLAYBOOK
     assert parameters["inputs"] == {"expansion_mode": "overnight"}
-    assert config_of_run(parameters["playbook"], parameters["inputs"]) == _DEFAULT_CONFIG
+    assert _config_read_back(parameters) == _DEFAULT_CONFIG
     assert parameters["revision"] == {"store": _store_url(project), "id": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
@@ -194,7 +192,43 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
     # Then
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["inputs"] == {"expansion_mode": "overnight"}
-    assert config_of_run(parameters["playbook"], parameters["inputs"]) == custom_config
+    assert _config_read_back(parameters) == custom_config
+
+
+def test_create_run_dispatches_settings_merged_and_reads_them_back_evaluated(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given a config that clusters by segments, and gives no input values
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project})
+    dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+    service = _dispatching_service(db, mock_s3_client)
+    default_config = service.playbook_service.default_config("cluster-expand-dispatch")
+    config = {**default_config, "inputs": {}, "cluster": {"segments": 10}}
+
+    # When
+    service.create_run(
+        project_uuid=project.uuid,
+        playbook="cluster-expand-dispatch",
+        config=config,
+        store_url=_store_url(project),
+        revision_uuid=_REVISION_UUID,
+        user=_existing_user(),
+    )
+
+    # Then the step gets exactly the given settings...
+    parameters = dispatch.call_args.kwargs["parameters"]
+    assert parameters["playbook"]["steps"][0]["with"] == {"segments": 10}
+    # ...and the config read back has the input defaults and every expression evaluated
+    solver = {"optimize_config": {"solver_name": "highs"}}
+    assert _config_read_back(parameters) == {
+        "inputs": {"expansion_mode": "overnight", "solver_name": "highs"},
+        "cluster": {"segments": 10},
+        "expansion_overnight": solver,
+        "expansion_myopic": solver,
+        "dispatch": {"optimize_config": {"solver_name": "highs", "horizon": 168, "overlap": 24}},
+    }
 
 
 def test_create_run_logs_orphaned_flow_run_when_commit_fails(

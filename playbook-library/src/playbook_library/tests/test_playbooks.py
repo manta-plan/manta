@@ -12,7 +12,8 @@ backend does. The few that need the blocks themselves carry the pypsa marker.
 
 import pytest
 from playbook.blocks import BlockSpec
-from playbook.playbooks import Playbook, playbook_from_doc
+from playbook.playbooks import Playbook, plan
+from playbook.playbooks.planner import PlannedBlock, walk_planned
 
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
@@ -39,17 +40,14 @@ def described_only(playbook: Playbook) -> Playbook:
     )
 
 
-def as_the_backend_sees_it(name: str) -> Playbook:
-    """A shipped playbook with every block known only from the committed catalogue."""
-    playbook = playbook_from_doc(library_playbooks()[name], catalogue=library_catalogue())
-    return described_only(playbook)
+@pytest.fixture
+def as_the_backend_sees_it(tuned_playbook):
+    """Build a shipped playbook with its default settings and every block described only."""
 
+    def build(name: str) -> Playbook:
+        return described_only(tuned_playbook(name))
 
-def with_its_blocks_imported(name: str) -> Playbook:
-    """A shipped playbook with its real blocks, so their own settings models check it."""
-    playbook = playbook_from_doc(library_playbooks()[name])
-    assert all(step.block.config_model() is not None for step in playbook.steps)
-    return playbook
+    return build
 
 
 @pytest.mark.parametrize(
@@ -65,26 +63,77 @@ def with_its_blocks_imported(name: str) -> Playbook:
 def test_the_library_ships_the_playbook(name, steps):
     playbooks = library_playbooks()
     assert name in playbooks
-    assert [step.id for step in playbooks[name].steps] == steps
+    assert [step.id for step in playbooks[name].doc.steps] == steps
+
+
+@pytest.mark.parametrize(
+    ("name", "default_settings"),
+    [
+        ("expand", {}),
+        (
+            "cluster-expand-dispatch",
+            {
+                "cluster": {"n_hours": 3},
+                "dispatch": {"optimize_config": {"horizon": 168, "overlap": 24}},
+            },
+        ),
+    ],
+)
+def test_a_shipped_playbook_comes_with_its_default_settings(name, default_settings):
+    assert library_playbooks()[name].default_settings == default_settings
 
 
 @pytest.mark.parametrize("name", SHIPPED_PLAYBOOKS)
 @pytest.mark.parametrize("inputs", [None, {}])
-def test_a_shipped_playbook_has_no_issues_with_its_default_settings(name, inputs):
+def test_a_shipped_playbook_has_no_issues_with_its_default_settings(
+    as_the_backend_sees_it, name, inputs
+):
     assert as_the_backend_sees_it(name).find_issues(inputs) == []
 
 
 @pytest.mark.pypsa
 @pytest.mark.parametrize("name", SHIPPED_PLAYBOOKS)
 def test_a_shipped_playbook_has_no_issues_with_its_default_settings_where_its_blocks_import(
-    name,
+    tuned_playbook, name
 ):
     pytest.importorskip("pypsa", reason="checking with the blocks' own models means importing them")
-    assert with_its_blocks_imported(name).find_issues({}) == []
+    playbook = tuned_playbook(name)
+    assert all(step.block.config_model() is not None for step in playbook.steps)
+    assert playbook.find_issues({}) == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "settings"),
+    [
+        (
+            "overnight",
+            {
+                "cluster": {"n_hours": 3},
+                "expansion_overnight": {"optimize_config": {"solver_name": "highs"}},
+                "dispatch": {
+                    "optimize_config": {"solver_name": "highs", "horizon": 168, "overlap": 24}
+                },
+            },
+        ),
+        (
+            "myopic",
+            {
+                "cluster": {"n_hours": 3},
+                "expansion_myopic": {"optimize_config": {"solver_name": "highs"}},
+            },
+        ),
+    ],
+)
+def test_cluster_expand_dispatch_plans_its_default_settings_and_the_solver(
+    as_the_backend_sees_it, mode, settings
+):
+    planned = plan(as_the_backend_sees_it("cluster-expand-dispatch"), {"expansion_mode": mode})
+    blocks = [step for step in walk_planned(planned) if isinstance(step, PlannedBlock)]
+    assert {step.path[-1]: step.settings for step in blocks} == settings
 
 
 @pytest.mark.parametrize("name", ["expand", "cluster-expand-dispatch"])
-def test_the_myopic_branch_is_reported_as_missing_the_period(name):
+def test_the_myopic_branch_is_reported_as_missing_the_period(as_the_backend_sees_it, name):
     # Myopic expansion works one investment period at a time, so it needs that
     # dimension, but this playbook's data starts with `snapshot` alone and no step
     # before it adds one. Run anyway, the branch would quietly do nothing.
@@ -93,11 +142,18 @@ def test_the_myopic_branch_is_reported_as_missing_the_period(name):
     assert "needs the 'period' dimension" in issues[0].message
 
 
-def test_an_expansion_mode_the_playbook_does_not_offer_is_reported():
-    issues = as_the_backend_sees_it("cluster-expand-dispatch").find_issues(
-        {"expansion_mode": "perfect"}
-    )
-    assert [(i.kind, i.input_path) for i in issues] == [("inputs", ("expansion_mode",))]
+@pytest.mark.parametrize(
+    ("inputs", "input_path"),
+    [
+        ({"expansion_mode": "perfect"}, ("expansion_mode",)),
+        ({"solver_name": "cplex"}, ("solver_name",)),
+    ],
+)
+def test_an_input_value_the_playbook_does_not_offer_is_reported(
+    as_the_backend_sees_it, inputs, input_path
+):
+    issues = as_the_backend_sees_it("cluster-expand-dispatch").find_issues(inputs)
+    assert [(i.kind, i.input_path) for i in issues] == [("inputs", input_path)]
 
 
 @pytest.mark.pypsa
@@ -106,10 +162,9 @@ def test_a_rule_a_block_writes_in_code_is_only_checked_where_the_block_imports(t
     # Python, which its JSON schema cannot carry. So the backend, knowing the block
     # only from the catalogue, lets this through; the block refuses it when it runs.
     pytest.importorskip("pypsa", reason="checking with the blocks' own models means importing them")
-    settings = {"cluster": {"n_hours": None}}
+    tuned = tuned_playbook("cluster-expand-dispatch", {"cluster": {"n_hours": None}})
 
-    described = described_only(tuned_playbook("cluster-expand-dispatch", settings))
-    assert described.find_issues({}) == []
+    assert described_only(tuned).find_issues({}) == []
 
-    issues = tuned_playbook("cluster-expand-dispatch", settings).find_issues({})
+    issues = tuned.find_issues({})
     assert [(i.kind, i.step_path) for i in issues] == [("config", ("cluster",))]

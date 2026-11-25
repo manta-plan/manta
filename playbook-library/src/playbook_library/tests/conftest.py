@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from playbook.playbooks import Playbook, PlaybookDoc, playbook_from_doc
+from playbook.playbooks import Playbook, apply_settings, playbook_from_doc
 
+from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 
 if TYPE_CHECKING:
@@ -43,16 +44,20 @@ def store_revision(tmp_path: Path, workspace: "Workspace") -> Callable[..., "Rev
 
 @pytest.fixture
 def tuned_playbook() -> Callable[..., Playbook]:
-    """Build a library playbook with the settings of some steps replaced.
+    """Build a library playbook with its default settings, some of them replaced.
 
     The fixture takes the name of the playbook, then the settings to replace, by step id
-    and setting name. Every other setting is as the library ships it.
+    and setting name. Every other setting is as the library ships it. A block that
+    cannot be imported is known from the committed catalogue.
     """
 
-    def tune(name: str, settings: dict[str, dict]) -> Playbook:
-        raw = library_playbooks()[name].model_dump(by_alias=True, exclude_unset=True)
-        for step in raw["steps"]:
-            step["with"] = {**step.get("with", {}), **settings.get(step["id"], {})}
-        return playbook_from_doc(PlaybookDoc.model_validate(raw))
+    def tune(name: str, settings: dict[str, dict] | None = None) -> Playbook:
+        shipped = library_playbooks()[name]
+        defaults = shipped.default_settings
+        replaced = {
+            step: {**defaults.get(step, {}), **value} for step, value in (settings or {}).items()
+        }
+        playbook = playbook_from_doc(shipped.doc, catalogue=library_catalogue())
+        return apply_settings(playbook, {**defaults, **replaced})
 
     return tune

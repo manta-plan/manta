@@ -156,9 +156,7 @@ An input is a value that a user sets for one run.
 `inputs` is a mapping from the name of each input to its declaration.
 A name starts with a letter or an underscore, and contains only letters, digits, and underscores.
 
-Each declaration has a `type`, an optional `description`, and an optional `default`.
-An input without a `default` is required.
-Because `null` counts as a default, an input with `default: null` is optional.
+Each declaration has a `type`, and optionally a `description`, `required`, and a `default`.
 
 | `type` | Value | Other keys |
 | --- | --- | --- |
@@ -166,6 +164,26 @@ Because `null` counts as a default, an input with `default: null` is optional.
 | `number` | An integer or a float. `true` and `false` are not numbers. | |
 | `boolean` | `true` or `false`. | |
 | `choice` | One of `options`. | `options`, a list of one or more texts or numbers. A `default` other than `null` must be one of them. |
+
+`required` is `true` or `false`, and is `false` when the declaration leaves it out.
+Together with `default`, it sets the value of an input that a run leaves out or gives as `null`:
+
+| `required` | `default` | Left out of the run | `null` in the run |
+| --- | --- | --- | --- |
+| `true` | None, or `null`. | `playbook` reports an `inputs` issue. | `playbook` reports an `inputs` issue. |
+| `false` | A value other than `null`. | The input takes the default. | `playbook` reports an `inputs` issue. |
+| `false` | None, or `null`. | The input is `null`. | The input is `null`. |
+
+For a declaration with `required: true` and a `default` other than `null`, `parse_doc` raises `PlaybookLoadError`:
+
+```text
+invalid playbook: 1 validation error for PlaybookDoc
+inputs.n_hours.number
+  Value error, the input is required and has `default` 3. Remove `default`, or set `required: false`. [type=value_error, input_value={'type': 'number', 'required': True, 'default': 3}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+```
+
+The location `inputs.n_hours.number` is the declaration of the `number` input `n_hours`.
 
 This playbook has two inputs: the number of hours that `cluster_time` aggregates into one, and the length of each rolling horizon dispatch window:
 
@@ -238,7 +256,14 @@ This playbook has two inputs: the number of hours that `cluster_time` aggregates
 With the inputs `{"horizon": 336}`, `n_hours` resolves to its default `3`, and `horizon` to `336`.
 
 Before any step runs, `playbook` resolves the inputs.
-An unknown name, a missing required input, a value of the wrong type, and a choice outside `options` are each an `inputs` issue.
+Each of these is an `inputs` issue:
+
+- a name that the playbook does not declare
+- a required input without a value
+- `null` for an input with a default
+- a value of the wrong type
+- a choice outside `options`
+
 For the same playbook with the inputs `{"n_hours": "3"}`, `find_playbook_issues` reports:
 
 ```text
@@ -246,6 +271,13 @@ For the same playbook with the inputs `{"n_hours": "3"}`, `find_playbook_issues`
 ```
 
 The value `"3"` is text, so it does not fit `type: number`.
+With the inputs `{"n_hours": None}`, `find_playbook_issues` reports:
+
+```text
+[inputs] playbook, input 'n_hours': cannot be null. Give it a value, or leave it out to use the default 3
+```
+
+`n_hours` has a default, so a run that leaves it out gets `3`.
 
 ## `steps`
 
@@ -286,7 +318,7 @@ In an issue, a step is written as its path of ids from the outermost playbook in
 ### `block`
 
 `block` is the registered name of the block that the step runs, such as `cluster_time`.
-The [`with`](#with) of the step sets the settings of the block.
+The [`with`](#with) of the step sets the settings of the block that a run cannot change.
 
 ### `playbook`
 
@@ -429,8 +461,8 @@ On both kinds of step, `parse_doc` refuses a single expression in place of the m
 
 Each value in `with` is written out in place, or is an [expression](#expressions), at any depth of the mapping.
 In [the inputs example](#inputs), the expression for `n_hours` is at the top of the mapping, and the one for `horizon` is inside `optimize_config`.
-The settings of a block are set only in `with`.
-So a setting that a run can change must be an input, used in `with` through an expression.
+A setting in `with` is fixed by the author of the playbook, as a value or through an expression.
+A run can give every other setting of the block, which [`apply_settings`](#settings-of-a-run) merges into `with`.
 
 Where the block can be imported, `find_playbook_issues` checks `with` against the settings model of the block.
 Where the block cannot be imported, `find_playbook_issues` checks `with` against the JSON schema of the block in the catalogue.
@@ -462,7 +494,15 @@ It refers to a value by a dotted name that starts at `inputs`, such as `${{ inpu
 | A literal | `'text'`, a number, `true`, `false`, and `null`. A `'` inside text is written `''`. |
 
 The value of an expression has the type of its result, so `${{ inputs.horizon }}` is a number.
-For an expression that orders a number against text, `find_playbook_issues` and `execute_playbook` raise `ExpressionError`, such as ``1 > 'a' cannot be evaluated. `>` compares two numbers or two strings.``
+An expression that cannot be evaluated with the input values, such as one that orders a number against text, is an `inputs` issue.
+`find_playbook_issues` returns the issue, and `execute_playbook` raises `PlaybookHasIssuesError` with it.
+For step `cluster` with `if: ${{ inputs.n_hours > 'a' }}`, and `n_hours` at `3`, the issue is:
+
+```text
+[inputs] step 'cluster': 3 > 'a' cannot be evaluated. `>` compares two numbers or two strings.
+```
+
+The issue gives the step whose expression `playbook` could not evaluate, and the values it compared.
 
 For text that contains `${{` but is not one whole expression, `parse_doc` raises `PlaybookLoadError`:
 
@@ -483,6 +523,56 @@ An expression that refers to an input the playbook does not have is a `reference
 
 The message lists the inputs that the playbook has.
 
+## Settings of a run
+
+`apply_settings(playbook, settings)` returns a copy of `playbook` with the settings of one run merged into the `with` of its steps.
+`settings` is a mapping from step id to the settings of that step.
+`apply_settings` merges nested mappings key by key, so a run can add a setting inside a mapping that `with` already has.
+For a `playbook` step, the entry contains the settings of the nested playbook, by its own step ids.
+`apply_settings` changes neither `playbook` nor `settings`.
+
+These settings give the solver of step `dispatch` in [the inputs example](#inputs), saved as `cluster_and_dispatch.yaml`:
+
+```yaml title="settings.yaml"
+dispatch:
+  optimize_config:
+    solver_name: highs
+```
+
+```python
+import yaml
+from playbook.playbooks import Playbook, apply_settings
+from playbook_library import library_catalogue
+
+playbook = Playbook.from_yaml("cluster_and_dispatch.yaml", library_catalogue())
+
+with open("settings.yaml") as file:
+    settings = yaml.safe_load(file)
+applied = apply_settings(playbook, settings)
+print(applied.steps[1].with_)
+```
+
+```text
+{'optimize_config': {'horizon': '${{ inputs.horizon }}', 'overlap': 24, 'solver_name': 'highs'}}
+```
+
+`solver_name` sits beside the two settings that `with` fixes, and the expression for `horizon` is left for the run to evaluate.
+
+`apply_settings` raises `PlaybookHasIssuesError`, with one `config` issue for each of these:
+
+- a step id that the playbook does not have
+- settings of a step that are not a mapping
+- a setting that `with` sets
+- a value that contains `${{`
+
+For the settings `{"dispatch": {"optimize_config": {"overlap": 48}}}`, the issue is:
+
+```text
+[config] step 'dispatch', setting 'optimize_config.overlap': the playbook sets this to 24, so a run cannot set it. Leave it out of the settings
+```
+
+The issue gives the path to `overlap` within the `with` of `dispatch`, where the playbook fixes it at `24`.
+
 ## Checking a playbook
 
 `find_playbook_issues` checks a playbook against the inputs of one run.
@@ -493,7 +583,7 @@ from playbook.playbooks import find_playbook_issues, playbook_from_doc
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 
-playbook = playbook_from_doc(library_playbooks()["expand"], catalogue=library_catalogue())
+playbook = playbook_from_doc(library_playbooks()["expand"].doc, catalogue=library_catalogue())
 for issue in find_playbook_issues(playbook, {"expansion_mode": "greenfield"}):
     print(issue)
 ```
@@ -565,7 +655,7 @@ A `PlaybookIssue` has these fields:
 | `message` | What is wrong, in words. | `"there is no setting called 'n_hour'"` |
 | `step_path` | The step, as ids from the outermost playbook inwards. It is empty for the playbook as a whole. | `("plan", "expansion_myopic")` |
 | `input_path` | The input at fault, or `None`. | `("expansion_mode",)` |
-| `setting_path` | Where in the settings of the step the problem is, or `None`. | `("optimize_config", "horizon")` |
+| `setting_path` | Where in the settings of the step the problem is, or `None`. It is empty for the settings of a step as a whole. | `("optimize_config", "horizon")` |
 
 The `kind` of an issue is one of these checks:
 
@@ -573,9 +663,9 @@ The `kind` of an issue is one of these checks:
 | --- | --- |
 | `structure` | Two steps share an `id`, an inherited input has the name of another input, or a playbook contains itself. |
 | `reference` | An expression refers to an input that does not exist, or a nested playbook is given an input it does not declare. |
-| `inputs` | An input value is unknown, missing, of the wrong type, or not one of its options. |
+| `inputs` | An input value is unknown, missing, `null` where it cannot be, of the wrong type, or not one of its options, or an expression cannot be evaluated with the input values. |
 | `dims` | A step needs a dimension that neither `initial_data` lists nor an earlier step adds, or that an earlier step removed. |
-| `config` | The settings of a step do not fit what its block accepts. |
+| `config` | The settings of a step do not fit what its block accepts, or `apply_settings` cannot apply a setting that a run gives. |
 | `environment` | Two blocks describe the same environment differently. |
 
 Without inputs, `find_playbook_issues(playbook)` runs only the `structure` and `reference` checks, because they do not depend on the inputs.
@@ -592,12 +682,31 @@ If `initial_data` lists a dimension that the starting data does not populate, th
 ## Shipped playbooks
 
 `playbook-library` ships two playbooks.
-`playbook_library.playbooks.library_playbooks()` returns them as documents, keyed by the `name` in each document:
+`playbook_library.playbooks.library_playbooks()` returns them as `LibraryPlaybook` objects, keyed by the `name` in each document.
+A `LibraryPlaybook` has the document in `doc`, and the default settings of a run in `default_settings`, by step id.
+The default settings of a playbook are in `configs/` beside it, in a file with the same name as the playbook file.
+For a playbook without such a file, `default_settings` is empty.
 
 | Name | File | Inputs | What it runs |
 | --- | --- | --- | --- |
 | `expand` | [`expand.yaml`](https://github.com/manta-plan/manta/blob/main/playbook-library/src/playbook_library/playbooks/expand.yaml) | `expansion_mode`: `overnight`, `myopic`, or `perfect`, with `overnight` as the default. | Optimises capacities with one capacity expansion block, chosen by `expansion_mode`. It has no time aggregation step, so it is for small models only. |
-| `cluster-expand-dispatch` | [`cluster_expand_dispatch.yaml`](https://github.com/manta-plan/manta/blob/main/playbook-library/src/playbook_library/playbooks/cluster_expand_dispatch.yaml) | `expansion_mode`: `overnight` or `myopic`, with `overnight` as the default. | Aggregates the time series to a resolution of three hours, then optimises capacities. With `overnight`, a rolling horizon dispatch follows, in windows of 168 hours that overlap by 24 hours. |
+| `cluster-expand-dispatch` | [`cluster_expand_dispatch.yaml`](https://github.com/manta-plan/manta/blob/main/playbook-library/src/playbook_library/playbooks/cluster_expand_dispatch.yaml) | `expansion_mode`: `overnight` or `myopic`, with `overnight` as the default. `solver_name`: `highs`, the only option and the default. | Aggregates the time series, then optimises capacities. With `overnight`, a rolling horizon dispatch follows. |
+
+The `with` of each optimisation step in `cluster-expand-dispatch` sets `optimize_config.solver_name` to the `solver_name` input.
+Its default settings, in [`configs/cluster_expand_dispatch.yaml`](https://github.com/manta-plan/manta/blob/main/playbook-library/src/playbook_library/playbooks/configs/cluster_expand_dispatch.yaml), are:
+
+```yaml
+cluster:
+  n_hours: 3
+
+dispatch:
+  optimize_config:
+    horizon: 168
+    overlap: 24
+```
+
+With these settings, `cluster_time` aggregates the time series to a resolution of three hours.
+The rolling horizon dispatch then runs in windows of 168 hours that overlap by 24 hours.
 
 The expansion step before the dispatch writes an optimised value for each capacity it optimises.
 `rolling_horizon_dispatch` fixes each capacity that has such a value in the revision it receives.

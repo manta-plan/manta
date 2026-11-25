@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from playbook.playbooks import parse_doc
 from playbook_library import library_catalogue
-from playbook_library.playbooks import library_playbooks
+from playbook_library.playbooks import LibraryPlaybook, library_playbooks
 
 from manta.services.playbook_service import PlaybookService
 from manta.services.results.playbook_result import (
@@ -15,6 +15,12 @@ _LIBRARY_PLAYBOOK = "expand"
 
 def _library_service() -> PlaybookService:
     return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
+
+
+def _service_of(raw: dict) -> PlaybookService:
+    doc = parse_doc(raw)
+    playbooks = {doc.name: LibraryPlaybook(doc=doc, default_settings={})}
+    return PlaybookService(playbooks=playbooks, catalogue=library_catalogue())
 
 
 def test_list_playbooks_lists_every_library_playbook_with_its_steps() -> None:
@@ -47,7 +53,7 @@ def test_get_playbook_describes_each_step_with_its_blocks_settings() -> None:
     # starting config without reading the library's source...
     assert result.name == _LIBRARY_PLAYBOOK
     assert result.default_config == {
-        "globals": {"expansion_mode": "overnight"},
+        "inputs": {"expansion_mode": "overnight"},
         "expansion_overnight": {},
         "expansion_myopic": {},
         "expansion_perfect": {},
@@ -63,14 +69,14 @@ def test_get_playbook_describes_each_step_with_its_blocks_settings() -> None:
         assert step.block_config_schema == block.config_schema
 
     # And the step-level conditions are reported per step.
-    assert steps["expansion_overnight"].when.config == "globals.expansion_mode"
+    assert steps["expansion_overnight"].when.config == "inputs.expansion_mode"
     assert steps["expansion_overnight"].when.equals == "overnight"
     assert steps["expansion_myopic"].when.equals == "myopic"
     assert steps["expansion_perfect"].when.equals == "perfect"
     assert steps["expansion_overnight"].inputs == {}
 
 
-def test_get_playbook_offers_each_steps_with_as_its_default_settings() -> None:
+def test_get_playbook_offers_the_default_settings_without_what_with_sets() -> None:
     # Given
     service = _library_service()
 
@@ -78,8 +84,27 @@ def test_get_playbook_offers_each_steps_with_as_its_default_settings() -> None:
     result = service.get_playbook("cluster-expand-dispatch")
 
     # Then
-    assert result.default_config["cluster"] == {"n_hours": 3}
-    assert result.default_config["dispatch"] == {"optimize_config": {"horizon": 168, "overlap": 24}}
+    assert result.default_config == {
+        "inputs": {"expansion_mode": "overnight", "solver_name": "highs"},
+        "cluster": {"n_hours": 3},
+        "expansion_overnight": {},
+        "expansion_myopic": {},
+        "dispatch": {"optimize_config": {"horizon": 168, "overlap": 24}},
+    }
+
+
+def test_default_config_leaves_out_a_required_input() -> None:
+    # Given
+    service = _service_of(
+        {
+            "name": "needs",
+            "inputs": {"hours": {"type": "number", "required": True}, "on": {"type": "boolean"}},
+            "steps": [{"id": "cluster", "block": "cluster_time"}],
+        }
+    )
+
+    # When/Then
+    assert service.default_config("needs") == {"inputs": {"on": None}, "cluster": {}}
 
 
 @pytest.mark.parametrize(
@@ -97,7 +122,7 @@ def test_get_playbook_offers_each_steps_with_as_its_default_settings() -> None:
 )
 def test_a_condition_the_web_app_cannot_show_is_refused_with_a_501(condition, request_playbook):
     # Given a playbook whose step condition is not one input compared with `==`
-    doc = parse_doc(
+    service = _service_of(
         {
             "name": "conditional",
             "inputs": {
@@ -107,7 +132,6 @@ def test_a_condition_the_web_app_cannot_show_is_refused_with_a_501(condition, re
             "steps": [{"id": "cluster", "block": "cluster_time", "if": condition}],
         }
     )
-    service = PlaybookService(playbooks={"conditional": doc}, catalogue=library_catalogue())
 
     # When/Then: it is still listed...
     assert [item.name for item in service.list_playbooks().items] == ["conditional"]
@@ -120,9 +144,29 @@ def test_a_condition_the_web_app_cannot_show_is_refused_with_a_501(condition, re
     assert condition in exc_info.value.detail
 
 
+@pytest.mark.parametrize(
+    "request_playbook",
+    [
+        lambda service: service.get_playbook("named"),
+        lambda service: service.validate_playbook_config("named", config=None),
+    ],
+    ids=["detail", "validate"],
+)
+def test_a_step_called_inputs_is_refused_with_a_501(request_playbook) -> None:
+    # Given a playbook with a step whose id is the key of the inputs in a config
+    service = _service_of({"name": "named", "steps": [{"id": "inputs", "block": "cluster_time"}]})
+
+    # When/Then
+    with pytest.raises(HTTPException) as exc_info:
+        request_playbook(service)
+    assert exc_info.value.status_code == 501
+    assert "'named'" in exc_info.value.detail
+    assert "Rename the step" in exc_info.value.detail
+
+
 def test_get_playbook_describes_a_block_used_by_two_steps_once_per_step() -> None:
     # Given a playbook using the same block twice, under two step names
-    doc = parse_doc(
+    service = _service_of(
         {
             "name": "two-dispatches",
             "steps": [
@@ -131,7 +175,6 @@ def test_get_playbook_describes_a_block_used_by_two_steps_once_per_step() -> Non
             ],
         }
     )
-    service = PlaybookService(playbooks={"two-dispatches": doc}, catalogue=library_catalogue())
 
     # When
     result = service.get_playbook("two-dispatches")
@@ -146,7 +189,7 @@ def test_get_playbook_describes_a_block_used_by_two_steps_once_per_step() -> Non
 
 def test_get_playbook_lists_a_nested_playbook_step_without_a_block() -> None:
     # Given a playbook with a step that runs another playbook rather than a block
-    doc = parse_doc(
+    service = _service_of(
         {
             "name": "outer",
             "steps": [
@@ -158,7 +201,6 @@ def test_get_playbook_lists_a_nested_playbook_step_without_a_block() -> None:
             ],
         }
     )
-    service = PlaybookService(playbooks={"outer": doc}, catalogue=library_catalogue())
 
     # When
     result = service.get_playbook("outer")
@@ -228,6 +270,41 @@ def test_find_config_issues_points_each_issue_at_the_exact_setting() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("changed", "found", "message"),
+    [
+        ({"cluster": None}, [("config", ["cluster"], ["cluster"])], "not None"),
+        ({"cluster": [1]}, [("config", ["cluster"], ["cluster"])], "not [1]"),
+        (
+            {"cluster": {"n_hours": "${{ oops"}},
+            [("config", ["cluster"], ["cluster", "n_hours"])],
+            "contains an expression",
+        ),
+        ({"inputs": None}, [("inputs", [], ["inputs"])], "not None"),
+        ({"inputs": ["a"]}, [("inputs", [], ["inputs"])], "not ['a']"),
+        (
+            {"dispatch": {"optimize_config": {"solver_name": "x"}}},
+            [("config", ["dispatch"], ["dispatch", "optimize_config", "solver_name"])],
+            "${{ inputs.solver_name }}",
+        ),
+    ],
+)
+def test_find_config_issues_answers_a_config_that_cannot_apply_with_issues(
+    changed, found, message
+) -> None:
+    # Given the default config with one entry replaced by something that cannot apply
+    service = _library_service()
+    config = {**service.default_config("cluster-expand-dispatch"), **changed}
+
+    # When
+    result = service.validate_playbook_config("cluster-expand-dispatch", config=config)
+
+    # Then
+    assert result.valid is False
+    assert [(i.kind, i.step_path, i.config_path) for i in result.issues] == found
+    assert message in result.issues[0].message
+
+
 def test_find_config_issues_with_unknown_playbook_raises_404() -> None:
     # Given
     service = _library_service()
@@ -252,7 +329,10 @@ def test_raise_for_config_issues_refuses_with_422_listing_every_issue() -> None:
         "issues": [
             {
                 "kind": "config",
-                "message": "there is no step called 'not_a_step', and it is not 'globals'",
+                "message": (
+                    "there is no step called 'not_a_step'. Use one of "
+                    "['expansion_overnight', 'expansion_myopic', 'expansion_perfect']"
+                ),
                 "step_path": [],
                 "config_path": ["not_a_step"],
                 "input": None,
@@ -276,7 +356,7 @@ def test_validate_playbook_config_without_a_config_checks_the_playbooks_default(
     ("mode", "issues"),
     [
         ("myopic", [("dims", ["expansion_myopic"], None)]),
-        ("greenfield", [("inputs", [], ["globals", "expansion_mode"])]),
+        ("greenfield", [("inputs", [], ["inputs", "expansion_mode"])]),
     ],
     ids=["myopic-needs-a-period", "not-offered"],
 )
@@ -286,7 +366,7 @@ def test_validate_playbook_config_answers_with_every_issue_instead_of_refusing(
     # Given the default config switched to its myopic branch, which needs a period
     # dimension the playbook's data does not have, or to a mode it does not offer
     service = _library_service()
-    config = {**service.default_config(_LIBRARY_PLAYBOOK), "globals": {"expansion_mode": mode}}
+    config = {**service.default_config(_LIBRARY_PLAYBOOK), "inputs": {"expansion_mode": mode}}
 
     # When
     result = service.validate_playbook_config(_LIBRARY_PLAYBOOK, config=config)

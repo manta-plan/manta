@@ -18,7 +18,7 @@ from playbook.blocks.tests.fakes import (
     FakePassthrough,
     FakeStrictConfig,
 )
-from playbook.playbooks.tests.specs import SPEC_PLAYBOOKS
+from playbook.playbooks.tests.specs import SPEC_PLAYBOOKS, SPEC_REQUIRED_INPUTS
 from playbook.playbooks.validation import find_playbook_issues
 
 DESCRIBED = Catalogue(
@@ -49,8 +49,9 @@ def found(pb, inputs: dict | None) -> list[tuple]:
 
 
 @pytest.mark.parametrize("name", SPEC_PLAYBOOKS)
-@pytest.mark.parametrize("inputs", [None, {}])
-def test_a_spec_playbook_has_no_issues(request, name, inputs):
+@pytest.mark.parametrize("given", [None, {}, {"snapshot": "resampled"}])
+def test_a_spec_playbook_has_no_issues(request, name, given):
+    inputs = None if given is None else {**SPEC_REQUIRED_INPUTS[name], **given}
     assert request.getfixturevalue(name).find_issues(inputs) == []
 
 
@@ -158,6 +159,39 @@ def test_settings_come_from_the_inputs_before_they_are_checked(build_playbook):
     pb = build_playbook(doc)
     assert pb.find_issues({}) == []
     assert [i.setting_path for i in pb.find_issues({"size": 1.5})] == [("required_field",)]
+
+
+UNEVALUABLE_IF = block("a", **{"if": "${{ inputs.hours > 1 }}"})
+
+
+@pytest.mark.parametrize(
+    ("listed", "step_paths"),
+    [
+        ([UNEVALUABLE_IF], [("a",)]),
+        ([block("a", **{"with": {"label": "${{ inputs.hours < 1 }}"}})], [("a",)]),
+        (
+            [{"id": "n", "playbook": steps(UNEVALUABLE_IF, hours={"type": "number"})}],
+            [("n", "a")],
+        ),
+        (
+            [
+                UNEVALUABLE_IF,
+                {
+                    "id": "n",
+                    "playbook": steps(block("b"), m={"type": "number", "required": True}),
+                },
+            ],
+            [("a",), ("n",)],
+        ),
+    ],
+)
+def test_an_expression_that_cannot_be_evaluated_is_reported(build_playbook, listed, step_paths):
+    pb = build_playbook(steps(*listed, hours={"type": "number"}))
+    issues = pb.find_issues({})
+    assert [(issue.kind, issue.step_path) for issue in issues] == [
+        ("inputs", path) for path in step_paths
+    ]
+    assert "cannot be evaluated" in issues[0].message
 
 
 def test_a_step_removed_by_its_if_is_not_checked(build_playbook):

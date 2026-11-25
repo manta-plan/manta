@@ -10,6 +10,7 @@ from playbook.playbooks.inputs import effective_inputs, resolve_inputs
 from playbook.playbooks.issues import PlaybookHasIssuesError, PlaybookIssue, PlaybookIssueKind
 from playbook.playbooks.planner import Planned, PlannedBlock, PlannedGroup, plan
 from playbook.playbooks.playbook import BlockStep, Playbook, PlaybookStep, Step
+from playbook.playbooks.settings import apply_settings
 from playbook.playbooks.syntax import BlockStepDoc, InputSpec, PlaybookDoc, PlaybookStepDoc, StepDoc
 from playbook.playbooks.validation import find_playbook_issues, raise_for_playbook_issues
 from playbook.playbooks.yaml_io import (
@@ -46,6 +47,7 @@ __all__ = [
     "PlaybookStepDoc",
     "Step",
     "StepDoc",
+    "apply_settings",
     "effective_inputs",
     "execute_playbook",
     "find_playbook_issues",

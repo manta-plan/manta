@@ -1549,7 +1549,7 @@
           "equals"
         ],
         "title": "PlaybookStepConditionResult",
-        "description": "A step only runs when the config value at `config` (a dotted path, e.g.\n`globals.expansion_mode`) equals `equals`."
+        "description": "A step only runs when the config value at `config` (a dotted path, e.g.\n`inputs.expansion_mode`) equals `equals`."
       },
       "PlaybookStepResult": {
         "properties": {

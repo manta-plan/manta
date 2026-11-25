@@ -5,6 +5,7 @@
 import pytest
 
 from playbook.blocks.tests.fakes import steps
+from playbook.playbooks.tests.specs import SPEC_REQUIRED_INPUTS
 
 
 def labelled(*labels: str, **step: object) -> list[dict]:
@@ -72,7 +73,9 @@ def test_a_failing_step_stops_the_run(build_playbook, initial_revision):
 def test_the_capacity_expansion_playbook_runs_its_steps_in_turn(
     capacity_expansion, recording_runner, initial_revision
 ):
-    result = capacity_expansion.run(initial_revision, {"bus": "busmap_country"}, recording_runner)
+    result = capacity_expansion.run(
+        initial_revision, {"snapshot": "resampled", "bus": "busmap_country"}, recording_runner
+    )
 
     partition, expand = recording_runner.calls
     assert partition["config"] == {
@@ -85,10 +88,10 @@ def test_the_capacity_expansion_playbook_runs_its_steps_in_turn(
     assert result.store == f"{initial_revision.store}/partition/expand"
 
 
-@pytest.mark.parametrize("name", ["capacity_expansion", "expand_and_dispatch"])
+@pytest.mark.parametrize(("name", "inputs"), SPEC_REQUIRED_INPUTS.items())
 def test_the_partition_is_skipped_without_a_snapshot_property(
-    request, name, recording_runner, initial_revision
+    request, name, inputs, recording_runner, initial_revision
 ):
-    request.getfixturevalue(name).run(initial_revision, {"snapshot": None}, recording_runner)
+    request.getfixturevalue(name).run(initial_revision, inputs, recording_runner)
     [expand] = [call for call in recording_runner.calls if call["step_path"][-1] == "expand"]
     assert expand["revision"] == initial_revision

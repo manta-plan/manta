@@ -123,14 +123,21 @@ A playbook is not a workflow, and GitHub Actions cannot run one.
 
 ## Settings and inputs
 
-A playbook states which steps run and, in each step's `with`, how each one runs.
-It also declares its inputs: the values a user sets for one run, each with a type and an optional default.
-A step's `with` and `if` refer to an input through a `${{ inputs.<name> }}` expression.
-So one playbook runs in several ways, which is the scenario analysis that Manta exists for.
+The author of a playbook fixes a setting in a step's `with`, and a run can give every other setting of the block.
+A setting in `with` is a value written in place, or an expression that refers to an input.
+A run gives the other settings by step id, and [`apply_settings`](../reference/playbook/syntax.md#settings-of-a-run) merges them into the `with` of each step before `playbook` checks the playbook.
+`apply_settings` refuses a setting that `with` already sets, so a run cannot undo what the author fixed.
 
-A setting that does not refer to an input has the value the playbook gives it.
-A separate settings document would open every setting to the user.
-In contrast, the author of a playbook chooses which settings a user can change.
+An input is a value that a user sets once for a whole run, with a type and an optional default.
+A step's `with` and `if` refer to an input through a `${{ inputs.<name> }}` expression.
+So one input can switch steps on and off, which is the scenario analysis that Manta exists for.
+One input can also set the same value on several steps.
+In `cluster-expand-dispatch`, the input `solver_name` sets the solver of every optimisation step.
+
+The alternative we rejected is to let a run reach a block only through inputs.
+The author would then have to declare an input for every setting that any user might want to change.
+A block already describes all its settings in the catalogue, so declaring them again as inputs adds nothing for the user.
+Instead, the author decides only what cannot change, and a user keeps access to every other setting of a block.
 
 Each step has its own id, so one block can appear twice with different settings.
 `expansion_2030` and `expansion_2040` can be two steps of one block.

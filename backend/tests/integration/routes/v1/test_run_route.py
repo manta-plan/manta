@@ -12,10 +12,10 @@ from runner.flows import PLAYBOOK_DEPLOYMENT
 
 _LIBRARY_PLAYBOOK = "expand"
 """Runs expansion_overnight under the library's own default config
-(globals.expansion_mode: overnight) — one real block, a real PyPSA/HiGHS
+(inputs.expansion_mode: overnight) — one real block, a real PyPSA/HiGHS
 solve, dispatched through the actual docker work pool."""
 _DEFAULT_CONFIG = {
-    "globals": {"expansion_mode": "overnight"},
+    "inputs": {"expansion_mode": "overnight"},
     "expansion_overnight": {},
     "expansion_myopic": {},
     "expansion_perfect": {},
@@ -205,7 +205,7 @@ def test_create_and_run_a_playbook(
 
     # And its steps are reported straight away, before any has finished: every
     # step of the playbook in order, with the myopic and perfect branches skipped
-    # under the default config (globals.expansion_mode: overnight)
+    # under the default config (inputs.expansion_mode: overnight)
     early_steps = _get_steps(app_server, run_uuid, headers)
     assert [step["name"] for step in early_steps] == _STEP_NAMES
     assert [step["status"] for step in early_steps[1:]] == ["SKIPPED", "SKIPPED"]
@@ -363,7 +363,7 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
     project_uuid = _create_project(app_server, headers)
     _wait_for_deployment_registered(prefect_service)
     flow_runs_before = _count_playbook_flow_runs(prefect_service)
-    myopic_config = {**_DEFAULT_CONFIG, "globals": {"expansion_mode": "myopic"}}
+    myopic_config = {**_DEFAULT_CONFIG, "inputs": {"expansion_mode": "myopic"}}
 
     # When a run is requested with it
     response = httpx2.post(

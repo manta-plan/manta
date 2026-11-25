@@ -23,7 +23,12 @@ def blocks(planned: PlannedGroup) -> dict[str, PlannedBlock]:
 
 
 def test_settings_are_worked_out_from_the_inputs(capacity_expansion):
-    planned = blocks(plan(capacity_expansion, {"bus": "busmap_country", "solver": "gurobi"}))
+    planned = blocks(
+        plan(
+            capacity_expansion,
+            {"snapshot": "resampled", "bus": "busmap_country", "solver": "gurobi"},
+        )
+    )
     assert planned["partition"].settings == {
         "method": "resample",
         "resolution": "3h",
@@ -37,13 +42,16 @@ def test_settings_are_worked_out_from_the_inputs(capacity_expansion):
 
 
 def test_a_step_whose_if_is_false_is_removed(capacity_expansion):
-    assert paths(plan(capacity_expansion, {"snapshot": None})) == [("expand",)]
+    assert paths(plan(capacity_expansion, {})) == [("expand",)]
 
 
 def test_a_nested_playbook_becomes_a_group_of_its_steps_with_inherited_inputs(
     expand_and_dispatch,
 ):
-    planned = plan(expand_and_dispatch, {"resolution": "1h", "dispatch_resolution": "1d"})
+    planned = plan(
+        expand_and_dispatch,
+        {"snapshot": "resampled", "resolution": "1h", "dispatch_resolution": "1d"},
+    )
     assert paths(planned) == [
         ("plan",),
         ("plan", "partition"),

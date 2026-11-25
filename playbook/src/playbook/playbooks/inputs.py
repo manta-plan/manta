@@ -22,8 +22,6 @@ def _issue(path: tuple[str, ...], message: str) -> PlaybookIssue:
 
 
 def _type_problem(spec: InputSpec, value: object) -> str | None:
-    if value is None:
-        return None
     if isinstance(spec, ChoiceInput):
         listed = value in spec.options and not isinstance(value, bool)
         return None if listed else f"{value!r} is not one of {spec.options}"
@@ -33,8 +31,22 @@ def _type_problem(spec: InputSpec, value: object) -> str | None:
     return None
 
 
+def _null_problem(spec: InputSpec) -> str | None:
+    if spec.required:
+        return "is required and has no value. Give it a value that is not null"
+    if spec.default is not None:
+        return (
+            f"cannot be null. Give it a value, or leave it out to use the default {spec.default!r}"
+        )
+    return None
+
+
 def resolve_inputs(specs: Mapping[str, InputSpec], given: Mapping[str, object]) -> dict:
     """Return the value of each declared input: the given value, or the default.
+
+    A required input needs a value that is not null. An optional input with a default
+    takes the default when the run leaves it out, and cannot be null. An optional input
+    without a default is null when the run leaves it out.
 
     Raises:
         PlaybookHasIssuesError: With one `inputs` issue for each value that does not fit.
@@ -42,11 +54,11 @@ def resolve_inputs(specs: Mapping[str, InputSpec], given: Mapping[str, object]) 
     issues = [_issue((name,), "is not an input") for name in given if name not in specs]
     resolved = {}
     for name, spec in specs.items():
-        if name not in given and spec.required:
-            issues.append(_issue((name,), "is required and has no default"))
-            continue
         resolved[name] = given.get(name, spec.default)
-        problem = _type_problem(spec, resolved[name])
+        if resolved[name] is None:
+            problem = _null_problem(spec)
+        else:
+            problem = _type_problem(spec, resolved[name])
         if problem is not None:
             issues.append(_issue((name,), problem))
     if issues:

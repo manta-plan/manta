@@ -13,6 +13,11 @@ from playbook.playbooks.yaml_io import LoadedPlaybook, PlaybookLoadError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SPEC_PLAYBOOKS = ["capacity_expansion", "expand_and_dispatch"]
+SPEC_REQUIRED_INPUTS = {
+    "capacity_expansion": {},
+    "expand_and_dispatch": {"dispatch_resolution": "1w"},
+}
+"""A value for each required input of each fixture playbook."""
 
 
 def spec_raw(name: str) -> dict:

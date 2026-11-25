@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from playbook.blocks import BlockSpec
-from playbook.playbooks.expressions import evaluate, parse, substitute
+from playbook.playbooks.expressions import ExpressionError, evaluate, parse, substitute
 from playbook.playbooks.inputs import effective_inputs, resolve_inputs
-from playbook.playbooks.issues import PlaybookHasIssuesError
+from playbook.playbooks.issues import PlaybookHasIssuesError, PlaybookIssue
 from playbook.playbooks.playbook import BlockStep, Playbook, PlaybookStep, Step
 
 Scope = Mapping[str, Any]
@@ -59,7 +59,8 @@ def plan(playbook: Playbook, inputs: Mapping[str, object]) -> PlannedGroup:
 
     Raises:
         PlaybookHasIssuesError: If an input value does not fit, for `playbook` or for a
-            nested playbook whose inputs a step sets.
+            nested playbook whose inputs a step sets, or if the `if` or `with` of a step
+            cannot be evaluated with the input values.
     """
     steps = _plan_playbook(playbook, inputs, ())
     return PlannedGroup(path=(), steps=steps, initial_dims=playbook.initial_dims)
@@ -77,9 +78,20 @@ def _plan_playbook(
         ]
         raise PlaybookHasIssuesError(moved) from exc
     scope = {"inputs": resolved}
-    return tuple(
-        _plan_step(step, scope, (*path, step.id)) for step in playbook.steps if _runs(step, scope)
-    )
+    planned = []
+    issues = []
+    for step in playbook.steps:
+        step_path = (*path, step.id)
+        try:
+            if _runs(step, scope):
+                planned.append(_plan_step(step, scope, step_path))
+        except ExpressionError as exc:
+            issues.append(PlaybookIssue(kind="inputs", message=str(exc), step_path=step_path))
+        except PlaybookHasIssuesError as exc:
+            issues.extend(exc.issues)
+    if issues:
+        raise PlaybookHasIssuesError(issues)
+    return tuple(planned)
 
 
 def _runs(step: Step, scope: Scope) -> bool:

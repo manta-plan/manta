@@ -44,6 +44,7 @@ src/playbook/
     yaml_io.py     Playbooks as documents: reading, writing, sending
     expressions.py The `${{ ... }}` expressions, parsed and evaluated without eval
     inputs.py      Resolving the inputs a run is given against their declarations
+    settings.py    Merging the settings a run gives into the `with` of each step
     planner.py     What a playbook will run with given inputs, without reading data
     issues.py      How a problem with a playbook is reported
     validation.py  Checking a playbook and its inputs before it runs
@@ -203,14 +204,16 @@ other step's revision to a step.
 
 ### Inputs
 
-An input is a value a user sets for one run. Each input has a `type`, an optional
-`description`, and an optional `default`. The `type` is `string`, `number`, `boolean`,
-or `choice`, and a `choice` input also lists its `options`. An input without a
-`default` is required.
+An input is a value a user sets for one run. Each input has a `type`, and optionally a
+`description`, `required`, and a `default`. The `type` is `string`, `number`,
+`boolean`, or `choice`, and a `choice` input also lists its `options`. `required` is
+`false` unless the input sets it to `true`, and a required input has no `default` other than `null`.
 
 Before any step runs, `playbook` checks the input values a run is given and fills in
-each missing one from its default. It refuses an unknown name, a missing required
-input, a value of the wrong type, and a choice outside `options`.
+each missing one from its default. An optional input without a default is `null` when
+the run leaves it out. `playbook` refuses an unknown name and a required input without
+a value. It also refuses `null` for an input with a default, a value of the wrong type,
+and a choice outside `options`.
 
 ### Expressions
 
@@ -240,8 +243,18 @@ or an expression:
 
 Here `horizon` takes the value of the `horizon` input, and `overlap` is always 24.
 
-A playbook has no other place for block settings. To let a run change a setting, read
-an input in `with`.
+A setting in `with` is fixed by the author of the playbook. A run gives every other
+setting of a block by step id, and `apply_settings(playbook, settings)` merges these
+into the `with` of a copy of the playbook. It refuses a setting that `with` already
+sets. For the step above, the settings `{"dispatch": {"optimize_config": {"overlap": 48}}}`
+are refused with:
+
+```text
+[config] step 'dispatch', setting 'optimize_config.overlap': the playbook sets this to 24, so a run cannot set it. Leave it out of the settings
+```
+
+A run can still give `optimize_config.solver_name`, which `with` does not set. To let
+one value reach several steps, declare an input and read it in `with`.
 
 Each step has its own `id`, so `overnight_capacity_expansion` can appear as both
 `expansion_2030` and `expansion_2040`, each with its own settings.
@@ -333,9 +346,9 @@ The checks, by `kind`:
 | --- | --- |
 | `structure` | Two steps share an id, two inherited inputs clash, or a playbook contains itself. |
 | `reference` | An expression refers to an input that does not exist, or `with` sets an input the nested playbook does not declare. |
-| `inputs` | An input value is unknown, missing, of the wrong type, or not one of its options. |
+| `inputs` | An input value is unknown, missing, `null` where it cannot be, of the wrong type, or not one of its options, or an expression cannot be evaluated with the input values. |
 | `dims` | A step needs a dimension that neither `initial_data` lists nor an earlier step adds, or that an earlier step removed. |
-| `config` | A step's settings do not fit what its block accepts. |
+| `config` | A step's settings do not fit what its block accepts, or `apply_settings` cannot apply a setting that a run gives. |
 | `environment` | Two blocks describe the same environment differently. |
 
 Without inputs, `find_playbook_issues(playbook)` runs only the `structure` and

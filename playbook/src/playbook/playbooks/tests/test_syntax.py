@@ -85,6 +85,11 @@ def test_each_kind_of_step_is_told_apart():
         ),
         pytest.param(one_input({"type": "choice", "options": []}), id="choice-no-options"),
         pytest.param(
+            one_input({"type": "string", "required": True, "default": "a"}),
+            id="required-with-default",
+        ),
+        pytest.param(one_input({"type": "string", "required": "yes"}), id="required-not-bool"),
+        pytest.param(
             {
                 "name": "x",
                 "inputs": {"a-b": {"type": "string"}},
@@ -109,19 +114,6 @@ def test_a_malformed_document_is_refused(doc):
 def test_an_input_keeps_its_values_as_written(spec, field, value):
     written = PlaybookDoc.model_validate(one_input(spec)).model_dump(mode="json")
     assert written["inputs"]["value"][field] == value
-
-
-@pytest.mark.parametrize(
-    ("spec", "required"),
-    [
-        ({"type": "string"}, True),
-        ({"type": "string", "default": None}, False),
-        ({"type": "number", "default": 0}, False),
-        ({"type": "boolean"}, True),
-    ],
-)
-def test_an_input_without_a_default_is_required(spec, required):
-    assert PlaybookDoc.model_validate(one_input(spec)).inputs["value"].required is required
 
 
 @pytest.mark.parametrize("name", SPEC_PLAYBOOKS)

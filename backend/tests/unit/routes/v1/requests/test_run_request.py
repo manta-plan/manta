@@ -80,9 +80,9 @@ def test_create_run_request_accepts_an_explicit_config() -> None:
     # When
     request = CreateRunRequest(
         project_uuid=uuid4(),
-        playbook={**_PLAYBOOK, "config": {"globals": {"expansion_mode": "overnight"}}},
+        playbook={**_PLAYBOOK, "config": {"inputs": {"expansion_mode": "overnight"}}},
         data_record=_DATA_RECORD,
     )
 
     # Then
-    assert request.playbook.config == {"globals": {"expansion_mode": "overnight"}}
+    assert request.playbook.config == {"inputs": {"expansion_mode": "overnight"}}

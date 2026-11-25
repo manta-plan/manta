@@ -11,7 +11,7 @@ from playbook.playbooks.tests.specs import spec_doc
 
 CAPACITY_EXPANSION_INPUTS = spec_doc("capacity_expansion").inputs
 DEFAULTS = {
-    "snapshot": "resampled",
+    "snapshot": None,
     "bus": None,
     "resolution": "3h",
     "expansion_method": "overnight",
@@ -25,7 +25,6 @@ DEFAULTS = {
         ({}, {}),
         ({"solver": "gurobi"}, {"solver": "gurobi"}),
         ({"bus": "busmap_country"}, {"bus": "busmap_country"}),
-        ({"snapshot": None}, {"snapshot": None}),
     ],
 )
 def test_given_values_are_merged_over_the_defaults(given, changed):
@@ -58,29 +57,46 @@ SPECS = PlaybookDoc.model_validate(
     {
         "name": "typed",
         "inputs": {
-            "count": {"type": "number"},
+            "count": {"type": "number", "required": True},
             "flag": {"type": "boolean", "default": False},
+            "note": {"type": "string"},
             "level": {"type": "choice", "options": [1, 2], "default": 1},
         },
         "steps": [{"id": "a", "block": "b"}],
     }
 ).inputs
+GIVEN = {"count": 2.5}
+
+
+@pytest.mark.parametrize(
+    ("given", "changed"),
+    [
+        ({}, {}),
+        ({"note": None}, {}),
+        ({"note": "x", "flag": True}, {"note": "x", "flag": True}),
+    ],
+)
+def test_an_optional_input_left_out_takes_its_default_or_null(given, changed):
+    resolved = resolve_inputs(SPECS, {**GIVEN, **given})
+    assert resolved == {"count": 2.5, "flag": False, "note": None, "level": 1, **changed}
 
 
 @pytest.mark.parametrize(
     ("given", "input_path"),
     [
-        ({}, ("count",)),
+        ({"count": None}, ("count",)),
         ({"count": True}, ("count",)),
-        ({"count": 1, "flag": "yes"}, ("flag",)),
-        ({"count": 1, "level": True}, ("level",)),
+        ({"flag": None}, ("flag",)),
+        ({"flag": "yes"}, ("flag",)),
+        ({"level": True}, ("level",)),
     ],
 )
-def test_a_missing_or_mistyped_value_is_reported(given, input_path):
+def test_a_missing_null_or_mistyped_value_is_reported(given, input_path):
     with pytest.raises(PlaybookHasIssuesError) as raised:
-        resolve_inputs(SPECS, given)
+        resolve_inputs(SPECS, {**GIVEN, **given})
     assert [issue.input_path for issue in raised.value.issues] == [input_path]
 
 
-def test_a_required_value_once_given_is_used():
-    assert resolve_inputs(SPECS, {"count": 2.5}) == {"count": 2.5, "flag": False, "level": 1}
+def test_a_required_input_left_out_is_reported():
+    with pytest.raises(PlaybookHasIssuesError, match="'count': is required"):
+        resolve_inputs(SPECS, {})

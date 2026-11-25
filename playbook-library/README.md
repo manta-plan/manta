@@ -47,6 +47,7 @@ src/playbook_library/
   examples.py                   A tiny network, and the example playbook run on it
   public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships
+    configs/                    The default settings of each playbook, by step id
 ```
 
 ## Getting started
@@ -118,17 +119,25 @@ catalogue must all keep working in an environment that has never heard of PyPSA.
 1. Write it as a YAML document in `playbooks/`. For the format, see
    [the playbook syntax](../docs/reference/playbook/syntax.md), and for a real
    playbook, see `expand.yaml`.
-2. Write every block setting in the step's `with`. Only where a user should be able to
-   change a setting for a run, declare an input and read it in `with`. Give every
-   input a default, so that a user can run the playbook without setting any.
-3. Run the tests. The tests in `tests/test_playbooks.py` check every playbook in
-   `playbooks/` with its default inputs, so a default that cannot run fails there.
-   Add a case for anything else the playbook has to get right. Anything that offers
-   playbooks to a user cannot import the blocks they name. So most of those tests
-   run without PyPSA, and check against the catalogue.
+2. Write in the step's `with` only the settings that a run must not change. A run can
+   give every other setting of the block.
+3. Declare an input for a value that decides which steps run, or that several steps
+   share. `cluster_expand_dispatch.yaml` declares `solver_name`, and the `with` of
+   each optimisation step reads it, so one input sets the solver of every step. Give
+   every input a default, so that a user can run the playbook without setting any.
+4. Write the default of every other setting in `playbooks/configs/`, in a file with
+   the same name as the playbook file, by step id. `configs/cluster_expand_dispatch.yaml`
+   sets `n_hours` of `cluster` and the dispatch windows of `dispatch`. A run starts from
+   these settings and can change each of them.
+5. Run the tests. The tests in `tests/test_playbooks.py` check every playbook in
+   `playbooks/` with its default inputs and default settings, so a default that cannot
+   run fails there. Add a case for anything else the playbook has to get right.
+   Anything that offers playbooks to a user cannot import the blocks they name. So
+   most of those tests run without PyPSA, and check against the catalogue.
 
-Playbooks are found by the name written inside the document, not by filename, so
-renaming a file changes nothing and two playbooks claiming one name is an error.
+Playbooks are found by the name written inside the document, not by filename, so two
+playbooks claiming one name is an error. Their default settings are found by filename,
+so a renamed playbook file needs its file in `configs/` renamed too.
 
 ## The catalogue
 
