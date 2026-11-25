@@ -308,26 +308,49 @@ def test_scenario_on_a_run_result(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("meta", "base", "named_in", "error"),
+    ("meta", "references", "error"),
     [
-        ({}, "base", "store.json", f"have no {KIND}"),
-        ({KIND: "scenario"}, "base", "names.json", "store.json"),
-        ({KIND: "scenario"}, "original", "store.json", "no 'base' reference"),
+        pytest.param({}, lambda refs: refs, f"have no {KIND}", id="no kind"),
+        pytest.param(
+            {KIND: "scenario"},
+            lambda refs: {"original" if name == "base" else name: ref for name, ref in refs.items()},
+            "no 'base' reference",
+            id="no base",
+        ),
+        pytest.param(
+            {KIND: "scenario"},
+            lambda refs: {**refs, "base": refs["base/perfect"]},
+            "'base' reference is no scenario",
+            id="base is a result",
+        ),
     ],
-    ids=["no kind", "no store.json", "no base"],
 )
-def test_store_without_names(tmp_path, meta, base, named_in, error):
-    # Given a named layer without a kind, a store without `store.json`, or one
-    # without a `base` reference
+def test_store_with_broken_names(tmp_path, meta, references, error):
+    # Given a named layer without a kind, a store without a `base` reference,
+    # or one whose `base` is a run result
     add_layer(tmp_path, manifests()["base"]["id"], meta, name="after")
     store = json.loads((tmp_path / STORE / "store.json").read_text())
-    store["references"][base] = store["references"].pop("base")
+    store["references"] = references(store["references"])
     (tmp_path / STORE / "store.json").write_text(json.dumps(store))
-    (tmp_path / STORE / "store.json").rename(tmp_path / STORE / named_in)
 
     # When / Then listing the root fails
-    with pytest.raises((FileNotFoundError, ValueError), match=error):
+    with pytest.raises(ValueError, match=error):
         open_catalogue(str(tmp_path))
+
+
+def test_folder_without_store_json_is_no_store(tmp_path):
+    # Given a store whose `store.json` isn't written yet
+    add_layer(tmp_path, manifests()["base"]["id"], {KIND: "scenario"}, name="after")
+    (tmp_path / STORE / "store.json").unlink()
+
+    # When
+    ws, catalogue = open_catalogue(str(tmp_path))
+
+    # Then
+    try:
+        assert STORE not in catalogue.stores()
+    finally:
+        ws.close()
 
 
 def test_files_endpoint(opened):

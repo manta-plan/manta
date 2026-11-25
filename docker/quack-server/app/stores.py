@@ -192,7 +192,7 @@ class Catalogue:
             # Not `.`/`..`: an id names a folder under the root and the cache.
             if id.startswith("."):
                 continue
-            if not any(f.path.startswith("layers/") for f in files):
+            if not any(f.path == "store.json" for f in files):
                 continue
             uri = f"{self.root}/{id}"
             named = read_json(self.ws, f"{uri}/store.json")

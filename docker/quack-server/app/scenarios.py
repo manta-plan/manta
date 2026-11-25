@@ -102,6 +102,8 @@ def named_revisions(ws: Workspace, store: str, references: dict[str, dict[str, s
     unknown = sorted(name for id, name in names.items() if KIND not in manifests[id].meta)
     if unknown:
         raise ValueError(f"{store}: revisions {unknown} have no {KIND} in their manifest meta")
+    if manifests[references[BASE_NAME]["revision"]].meta[KIND] != "scenario":
+        raise ValueError(f"{store}: the {BASE_NAME!r} reference is no scenario")
 
     def parent(m: Manifest) -> str | None:
         while m.parent is not None and str(m.parent) not in names:
