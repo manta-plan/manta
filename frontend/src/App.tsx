@@ -1,11 +1,13 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect } from "react";
 import { Redirect, Route, Switch } from "wouter";
+import { SWRConfig } from "swr";
 import { useSessionUser } from "./features/auth/session";
 import { HOME_ROUTES } from "./features/home/routes";
 import { useAppStore } from "./features/home/store";
 import { HomePage } from "./pages/home";
 import { LoginPage } from "./pages/login";
+import { recordSWRConfig } from "./features/project/lib/record-data";
 import { ProjectPage } from "./pages/project";
 
 function App() {
@@ -30,24 +32,27 @@ function App() {
   }
 
   return (
-    <Tooltip.Provider delay={400} closeDelay={0}>
-      <Switch>
-        <Route path="/login">
-          <Redirect to="/" replace />
-        </Route>
-        <Route path="/project/:projectId/:tab?/:detailId?">
-          <ProjectPage />
-        </Route>
-        {HOME_ROUTES.map((route) => (
-          <Route key={route.id} path={route.path}>
-            <HomePage />
+    // One cache of record reads for every tab (record-data.ts).
+    <SWRConfig value={recordSWRConfig}>
+      <Tooltip.Provider delay={400} closeDelay={0}>
+        <Switch>
+          <Route path="/login">
+            <Redirect to="/" replace />
           </Route>
-        ))}
-        <Route>
-          <Redirect to="/" replace />
-        </Route>
-      </Switch>
-    </Tooltip.Provider>
+          <Route path="/project/:projectId/:tab?/:detailId?">
+            <ProjectPage />
+          </Route>
+          {HOME_ROUTES.map((route) => (
+            <Route key={route.id} path={route.path}>
+              <HomePage />
+            </Route>
+          ))}
+          <Route>
+            <Redirect to="/" replace />
+          </Route>
+        </Switch>
+      </Tooltip.Provider>
+    </SWRConfig>
   );
 }
 

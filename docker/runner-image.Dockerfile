@@ -7,7 +7,7 @@
 #
 # It holds `runner` (the run-playbook flow and the container transport) and
 # `playbook` (the playbook engine and the block catalogue types), and no block
-# library at all — orchestration only ever moves record pointers around, and
+# library at all — orchestration only ever moves revision pointers around, and
 # resolves blocks from the catalogue it is handed rather than importing them.
 # That is what keeps this image slim while block images stay bare.
 #

@@ -276,9 +276,9 @@
 </footer>
 
 <script type="module">
-// DuckDB v2.0.0 in the browser: a dev build of duckdb-wasm, plus the extensions
-// this server prepares (scripts/prepare_wasm.py). See the README.
-const DUCKDB_WASM = '1.33.1-dev110.0'
+// DuckDB v2.0 in the browser: a dev build of duckdb-wasm, which loads the signed
+// Quack extension from DuckDB's own repository. See the README.
+const DUCKDB_WASM = '1.33.1-dev121.0'
 const SCHEMAS = ['dims', 'properties', 'attributes', 'manta']
 // Folder in a layer → its schema section.
 const SECTIONS = { dims: 'dimensions', attributes: 'attributes' }
@@ -410,10 +410,8 @@ async function startDuckDB() {
   const worker = new Worker(URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })))
   const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker)
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
-  // The relabelled extensions are unsigned.
-  await db.open({ allowUnsignedExtensions: true })
+  await db.open({})
   conn = await db.connect()
-  await conn.query(`SET custom_extension_repository = '${location.origin}/ext'`)
   await conn.query('LOAD quack')
   return (await select('SELECT version() AS v'))[0].v
 }

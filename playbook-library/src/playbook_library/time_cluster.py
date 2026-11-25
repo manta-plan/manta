@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from pydantic import model_validator
 
 from playbook_library.pypsa_helpers import to_network, write_network
@@ -39,6 +40,6 @@ class ClusterTime(MantaBlock[ClusterTimeConfig]):
             return n.cluster.temporal.segment(self.config.segments)
         return n.cluster.temporal.resample(f"{self.config.n_hours}h")
 
-    def run(self, record: DataRecord) -> DataRecord:
-        n_new = self.cluster(to_network(record))
-        return write_network(n_new, record)
+    def run(self, base: Revision) -> Revision:
+        n_new = self.cluster(to_network(base))
+        return write_network(n_new, base)
