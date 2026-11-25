@@ -2,10 +2,8 @@
 
 - **A record is a store** under the root (local folder, or `s3://bucket/…`):
   a folder `<id>/` with `layers/` and `store.json`, which has the record's
-  `label` and `description` and names its revisions (`scenarios.py`). Or a
-  **plain record**, a folder with `manifest.json` and no `layers/`: one
-  scenario, `base`, shown by its folder name. Both are served as written:
-  nothing is added to the folder.
+  `label` and `description` and names its revisions (`scenarios.py`). It is
+  served as written: nothing is added to the folder. Other folders are ignored.
 - **Listing** reads the root: names, sizes, dates. It's refreshed when a
   minute old, so a store uploaded to the root shows without a restart.
 - **Opening** a store creates one catalog per scenario,
@@ -49,7 +47,6 @@ from datarecord import Workspace
 from .manta_views import SCHEMA
 from .record import create_views
 from .scenarios import (
-    BASE_LABEL,
     BASE_NAME,
     Revision,
     layer_manifest,
@@ -85,19 +82,17 @@ class StoreSummary:
     uri: str
     label: str
     description: str
-    # Named revisions; none for a plain record, and None when `store.json`
+    # Named revisions; None when `store.json`
     # and the manifests can't give them (the error is in Catalogue.failed).
     revisions: list[Revision] | None
     files: list[StoreFile] = field(repr=False)
-    # A record without revisions, rather than a store.
-    plain: bool = False
 
     def as_json(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "label": self.label,
             "description": self.description,
-            "revisions": [BASE_LABEL] if self.plain else [r.label for r in self.revisions or []],
+            "revisions": [r.label for r in self.revisions or []],
             "size": sum(f.size for f in self.files),
             "modified": max((f.modified for f in self.files), default=None),
             "files": len(self.files),
@@ -199,23 +194,20 @@ class Catalogue:
             # Not `.`/`..`: an id names a folder under the root and the cache.
             if id.startswith("."):
                 continue
-            is_store = any(f.path.startswith("layers/") for f in files)
-            plain = not is_store and any(f.path == "manifest.json" for f in files)
-            if not is_store and not plain:
+            if not any(f.path.startswith("layers/") for f in files):
                 continue
             uri = f"{self.root}/{id}"
             label, description, revisions = id, "", []
             try:
-                if not plain:
-                    named = read_json(self.ws, f"{uri}/store.json")
-                    label, description = named["label"], named.get("description", "")
-                    revisions = named_revisions(self.ws, uri, named["references"])
+                named = read_json(self.ws, f"{uri}/store.json")
+                label, description = named["label"], named.get("description", "")
+                revisions = named_revisions(self.ws, uri, named["references"])
             except (OSError, LookupError, ValueError) as e:
                 self.failed[id] = f"{type(e).__name__}: {e}"
                 revisions = None
             if revisions is not None and id in self._stores and self._stores[id].revisions is None:
                 self.failed.pop(id)
-            stores[id] = StoreSummary(plain=plain, id=id, uri=uri, label=label, description=description, revisions=revisions, files=files)
+            stores[id] = StoreSummary(id=id, uri=uri, label=label, description=description, revisions=revisions, files=files)
         return stores
 
     def stores(self) -> dict[str, StoreSummary]:
@@ -338,22 +330,7 @@ class Catalogue:
         started = time.monotonic()
         uri = self._download(summary, [r.id for r in summary.revisions]) if self.remote else summary.uri
         con = self.ws.con
-        if summary.plain:
-            record = self.ws.at(uri)
-            revisions = [
-                Revision(
-                    name=BASE_NAME,
-                    id=str(record.revision_id or summary.id),
-                    parent=None,
-                    kind="scenario",
-                    label=BASE_LABEL,
-                    description="",
-                    written=[],
-                    record=record,
-                )
-            ]
-        else:
-            revisions = open_revisions(self.ws, uri, summary.revisions)
+        revisions = open_revisions(self.ws, uri, summary.revisions)
         scenarios = [r for r in revisions if r.kind == "scenario"]
         if not scenarios:
             raise ValueError(f"{summary.id} has no scenario revisions")

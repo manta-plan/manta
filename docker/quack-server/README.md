@@ -48,7 +48,7 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
                                                         └── /api/*                            └── in-process DuckDB: one view per record relation
 ```
 
-- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/` and a `store.json`, which has the record's label and names its revisions (see "Scenarios and run results" below). A plain record (a folder with `manifest.json` and no `layers/`) is listed too, under its folder's name, with one scenario, `base` ("Base case").
+- **The record catalogue** (`app/stores.py`): every datarecord store under `RECORDS_ROOT` is a record, listed by `GET /api/records`. A store is a folder with `layers/` and a `store.json`, which has the record's label and names its revisions (see "Scenarios and run results" below).
 - **A record opens on first use**: when a project (or the explorer) first asks for it, then stays open while the server runs. The default record opens in the background at start. The listing refreshes every minute, so a store uploaded to the root shows without a restart; replacing a store that's open needs one.
 - **datarecord resolves each scenario.** `app/record.py` has the revision register its views (`datarecord.<catalog>.attributes.p_nom`), and puts a view over each in the scenario's catalog, in the schemas `dimensions`, `properties` and `attributes`, for example `attributes.p_nom`. The browser never sees layers or parquet files.
 - **One catalog per record and scenario:** `<record>__<scenario>`, e.g. `bel_pre_aggregated_incl_patches_incl_results__base.attributes.p_nom`, all with the same schemas, views and `manta` tables. `manta.revisions.catalog` names them. A client picks a record and scenario by naming the catalog, so the server stays shared and stateless. Run results get a catalog too, attached when first asked for. `docs/views-design.md` has the details.
@@ -105,11 +105,11 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 | `QUACK_PORT` | `9494` (internal) |
 | `CORS_ORIGINS` | `http://localhost:5173` |
 
-Local records live in `data/records` (git-ignored, never in the image), from the `2026-11-24` folder of the public `manta-public-test-data` bucket. The tests use the store `BEL-pre-aggregated-incl-patches-incl-results`, and the plain record `ac-dc-meshed-plain-record` if present. The store holds the scenarios `base` and `wind_and_solar_stress_test`, each solved in three runs (`base/perfect`, `base/myopic` and `base/overnight2050`, and the same under `wind_and_solar_stress_test/`).
+Local records live in `data/records` (git-ignored, never in the image), from the `2026-11-24` folder of the public `manta-public-test-data` bucket. The tests use the store `BEL-pre-aggregated-incl-patches-incl-results`. The store holds the scenarios `base` and `wind_and_solar_stress_test`, each solved in three runs (`base/perfect`, `base/myopic` and `base/overnight2050`, and the same under `wind_and_solar_stress_test/`).
 
 ```sh
 mkdir -p data/records
-gcloud storage cp -r gs://manta-public-test-data/2026-11-24/BEL-pre-aggregated-incl-patches-incl-results gs://manta-public-test-data/2026-11-24/ac-dc-meshed-plain-record data/records/
+gcloud storage cp -r gs://manta-public-test-data/2026-11-24/BEL-pre-aggregated-incl-patches-incl-results data/records/
 ```
 
 ### Scenarios and run results

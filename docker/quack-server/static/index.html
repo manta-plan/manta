@@ -435,7 +435,7 @@ document.addEventListener('alpine:init', () => {
     filesRoot: [],
     files: [],
     // From /files: the schema (once), each layer's manifest without it, and
-    // the revision names (null for a plain record).
+    // the revision names.
     stored: null,
     // The record's revisions as opened: name → catalog, if attached.
     revisionCatalogs: {},
@@ -641,32 +641,30 @@ document.addEventListener('alpine:init', () => {
 
     // What the manifests say about a file or folder, and the views it backs.
     // A store keeps one layer per revision, `layers/<id>/` (manifest.json,
-    // dimensions/, attributes/); a plain record is one layer at its root.
+    // dimensions/, attributes/).
     describe(node) {
-      const { schema, layers, revisions } = this.stored
-      const names = revisions ?? {}
-      const plain = revisions === null
+      const { schema, layers, revisions: names } = this.stored
       // The revision names a layer is, and the views of the first one attached.
-      const namesOf = (id) => (plain ? ['base'] : Object.keys(names).filter((name) => names[name] === id))
+      const namesOf = (id) => Object.keys(names).filter((name) => names[name] === id)
       const dbOf = (id) => namesOf(id).map((name) => this.revisionCatalogs[name]).find(Boolean)
       const isView = (db, key) => this.views.some((v) => v.db === db && `${v.schema}.${v.name}` === key)
       const parts = node.path ? node.path.split('/') : []
-      const inLayer = plain || (parts[0] === 'layers' && parts.length > 1)
-      const id = plain ? '' : inLayer ? parts[1] : null
-      const rest = plain ? parts : inLayer ? parts.slice(2) : parts
+      const inLayer = parts[0] === 'layers' && parts.length > 1
+      const id = inLayer ? parts[1] : null
+      const rest = inLayer ? parts.slice(2) : parts
       const layer = id === null ? null : layers[id]
       const sizes = Object.entries(SECTIONS).map(([dir, section]) => `${Object.keys(schema[section] ?? {}).length} ${section}`).join(', ')
 
       if (node.kind === 'root') {
         return {
           title: node.label,
-          subtitle: `${plural(this.files.length, 'file')} · ${plain ? 'plain record' : plural(Object.keys(names).length, 'revision')} · ${sizes}`,
-          json: plain ? { schema: Object.keys(schema) } : { revisions: names, schema: Object.keys(schema) },
+          subtitle: `${plural(this.files.length, 'file')} · ${plural(Object.keys(names).length, 'revision')} · ${sizes}`,
+          json: { revisions: names, schema: Object.keys(schema) },
           views: [],
         }
       }
-      if (!plain && node.path === 'store.json') return { title: node.path, subtitle: `${bytes(node.size)} · revision name → layer`, json: names, views: [] }
-      if (!plain && node.path === 'layers') {
+      if (node.path === 'store.json') return { title: node.path, subtitle: `${bytes(node.size)} · revision name → layer`, json: names, views: [] }
+      if (node.path === 'layers') {
         return {
           title: 'layers/',
           subtitle: `${plural(Object.keys(layers).length, 'layer')}, one per revision`,

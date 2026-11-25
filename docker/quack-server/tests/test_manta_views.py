@@ -27,8 +27,6 @@ from app.scenarios import KIND
 from app.stores import Catalogue, configure
 
 ROOT = Path(__file__).resolve().parents[1] / "data/records"
-# A plain record (a folder with manifest.json, no revisions), if present.
-PLAIN = Path(__file__).resolve().parents[1] / "data/records/ac-dc-meshed-plain-record"
 STORE = "BEL-pre-aggregated-incl-patches-incl-results"
 PREFIX = "bel_pre_aggregated_incl_patches_incl_results"
 PATCH_NAME = "wind_and_solar_stress_test"
@@ -351,23 +349,6 @@ def test_files_endpoint(opened):
     perfect = found["layers"][names["base/perfect"]]
     assert perfect["parent"] == names["base"] and "p_nom_opt" in perfect["files"]["attributes"]
     assert perfect["meta"][KIND] == "result"
-
-
-@pytest.mark.skipif(not PLAIN.is_dir(), reason="plain record not present")
-def test_plain_record(tmp_path):
-    (tmp_path / PLAIN.name).symlink_to(PLAIN, target_is_directory=True)
-    ws, catalogue = open_catalogue(str(tmp_path))
-    try:
-        summary = catalogue.get(PLAIN.name)
-        assert summary.plain and summary.as_json()["revisions"] == ["Base case"]
-        record = catalogue.open(PLAIN.name)
-        assert [(r.name, r.parent, r.kind, r.catalog) for r in record.revisions] == [
-            ("base", None, "scenario", "ac_dc_meshed_plain_record__base")
-        ]
-        assert rows(ws.con, "SELECT count(*), sum(buses) FROM ac_dc_meshed_plain_record__base.manta.locations") == [(9, 9)]
-        assert rows(ws.con, "SELECT count(*) FROM ac_dc_meshed_plain_record__base.manta.scenario_changes") == [(0,)]
-    finally:
-        ws.close()
 
 
 class FakeS3:

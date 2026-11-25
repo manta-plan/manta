@@ -37,7 +37,6 @@ from datarecord.store.manifest import Manifest
 from .manta_views import SCHEMA, SUBJECTS
 
 BASE_NAME = "base"
-BASE_LABEL = "Base case"
 KIND = "manta.kind"
 
 
