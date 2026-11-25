@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.14.*"
 
 [[package]]
@@ -944,6 +944,7 @@ dependencies = [
     { name = "alembic" },
     { name = "boto3" },
     { name = "boto3-stubs", extra = ["s3"] },
+    { name = "cachetools" },
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "playbook" },
@@ -971,6 +972,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "boto3", specifier = ">=1.43.73" },
     { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.43.73" },
+    { name = "cachetools", specifier = ">=7.1.8" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx2", specifier = ">=2.9.1" },
     { name = "playbook", editable = "../playbook" },
