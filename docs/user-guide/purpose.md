@@ -70,14 +70,14 @@ The work of every group upstream is already there to use.
 The structure matters as much as the parts.
 Every block describes its settings and its inputs in the same way, so a block from one author fits into a playbook from another.
 Without that shared shape, each contribution would be a one-off that only its author could connect.
-Manta ships with a first set of blocks and playbooks.
+Manta includes a first set of blocks and playbooks.
 Developers and tool creators can add new blocks, and analysts can build new playbooks from them.
 [Concepts](concepts.md) defines each of these terms.
 
 ## The modelling tools under Manta
 
 Manta's first goal is a consistent, reliable application that grid operators and industry can use, whatever tool runs underneath.
-To reach that goal quickly, the blocks that ship with Manta currently use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
+To reach that goal quickly, the blocks included in Manta currently use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
 For the models you can bring in today, see [Models describe the system](how-a-study-works.md#models-describe-the-system).
 
 Manta is not a wrapper for PyPSA, though.

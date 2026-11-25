@@ -29,7 +29,7 @@ flowchart LR
 - The web app is where a user works, at every stage of a project. Today it supports the stages from signing in to Run, some only in part, and the [user guide](user-guide/index.md#what-the-web-app-supports-today) lists what it supports in each stage.
 - The backend keeps users, projects, and runs. It checks a playbook's settings before a run and starts each run.
 - The modelling framework, `playbook`, sets what a block and a playbook must contain. Modellers use it to write blocks and playbooks, and the backend uses it to check a playbook's settings.
-- The library of ready-made blocks contains the blocks and playbooks Manta ships. Its blocks use the open-source [PyPSA](https://pypsa.org) power system modelling tool today, and Manta aims to support other modelling frameworks too.
+- The library of ready-made blocks contains the blocks and playbooks included in Manta. Its blocks use the open-source [PyPSA](https://pypsa.org) power system modelling tool today, and Manta aims to support other modelling frameworks too.
 - The runner runs each block of a playbook in its own container. Each block saves its result as a new revision in the project's [data record](user-guide/concepts.md).
 
 ## Where to start

@@ -16,7 +16,7 @@ Each block takes the model the previous block produced and does its work.
 It then passes a new version of the model to the next block, or back to the app.
 A setting can switch a block on or off, so one playbook can cover several ways of running a study.
 
-Manta ships with the `cluster-expand-dispatch` playbook.
+Manta includes the `cluster-expand-dispatch` playbook.
 It aggregates the time series, optimises capacity expansion decisions, and then runs a rolling horizon dispatch optimisation to verify them.
 
 ```mermaid
@@ -40,7 +40,7 @@ The investment decisions from one period inform the starting conditions for the 
 The playbook ends there, because the dispatch block runs only with the overnight mode.
 The default settings group the time series into even three-hour blocks and use the overnight mode.
 
-Manta also ships the `expand` playbook, which only runs the capacity expansion step.
+Manta also includes the `expand` playbook, which only runs the capacity expansion step.
 It is used for testing and should only be run on a small model as it has no time aggregation step.
 Its expansion mode setting picks the overnight mode, the myopic mode, or a perfect foresight mode that plans all investment periods together.
 The default is the overnight mode.

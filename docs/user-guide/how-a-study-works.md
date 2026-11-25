@@ -88,7 +88,7 @@ Experienced analysts can also build new playbooks.
 
 !!! note "Playbook customisation"
 
-    Playbook customisation will evolve over time. Early releases will ship with a set of built-in playbooks, with the capability for contributors to code new ones.
+    Playbook customisation will evolve over time. Manta currently includes a set of built-in playbooks, and contributors can code new ones.
     A future release (2027+) will include (simple) playbook creation in the UI using plug-and-play blocks.
     A playbook currently runs its steps one after another.
     We aim to support playbooks that repeat steps (iterative workflows) and playbooks that run steps in parallel.
@@ -144,7 +144,7 @@ flowchart LR
     class i4,r1,r3 planned
 ```
 
-A dashed box is a block that Manta does not ship yet.
+A dashed box is a block that is not implemented yet.
 Integrated resource planning first decides what to build (optimise capacities), then checks hour by hour that the plan keeps the lights on (rolling horizon dispatch).
 Resource adequacy starts from a system that is already decided, and tests it in many weather years and outage patterns.
 Both playbooks use the same blocks for the dispatch and for the adequacy metrics.

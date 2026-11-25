@@ -38,7 +38,7 @@ Manta is designed for six kinds of user, and each one asks something different o
 | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Analyst          | Runs playbooks and analyses scenarios                     | A way to set up and start a run without code, and to follow it            |
 | Modeller         | Builds models and the playbooks that analysts run         | Checks that catch a mistake before a run starts                           |
-| Block author     | Writes new blocks, in a block library of their own        | A way to ship block code with its own dependencies, which Manta then runs |
+| Block author     | Writes new blocks, in a block library of their own        | A way to package block code with its own dependencies, which Manta then runs |
 | Stakeholder      | Reads and explores results and reports                    | Ways to read results without knowing how runs work                         |
 | Administrator    | Manages who can access what                               | Access control that maps onto projects and runs                           |
 | Maintainer       | Builds Manta and runs a hosted service of it              | Monitoring, logs, isolated failures, and parts that upgrade on their own  |
