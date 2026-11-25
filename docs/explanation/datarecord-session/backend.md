@@ -370,7 +370,7 @@ route /quack {
 		uri /v1/datarecord-session/quack-auth
 		copy_headers X-Session-Upstream
 	}
-	@badup not header_regexp X-Session-Upstream <launcher address pattern>
+	@badup not header_regexp X-Session-Upstream ^datarecord-session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:9494$
 	respond @badup "no session upstream" 502
 	reverse_proxy {header.X-Session-Upstream}
 }

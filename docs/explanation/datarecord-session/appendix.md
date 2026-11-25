@@ -116,6 +116,8 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 
 ## 6. Facts
 
+The FE sources of F4 to F7 and F22 are files of the baby-manta prototype. [#353](https://github.com/manta-plan/manta/pull/353) ported its Build and Inspect pages to `frontend/src/features/level/`, and the WASM client to `frontend/src/features/project/lib/record-server/client.ts`. These facts describe the prototype and are not checked against the port.
+
 | # | Fact | Source |
 |---|---|---|
 | F1 | A store is the S3 prefix `s3://<bucket>/<project_uuid>/<store_name>`. A project holds many stores, a user owns many projects. | `backend/.../run_service.py`, `example_data_service.py` |

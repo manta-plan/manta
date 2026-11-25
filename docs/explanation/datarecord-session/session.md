@@ -163,45 +163,46 @@ What catalog functions and parsers report:
 
 ### What changes in the FE
 
-Today the FE prefixes every view with the catalog of the active scenario: `serverName` in `client.ts:239-241`, and `at(catalog, ...)` in `entityPage.ts:48` and `componentPage.ts:204`. The catalog name comes from the server's open response (`revision.catalog`). A scenario switch only changes that prefix (`recordSlice.ts:31`). No query runs `USE`.
+Today the FE prefixes every view with the catalog of the active scenario. `serverName` in `frontend/src/features/project/lib/record-server/client.ts` adds that prefix to every view name. The catalog name comes from the server's open response (`revision.catalog`). A scenario switch only changes that prefix: `fetchScenario` in `frontend/src/features/project/store/slices/record-slice.ts` calls `setRecordCatalog`. No query runs `USE`.
 
 In the target the prefix is `manta.<name>`. The FE takes it from the answer of the registration call and does not build it itself. Group A views move from `manta.<view>` to `<prefix>.<pack>.<view>`.
 
 ## 5. Replacing the manta objects
 
-Decision D4 covers these objects. Today quack-server attaches one catalog per scenario. It adds a fourth DuckDB schema `manta` to each, beside `dims`, `properties` and `attributes`. This DuckDB schema holds ten objects of three different natures.
+Decision D4 covers these objects. Today quack-server attaches one catalog per scenario. It adds a fourth DuckDB schema `manta` to each, beside `dims`, `properties` and `attributes`. This DuckDB schema holds eleven objects of three different natures.
 
 In the target there is one catalog and no DuckDB schema `manta`. The names of the new objects are in [Names in DuckDB](#4-names-in-duckdb).
 
 | Group | Today | Target |
 |---|---|---|
-| A | six map and topology views | the view pack `pypsa-eur` |
+| A | seven map and topology views | the view pack `pypsa-eur` |
 | B | `attribute_summary`, `ctype_attributes` | the `static_<dtype>` views and the owner map ([constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map)) |
 | C | `revisions` | the BE's revision listing ([revisions](backend-mvp.md#5-revisions)) |
 | C | `scenario_changes` | a change summary of a reference against the fork point with its base reference, computed on request, and diff registrations of the same two revisions ([changes between revisions](frontend.md#3-changes-between-revisions)) |
 
 ### Group A: map and topology views
 
-The six views are plain SELECT statements over `properties.*` and `attributes.*`. They encode PyPSA-Eur conventions.
+The seven views are plain SELECT statements over `properties.*` and `attributes.*`. They encode PyPSA-Eur conventions.
 
 | View | Content | Convention it hard-codes |
 |---|---|---|
-| `bus_location` | bus, carrier, location, x, y, `virtual` | bus property `location`; location `EU` is virtual |
+| `bus_location` | bus, carrier, location, x, y, `virtual` | bus property `location`, or the bus itself when that property is empty; locations `EU` and `''` are virtual |
 | `locations` | one map point per real location, with bus count and carriers | as above |
-| `location_zones` | level, location, zone; one branch per `busmap_*` attribute | attribute prefix `busmap_`; location name equals AC bus name |
+| `location_zones` | level, location, zone; one branch per `busmap_*` attribute, and one per `busmap_*` bus property that no attribute of the same name covers | prefix `busmap_` on attributes and bus properties, where an attribute wins; location name equals AC bus name |
 | `branches` | entity, ctype, carrier, both buses and locations, `scope` (`within`, `between`, `virtual`) | the join over `connection` and `role` is generic PyPSA; `scope` is PyPSA-Eur |
 | `attached` | generators, loads, stores at their bus and location | role `attached`; location columns |
-| `regions` | region polygons as WKT | ctype `Shape`, attributes `geometry`, `component`, `idx` |
+| `regions` | region polygons as WKT | ctype `Shape`, attributes `geometry`, `component`, `idx`; bus properties `shape_onshore`, `shape_offshore` |
+| `entity_geometry` | entity, ctype, carrier, `kind` (`point`, `route`, `area`), wkt, lon, lat | entity property `geometry` (WKT); the view is empty when that column is missing |
 
-The FE uses all six: map points, map lines, zone levels, entity location, location graph, region polygons. Two of them (`location_zones`, `regions`) have SQL text that depends on which attributes exist.
+The FE uses all seven: map points, map lines, zone levels, entity location, location graph, region polygons, and entity geometries on the map and in the entity table. Three of them (`location_zones`, `regions`, `entity_geometry`) have SQL text that depends on which attributes and property columns exist.
 
 In the target, group A becomes view packs, named by convention set:
 
 - A *view pack* is a set of SQL templates in the session.
 - The session adds a pack below a registered revision when the registration asks for it (`packs: ["pypsa-eur"]`).
 - The pack `pypsa-eur` becomes the DuckDB schema `manta.<name>."pypsa-eur"`.
-- The code of the six views moves as is.
-- The FE cannot own the views cleanly. Two views need the attribute list, and every page would repeat the SQL.
+- The code of the seven views moves as is, including the `busmap_*` rule of `location_zones`: one branch per attribute, and one per bus property that no attribute of the same name covers.
+- The FE cannot own the views cleanly. Three views need the list of attributes or property columns, and every page would repeat the SQL.
 
 Open: who owns a convention set. It must match between the playbooks that write the data, the session and the FE.
 

@@ -47,7 +47,7 @@ N3 is the largest need. Today the component page gets everything from one query.
 | Element | Needs |
 |---|---|
 | Column list, ordered "most stored first" | per attribute: number of entities that store it |
-| Visible columns: `PREFERRED_COLUMNS` first, then the rest with a constant | constant values of some attributes |
+| Visible columns: `PREFERRED` first, then the rest with a constant | constant values of some attributes |
 | Summary per attribute: same, range or mixed; series count; default count | counts, plus min, max and distinct of the constants |
 | Cost cards and totals (`p_nom`, `capital_cost`, `marginal_cost`) | constant values of a few fixed attributes |
 | Profile marker | "has a series", yes or no |
@@ -137,7 +137,7 @@ Attributes over `connection` in DR's PyPSA registry: inputs `efficiency`, `delay
 
 ### Changes in the FE
 
-Entity table and Entities tab, as the FE works today (`componentPage.ts:109-161`, `InspectComponentPage.tsx:248-262`):
+Entity table and Entities tab, as the FE works today (`loadMemberValues` in `table-queries.ts` and `memberColumns` in `level-columns.tsx`, both in `frontend/src/features/level/table/`):
 
 - The column picker shows names and a hint only (`default`, `series`, or none), no values. It offers every attribute the ctype stores, plus attributes with a ctype default from the manifest. Source: owner map and manifest.
 - Visible by default: every attribute for which some entity stores a constant. Their cells need values.

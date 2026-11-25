@@ -108,7 +108,7 @@ What a registration `manta.<name>` holds after step 3.3:
 | `attributes.<A>` | DR | the values of one attribute, as stored |
 | `owner_map` | DR | which attributes exist for which label, and whether each is a constant or a series |
 | `static_<dtype>` | session | all constant values in one long view per value type: entity, bus, attribute, value |
-| `"pypsa-eur".<view>` | session, on request | a *view pack*: the six map and topology views of today's quack-server, which encode PyPSA-Eur conventions |
+| `"pypsa-eur".<view>` | session, on request | a *view pack*: the seven map and topology views of today's quack-server, which encode PyPSA-Eur conventions |
 
 The launcher behind step 2.2 is an interface with three calls: start, stop, list. The first implementation uses Docker. Kubernetes follows next year.
 
