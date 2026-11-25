@@ -23,10 +23,8 @@ FILES = {
     "small/store.json": json.dumps({"references": {"base": {"revision": BASE}}}).encode(),
     f"small/layers/{BASE}/manifest.json": b"{}",
     f"small/layers/{BASE}/dimensions/a.parquet": b"data",
-    "plain/manifest.json": b"{}",
-    "plain/dimensions/a.parquet": b"data",
 }
-MARKERS = {"example-data/small/store.json", "example-data/plain/manifest.json"}
+MARKERS = {"example-data/small/store.json"}
 
 
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
@@ -127,15 +125,12 @@ def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example
     assert _last_per_store([copy["CopySource"]["Key"] for copy in copies]) == MARKERS
 
 
-@pytest.mark.parametrize("store", ["small", "plain"])
-def test_copy_to_project_skips_stores_whose_download_was_cut_short(
-    mock_db, s3_client, store: str
-) -> None:
+def test_copy_to_project_skips_stores_whose_download_was_cut_short(mock_db, s3_client) -> None:
     # Given
     s3_client.get_paginator.return_value.paginate.return_value = [
         {"Contents": [{"Key": f"example-data/{name}"}]}
         for name in FILES
-        if name.startswith(f"{store}/") and f"example-data/{name}" not in MARKERS
+        if f"example-data/{name}" not in MARKERS
     ]
 
     # When

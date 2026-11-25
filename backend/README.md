@@ -93,13 +93,10 @@ touching anyone else's. The stores, sizes and `base` revisions:
 | `BEL-pre-aggregated-incl-patches-incl-results` | 13.3 MB | `9ec88f52-d2d7-4785-9cbb-0c9a1da9b827` |
 | `BEL-full-res` | 36.3 MB | `0921e11f-1998-4983-9992-9a2f923ed392` |
 | `europe-full-resolution` | 1379.4 MB | `dfff61bc-6bed-4d6f-8c45-815ba5dd5ce8` |
-| `ac-dc-meshed-plain-record` | 0.1 MB | none, a plain record |
 
 Each store's `store.json` names its revisions under `references`, `base` being the
-one a run starts from. `ac-dc-meshed-plain-record` is a single datarecord without
-a `store.json`, so no run starts from it. A download or copy is complete once a
-folder has its `store.json`, or a plain record its `manifest.json`: both are written
-last. `europe-full-resolution` is left out of `EXAMPLE_DATA_STORES` by default for
+one a run starts from. A download or copy is complete once a store has its
+`store.json`, which is written last. `europe-full-resolution` is left out of `EXAMPLE_DATA_STORES` by default for
 its size. The integration tests download only `ac-dc-meshed`.
 
 Keycloak only imports the realm into a fresh database. If your Keycloak volume
