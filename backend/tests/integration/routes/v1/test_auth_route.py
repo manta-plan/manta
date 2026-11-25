@@ -98,6 +98,7 @@ def test_login_updates_username_renamed_in_keycloak(
     app_server: str, db_connection: psycopg.Connection, kc_admin_client: KeycloakAdmin
 ) -> None:
     # Given - a user who logged in before being renamed in Keycloak
+    realm = kc_admin_client.connection.realm_name
     username = f"beta-{uuid4()}"
     password = "beta-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
     idp_subject = kc_admin_client.create_user(
@@ -111,7 +112,13 @@ def test_login_updates_username_renamed_in_keycloak(
     )
     httpx2.post(f"{app_server}/v1/auth/login", json={"username": username, "password": password})
     renamed = f"renamed-{uuid4()}"
-    kc_admin_client.update_user(idp_subject, {"username": renamed})
+    # Keycloak refuses to change a username, even for an admin, unless the realm
+    # allows it. Ours doesn't, so allow it for this one rename only.
+    kc_admin_client.update_realm(realm, {"editUsernameAllowed": True})
+    try:
+        kc_admin_client.update_user(idp_subject, {"username": renamed})
+    finally:
+        kc_admin_client.update_realm(realm, {"editUsernameAllowed": False})
 
     # When
     response = httpx2.post(
