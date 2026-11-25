@@ -122,7 +122,23 @@ def test_login_does_not_recreate_existing_user(mock_db_class, mock_kc_client) ->
 
     # Then
     mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
     example_data.create_project.assert_not_called()
+
+
+def test_login_updates_username_renamed_in_the_idp(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _login_service(mock_db, mock_kc_client)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    assert existing_user.username == "alice"
+    mock_db.commit.assert_called_once()
+    mock_db.add.assert_not_called()
 
 
 def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:

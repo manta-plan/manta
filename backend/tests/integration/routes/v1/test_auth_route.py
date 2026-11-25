@@ -94,6 +94,38 @@ def test_first_login_creates_the_user_with_an_example_project(
     assert response.status_code == 200
 
 
+def test_login_updates_username_renamed_in_keycloak(
+    app_server: str, db_connection: psycopg.Connection, kc_admin_client: KeycloakAdmin
+) -> None:
+    # Given - a user who logged in before being renamed in Keycloak
+    username = f"beta-{uuid4()}"
+    password = "beta-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
+    idp_subject = kc_admin_client.create_user(
+        {
+            "username": username,
+            "enabled": True,
+            "emailVerified": True,
+            "email": f"{username}@example.com",
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
+        }
+    )
+    httpx2.post(f"{app_server}/v1/auth/login", json={"username": username, "password": password})
+    renamed = f"renamed-{uuid4()}"
+    kc_admin_client.update_user(idp_subject, {"username": renamed})
+
+    # When
+    response = httpx2.post(
+        f"{app_server}/v1/auth/login", json={"username": renamed, "password": password}
+    )
+
+    # Then
+    assert response.status_code == 200
+    with db_connection.cursor() as cursor:
+        cursor.execute("SELECT username FROM users WHERE idp_subject = %s", (idp_subject,))
+        rows = cursor.fetchall()
+    assert rows == [(renamed,)]
+
+
 def test_login_with_wrong_password_is_unauthorized(app_server: str) -> None:
     # When
     response = httpx2.post(

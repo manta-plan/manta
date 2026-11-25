@@ -2,6 +2,7 @@ import logging
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -28,6 +29,9 @@ GUEST_USERNAME_PREFIX = "guest-"
 # Keycloak requires an email on our realm's user profile. `.invalid` is reserved
 # (RFC 2606), so no mail can ever be delivered to a guest's made-up address.
 GUEST_EMAIL_DOMAIN = "guest.manta.invalid"
+
+# User fields that cache an IdP claim, refreshed on login.
+_SYNCED_CLAIMS = {"username": "preferred_username"}
 
 
 def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) -> User | None:
@@ -91,16 +95,14 @@ class AuthService:
         self.kc_admin = kc_admin
 
     def login(self, username: str, password: str) -> LoginResult:
-        # This doesn't currently update the user object if the Identity Provider
-        # has new claims regarding the entity.
-        # TODO: fix update functionality here
         with _translate_keycloak_errors():
             token = self.kc_client.token(username, password)
             # Keycloak issued this token to us directly, so its claims need no validation.
             claims = self.kc_client.decode_token(token["access_token"], validate=False)
-        self._find_or_create_user(
+        user = self._find_or_create_user(
             claims.get("preferred_username", username), claims["sub"], claims["iss"]
         )
+        self._sync_user_data_with_idp(user, claims)
         return LoginResult(
             access_token=token["access_token"],
             expires_in=token["expires_in"],
@@ -189,6 +191,16 @@ class AuthService:
             # gets a Manta user.
             user = self._create_user(username, idp_subject, idp_source)
         return user
+
+    def _sync_user_data_with_idp(self, user: User, claims: dict[str, Any]) -> None:
+        changed = False
+        for field, claim in _SYNCED_CLAIMS.items():
+            value = claims.get(claim)
+            if value is not None and getattr(user, field) != value:
+                setattr(user, field, value)
+                changed = True
+        if changed:
+            self.db.commit()
 
     def _create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
         user = self._add_user(username, idp_subject, idp_source)
