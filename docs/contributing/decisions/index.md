@@ -45,7 +45,11 @@ This includes a decision made for the MVP and revisited after it.
 
 ## How to write one
 
-1. Copy the [template](template.md) to `NNNN-title.md`, with the next free number and the decision as the title, such as `0001-one-session-container-per-user-and-project.md`.
+1. Copy the [template](template.md) to `NNNN-title.md`, with the decision as the title.
+   `NNNN` is the number of the plan PR, padded to four digits, such as `0303-one-session-container-per-user-and-project.md` for PR #303.
+   A decision without a plan takes the number of the issue where it was made, or of the PR that adds its ADR.
+   Issues and PRs share one sequence of numbers on GitHub, so two ADRs never get the same number, and none is renumbered when another is rejected.
+   Open the PR as a draft to learn its number before naming the files.
 2. Fill it in.
    Link to discussions and comparisons rather than copying them in.
 3. Add a row to the table below.

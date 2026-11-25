@@ -95,6 +95,8 @@ commits get squashed together:
   a changelog.
 - The description should be imperative and descriptive — read it as
   completing "If applied, this commit will...".
+- The description starts with a lowercase letter (`feat: add login endpoint`,
+  not `feat: Add login endpoint`), as commitlint requires.
 - Header (the whole `<type>[!]: <description>` line) must be 100 characters
   or fewer, and the description must not end with a full stop.
 - CI enforces this on the PR title via
