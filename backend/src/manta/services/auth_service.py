@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -9,9 +11,11 @@ from keycloak.openid_connection import KeycloakPostError
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
+from manta.config.example_data_config import example_project_for_new_users_enabled
 from manta.config.keycloak_config import get_keycloak_openid, well_known
 from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
+from manta.services.example_data_service import ExampleDataService
 from manta.services.results.login_result import LoginResult
 from manta.services.results.register_result import RegisterResult
 
@@ -72,31 +76,47 @@ class AuthService:
         self,
         db: Session = Depends(get_db_session),
         kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
+        example_data: ExampleDataService = Depends(),
     ) -> None:
         self.db = db
         self.kc_client = kc_client
+        self.example_data = example_data
 
     def login(self, username: str, password: str) -> LoginResult:
         # This doesn't currently update the user object if the Identity Provider
         # has new claims regarding the entity.
         # TODO: fix update functionality here
-        try:
+        with _translate_keycloak_errors():
             token = self.kc_client.token(username, password)
-        except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
-            raise AuthenticationError from request_error
-        except KeycloakPostError as post_error:
-            # Keycloak rejects wrong credentials with `400 invalid_grant`, which
-            # python-keycloak raises as a generic KeycloakPostError.
-            if _is_invalid_grant(post_error):
-                raise AuthenticationError from post_error
-            raise BackendError from post_error
-        except (
-            KeycloakConnectionError
-        ) as transient_error:  # Transient or configuration-based connection error
-            raise BackendError from transient_error
-        except (TypeError, AttributeError) as config_error:  # configuration-based connection error
-            raise BackendError from config_error
-        return LoginResult(access_token=token["access_token"])
+        return LoginResult(
+            access_token=token["access_token"],
+            expires_in=token["expires_in"],
+            refresh_token=token["refresh_token"],
+            refresh_expires_in=token["refresh_expires_in"],
+        )
+
+    def refresh(self, refresh_token: str) -> LoginResult:
+        with _translate_keycloak_errors():
+            token = self.kc_client.refresh_token(refresh_token)
+        # Keycloak issues a new refresh token on every refresh. Callers must
+        # replace the one they hold: if the realm's "Revoke Refresh Token"
+        # setting is turned on, the old one stops working after one use.
+        return LoginResult(
+            access_token=token["access_token"],
+            expires_in=token["expires_in"],
+            refresh_token=token["refresh_token"],
+            refresh_expires_in=token["refresh_expires_in"],
+        )
+
+    def logout(self, refresh_token: str) -> None:
+        # Ends the Keycloak session the refresh token belongs to, so neither it
+        # nor any other refresh token from that session can be used again.
+        # Access tokens already issued stay valid until they expire: they are
+        # verified by signature alone, without asking Keycloak.
+        # Keycloak accepts a token whose session has already ended, so logging
+        # out twice is not an error.
+        with _translate_keycloak_errors():
+            self.kc_client.logout(refresh_token)
 
     def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
         user = _find_user_by_credentials(self.db, idp_subject, idp_source)
@@ -109,6 +129,9 @@ class AuthService:
             self.db.commit()
 
             logger.info("Registered new user %r (uuid=%s)", user.username, user.uuid)
+
+            if example_project_for_new_users_enabled():
+                self.example_data.create_project(owner=user)
         # else: registering an already-registered identity is a no-op, not an error.
 
         return RegisterResult(
@@ -118,6 +141,29 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
+
+
+@contextmanager
+def _translate_keycloak_errors() -> Iterator[None]:
+    # Maps python-keycloak errors from calls made with user credentials or a
+    # refresh token (login, refresh, logout) onto manta's error types.
+    try:
+        yield
+    except KeycloakAuthenticationError as request_error:  # authentication failed, keycloak side
+        raise AuthenticationError from request_error
+    except KeycloakPostError as post_error:
+        # Keycloak rejects wrong credentials, and invalid, expired or revoked
+        # refresh tokens, with `400 invalid_grant`, which python-keycloak
+        # raises as a generic KeycloakPostError.
+        if _is_invalid_grant(post_error):
+            raise AuthenticationError from post_error
+        raise BackendError from post_error
+    except (
+        KeycloakConnectionError
+    ) as transient_error:  # Transient or configuration-based connection error
+        raise BackendError from transient_error
+    except (TypeError, AttributeError) as config_error:  # configuration-based connection error
+        raise BackendError from config_error
 
 
 def _is_invalid_grant(error: KeycloakPostError) -> bool:

@@ -10,16 +10,21 @@ from fastapi import Depends
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import get_s3_client, s3_bucket_name
+from manta.entities import User
 from manta.services.results.s3_file_result import (
     GetS3FileContentResult,
     GetS3FileResult,
     UploadS3FileResult,
 )
+from manta.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
 _STREAM_CHUNK_SIZE = 1024 * 1024
 """How much of a file get_file() holds in memory at once while streaming it."""
+
+_DELETE_BATCH_SIZE = 1000
+"""The most keys one S3 DeleteObjects request accepts."""
 
 
 class S3StorageError(Exception):
@@ -31,9 +36,11 @@ class S3FileStorageService:
         self,
         client: S3Client = Depends(get_s3_client),
         bucket: str = Depends(s3_bucket_name),
+        user_service: UserService = Depends(),
     ) -> None:
         self.client = client
         self.bucket = bucket
+        self.user_service = user_service
 
     def upload_file(
         self, project_uuid: UUID, filename: str, content: IO[bytes]
@@ -75,6 +82,20 @@ class S3FileStorageService:
             content_type=response.get("ContentType", "application/octet-stream"),
             content=self._stream_body(key, response["Body"]),
         )
+
+    def file_exists(self, project_uuid: UUID, filename: str) -> bool:
+        key = f"{project_uuid}/{filename}"
+
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+        except ClientError as e:
+            if e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                return False
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+        except BotoCoreError as e:
+            raise S3StorageError(f"Failed to check {key!r} in bucket {self.bucket!r}") from e
+
+        return True
 
     def _stream_body(self, key: str, body: StreamingBody) -> Iterator[bytes]:
         try:
@@ -122,6 +143,36 @@ class S3FileStorageService:
             raise S3StorageError(f"Failed to delete {key!r} from bucket {self.bucket!r}") from e
 
         logger.info("Deleted %r", key)
+
+    def delete_project_files(self, project_uuid: UUID, user: User) -> None:
+        """Deletes every object under the project's own prefix. Nothing to delete is
+        not an error."""
+        self.user_service.get_owned_project(project_uuid, user)
+
+        keys = [file.key for file in self.list_files(project_uuid)]
+
+        try:
+            for start in range(0, len(keys), _DELETE_BATCH_SIZE):
+                batch = keys[start : start + _DELETE_BATCH_SIZE]
+                response = self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+                )
+                if errors := response.get("Errors"):
+                    failures = ", ".join(
+                        f"{error.get('Key')!r} ({error.get('Code')}: {error.get('Message')})"
+                        for error in errors
+                    )
+                    raise S3StorageError(
+                        f"Failed to delete {len(errors)} object(s) of project "
+                        f"{project_uuid} from bucket {self.bucket!r}: {failures}"
+                    )
+        except (ClientError, BotoCoreError) as e:
+            raise S3StorageError(
+                f"Failed to delete the files of project {project_uuid} from bucket {self.bucket!r}"
+            ) from e
+
+        logger.info("Deleted %d file(s) of project %s", len(keys), project_uuid)
 
     def ensure_bucket_exists(self) -> None:
         """Called once at app startup (see create_app()) — CRUD methods assume

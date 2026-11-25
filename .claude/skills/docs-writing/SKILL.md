@@ -259,7 +259,8 @@ The obvious rule gets one sentence.
   Never in a later subsection.
 - **Run every Python example before committing it.**
   No test reads a fence on a page, so a fence is only as true as its last run.
-  Run it with `uv run python` in the package's folder (`pixi run python` in `playbook-library/`) against your branch, and paste the real output.
+  Run it with `uv run python` in the package's folder against your branch, and paste the real output.
+  In `playbook-library/`, run it with `pixi run python`, or with `pixi run -e pypsa python` if it imports PyPSA, because the default environment has none.
   A fence that cannot run alone, such as one line of a longer session, follows the fence that sets up its names on the same page.
 - **Use the running example** that project.md names, where it has one.
 - **Quote error messages whole.**

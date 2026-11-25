@@ -6,11 +6,11 @@ SPDX-License-Identifier: CC-BY-4.0
 # Backend
 
 This page shows how to run the backend on your own machine and call its REST API, without the frontend.
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/), Docker and a [clone of the repository](full-stack.md#1-clone-the-repository).
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/), Docker, and a [clone of the repository](full-stack.md#1-clone-the-repository).
 
 ## Start the services
 
-When the backend starts, it applies database migrations, creates the storage bucket and checks that Prefect is reachable.
+When the backend starts, it applies database migrations, creates the storage bucket, and checks that Prefect is reachable.
 So it needs every service from Docker running first.
 Start them as [step 2 of Full stack](full-stack.md#2-start-the-services) shows, and leave them running.
 Then open a second terminal in the `backend` folder for the steps below.
@@ -19,6 +19,7 @@ Then open a second terminal in the `backend` folder for the steps below.
 
 ## Check the API
 
+The first start takes a few minutes, because the backend downloads the [example data](../contributing/backend.md#example-data) before it serves the API.
 Ask the backend for its health status:
 
 ```bash
@@ -35,5 +36,5 @@ FastAPI's interactive API docs are at `http://127.0.0.1:8000/docs`, and the [RES
 ## Next steps
 
 - To run the web app against this backend with live reloading, read [Frontend](frontend.md).
-- To change the database schema, run the tests or lint your code, read [Contributing: Backend](../contributing/backend.md).
+- To change the database schema, run the tests, or lint your code, read [Contributing: Backend](../contributing/backend.md).
 - To stop the services, follow [Stopping](full-stack.md#stopping) on the Full stack page.

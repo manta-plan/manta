@@ -5,7 +5,7 @@
 """A whole playbook of real blocks, run against a real but tiny network.
 
 This is the end-to-end check: a network revision goes in, each block writes a new
-revision into the same store, and the last record points at the finished result. The
+revision into the same store, and the last revision holds the finished result. The
 playbooks are the ones this library ships, and the network and example playbook are the
 ones `examples.py` runs, so what a contributor runs by hand is what is tested here.
 """
@@ -13,15 +13,15 @@ ones `examples.py` runs, so what a contributor runs by hand is what is tested he
 import json
 import shutil
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import urlopen, urlretrieve
 from uuid import UUID
 
 import pytest
 
 pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA installed")
 
-from playbook.blocks.core import DataRecord, DataRecordError
+from datarecord import Revision, Workspace
+from playbook.blocks.core import RevisionRef
+from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
@@ -30,6 +30,7 @@ from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
+from playbook_library.public_data import download_public_store
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
 
 pytestmark = pytest.mark.pypsa
@@ -40,8 +41,8 @@ def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
 
 
 @pytest.fixture
-def network_record(store_record) -> DataRecord:
-    return store_record(build_example_network(), "start")
+def network(store_revision) -> Revision:
+    return store_revision(build_example_network(), "start")
 
 
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
@@ -53,27 +54,29 @@ CLUSTER_EXPAND_DISPATCH_CONFIG = {
 }
 
 
-def test_the_example_playbook_runs_from_one_network_to_another(network_record, ancestry):
-    result = build_playbook().run(
-        network_record, library_playbooks()[EXAMPLE_PLAYBOOK].default_config
+def test_the_example_playbook_runs_from_one_network_to_another(network, workspace):
+    ref = build_playbook().run(
+        RevisionRef.from_revision(network), library_playbooks()[EXAMPLE_PLAYBOOK].default_config
     )
+    result = open_revision(workspace, ref)
 
-    assert result.url == network_record.url
-    assert ancestry(result) == [network_record.uuid, result.uuid]
+    assert result.store is network.store
+    assert result.ancestry() == [network.id, result.id]
     n = to_network(result)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network_record, ancestry):
-    result = build_playbook("cluster-expand-dispatch").run(
-        network_record, CLUSTER_EXPAND_DISPATCH_CONFIG
+def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, workspace):
+    ref = build_playbook("cluster-expand-dispatch").run(
+        RevisionRef.from_revision(network), CLUSTER_EXPAND_DISPATCH_CONFIG
     )
+    result = open_revision(workspace, ref)
 
-    assert result.url == network_record.url
-    lineage = ancestry(result)
+    assert result.store is network.store
+    lineage = result.ancestry()
     assert len(lineage) == 4
-    assert lineage[0] == network_record.uuid
+    assert lineage[0] == network.id
 
     n = to_network(result)
     assert len(n.snapshots) == 8  # clustered down from 24
@@ -82,54 +85,32 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network_r
     assert n.generators.p_nom["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_the_network_the_playbook_started_from_is_left_alone(network_record):
-    build_playbook("cluster-expand-dispatch").run(network_record, CLUSTER_EXPAND_DISPATCH_CONFIG)
-    n = to_network(network_record)
+def test_the_network_the_playbook_started_from_is_left_alone(network):
+    build_playbook("cluster-expand-dispatch").run(
+        RevisionRef.from_revision(network), CLUSTER_EXPAND_DISPATCH_CONFIG
+    )
+    n = to_network(network)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_extendable["gen"]
 
 
-@pytest.mark.parametrize(
-    ("url", "uuid"),
-    [("missing-store", None), (None, UUID(int=0))],
-    ids=["missing-store", "missing-revision"],
-)
-def test_a_record_pointing_at_nothing_raises_a_datarecord_error(network_record, url, uuid):
-    record = DataRecord(
-        url=network_record.url + url if url else network_record.url,
-        uuid=uuid or network_record.uuid,
-    )
-    with pytest.raises(DataRecordError, match="No revision"):
-        to_network(record)
-
-
-BEL_OBJECTS = "https://storage.googleapis.com/storage/v1/b/manta-public-test-data/o"
-BEL_PREFIX = "BEL-pre-aggregated/"
-
-
 @pytest.fixture(scope="session")
 def bel_store(tmp_path_factory) -> Path:
-    store_dir = tmp_path_factory.mktemp("bel-download")
-    with urlopen(f"{BEL_OBJECTS}?{urlencode({'prefix': BEL_PREFIX})}") as response:
-        listing = json.load(response)
-    for item in listing["items"]:
-        target = store_dir / item["name"].removeprefix(BEL_PREFIX)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        urlretrieve(item["mediaLink"], target)
-    return store_dir
+    return download_public_store("BEL-pre-aggregated", tmp_path_factory.mktemp("bel-download"))
 
 
 @pytest.fixture
-def bel_record(tmp_path, bel_store) -> DataRecord:
+def bel(tmp_path, bel_store, workspace: Workspace) -> Revision:
     store_dir = tmp_path / "BEL"
     shutil.copytree(bel_store, store_dir)
     revisions = json.loads((store_dir / "revisions.json").read_text())
-    return DataRecord(url=str(store_dir), uuid=UUID(revisions["inputs"]))
+    return workspace.store(str(store_dir)).revision(UUID(revisions["inputs"]))
 
 
 BUILT_CARRIERS = [
     "Generator CCGT",
     "Generator biomass",
+    "Generator OCGT",
     "Generator offwind-ac",
     "Generator offwind-dc",
     "Generator offwind-float",
@@ -146,32 +127,32 @@ BUILT_CARRIERS = [
 ]
 PYPSA_EUR_BUILT: dict[tuple[str, int | None], list[float]] = {
     ("perfect", None): [
-        7359.2, 113.0, 871.0, 871.2, 878.1, 130.2, 15287.4, 73882.7, 0.0, 293.8,
-        6264.9, 20009.1, 12727.1, 10322859.3, 25670.6,
+        7406.1, 113.0, 1818.4, 871.0, 1565.0, 21.3, 130.2, 15287.4, 103508.8, 7017.2, 293.8,
+        8537.2, 21852.5, 13644.7, 13191293.9, 25409.0,
     ],
     ("overnight2050", 2050): [
-        6634.2, 113.0, 871.0, 871.2, 1742.2, 130.2, 15287.4, 71464.9, 0.0, 293.8,
-        6677.9, 14479.2, 10289.6, 9643619.4, 25607.4,
+        0.0, 0.0, 0.0, 174.2, 0.0, 21.3, 0.0, 12890.4, 103288.4, 0.0, 0.0,
+        6139.5, 14591.2, 17694.7, 13046611.8, 23773.4,
     ],
     ("myopic", 2030): [
-        7432.4, 113.0, 871.0, 871.2, 0.0, 130.2, 15287.4, 52805.8, 0.0, 293.8,
-        0.0, 0.0, 11987.9, 0.1, 25490.1,
+        6634.2, 113.0, 876.6, 871.0, 1565.0, 0.0, 130.2, 15287.4, 49690.6, 0.0, 293.8,
+        0.0, 0.0, 11084.1, 0.1, 25642.3,
     ],
     ("myopic", 2040): [
-        7432.4, 113.0, 1033.5, 1742.5, 0.0, 130.2, 20815.8, 52805.8, 0.0, 293.8,
-        3558.8, 5891.0, 11987.9, 4724087.0, 25490.1,
+        3088.5, 0.0, 1342.6, 984.6, 1429.0, 0.0, 0.0, 21825.5, 54054.7, 0.0, 0.0,
+        4186.6, 6526.1, 11084.1, 5075397.6, 25642.3,
     ],
     ("myopic", 2050): [
-        7432.4, 113.0, 1033.5, 1742.5, 0.0, 130.2, 21412.9, 52812.7, 0.0, 293.8,
-        5434.7, 14931.3, 11987.9, 8472659.7, 25490.1,
+        2213.5, 0.0, 1342.6, 522.5, 0.0, 0.0, 0.0, 24515.2, 61247.2, 0.0, 0.0,
+        6227.3, 15107.7, 11084.1, 9157711.1, 25642.3,
     ],
 }  # fmt: skip
 PYPSA_EUR_OBJECTIVE: dict[tuple[str, int | None], float] = {
-    ("perfect", None): 2.2021688830e11,
-    ("overnight2050", 2050): 6.4785309730e10,
-    ("myopic", 2030): 6.8140855875e10,
-    ("myopic", 2040): 2.4082960130e10,
-    ("myopic", 2050): 1.4424425926e10,
+    ("perfect", None): 2.0088690824e11,
+    ("overnight2050", 2050): 6.8943088274e10,
+    ("myopic", 2030): 5.2184445142e10,
+    ("myopic", 2040): 2.9012039811e10,
+    ("myopic", 2050): 1.9758761984e10,
 }
 
 
@@ -183,7 +164,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
         active = c.static[c.get_active_assets(n.investment_periods)]
         built = active.groupby("carrier")[nominal_attr(c.name) + "_opt"].sum()
         totals |= built.add_prefix(f"{c.name} ").to_dict()
-    return totals
+    return {carrier: totals.pop(carrier, 0.0) for carrier in BUILT_CARRIERS} | totals
 
 
 @pytest.mark.slow
@@ -214,7 +195,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
     ],
 )
 def test_expansion_of_a_real_network_matches_the_pypsa_eur_reference(
-    block_cls, mode, periods, dispatched, bel_record, ancestry
+    block_cls, mode, periods, dispatched, bel
 ):
     objectives = []
 
@@ -224,17 +205,17 @@ def test_expansion_of_a_real_network_matches_the_pypsa_eur_reference(
             objectives.append(solved.objective)
             return solved
 
-    result = Recorded({}).run(bel_record)
-    root, *revisions = ancestry(result)
+    result = Recorded({}).run(bel)
+    root, *revisions = result.ancestry()
 
-    assert result.url == bel_record.url
-    assert root == bel_record.uuid
-    assert revisions[-1] == result.uuid
+    assert result.store is bel.store
+    assert root == bel.id
+    assert revisions[-1] == result.id
     expected = [PYPSA_EUR_OBJECTIVE[mode, period] for period in periods]
     assert objectives == pytest.approx(expected, rel=1e-5)
-    for uuid, period in zip(revisions, periods, strict=True):
+    for revision_id, period in zip(revisions, periods, strict=True):
         select = None if period is None else {"period": [period]}
-        n = to_network(DataRecord(url=result.url, uuid=uuid), select=select)
+        n = to_network(result.store.revision(revision_id), select=select)
         built = dict(zip(BUILT_CARRIERS, PYPSA_EUR_BUILT[mode, period], strict=True))
         assert _built(n) == pytest.approx(built, rel=1e-3, abs=1.0)
 

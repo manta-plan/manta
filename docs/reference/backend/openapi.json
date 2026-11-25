@@ -46,6 +46,81 @@
         }
       }
     },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh",
+        "operationId": "refresh_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/register": {
       "post": {
         "tags": [
@@ -246,15 +321,20 @@
         ],
         "summary": "Create Project",
         "operationId": "create_project_v1_projects_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateProjectRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -262,7 +342,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateProjectResult"
+                  "$ref": "#/components/schemas/ProjectResult"
                 }
               }
             }
@@ -277,12 +357,341 @@
               }
             }
           }
-        },
+        }
+      },
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Projects",
+        "operationId": "list_projects_v1_projects_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Description"
+            }
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "name": "created_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          },
+          {
+            "name": "updated_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated From"
+            }
+          },
+          {
+            "name": "updated_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated To"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "string",
+              "default": "created_at",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "desc",
+              "title": "Order"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListProjectsResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_uuid}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get Project",
+        "operationId": "get_project_v1_projects__project_uuid__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update Project",
+        "operationId": "update_project_v1_projects__project_uuid__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete Project",
+        "operationId": "delete_project_v1_projects__project_uuid__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/runs": {
@@ -563,104 +972,6 @@
         }
       }
     },
-    "/v1/runs/{run_uuid}/outputs": {
-      "get": {
-        "tags": [
-          "runs"
-        ],
-        "summary": "List Run Outputs",
-        "operationId": "list_run_outputs_v1_runs__run_uuid__outputs_get",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "run_uuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Run Uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListRunOutputsResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/runs/{run_uuid}/outputs/{name}": {
-      "get": {
-        "tags": [
-          "runs"
-        ],
-        "summary": "Get Run Output",
-        "operationId": "get_run_output_v1_runs__run_uuid__outputs__name__get",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "run_uuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Run Uuid"
-            }
-          },
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/runs/{run_uuid}/logs": {
       "get": {
         "tags": [
@@ -738,43 +1049,6 @@
         ],
         "title": "CreateProjectRequest"
       },
-      "CreateProjectResult": {
-        "properties": {
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Uuid"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "uuid",
-          "name",
-          "description",
-          "created_at"
-        ],
-        "title": "CreateProjectResult"
-      },
       "CreateRunRequest": {
         "properties": {
           "project_uuid": {
@@ -783,37 +1057,17 @@
             "title": "Project Uuid"
           },
           "playbook": {
-            "type": "string",
-            "title": "Playbook"
+            "$ref": "#/components/schemas/PlaybookRequest"
           },
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          },
-          "data_record_url": {
-            "type": "string",
-            "title": "Data Record Url"
-          },
-          "revision_uuid": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Revision Uuid"
+          "data_record": {
+            "$ref": "#/components/schemas/DataRecordRequest"
           }
         },
         "type": "object",
         "required": [
           "project_uuid",
           "playbook",
-          "data_record_url",
-          "revision_uuid"
+          "data_record"
         ],
         "title": "CreateRunRequest"
       },
@@ -847,6 +1101,44 @@
           "created_at"
         ],
         "title": "CreateRunResult"
+      },
+      "DataRecordRequest": {
+        "properties": {
+          "store_url": {
+            "type": "string",
+            "title": "Store Url"
+          },
+          "revision_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Uuid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "store_url",
+          "revision_uuid"
+        ],
+        "title": "DataRecordRequest"
+      },
+      "DataRecordResult": {
+        "properties": {
+          "store_url": {
+            "type": "string",
+            "title": "Store Url"
+          },
+          "revision_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Uuid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "store_url",
+          "revision_uuid"
+        ],
+        "title": "DataRecordResult"
       },
       "GetPlaybookResult": {
         "properties": {
@@ -923,6 +1215,9 @@
             "type": "object",
             "title": "Config"
           },
+          "data_record": {
+            "$ref": "#/components/schemas/DataRecordResult"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -939,6 +1234,7 @@
           "project_uuid",
           "playbook",
           "config",
+          "data_record",
           "status",
           "created_at"
         ],
@@ -1026,16 +1322,11 @@
         ],
         "title": "ListPlaybooksResult"
       },
-      "ListRunOutputsResult": {
+      "ListProjectsResult": {
         "properties": {
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Uuid"
-          },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/RunOutputFileResult"
+              "$ref": "#/components/schemas/ProjectResult"
             },
             "type": "array",
             "title": "Items"
@@ -1043,15 +1334,24 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
           }
         },
         "type": "object",
         "required": [
-          "uuid",
           "items",
-          "total"
+          "total",
+          "limit",
+          "offset"
         ],
-        "title": "ListRunOutputsResult"
+        "title": "ListProjectsResult"
       },
       "ListRunsResult": {
         "properties": {
@@ -1116,11 +1416,26 @@
             "type": "string",
             "title": "Token Type",
             "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "title": "Refresh Expires In"
           }
         },
         "type": "object",
         "required": [
-          "access_token"
+          "access_token",
+          "expires_in",
+          "refresh_token",
+          "refresh_expires_in"
         ],
         "title": "LoginResult"
       },
@@ -1192,6 +1507,31 @@
         ],
         "title": "PlaybookIssueResult",
         "description": "One reason a playbook cannot run with a particular config (see\nplaybook.playbooks.PlaybookIssue)."
+      },
+      "PlaybookRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "PlaybookRequest"
       },
       "PlaybookStepConditionResult": {
         "properties": {
@@ -1326,6 +1666,62 @@
         ],
         "title": "PlaybookSummaryResult"
       },
+      "ProjectResult": {
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Uuid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "uuid",
+          "name",
+          "description",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectResult"
+      },
+      "RefreshTokenRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshTokenRequest"
+      },
       "RegisterRequest": {
         "properties": {
           "username": {
@@ -1384,30 +1780,6 @@
         ],
         "title": "RegisterResult"
       },
-      "RunOutputFileResult": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "size": {
-            "type": "integer",
-            "title": "Size"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Last Modified"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "size",
-          "last_modified"
-        ],
-        "title": "RunOutputFileResult"
-      },
       "RunStepResult": {
         "properties": {
           "name": {
@@ -1452,6 +1824,27 @@
               }
             ],
             "title": "End Time"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataRecordResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1460,9 +1853,35 @@
           "block",
           "status",
           "start_time",
-          "end_time"
+          "end_time",
+          "message",
+          "output"
         ],
         "title": "RunStepResult"
+      },
+      "UpdateProjectRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "UpdateProjectRequest",
+        "description": "A partial update: only the fields sent are changed. Sending\n`\"description\": null` clears the description; `name` can't be cleared."
       },
       "ValidatePlaybookConfigRequest": {
         "properties": {

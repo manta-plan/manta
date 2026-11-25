@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
+from playbook.blocks.run import open_revision
 from pydantic import Field
 
 from playbook_library.pypsa_configs import PyPSAOptimizeRollingHorizonConfig
@@ -19,7 +21,7 @@ class RollingHorizonDispatchConfig(ConfigSchema):
     optimize_config: PyPSAOptimizeRollingHorizonConfig = Field(
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
-    capacity_source: DataRecord | None = Field(default=None, title="Capacity data source")
+    capacity_source: RevisionRef | None = Field(default=None, title="Capacity data source")
     """Where the capacities to dispatch against come from.
 
     Normally wired to a capacity-expansion block earlier in the playbook. Left unset,
@@ -48,13 +50,22 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             c.static[attr + "_extendable"] = False
 
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
+        """Dispatch `n` window by window, each result series then spanning every snapshot.
+
+        PyPSA keeps a series it writes whole on each window, such as `Bus.v_ang`, at
+        the last window alone; the windows before it are missing values.
+        """
         n.optimize.optimize_with_rolling_horizon(**self.config.optimize_config.model_dump())
+        for c in n.components:
+            for attr, series in c.dynamic.items():
+                c.dynamic[attr] = series.reindex(n.snapshots)
         return n
 
-    def run(self, record: DataRecord) -> DataRecord:
-        n_new = to_network(record)
+    def run(self, base: Revision) -> Revision:
+        n_new = to_network(base)
         if self.config.capacity_source is not None:
-            self.apply_optimised_capacities(n_new, to_network(self.config.capacity_source))
+            source = open_revision(base.store.workspace, self.config.capacity_source)
+            self.apply_optimised_capacities(n_new, to_network(source))
 
         n_new = self.optimize(n_new)
-        return write_network(n_new, record)
+        return write_network(n_new, base)

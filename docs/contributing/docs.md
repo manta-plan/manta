@@ -29,7 +29,7 @@ The site is written to `.docs/`, which git ignores.
 
 ## Pages pulled in from the READMEs
 
-Installation and most contributing pages contain sections of `README.md`, `CONTRIBUTING.md` and the package READMEs.
+Installation and most contributing pages contain sections of `README.md`, `CONTRIBUTING.md`, and the package READMEs.
 Each page includes a section with a snippet, `--8<-- "README.md:docs-install"`, which takes the text between the `[start:docs-install]` and `[end:docs-install]` markers.
 To change that text, edit the README, not the page.
 A link in a pulled-in section that points outside `docs/` is a full GitHub URL, because a relative one fails the strict build.
@@ -54,5 +54,5 @@ CI exports the schema on every pull request and fails if the result differs from
 
 The rules for a page live in two agent skills in `.claude/skills/`.
 `docs-writing` sets what kind of page to write and how each kind is shaped.
-`prose-writing` sets the reader, the voice and the words, for pages, pull requests and issues alike.
+`prose-writing` sets the reader, the voice, and the words, for pages, pull requests, and issues alike.
 Each skill has a `project.md` beside it with the rules that are Manta's own.

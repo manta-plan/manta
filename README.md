@@ -42,11 +42,13 @@ cd manta
 From the repo root:
 
 ```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
+  --profile temporary-quack-setup up
 ```
 
-This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak and the
-playbook workers, and builds the images playbook steps run in. The first run
+This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the
+playbook workers, and the record server the frontend's data catalogue reads,
+and builds the images playbook steps run in. The first run
 takes a while. Leave it running and wait until the logs settle. All
 configuration comes from [`backend/.env`](https://github.com/manta-plan/manta/blob/main/backend/.env), which already has
 working local defaults. Nothing needs to be filled in.
@@ -62,15 +64,25 @@ uv run manta
 ```
 
 On startup the backend applies database migrations, creates the storage
-bucket and checks that Prefect is reachable, then serves the API on
-`localhost:8000`.
+bucket, and checks that Prefect is reachable, then serves the API on
+`localhost:8000`. The first start also downloads the example data, which takes
+a few minutes, and creates the `manta-admin` user with an example project (see
+[Example data](https://github.com/manta-plan/manta/blob/main/backend/README.md#example-data)).
+The record server finds the example data within a minute of the download.
 
 ### 4. Start the frontend
 
-In a third terminal:
+In a third terminal, move into the `frontend` folder and create a file named
+`.env.local` there that points the app at the record server:
 
 ```bash
 cd frontend
+printf 'VITE_RECORD_SERVER=localhost:8010\nVITE_RECORD_TOKEN=devtoken\n' > .env.local
+```
+
+Then install the dependencies and start the dev server:
+
+```bash
 pnpm install
 pnpm dev
 ```
@@ -80,7 +92,7 @@ The dev server proxies `/v1` requests to the backend on `localhost:8000`.
 ### 5. Open Manta
 
 Go to `localhost:5173` and log in as `manta-admin`,
-password `manta-admin`.
+password `manta-admin`. The "Example project" contains the example data.
 
 The services also have their own UIs, which help when you want to see what is
 happening under the hood:
@@ -98,18 +110,37 @@ To stop Docker containers, press
 `Ctrl+C` in their terminal, or run from the repo root:
 
 ```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down
 ```
 
 This will not delete your local data (database, stored files, Keycloak state) so the next
 `up` command picks up where you left off.
 
 To wipe everything and start from scratch next time, add `-v` to also delete
-the data volumes:
+the data volumes. The backend then downloads the example data again at its
+next start.
 
 ```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env down -v
+docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down -v
 ```
+
+### Run the backend and frontend in Docker instead
+
+To run the whole stack in containers, with no uv, Node.js, or pnpm on your
+machine, replace steps 2 to 4 with this command from the repo root:
+
+```bash
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup up --build
+```
+
+It builds the backend and frontend images, and serves the web app on
+`localhost:5173` once the backend is healthy, which takes a few minutes on the
+first start. To stop it, run the same command with `down` in place of
+`up --build`. To run the backend or frontend from source again, stop its
+container first, because they share ports.
 
 See [docker/README.md](https://github.com/manta-plan/manta/blob/main/docker/README.md) for details on each service.
 <!-- --8<-- [end:docs-install] -->

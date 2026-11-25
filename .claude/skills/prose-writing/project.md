@@ -22,6 +22,11 @@ They know Python and energy modelling, and have read no other page.
 | step | one block, or one nested playbook, in a playbook | stage, node |
 | catalogue | the description of every block: names, settings as JSON schema and dimensions | registry, manifest |
 
+## Punctuation
+
+Use the Oxford comma in every list of three or more items: "format, lint, and type-check".
+This rule overrides SKILL.md and its examples.
+
 ## Words to avoid
 
 None listed yet.

@@ -70,4 +70,4 @@ Each block adds a result layer to the data record, on top of the layer it starte
 So the intermediate models of a run are always available.
 You can follow the run status while it is running and read its logs when it has finished.
 
-The web app supports part of this flow today; [start and follow a run](run.md) describes which part.
+[Start and follow a run](run.md) shows how to follow this flow in the web app.

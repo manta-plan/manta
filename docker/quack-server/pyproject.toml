@@ -16,9 +16,9 @@ package = false
 
 [tool.uv.sources]
 # Pinned by commit: the format changes often, and a record written by one
-# commit may not open with another. 1781cfb is `main` with DuckDB 2.0, the
-# layout the 28 October sample records use.
-datarecord = { git = "https://github.com/energy-models/datarecord.git", rev = "1781cfbabb8e86da57704d9b46e859919db736b5" }
+# commit may not open with another. 8889d62 is `main` with per-layer manifests
+# and registered views, the layout the 11 November records use.
+datarecord = { git = "https://github.com/energy-models/datarecord.git", rev = "8889d623" }
 
 [dependency-groups]
 dev = [

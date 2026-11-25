@@ -17,6 +17,59 @@ Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
 truth instead of two.
 
+To run the app itself in containers too, use one of the files layered on top:
+
+- `compose-dev-backend.yaml` — every service above plus the backend.
+- `compose-dev-fullstack.yaml` — everything in `compose-dev-backend.yaml`
+  plus the frontend.
+
+```bash
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --build
+```
+
+To run the backend or frontend on the host instead (`uv run manta`,
+`pnpm dev`), stop its container first: they share ports.
+
+The frontend's data catalogue reads from the temporary **quack-server** (see
+below), which only starts with its profile. Deploys therefore run:
+
+```bash
+cd docker
+
+docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml \
+  --profile temporary-quack-setup up --build
+```
+
+The frontend container's Caddy proxies `/api/*` and `/quack` to
+`quack-server:8080`, so the browser reaches it on the frontend's own origin.
+Its settings live in [`backend/.env`](../backend/.env) with the rest:
+`FRONTEND_PORT`, `QUACK_SERVER_PORT` (`8010`) and `QUACK_TOKEN` (`devtoken`).
+The token is also built into the public frontend bundle, so only a dev value
+belongs there. The app calls the server on its own origin, over the page's own
+protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets
+HTTPS from Caddy. No CORS settings are needed.
+
+### HTTPS on a domain
+
+Set `SITE_ADDRESS` in [`backend/.env`](../backend/.env) (or export it before
+`docker compose`) to the domain name, for example `SITE_ADDRESS=manta.example.org`.
+Point the domain's DNS at the host first. Caddy then obtains and renews a Let's
+Encrypt certificate itself, which needs ports **80 and 443** reachable from the
+internet (80 for the challenge and the redirect to HTTPS). The certificates are
+kept in the `caddy-data` volume, so recreating the container doesn't request new
+ones. `FRONTEND_HTTPS_PORT` (`443`) is the host port for HTTPS.
+
+Leave `SITE_ADDRESS` empty to serve plain HTTP on `FRONTEND_PORT`. That is also
+the setup for a load balancer that terminates TLS, such as a Google Cloud
+HTTPS load balancer with a Google-managed certificate: forward it to port 80,
+and the VM needs no certificate and no public 443.
+
+The frontend is served on `FRONTEND_PORT` (`80`, in `backend/.env`):
+<http://localhost>. `pnpm dev` stays on 5173, and its Vite server proxies the
+same record server paths to `localhost:${QUACK_SERVER_PORT}` (`8010`, published
+on the host's loopback only), reading both that port and the token from
+`backend/.env`. Set `QUACK_SERVER_PORT` to a free host port if 8010 is taken.
+
 ## Services
 
 - **postgres** — the app database. Also hosts Keycloak's and Prefect's own
@@ -38,12 +91,15 @@ truth instead of two.
 - **quack-server** — *temporary*, **opt-in** (compose profile
   `temporary-quack-setup`: add `--profile temporary-quack-setup` to the `up`
   command above, or name the service) record server that exposes a datarecord to the
-  browser (DuckDB-Wasm) over the Quack protocol, used to port the Model /
-  Inspect / Report tabs before datarecord is integrated into the backend. Copied
+  browser (DuckDB-Wasm) over the Quack protocol, used to port the Build /
+  Inspect / Analyse tabs before datarecord is integrated into the backend. Copied
   from baby-manta's `server/`; see [quack-server/README.md](quack-server/README.md).
-  Listens on `localhost:${QUACK_SERVER_PORT:-8010}`, token `${QUACK_TOKEN:-devtoken}`.
-  It reads records from `docker/quack-server/data/records` (git-ignored): put
-  datarecord stores there before starting, otherwise it serves nothing.
+  Listens on `localhost:${QUACK_SERVER_PORT}`, token `${QUACK_TOKEN}` (both in `backend/.env`).
+  It reads the example stores the backend seeds into SeaweedFS
+  (`s3://${S3_BUCKET}/example-data`, `EXAMPLE_DATA_SEED=true`), so it serves
+  nothing until the backend has started once; it picks them up within a minute.
+  Set `QUACK_RECORDS_ROOT=/srv/data/records` to serve the git-ignored
+  `docker/quack-server/data/records` folder instead.
 
 ## Testing
 

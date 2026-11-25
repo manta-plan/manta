@@ -9,9 +9,9 @@ SPDX-License-Identifier: MIT
 A **block** is one unit of work in an energy model workflow. A **playbook** chains blocks
 together into something you can run.
 
-Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in 
-python for testing purposes only). Each block declares which environment it needs, 
-so one playbook can span environments that could never be installed side by side: 
+Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in
+python for testing purposes only). Each block declares which environment it needs,
+so one playbook can span environments that could never be installed side by side:
 each step runs where it belongs, and the results are passed along.
 
 This package is the *framework*: what a block is, what a playbook is, and how to run
@@ -33,10 +33,10 @@ Manta's infrastructure, and what lets this package move to its own repository la
 ```text
 src/playbook/
   blocks/          A block, and everything needed to describe one without running it
-    core.py        DataRecord, BlockDims, ConfigSchema, MantaBlock
+    core.py        RevisionRef, BlockDims, ConfigSchema, MantaBlock
     registry.py    Which blocks exist, and the catalogue that describes them
     environments.py  The environments blocks run in
-    storage.py     Where a record's bytes live (local files or S3)
+    run.py         Running a block on its revisions (needs the `run` extra)
     run_one.py     Running a single block from the command line
   playbooks/       Blocks chained together
     playbook.py    What a playbook is: steps, wiring, conditions
@@ -56,15 +56,22 @@ uv sync
 uv run pytest
 ```
 
-The tests need nothing installed beyond this package. That they pass without PyPSA —
-or any other modelling framework — is the proof that a block's own dependencies stay
-its own.
+The tests need nothing installed beyond this package and its `run` extra. That they
+pass without PyPSA — or any other modelling framework — is the proof that a block's
+own dependencies stay its own.
+
+Running a block opens datarecord stores, so a process that runs blocks installs
+`playbook[run]`. One that only passes revisions along, such as an orchestrator or a
+web backend, installs plain `playbook`: everything outside `playbook.blocks.run`
+imports without datarecord.
 <!-- --8<-- [end:docs-setup] -->
 
 ## Writing a block
 
 ```python
-from playbook.blocks import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from datarecord import Revision
+
+from playbook.blocks import BlockDims, ConfigSchema, MantaBlock
 
 
 class ShrinkConfig(ConfigSchema):
@@ -78,7 +85,7 @@ class Shrink(MantaBlock[ShrinkConfig]):
     CONFIG = ShrinkConfig
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
-    def run(self, record: DataRecord) -> DataRecord: ...
+    def run(self, base: Revision) -> Revision: ...
 ```
 
 What a block declares:
@@ -92,13 +99,19 @@ What a block declares:
 | `INPUTS` | settings that another block fills in, rather than the user |
 | `OUTPUTS` | the results it offers to later blocks |
 
-`run` receives the record to work on, writes its result as a new revision in that
-record's own store, and returns a record pointing at that revision. A record's URL
-names a datarecord store, either a local directory or an `s3://` URL, and its uuid
-names one revision in that store.
+`run` receives the datarecord `Revision` to work on, commits its result as a new
+revision through `base.store`, and returns that revision. Every revision a block run
+touches shares one `Workspace`, opened by whatever runs the block (`LocalBlockRunner`,
+`run_one`) before the block runs and closed after it, so a block never opens a store of
+its own.
+
+Between processes a revision travels as a `RevisionRef`: a `store` (a local directory
+or an `s3://` URL) and the `id` of one revision in it. Settings wired in through
+`INPUTS` arrive as `RevisionRef`s; open one on the block's workspace with
+`open_revision(base.store.workspace, ref)` from `playbook.blocks.run`.
 
 A block class is checked as soon as it is written: every name in `INPUTS` has to be a
-setting that can hold a `DataRecord` and has a default, so a block is always usable
+setting that can hold a `RevisionRef` and has a default, so a block is always usable
 with nothing wired to it.
 
 A block refuses a setting it does not have, so a misspelt name is an error rather than
@@ -175,7 +188,7 @@ everything can see. Keeping them apart is what lets one playbook be run several 
 
 ### How work flows between steps
 
-Every step is handed the record the previous step produced. On top of that, a step can
+Every step is handed the revision the previous step produced. On top of that, a step can
 reach back for a *particular* earlier step's result and put it into one of its settings
 (`${steps.<step>.<output>}`). Those are separate things: a `dispatch` step written as
 
@@ -186,7 +199,7 @@ reach back for a *particular* earlier step's result and put it into one of its s
       capacity_source: ${steps.expansion_overnight.output}
 ```
 
-receives the record from the step before it *and* the capacities that the expansion
+receives the revision from the step before it *and* the capacities that the expansion
 step specifically decided.
 
 ### Using a block more than once
@@ -278,20 +291,20 @@ block runs.
 ## Running a playbook
 
 ```python
-result = playbook.run(record, config)
+result = playbook.run(revision, config)
 ```
 
 `run` [checks](#checking-a-playbook) the playbook against `config` first. If anything
 is wrong, it raises `PlaybookHasIssuesError` before any step runs. Otherwise each step
-runs in turn on the record the previous step returned, so a finished run is a chain of
-revisions in the input record's store.
+runs in turn on the revision the previous step returned, so a finished run is a chain
+of revisions in the input revision's store. `revision` and `result` are `RevisionRef`s.
 
 By default every block runs in the current process, which is what tests and local use
 want. To run blocks anywhere else, pass a `BlockRunner`:
 
 ```python
 class BlockRunner(Protocol):
-    def run_block(self, block, *, step_name, config, record, inputs): ...
+    def run_block(self, block, *, step_name, config, revision, inputs): ...
 ```
 
 `execute_playbook` checks the playbook, walks it, decides which steps run, wires
@@ -303,12 +316,12 @@ never learns how.
 
 ```bash
 python -m playbook.blocks.run_one <block> --source <your library> \
-    --record '{"url": "<store>", "uuid": "<revision>"}' \
+    --revision '{"store": "<store>", "id": "<revision>"}' \
     [--config '<json>'] [--inputs '<json>']
 ```
 
 Plain arguments in, ordinary log output, and one final `MANTA_BLOCK_RESULT` line on
-stdout saying where the output record landed; the exit code says whether the block
+stdout saying where the output revision landed; the exit code says whether the block
 succeeded. This is the whole contract between a block and whatever drives it, and the
 quickest way to try a block you are writing.
 
@@ -341,15 +354,17 @@ uv run ruff format --check src
 ```
 
 Tests live beside the code they cover, in `tests/` inside each layer, plus
-`playbook/tests/` for the two boundaries the package as a whole has to keep: that
-nothing here imports an orchestration tool, and that `blocks` never imports
-`playbooks`. Breaking either is a one-line accident that nothing else would notice,
-which is why they are tested rather than only written down.
+`playbook/tests/` for the boundaries the package as a whole has to keep: that nothing
+here imports an orchestration tool, that `blocks` never imports `playbooks`, and that
+passing revisions along never imports datarecord. Breaking any of them is a one-line
+accident that nothing else would notice, which is why they are tested rather than only
+written down.
 
 The fake blocks the tests share are in `blocks/tests/fakes.py` — each fake just
-appends its name to the record's url, so a finished run reads as a record of which
-blocks ran and in what order. Add fakes there rather than registering new ones in a
-test module: a block name can only be claimed once per process.
+commits an empty revision labelled with its name, so `steps(result)` reads the lineage
+of a finished run as a record of which blocks ran and in what order. Add fakes there
+rather than registering new ones in a test module: a block name can only be claimed
+once per process.
 
 A pull request is expected to keep this suite green and to add tests for what it
 changes. If you are adding a real block rather than a framework feature, it belongs in
@@ -362,6 +377,6 @@ instructions.
 - Resource requirements (cpu, memory, walltime) are not modelled yet.
 - Conditions can only look at settings, not at the contents of the data.
 - A block declares `OUTPUTS`, but every block so far produces exactly one result.
-- `initial_data.dims` has to be declared on a playbook, because a record does not yet
+- `initial_data.dims` has to be declared on a playbook, because a `RevisionRef` does not
   describe the data it points at. Once it does, the dimensions can be read from the
-  incoming record instead.
+  incoming revision instead.

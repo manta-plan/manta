@@ -4,6 +4,11 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class DataRecordResult(BaseModel):
+    store_url: str
+    revision_uuid: UUID
+
+
 class CreateRunResult(BaseModel):
     uuid: UUID
     project_uuid: UUID
@@ -19,6 +24,9 @@ class GetRunResult(BaseModel):
     """The config this run was started with, exactly as dispatched: the caller's own,
     or the playbook's default_config when none was given (see GET /v1/playbooks/{name}
     for those defaults)."""
+
+    data_record: DataRecordResult
+    """The record this run started from, exactly as dispatched."""
 
     status: str
     created_at: datetime
@@ -59,6 +67,15 @@ class RunStepResult(BaseModel):
     start_time: datetime | None
     end_time: datetime | None
 
+    message: str | None
+    """Prefect's message for the step's block run, e.g. the exception a failed block
+    raised. None for a step with no block run, or one that completed."""
+
+    output: DataRecordResult | None
+    """The revision the step wrote into the run's store. None until the step's block
+    run has COMPLETED. The run's final record is the output of its last step that
+    ran."""
+
 
 class GetRunStepsResult(BaseModel):
     uuid: UUID
@@ -66,22 +83,6 @@ class GetRunStepsResult(BaseModel):
     """Every step of the run's playbook, in playbook order."""
 
     run_status: str
-
-
-class RunOutputFileResult(BaseModel):
-    name: str
-    """The file's path within the run's outputs, e.g. `dispatch.nc` — what it is
-    downloaded by (GET /v1/runs/{uuid}/outputs/{name}). Each step writes
-    `<step name>.<suffix>`."""
-
-    size: int
-    last_modified: datetime
-
-
-class ListRunOutputsResult(BaseModel):
-    uuid: UUID
-    items: list[RunOutputFileResult]
-    total: int
 
 
 class GetRunLogsResult(BaseModel):

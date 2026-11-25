@@ -9,13 +9,18 @@ what dispatches at it. Both are exercised without Prefect infrastructure: the
 flow through its undecorated function, the runner with `run_deployment` stubbed.
 """
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
-from playbook.blocks import Catalogue, DataRecord
+from datarecord import Revision
+from playbook.blocks import Catalogue, RevisionRef
 from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from playbook.blocks.registry import BlockDescription, BlockSpec, register
+from playbook.blocks.tests.fakes import commit_root, commit_step, steps
 from playbook.playbooks.yaml_io import PlaybookDoc, StepDoc
 
 from runner import flows
@@ -30,14 +35,14 @@ from runner.flows import (
 )
 
 STORE = "s3://bucket/store"
-RECORD_ID = "00000000-0000-0000-0000-000000000000"
+REVISION_ID = "00000000-0000-0000-0000-000000000000"
 EARLIER_ID = "00000000-0000-0000-0000-000000000001"
 OUTPUT_ID = "00000000-0000-0000-0000-000000000002"
 
 
 class _FakeConfig(ConfigSchema):
     label: str = ""
-    source: DataRecord | None = None
+    source: RevisionRef | None = None
 
 
 @register("runtime_fake")
@@ -49,9 +54,9 @@ class _RuntimeFake(MantaBlock[_FakeConfig]):
     DIMS = BlockDims()
     INPUTS = frozenset({"source"})
 
-    def run(self, record: DataRecord) -> DataRecord:
-        wired = str(self.config.source.uuid) if self.config.source else "-"
-        return DataRecord(url=f"{record.url}|{self.config.label}|{wired}", uuid=record.uuid)
+    def run(self, base: Revision) -> Revision:
+        wired = str(self.config.source.id) if self.config.source else "-"
+        return commit_step(base, f"{self.config.label}|{wired}")
 
 
 def _spec(name: str = "runtime_fake", env: str = "default") -> BlockSpec:
@@ -67,47 +72,100 @@ def _env_images(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _completed(result: dict):
-    state = SimpleNamespace(
-        is_completed=lambda: True, result=lambda: result, type=SimpleNamespace(value="COMPLETED")
-    )
-    return SimpleNamespace(id="flow-run-id", state=state)
+@pytest.fixture
+def root(tmp_path: Path) -> dict:
+    """The revision a block flow runs on, as it arrives across a process boundary."""
+    return commit_root(str(tmp_path / "store")).to_dict()
 
 
-def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs() -> None:
+@pytest.fixture(autouse=True)
+def published(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """The Prefect artifact API, which `run-block` publishes its output revision to."""
+    create = MagicMock()
+    monkeypatch.setattr(flows, "create_table_artifact", create)
+    return create
+
+
+_PUBLISHED_OUTPUTS: dict = {}
+"""The output revision each completed fake step published, by its flow run id."""
+
+
+class _FakePrefectClient:
+    """Serves the output artifacts of the steps `_completed` made up."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        return None
+
+    def read_artifacts(self, artifact_filter):
+        assert artifact_filter.key.any_ == [flows.OUTPUT_ARTIFACT_KEY]
+        [flow_run_id] = artifact_filter.flow_run_id.any_
+        output = _PUBLISHED_OUTPUTS.get(flow_run_id)
+        return [] if output is None else [SimpleNamespace(data=json.dumps([output]))]
+
+
+@pytest.fixture(autouse=True)
+def _prefect_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    _PUBLISHED_OUTPUTS.clear()
+    monkeypatch.setattr(flows, "get_client", lambda sync_client: _FakePrefectClient())
+
+
+def _completed(output: dict | None):
+    """A step's flow run that completed, having published `output` (None: nothing)."""
+    flow_run_id = uuid4()
+    if output is not None:
+        _PUBLISHED_OUTPUTS[flow_run_id] = output
+    state = SimpleNamespace(is_completed=lambda: True, type=SimpleNamespace(value="COMPLETED"))
+    return SimpleNamespace(id=flow_run_id, state=state)
+
+
+@pytest.mark.parametrize(
+    ("config", "inputs", "label"),
+    [
+        ({"label": "tidy"}, {"source": {"store": STORE, "id": EARLIER_ID}}, f"tidy|{EARLIER_ID}"),
+        ({}, None, "|-"),
+    ],
+    ids=["wired", "nothing-wired"],
+)
+def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs(
+    root: dict, config: dict, inputs: dict | None, label: str
+) -> None:
     # When: the flow's own body, as it runs inside the block's container
     result = flows.run_block.fn(
         block="runtime_fake",
         step_name="cluster",
-        config={"label": "tidy"},
-        record={"url": STORE, "uuid": RECORD_ID},
-        inputs={"source": {"url": STORE, "uuid": EARLIER_ID}},
+        config=config,
+        revision=root,
+        inputs=inputs,
     )
 
-    # Then: the record, the settings and the wired input all arrived, and the
-    # result comes back as plain data, ready to cross a process boundary.
-    assert result == {
-        "url": f"{STORE}|tidy|{EARLIER_ID}",
-        "uuid": RECORD_ID,
-    }
+    # Then: the revision, the settings and the wired input all arrived, and the
+    # result comes back as plain data, a new revision in the input's own store.
+    output = RevisionRef.from_dict(result)
+    assert output.store == root["store"]
+    assert steps(output) == [label]
 
 
-def test_the_block_flow_accepts_a_step_with_nothing_wired_into_it() -> None:
+def test_the_block_flow_publishes_its_output_revision_as_an_artifact(
+    published: MagicMock, root: dict
+) -> None:
     # When
     result = flows.run_block.fn(
         block="runtime_fake",
         step_name="cluster",
         config={},
-        record={"url": STORE, "uuid": RECORD_ID},
+        revision=root,
         inputs=None,
     )
 
     # Then
-    assert result == {"url": f"{STORE}||-", "uuid": RECORD_ID}
+    published.assert_called_once_with(table=[result], key=flows.OUTPUT_ARTIFACT_KEY)
 
 
 def test_the_block_flow_imports_the_job_containers_block_library_before_looking_anything_up(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, root: dict
 ) -> None:
     # A freshly started job container has imported nothing yet: MANTA_BLOCK_SOURCES
     # names the library, but only importing it registers the block being asked for.
@@ -120,7 +178,7 @@ def test_the_block_flow_imports_the_job_containers_block_library_before_looking_
         block="runtime_fake",
         step_name="cluster",
         config={},
-        record={"url": STORE, "uuid": RECORD_ID},
+        revision=root,
         inputs=None,
     )
 
@@ -131,7 +189,7 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    dispatch = MagicMock(return_value=_completed({"url": STORE, "uuid": OUTPUT_ID}))
+    dispatch = MagicMock(return_value=_completed({"store": STORE, "id": OUTPUT_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
 
     # When
@@ -139,8 +197,8 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         _spec(),
         step_name="cluster",
         config={"label": "tidy"},
-        record=DataRecord(url=STORE, uuid=RECORD_ID),
-        inputs={"source": DataRecord(url=STORE, uuid=EARLIER_ID)},
+        revision=RevisionRef(store=STORE, id=REVISION_ID),
+        inputs={"source": RevisionRef(store=STORE, id=EARLIER_ID)},
     )
 
     # Then: one deployment for every block, with the block named as a parameter,
@@ -151,10 +209,10 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
         "block": "runtime_fake",
         "step_name": "cluster",
         "config": {"label": "tidy"},
-        "record": {"url": STORE, "uuid": RECORD_ID},
-        "inputs": {"source": {"url": STORE, "uuid": EARLIER_ID}},
+        "revision": {"store": STORE, "id": REVISION_ID},
+        "inputs": {"source": {"store": STORE, "id": EARLIER_ID}},
     }
-    assert result == DataRecord(url=STORE, uuid=OUTPUT_ID)
+    assert result == RevisionRef(store=STORE, id=OUTPUT_ID)
 
 
 def test_a_step_that_did_not_complete_fails_the_playbook(
@@ -173,7 +231,7 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
             _spec(),
             step_name="cluster",
             config={},
-            record=DataRecord(url=STORE, uuid=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
     message = str(exc_info.value)
@@ -181,6 +239,23 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
     assert "runtime_fake" in message
     assert "CRASHED" in message
     assert "flow-run-id" in message
+
+
+def test_a_step_that_completed_without_publishing_its_output_fails_the_playbook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=_completed(None)))
+
+    # When/Then
+    with pytest.raises(BlockRunFailedError, match="without publishing its output revision"):
+        PrefectBlockRunner().run_block(
+            _spec(),
+            step_name="cluster",
+            config={},
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
+            inputs={},
+        )
 
 
 def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
@@ -196,14 +271,14 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
             _spec(),
             step_name="cluster",
             config={},
-            record=DataRecord(url=STORE, uuid=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
 
 
 def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given two steps whose blocks declare different environments
-    dispatch = MagicMock(return_value=_completed({"url": STORE, "uuid": OUTPUT_ID}))
+    dispatch = MagicMock(return_value=_completed({"store": STORE, "id": OUTPUT_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
     runner = PrefectBlockRunner()
 
@@ -213,7 +288,7 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
             _spec(env=env),
             step_name="step",
             config={},
-            record=DataRecord(url=STORE, uuid=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
 
@@ -238,7 +313,7 @@ def test_a_step_needing_an_unconfigured_environment_says_so(
             _spec(env="julia"),
             step_name="step",
             config={},
-            record=DataRecord(url=STORE, uuid=RECORD_ID),
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
             inputs={},
         )
     assert "julia" in str(exc_info.value)
@@ -276,7 +351,7 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     # at all — the real situation for an orchestrator container, which never
     # installs a block library and knows blocks only through the catalogue it was
     # handed. Dispatch is stubbed so the block "runs" without a docker work pool.
-    dispatch = MagicMock(return_value=_completed({"url": f"{STORE}|tidy|-", "uuid": RECORD_ID}))
+    dispatch = MagicMock(return_value=_completed({"store": STORE, "id": OUTPUT_ID}))
     monkeypatch.setattr(flows, "run_deployment", dispatch)
 
     catalogue = Catalogue(
@@ -294,10 +369,10 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     result = run_playbook.fn(
         playbook=doc.model_dump(mode="json"),
         config={"cluster": {"label": "tidy"}},
-        record={"url": STORE, "uuid": RECORD_ID},
+        revision={"store": STORE, "id": REVISION_ID},
         catalogue=catalogue_parameter(catalogue),
     )
 
     # Then: the block ran through the docker-pool transport, not in this process.
-    assert result == {"url": f"{STORE}|tidy|-", "uuid": RECORD_ID}
+    assert result == {"store": STORE, "id": OUTPUT_ID}
     assert dispatch.call_args.kwargs["parameters"]["block"] == "catalogue_only_fake"

@@ -12,18 +12,28 @@ environment's execution image.
 Both flows are deployed once, statically (see `deploy.py`). Playbooks are data
 passed in as parameters, so nothing is ever deployed per playbook or per block.
 
-Everything passed in has crossed a process boundary, so records arrive as plain
-`{"url": ..., "uuid": ...}` data: a store and one of its revisions. A loaded
-model could never travel this way, which is exactly why blocks pass pointers to
-data rather than the data itself.
+Everything passed in has crossed a process boundary, so revisions arrive as plain
+`{"store": ..., "id": ...}` data (`RevisionRef.to_dict()`): a store and one of its
+revisions. A loaded model could never travel this way, which is exactly why blocks
+pass pointers to data rather than the data itself.
 """
 
+import json
 import logging
+from contextlib import closing
+from uuid import UUID
 
-from playbook.blocks import BlockSpec, Catalogue, DataRecord
+from playbook.blocks import BlockSpec, Catalogue, RevisionRef
 from playbook.blocks.registry import get_block, load_block_sources
 from playbook.playbooks import execute_playbook, parse_doc, playbook_from_doc
 from prefect import flow
+from prefect.artifacts import create_table_artifact
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import (
+    ArtifactFilter,
+    ArtifactFilterFlowRunId,
+    ArtifactFilterKey,
+)
 from prefect.deployments import run_deployment
 
 from runner.config import exec_image
@@ -32,6 +42,11 @@ logger = logging.getLogger(__name__)
 
 BLOCK_FLOW_NAME = "run-block"
 PLAYBOOK_FLOW_NAME = "run-playbook"
+
+OUTPUT_ARTIFACT_KEY = "block-output"
+"""The key of the one-row table artifact `run-block` publishes its output revision as.
+It is how that revision travels back out of the block's container: to the orchestrator,
+which hands it to the next step, and to Manta's backend, which reports it."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -76,9 +91,6 @@ def parse_catalogue_parameter(raw: str) -> Catalogue:
     # Fills in from this flow's own call parameters below, not from anything
     # read in the function body — this is the only place `step_name` is used.
     flow_run_name="{step_name}[{block}]",
-    # The step's output record, read back by the orchestrator from the object
-    # store. The data itself never travels this way — only the pointer to it.
-    persist_result=True,
     # A block's own print()s are part of its log, and solvers are talkative.
     log_prints=True,
 )
@@ -86,7 +98,7 @@ def run_block(
     block: str,
     step_name: str,
     config: dict,
-    record: dict,
+    revision: dict,
     inputs: dict[str, dict] | None,
 ) -> dict:
     """Run one block by name, in this container, and report where its result went.
@@ -100,15 +112,24 @@ def run_block(
     This is the only code in this runtime that runs inside a block's own
     environment, and it does not import a block until asked for one by name.
     """
+    # Imported here: only a block's own image installs `playbook[run]`, and the
+    # control image imports this module to dispatch at this flow.
+    from datarecord import Workspace
+    from playbook.blocks.run import open_revision
+
     # Nothing has imported this container's block library yet until this call
     # does: MANTA_BLOCK_SOURCES (see config.block_sources) names it, but only
     # importing it registers its blocks. Skipping this leaves every run failing
     # with BlockNotRegisteredError.
     load_block_sources()
     block_cls = get_block(block)
-    wired = {name: DataRecord.from_dict(value) for name, value in (inputs or {}).items()}
-    result = block_cls(block_cls.merge_config(config, wired)).run(DataRecord.from_dict(record))
-    return result.to_dict()
+    wired = {name: RevisionRef.from_dict(value) for name, value in (inputs or {}).items()}
+    instance = block_cls(block_cls.merge_config(config, wired))
+    with closing(Workspace()) as workspace:
+        result = instance.run(open_revision(workspace, RevisionRef.from_dict(revision)))
+        output = RevisionRef.from_revision(result).to_dict()
+    create_table_artifact(table=[output], key=OUTPUT_ARTIFACT_KEY)
+    return output
 
 
 class PrefectBlockRunner:
@@ -131,9 +152,9 @@ class PrefectBlockRunner:
         *,
         step_name: str,
         config: dict,
-        record: DataRecord,
-        inputs: dict[str, DataRecord],
-    ) -> DataRecord:
+        revision: RevisionRef,
+        inputs: dict[str, RevisionRef],
+    ) -> RevisionRef:
         # Dispatching from inside a flow makes the block run a child of the
         # playbook run, which is what groups a run's steps under it in Prefect.
         # Prefect records job_variables on the flow run, so which image ran a
@@ -145,7 +166,7 @@ class PrefectBlockRunner:
                 "block": block.name,
                 "step_name": step_name,
                 "config": config,
-                "record": record.to_dict(),
+                "revision": revision.to_dict(),
                 "inputs": {name: value.to_dict() for name, value in inputs.items()},
             },
         )
@@ -156,11 +177,32 @@ class PrefectBlockRunner:
                 f"{state.type.value if state else 'UNKNOWN'}; "
                 f"its log is on flow run {flow_run.id}"
             )
-        return DataRecord.from_dict(state.result())
+        return _block_output(flow_run.id, step_name)
+
+
+def _block_output(flow_run_id: UUID, step_name: str) -> RevisionRef:
+    """The output revision a completed `run-block` flow run published (see `run_block`)."""
+    # TODO(post-MVP): like the backend's reading of a run's outputs, this only finds a
+    # step's output through the artifact its block run publishes to Prefect. Once data
+    # records are tracked in Manta's own database, consider reading it from there.
+    with get_client(sync_client=True) as client:
+        artifacts = client.read_artifacts(
+            artifact_filter=ArtifactFilter(
+                flow_run_id=ArtifactFilterFlowRunId(any_=[flow_run_id]),
+                key=ArtifactFilterKey(any_=[OUTPUT_ARTIFACT_KEY]),
+            )
+        )
+    if not artifacts:
+        raise BlockRunFailedError(
+            f"step {step_name!r} completed without publishing its output revision; "
+            f"its log is on flow run {flow_run_id}"
+        )
+    [row] = json.loads(artifacts[0].data)
+    return RevisionRef.from_dict(row)
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)
-def run_playbook(playbook: dict, config: dict, record: dict, catalogue: str) -> dict:
+def run_playbook(playbook: dict, config: dict, revision: dict, catalogue: str) -> dict:
     """Run a whole playbook, given its document rather than the playbook itself.
 
     `catalogue` is what `playbook`'s blocks are resolved against — this process
@@ -172,7 +214,7 @@ def run_playbook(playbook: dict, config: dict, record: dict, catalogue: str) -> 
     built = playbook_from_doc(parse_doc(playbook), catalogue=resolved_catalogue)
     result = execute_playbook(
         built,
-        DataRecord.from_dict(record),
+        RevisionRef.from_dict(revision),
         config,
         runner=PrefectBlockRunner(),
     )

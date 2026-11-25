@@ -19,5 +19,5 @@ If the page loads but login fails, check that the backend answers on port 8000, 
 
 ## Next steps
 
-- To format, lint and type-check your change, read [Contributing: Frontend](../contributing/frontend.md).
+- To format, lint, and type-check your change, read [Contributing: Frontend](../contributing/frontend.md).
 - To stop the services, follow [Stopping](full-stack.md#stopping) on the Full stack page.

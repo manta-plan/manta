@@ -1,0 +1,77 @@
+// The record server serves datarecord stores that an admin uploads to its
+// bucket. Only its catalogue is read here: the list of records a project can
+// be created from.
+
+// A record in the catalogue, as listed without opening it.
+export type RecordSummary = {
+  id: string;
+  label: string;
+  description: string;
+  // Its named revisions, scenarios and run results alike.
+  revisions: string[];
+  size: number;
+  modified: string | null;
+  files: number;
+  // Open on the server now: records open when a project first uses them.
+  open: boolean;
+  // Why it last failed to open; it is retried on the next use.
+  error: string | null;
+};
+
+export type RecordCatalogue = {
+  records: RecordSummary[];
+  // What a project that names no record opens.
+  default: string | null;
+};
+
+export type RecordServerConfig = {
+  // host[:port] of the record server: the app's own origin.
+  server: string;
+  // Shared dev token: it ships in the static bundle, so it is not a secret.
+  token: string;
+};
+
+export function recordServerConfig(): RecordServerConfig {
+  // The record server is on the app's own origin: the deployed frontend's
+  // Caddy (frontend/Caddyfile) and the Vite dev server proxy it there, so one
+  // build works on any host, port or domain, with no CORS.
+  return { server: window.location.host, token: import.meta.env.VITE_RECORD_TOKEN ?? "" };
+}
+
+// The record server is reached over the page's own protocol: an https page
+// can't call http (mixed content), and an http page, e.g. a VM by IP address
+// without a certificate, has no https to call.
+export function isSecure() {
+  return window.location.protocol === "https:";
+}
+
+async function recordServerGet<T>(path: string): Promise<T> {
+  const config = recordServerConfig();
+  const protocol = isSecure() ? "https" : "http";
+  const response = await fetch(`${protocol}://${config.server}${path}`, {
+    headers: { Authorization: `Bearer ${config.token}` },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("The record server refused the token.");
+    }
+
+    throw new Error(`GET ${path}: HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function getRecordCatalogue(): Promise<RecordCatalogue> {
+  return recordServerGet<RecordCatalogue>("/api/records");
+}
+
+// A record's revision UUIDs by revision name, e.g. `{ inputs: "1bad4cfd-…" }`.
+export async function getRecordRevisions(id: string): Promise<Record<string, string>> {
+  const record = await recordServerGet<{ revisions: Record<string, string> | null }>(
+    `/api/records/${encodeURIComponent(id)}/files`,
+  );
+
+  return record.revisions ?? {};
+}
