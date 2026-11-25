@@ -39,6 +39,12 @@ services:
       # Caddy's certificates and ACME account: without it every recreate
       # asks Let's Encrypt for a new certificate, and its rate limits bite.
       - caddy-data:/data
+    networks:
+      default:
+        # Fixed, so the backend can trust X-Forwarded-For from this address
+        # alone (FORWARDED_ALLOW_IPS in compose-dev-backend.yaml). Outside the
+        # network's ip_range (compose-dev-services.yaml), so it's never taken.
+        ipv4_address: 172.30.0.2
     depends_on:
       backend:
         condition: service_healthy

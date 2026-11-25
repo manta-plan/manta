@@ -234,3 +234,44 @@ def test_register_creates_an_example_project_for_a_new_user(
     # Then
     assert len(rows) == 1
     assert example_store_exists(str(rows[0][0]))
+
+
+def test_guest_login_returns_working_tokens_for_a_new_user(
+    app_server: str, db_connection: psycopg.Connection, kc_oidc_client: KeycloakOpenID
+) -> None:
+    # When
+    response = httpx2.post(f"{app_server}/v1/auth/guest")
+
+    # Then
+    assert response.status_code == 201
+    body = response.json()
+    claims = kc_oidc_client.decode_token(body["access_token"], validate=True)
+    assert claims["preferred_username"].startswith("guest-")
+
+    with db_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT username, idp_source FROM users WHERE idp_subject = %s", (claims["sub"],)
+        )
+        row = cursor.fetchone()
+    assert row == (claims["preferred_username"], claims["iss"])
+
+    # ...and the token is accepted by authenticated routes without calling /register
+    projects = httpx2.get(
+        f"{app_server}/v1/projects", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert projects.status_code == 200
+
+    # ...and can be refreshed like any other session
+    refreshed = httpx2.post(
+        f"{app_server}/v1/auth/refresh", json={"refresh_token": body["refresh_token"]}
+    )
+    assert refreshed.status_code == 200
+
+
+def test_each_guest_login_creates_a_different_user(app_server: str) -> None:
+    # When
+    first = httpx2.post(f"{app_server}/v1/auth/guest").json()
+    second = httpx2.post(f"{app_server}/v1/auth/guest").json()
+
+    # Then
+    assert first["access_token"] != second["access_token"]
