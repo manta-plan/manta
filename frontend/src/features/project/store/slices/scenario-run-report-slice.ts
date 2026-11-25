@@ -1,25 +1,15 @@
-import { widgetsForCanvasPreset } from "../../data/reports";
-import type { ReportWidget } from "../../data/report-widgets";
 import { INITIAL_RUNS } from "../../data/runs";
 import { INITIAL_SCENARIOS } from "../../data/scenarios";
 import type { ScenarioMutation } from "../../data/scenarios";
 import { loadProjectScenarios, saveProjectScenarios } from "../../lib/project-scenarios";
 import { loadProjectRuns, saveProjectRuns } from "../../lib/project-runs";
-import { loadProjectInspections, saveProjectInspections } from "../../lib/project-inspections";
-import type { InspectionContent } from "../../data/inspections";
-import { loadProjectReports, saveProjectReports } from "../../lib/project-reports";
 import type {
   ProjectStoreGet,
   ProjectStoreSet,
-  CreateInspectionInput,
-  CreateReportInput,
-  NewInspectionInput,
   CreateRunInput,
   CreateScenarioDirectMutationInput,
   CreateScenarioInput,
   CreateScenarioMutationInput,
-  InspectionCanvas,
-  Report,
   Run,
   Scenario,
 } from "../types";
@@ -31,14 +21,6 @@ function persisted(projectId: string | null, runs: Run[]): Run[] {
   saveProjectRuns(projectId, runs);
   return runs;
 }
-
-// Same write-through helper for reports, whose widget edits change them often.
-function persistedReports(projectId: string | null, reports: Report[]): Report[] {
-  saveProjectReports(projectId, reports);
-  return reports;
-}
-
-let inspectionSaveTimeout: ReturnType<typeof setTimeout> | undefined;
 
 export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
   return {
@@ -192,67 +174,6 @@ export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectS
     selectRun: (id: string | null) => set({ selectedRunId: id, isResultInspectorOpen: false }),
     selectedInspectionId: null,
     selectInspection: (id: string | null) => set({ selectedInspectionId: id }),
-    inspections: [] as InspectionCanvas[],
-    inspectionsProjectId: null as string | null,
-    loadProjectInspections: (projectId: string) =>
-      set({
-        inspections: loadProjectInspections(projectId),
-        inspectionsProjectId: projectId,
-        selectedInspectionId: null,
-      }),
-    // Leaves selection to the route, so creating one from a widget's menu
-    // doesn't pull the user away from the page they're on.
-    createInspection: ({ name, description, ...content }: NewInspectionInput) => {
-      const inspection: InspectionCanvas = {
-        id: `inspection-${Date.now()}`,
-        name: name.trim(),
-        description: description.trim(),
-        ...content,
-      };
-      set((state) => {
-        const inspections = [inspection, ...state.inspections];
-        saveProjectInspections(state.currentProjectId, inspections);
-        return { inspections, isNewInspectionDrawerOpen: false };
-      });
-      return inspection;
-    },
-    updateInspection: (id: string, { name, description }: CreateInspectionInput) =>
-      set((state) => {
-        const inspections = state.inspections.map((inspection) =>
-          inspection.id === id
-            ? { ...inspection, name: name.trim(), description: description.trim() }
-            : inspection,
-        );
-        saveProjectInspections(state.currentProjectId, inspections);
-        return { inspections, isNewInspectionDrawerOpen: false, editingInspectionId: null };
-      }),
-    // Panning a map widget changes its inspection every frame, so the save
-    // waits for the changes to settle.
-    updateInspectionContent: (id: string, content: Partial<InspectionContent>) => {
-      set((state) => ({
-        inspections: state.inspections.map((inspection) =>
-          inspection.id === id ? { ...inspection, ...content } : inspection,
-        ),
-      }));
-      clearTimeout(inspectionSaveTimeout);
-      inspectionSaveTimeout = setTimeout(
-        () => saveProjectInspections(get().currentProjectId, get().inspections),
-        400,
-      );
-    },
-    deleteInspection: (id: string) =>
-      set((state) => {
-        const inspections = state.inspections.filter((inspection) => inspection.id !== id);
-        saveProjectInspections(state.currentProjectId, inspections);
-        return {
-          inspections,
-          ...(state.selectedInspectionId === id ? { selectedInspectionId: null } : {}),
-          // Don't leave the edit form open on an inspection that no longer exists.
-          ...(state.editingInspectionId === id
-            ? { isNewInspectionDrawerOpen: false, editingInspectionId: null }
-            : {}),
-        };
-      }),
     isResultInspectorOpen: false,
     openResultInspector: () => set({ isResultInspectorOpen: true }),
     closeResultInspector: () => set({ isResultInspectorOpen: false }),
@@ -361,13 +282,12 @@ export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectS
       }));
     },
     // Refuses in-progress runs (their async solve would write back into a
-    // missing run) and runs still referenced by an inspection — RunsPanel
-    // disables the UI for it, this just guards the action too.
+    // missing run) — RunsPanel disables the UI for it, this just guards
+    // the action too.
     deleteRun: (id: string) =>
       set((state) => {
         const run = state.runs.find((r) => r.id === id);
         if (!run || run.status === "running") return {};
-        if (state.inspections.some((i) => i.runId === id)) return {};
         return {
           runs: persisted(
             state.currentProjectId,
@@ -430,95 +350,5 @@ export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectS
         };
       });
     },
-
-    reports: [] as Report[],
-    reportsProjectId: null as string | null,
-    loadProjectReports: (projectId: string) =>
-      set({
-        reports: loadProjectReports(projectId),
-        reportsProjectId: projectId,
-        selectedReportId: null,
-      }),
-    isReportTourPlaceholderVisible: false,
-    setReportTourPlaceholderVisible: (visible: boolean) =>
-      set({ isReportTourPlaceholderVisible: visible }),
-    selectedReportId: null,
-    selectReport: (id: string | null) => set({ selectedReportId: id }),
-    createReport: ({ name, scenarioName, runId, canvasPreset }: CreateReportInput) => {
-      const report: Report = {
-        id: `report-${Date.now()}`,
-        name: name.trim(),
-        scenarioName,
-        generatedAt: "Just now",
-        widgets: widgetsForCanvasPreset(canvasPreset),
-        runId,
-        canvasPreset,
-      };
-      set((state) => ({
-        reports: persistedReports(state.currentProjectId, [report, ...state.reports]),
-        selectedReportId: report.id,
-        isNewReportDrawerOpen: false,
-      }));
-      return report;
-    },
-    renameReport: (id: string, name: string) =>
-      set((state) => ({
-        reports: persistedReports(
-          state.currentProjectId,
-          state.reports.map((report) =>
-            report.id === id ? { ...report, name: name.trim() } : report,
-          ),
-        ),
-        isNewReportDrawerOpen: false,
-        editingReportId: null,
-      })),
-    deleteReport: (id: string) =>
-      set((state) => ({
-        reports: persistedReports(
-          state.currentProjectId,
-          state.reports.filter((report) => report.id !== id),
-        ),
-        // The widget config drawer edits the selected report's widgets, so
-        // close it along with the selection.
-        ...(state.selectedReportId === id
-          ? { selectedReportId: null, isNewWidgetDrawerOpen: false, editingWidgetId: null }
-          : {}),
-        ...(state.editingReportId === id
-          ? { isNewReportDrawerOpen: false, editingReportId: null }
-          : {}),
-      })),
-    addWidgetToReport: (widget: ReportWidget) =>
-      set((state) => ({
-        reports: persistedReports(
-          state.currentProjectId,
-          state.reports.map((report) =>
-            report.id === state.selectedReportId
-              ? { ...report, widgets: [...report.widgets, widget] }
-              : report,
-          ),
-        ),
-      })),
-    updateWidgetInReport: (widget: ReportWidget) =>
-      set((state) => ({
-        reports: persistedReports(
-          state.currentProjectId,
-          state.reports.map((report) =>
-            report.id === state.selectedReportId
-              ? { ...report, widgets: report.widgets.map((w) => (w.id === widget.id ? widget : w)) }
-              : report,
-          ),
-        ),
-      })),
-    removeWidgetFromReport: (widgetId: string) =>
-      set((state) => ({
-        reports: persistedReports(
-          state.currentProjectId,
-          state.reports.map((report) =>
-            report.id === state.selectedReportId
-              ? { ...report, widgets: report.widgets.filter((w) => w.id !== widgetId) }
-              : report,
-          ),
-        ),
-      })),
   };
 }

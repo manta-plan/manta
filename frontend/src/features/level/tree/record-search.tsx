@@ -15,10 +15,12 @@ export function RecordSearchBox({
   term,
   onChange,
   placeholder = "Find an entity, carrier or location",
+  autoFocus,
 }: {
   term: string;
   onChange: (term: string) => void;
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <div className="border-surface-700 shrink-0 border-b px-2 py-1.5">
@@ -31,6 +33,7 @@ export function RecordSearchBox({
           onKeyDown={(event) => event.key === "Escape" && onChange("")}
           placeholder={placeholder}
           aria-label={placeholder}
+          autoFocus={autoFocus}
           className="text-surface-50 placeholder:text-surface-500 min-w-0 flex-1 bg-transparent text-[12px] outline-none [&::-webkit-search-cancel-button]:hidden"
         />
         {term && (

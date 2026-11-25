@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useAppStore } from "../../home/store";
 import type { ProjectState } from "./types";
+import { createAnalyseSlice } from "./slices/analyse-slice";
 import { createCurrentProjectSlice } from "./slices/current-project-slice";
 import { createDraftSlice } from "./slices/draft-slice";
 import { createDrawerSlice } from "./slices/drawer-slice";
@@ -32,6 +33,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   ...createRecordSlice(set, get),
   ...createDraftSlice(set, get),
   ...createScenarioRunReportSlice(set, get),
+  ...createAnalyseSlice(set, get),
 }));
 
 // A vector basemap follows the theme the home store keeps; satellite imagery has
