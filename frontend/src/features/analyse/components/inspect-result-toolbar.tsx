@@ -13,7 +13,7 @@ const NO_COMPARISON = "";
 
 // The Inspect tab's toolbar: which of the record's results every inspection shows, and
 // which one it compares with. Hidden until the catalogue has results.
-export function InspectResultToolbar() {
+export function InspectResultToolbar({ withComparison = true }: { withComparison?: boolean }) {
   const catalogueState = useLoadResultCatalogue();
   const selection = useResultSelection();
   if (catalogueState.status !== "ready" || catalogueState.catalogue.results.length === 0)
@@ -48,16 +48,18 @@ export function InspectResultToolbar() {
           disabled={results.length < 2}
           disabledHint="the only one there is"
         />
-        <ToolbarModeMenu
-          label="Compare with"
-          options={comparisonOptions}
-          value={comparisonRun?.id ?? NO_COMPARISON}
-          onChange={selectComparison}
-          showLabel
-          active={comparisonRun !== null}
-          disabled={results.length < 2}
-          disabledHint="there is no other result"
-        />
+        {withComparison && (
+          <ToolbarModeMenu
+            label="Compare with"
+            options={comparisonOptions}
+            value={comparisonRun?.id ?? NO_COMPARISON}
+            onChange={selectComparison}
+            showLabel
+            active={comparisonRun !== null}
+            disabled={results.length < 2}
+            disabledHint="there is no other result"
+          />
+        )}
       </Toolbar.Group>
       <Toolbar.Separator className="bg-surface-600 mx-1 h-5 w-px" />
     </>

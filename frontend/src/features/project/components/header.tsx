@@ -206,7 +206,9 @@ export function Header() {
         {/* Right toolbar */}
         <Toolbar.Root className="ml-auto flex shrink-0 items-center gap-1 pr-1">
           {/* The open level's actions (Build) come first, then the project-wide ones. */}
-          {activeTab === "analyse" && (selectedViewId || isDataPage) && <InspectResultToolbar />}
+          {activeTab === "analyse" && (selectedViewId || isDataPage) && (
+            <InspectResultToolbar withComparison={!isDataPage} />
+          )}
 
           <LevelToolbarActions />
 
