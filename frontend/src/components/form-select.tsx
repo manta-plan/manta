@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { Select } from "@base-ui/react/select";
 import type { IconType } from "react-icons";
 import { LuCheck, LuChevronDown } from "react-icons/lu";

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 [build-system]
 requires = ["hatchling"]
@@ -12,7 +12,7 @@ version = "0.1.0"
 description = "The blocks and playbooks Manta ships: energy-model work built on PyPSA."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "Apache-2.0"
 authors = [
     { name = "Bryn Pickering", email = "bryn.pickering@openenergytransition.org" },
     { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" }

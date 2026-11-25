@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
@@ -7,3 +11,7 @@ repos:
         files: ^(backend|playbook|playbook-library)/
       - id: ruff-format
         files: ^(backend|playbook|playbook-library)/
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: v6.2.0
+    hooks:
+      - id: reuse-lint-file

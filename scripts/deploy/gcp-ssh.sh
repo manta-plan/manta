@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # Runs a command on the VM over SSH, as the deploy identity (OS Login).
 #
 #   scripts/deploy/gcp-ssh.sh '<remote command>'

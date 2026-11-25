@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 from logging.config import fileConfig
 
 from alembic import context

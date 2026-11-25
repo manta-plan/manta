@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { JsonObject } from "./playbookFormTypes";
 
 export function isObject(value: unknown): value is JsonObject {

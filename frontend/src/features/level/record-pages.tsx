@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useMemo } from "react";
 import { PageSkeleton } from "./ui";
 import { LevelPage } from "./level-page";

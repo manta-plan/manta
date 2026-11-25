@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """The record catalogue: datarecord stores under one root, opened on demand.
 
 - **A record is a store** under the root (local folder, or `s3://bucket/…`):

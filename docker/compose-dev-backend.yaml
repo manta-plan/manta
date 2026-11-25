@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # The backend (backend/Dockerfile), on top of every service in
 # compose-dev-services.yaml. compose-dev-fullstack.yaml adds the frontend on
 # top of this. Could also back the integration tests later, instead of them

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { create } from "zustand";
 import { buildConfig } from "../../playbook-config/buildConfig";
 import { getPlaybook, listPlaybooks, validatePlaybookConfig } from "../../playbooks/api";

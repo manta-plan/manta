@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # Serves the VM at $SITE_HOST through the existing load balancer, which lives
 # in another project than the VM:
 #

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 from uuid import uuid4

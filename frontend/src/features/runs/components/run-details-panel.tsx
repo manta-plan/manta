@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { Button } from "@base-ui/react/button";
 import { FiRefreshCw } from "react-icons/fi";
 import type { ExpandedRunState } from "../types";

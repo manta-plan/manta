@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """How this runtime reaches the things it drives: the images blocks execute in,
 the network their containers join, and the object store as they see it.

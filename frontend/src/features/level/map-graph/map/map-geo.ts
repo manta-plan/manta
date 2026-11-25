@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { BusRow } from "../map-graph-data";
 
 // Points and boxes for the map, in lon/lat.

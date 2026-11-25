@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Manta contributors
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Manta Backend
 
 The Manta backend is built with [Python](https://www.python.org/) and

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 export type ProjectTab = "build" | "run" | "inspect" | "analyse";
 
 // The active tab is derived from the URL rather than stored as separate

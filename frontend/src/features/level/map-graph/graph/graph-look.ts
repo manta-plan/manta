@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useProjectStore } from "../../../project/store/project-store";
 import { LINE } from "./graph-parts";
 

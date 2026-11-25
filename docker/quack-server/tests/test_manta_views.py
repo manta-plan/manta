@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """The record catalogue and the `manta` views against the 11 November
 BEL-pre-aggregated combined store (inputs, the stress test, and three run
 types solved for each), in `data/records` (the server's local root; see the

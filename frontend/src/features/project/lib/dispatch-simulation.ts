@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { SNAPSHOT_COUNT } from "./inspect-filters";
 
 // The dummy hour-by-hour dispatch behind the Power Dispatch widgets and the

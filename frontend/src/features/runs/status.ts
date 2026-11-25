@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { IconType } from "react-icons";
 import { FiActivity, FiCheckCircle, FiClock, FiRefreshCw, FiXCircle } from "react-icons/fi";
 import type { RunStatus } from "./types";

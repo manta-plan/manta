@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ViewState } from "../store/types";
 import { querySql, type CustomQuery } from "./custom-query";
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # SITE_ADDRESS defaults to plain HTTP on :80. Set it to a domain name (e.g.
 # manta.example.org) and Caddy obtains and renews an HTTPS certificate for it.
 {$SITE_ADDRESS::80} {

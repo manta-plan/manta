@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { Toolbar } from "@base-ui/react/toolbar";
 import { LuPackagePlus, LuPencil } from "react-icons/lu";
 import { ToolbarIconButton } from "../../project/components/toolbar-icon-button";

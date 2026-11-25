@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { create } from "zustand";
 
 // What the map draws, from its "Map layers" popover. Kept across levels for

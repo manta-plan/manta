@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { clearSession, getValidAccessToken, refreshAccessToken } from "../features/auth/session";
 
 export function getJson<ResponseBody>(url: string) {

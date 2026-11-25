@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo } from "react";
 import { useShownData } from "../project/lib/record-data";
 import { serverName, serverQuery } from "../project/lib/record-server/client";

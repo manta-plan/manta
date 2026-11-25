@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { RecordInfo, Revision } from "./record-server/types";
 
 // Which of a record's scenarios the project page can show, and which one it

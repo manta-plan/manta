@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { componentOfPageId, componentPageId } from "./component-page";
 import { entityOfPageId, entityPageId } from "./entity-page";
 

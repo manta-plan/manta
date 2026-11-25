@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Manta contributors
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Manta Docker
 
 Local development services, run via [Docker Compose](https://docs.docker.com/compose/).

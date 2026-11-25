@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 from fastapi import Depends, HTTPException
 from playbook.blocks import Catalogue
 from playbook.playbooks import PlaybookIssue, find_playbook_issues, playbook_from_doc

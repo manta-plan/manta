@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, describe, expect, it } from "vitest";
 import { setRecordCatalog } from "../../project/lib/record-server/client";
 import { entitiesSql, levelCtes, membersSql, scopeKey, spanCondition, spanSql } from "../level-sql";

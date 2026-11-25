@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 /* eslint-disable react-hooks/exhaustive-deps -- several memos and effects key on a derived value (joined coordinates, the fit key, the highlight) because the object they read is rebuilt each render; each says which. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, {

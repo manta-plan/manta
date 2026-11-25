@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { create } from "zustand";
 import type { FeedbackKind } from "./send-feedback";
 import type { FeedbackImage } from "./feedback-image";

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 from fastapi import APIRouter
 
 from manta.routes.v1.auth_route import router as auth_router

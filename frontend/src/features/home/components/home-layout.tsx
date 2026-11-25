@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { LuLogOut, LuMoon, LuSun } from "react-icons/lu";

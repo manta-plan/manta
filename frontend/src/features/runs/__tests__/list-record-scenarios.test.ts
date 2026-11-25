@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import type { Revision } from "../../project/lib/record-server/types";
 import { listRecordScenarios } from "../list-record-scenarios";

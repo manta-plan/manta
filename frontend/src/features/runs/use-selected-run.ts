@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { draftIdPrefix, useRunsStore } from "./store/runs-store";
 import type { GetRunResponse, RunDraft, RunListItem } from "./types";
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """add updated_at to projects, runs and users
 
 Revision ID: b3d7a1c25e90

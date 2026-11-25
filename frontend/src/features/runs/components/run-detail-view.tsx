@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, type ReactNode } from "react";
 import { FiRefreshCw } from "react-icons/fi";
 import { LuArrowLeft, LuCircleDashed, LuCirclePlay } from "react-icons/lu";

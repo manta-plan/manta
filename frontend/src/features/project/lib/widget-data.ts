@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 // The table behind a widget, as the data drawer shows it. Headers carry
 // units; time series are wide, one row per snapshot and a column per series.
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { postJson } from "../../api/manta";
 import { clearSession, decodeTokenClaims, getRefreshToken, startSession } from "./session";
 import type { LoginResponse, RegisterResponse } from "./types";

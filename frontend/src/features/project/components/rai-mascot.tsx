@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import type { IconBaseProps } from "react-icons";
 import type { AnimationItem } from "lottie-web";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { KeyboardEvent, ReactNode } from "react";
 
 // Pieces both graphs draw with.

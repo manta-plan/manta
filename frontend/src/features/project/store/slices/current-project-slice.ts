@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ProjectStoreSet } from "../types";
 
 export function createCurrentProjectSlice(set: ProjectStoreSet) {

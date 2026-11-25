@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState } from "react";
 import { getRecordCatalogue } from "./record-server";
 import type { RecordCatalogue } from "./record-server";

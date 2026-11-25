@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Manta contributors
 #
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 [project]
 name = "runner"
@@ -10,7 +10,7 @@ readme = "README.md"
 # Not pinned to the backend's 3.14: this package also runs inside the control
 # image, which is built on Prefect's own (3.12) image.
 requires-python = ">=3.12"
-license = "MIT"
+license = "Apache-2.0"
 dependencies = [
     # The playbook engine this runtime walks, and the block catalogue it resolves
     # steps against. Block libraries (e.g. playbook-library) are never imported

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { isSecure, recordServerConfig } from "../../../home/lib/record-server";
 import type { RecordServerConfig } from "../../../home/lib/record-server";

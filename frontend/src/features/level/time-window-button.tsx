@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { LuClock3, LuX } from "react-icons/lu";

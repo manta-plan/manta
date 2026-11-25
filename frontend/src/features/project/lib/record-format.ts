@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { AttributeSpec } from "./record-server/types";
 
 // Display text for record ids and values.

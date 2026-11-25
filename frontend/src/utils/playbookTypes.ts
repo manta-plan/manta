@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 // ── GET /v1/playbooks ───────────────────────────────────────────────────────
 
 export type PlaybookStepSummary = {

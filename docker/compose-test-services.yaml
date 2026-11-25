@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
 # Test stack for the backend's integration suite (see
 # backend/tests/integration/conftest.py). Includes every service from
 # compose-dev-services.yaml wholesale — this file only adds test-specific

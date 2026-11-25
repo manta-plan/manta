@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { RAMP_GRADIENT } from "./map-layer-store";
 
 // One legend per active colour layer (name, min, ramp, max, unit), or a note

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { INITIAL_SCENARIOS, type Scenario } from "../data/scenarios";
 
 const PROJECT_SCENARIOS_STORAGE_KEY = "manta-project-scenarios-v1";

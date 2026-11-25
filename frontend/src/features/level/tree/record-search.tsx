@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { LuBoxes, LuCircleDot, LuMapPin, LuSearch, LuX } from "react-icons/lu";
 import { useProjectStore } from "../../project/store/project-store";

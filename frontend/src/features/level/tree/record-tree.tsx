@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tree, type NodeRendererProps, type RowRendererProps, type TreeApi } from "react-arborist";
 import { LuBoxes, LuCircleDot, LuFolder, LuFolderOpen, LuMapPin, LuTag } from "react-icons/lu";

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # The image a block's flow run actually executes in, built in two stages.
 #
 # Stage 1, `bare`: one block environment, as an image — playbook-library plus

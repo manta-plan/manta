@@ -1,4 +1,9 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 set -eu
 
 # Runs automatically via /docker-entrypoint-initdb.d on Postgres's first boot

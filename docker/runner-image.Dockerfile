@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # The image for the `runner` package itself: everything that talks to the
 # Prefect API and the Docker daemon but never runs a block — the one-shot
 # provisioner, the worker draining the blocks work pool, and the worker running

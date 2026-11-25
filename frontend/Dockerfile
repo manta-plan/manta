@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 #   docker build -t manta-frontend frontend
 FROM node:24-slim AS build
 WORKDIR /app

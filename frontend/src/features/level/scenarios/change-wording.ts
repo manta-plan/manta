@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { DraftChangeOp, DraftChangeTarget } from "../../project/lib/draft-scenarios";
 
 // How a draft change reads in the Scenarios panel and the change dialog's

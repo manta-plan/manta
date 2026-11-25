@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useMemo } from "react";
 import { useShownData } from "../../project/lib/record-data";
 import { useProjectStore } from "../../project/store/project-store";

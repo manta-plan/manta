@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState } from "react";
 import { LuSend } from "react-icons/lu";
 import { RaiAnimated, RaiMascot } from "./rai-mascot";

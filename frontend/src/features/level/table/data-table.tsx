@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { LuArrowDown, LuArrowUp, LuArrowUpDown, LuChartLine } from "react-icons/lu";
 import { formatNumber } from "../../project/lib/record-format";

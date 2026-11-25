@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { SubmitEvent } from "react";
 import { useState } from "react";
 import { FiAlertCircle, FiRefreshCw } from "react-icons/fi";

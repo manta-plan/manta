@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import type { DraftChange, DraftChangeTarget } from "../../project/lib/draft-scenarios";
 import { serverName, serverQuery, sqlString } from "../../project/lib/record-server/client";
 import { entitiesSql } from "../level-sql";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { widgetsForCanvasPreset } from "../../data/reports";
 import type { ReportWidget } from "../../data/report-widgets";
 import { INITIAL_RUNS } from "../../data/runs";

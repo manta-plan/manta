@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import type { PlaybookDetail } from "../../../utils/playbookTypes";
 import { collectGroups, groupLabel, resolveSchema, seedDefaults } from "../../../utils/jsonSchema";

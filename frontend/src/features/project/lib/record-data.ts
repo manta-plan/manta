@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Manta contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import useSWR, { unstable_serialize, type Cache, type State } from "swr";
 import useSWRImmutable from "swr/immutable";
 import { recordCatalog } from "./record-server/client";
