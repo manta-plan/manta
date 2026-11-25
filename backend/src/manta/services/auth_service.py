@@ -30,7 +30,7 @@ GUEST_USERNAME_PREFIX = "guest-"
 # (RFC 2606), so no mail can ever be delivered to a guest's made-up address.
 GUEST_EMAIL_DOMAIN = "guest.manta.invalid"
 
-# User fields that cache an IdP claim, refreshed on login.
+# User fields that cache an IdP claim, refreshed on login and on token refresh.
 _SYNCED_CLAIMS = {"username": "preferred_username"}
 
 
@@ -113,6 +113,14 @@ class AuthService:
     def refresh(self, refresh_token: str) -> LoginResult:
         with _translate_keycloak_errors():
             token = self.kc_client.refresh_token(refresh_token)
+            # Keycloak issued this token to us directly, so its claims need no validation.
+            claims = self.kc_client.decode_token(token["access_token"], validate=False)
+        # A session can outlive many logins, so a rename in the IdP has to be
+        # picked up here too. Only login creates users: an unknown one is left
+        # for the authenticated routes to reject.
+        user = _find_user_by_credentials(self.db, claims["sub"], claims["iss"])
+        if user is not None:
+            self._sync_user_data_with_idp(user, claims)
         # Keycloak issues a new refresh token on every refresh. Callers must
         # replace the one they hold: if the realm's "Revoke Refresh Token"
         # setting is turned on, the old one stops working after one use.

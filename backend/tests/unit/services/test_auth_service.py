@@ -189,6 +189,65 @@ def test_refresh_returns_new_tokens(mock_db, mock_kc_client) -> None:
     assert result.refresh_expires_in == 1800
 
 
+def _refresh_service(mock_db, mock_kc_client) -> AuthService:
+    mock_kc_client.refresh_token.return_value = {
+        "access_token": "new-access",
+        "expires_in": 300,
+        "refresh_token": "new-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+    mock_kc_client.decode_token.return_value = {
+        "sub": "abc-123",
+        "iss": ISSUER,
+        "preferred_username": "alice",
+    }
+    return AuthService(db=mock_db, kc_client=mock_kc_client)
+
+
+def test_refresh_updates_username_renamed_in_the_idp(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    service.refresh("old-refresh")
+
+    # Then
+    mock_kc_client.decode_token.assert_called_once_with("new-access", validate=False)
+    assert existing_user.username == "alice"
+    mock_db.commit.assert_called_once()
+    mock_db.add.assert_not_called()
+
+
+def test_refresh_leaves_an_unchanged_user_alone(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    service.refresh("old-refresh")
+
+    # Then
+    mock_db.commit.assert_not_called()
+    mock_db.add.assert_not_called()
+
+
+def test_refresh_does_not_create_an_unknown_user(mock_db, mock_kc_client) -> None:
+    # Given - a valid Keycloak session whose manta user does not exist
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    result = service.refresh("old-refresh")
+
+    # Then - only login creates users
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
+
+
 def test_refresh_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
     # Given - Keycloak's response to a garbage, expired or revoked refresh token
     mock_kc_client.refresh_token.side_effect = KeycloakPostError(
