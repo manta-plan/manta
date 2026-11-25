@@ -91,7 +91,7 @@ Open decisions: D6 (a rule operation in the changeset, [changeset format](storag
 0. **DR stack.** Review and merge of DR PR 144 and PRs 147 to 159, and a new export of all stores (F30). Manta pins the stack tip meanwhile (D19). Added with draft 9.
 1. **Spikes** S1, S2, S4, S6. Then S3. S2 and S3 run again on the stack ([what the DR stack changes](#83-what-the-dr-stack-changes)).
 2. **BE store routes over DR**, the MVP backend step ([MVP backend note](backend-mvp.md)). First, alone: the example data import reads `store.json` instead of `revisions.json` and moves to folder `2026-11-13`. Then the store, revision and reference routes answer from DR and `store.json`, and the BE moves references by a conditional write of `store.json`. No table. The FE home page can drop `record-server.ts` here.
-3. **Session service.** Package, Quack, guard, registration with `Record.register`, view packs. One fixed instance in compose in place of quack-server.
+3. **Session service.** Package, Quack, guard, registration with `Record.register`, view packs. A one-shot compose service builds the image; no session runs in compose until phase 4 starts them.
 4. **BE sessions.** Session tables, launcher (Docker), `ensure_datarecord_session`, registration routes, Quack auth check in Caddy, lifetime policy.
 5. **FE.** Move `manta/frontend`'s record client to the BE routes: open the session, register, attach, re-attach after `Invalid connection id`, presence call.
 6. **Commit path.** Claim, write credential, changeset format, verification, and the move of the reference by a conditional write of `store.json`. The DR side exists (PRs 151 to 153).
@@ -351,7 +351,7 @@ Read with the table of [issues that the plan touches](index.md#11-issues-that-th
 
 - Phase 0: review and merge of DR PR 144 and the stack (I11), and the new export of all stores into a new bucket folder (I9, F30).
 - Phase 2: the store, revision and reference routes over DR and `store.json`, with the conditional write of `store.json`.
-- Phase 3: the `datarecord-session` package (Quack, guard, registration, view packs) as one fixed instance in compose.
+- Phase 3: the `datarecord-session` package (Quack, guard, registration, view packs) and its image, built by a one-shot compose service.
 - Phase 4: session tables, Docker launcher, `ensure_datarecord_session`, registration routes, Quack auth check in Caddy, idle and suspend policy.
 - Phase 5: the move of `manta/frontend`'s record client to the BE routes (open the session, register, attach, re-attach after `Invalid connection id`), with the presence call in place of `SELECT 1`.
 - Phase 6: implementation of the commit path; #267 is the design only.

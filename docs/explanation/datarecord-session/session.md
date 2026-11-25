@@ -32,8 +32,8 @@ Today each session has one instance.
 Browser                       Frontend Caddy      BE (FastAPI)                            Session (one per user + project)
 -------                       --------------      ------------                            --------------------------------
 DuckDB-WASM --POST /quack---> route /quack -----> quack-auth: checks token,
-                              forward_auth <----- ensure_datarecord_session,
-                                    |             204 + X-Session-Upstream
+                              forward_auth <----- reads the active session,
+                                    |             204 + X-Session-Upstream, or 409
                                     +-- body unchanged, not through the BE --------------> Quack server
 session client --/v1/...----> /v1/* ------------> session routes                           session API
                                                   DatarecordSessionService -------------------^   |
@@ -89,7 +89,7 @@ Only the BE calls this API.
 | later: `POST /registrations/{name}/edits` | operation list ([changeset format](storage-commit.md#3-changeset-format)) | Apply edits to a registration of the kind `edit` ([working records](#6-working-records)). |
 | later: `POST /suspend` | | Hook before the BE stops the instance ([working records](#6-working-records), [session lifetime](backend.md#3-session-lifetime)). |
 
-The `kind` of a registration is the same value that the BE stores in its `datarecord_session_registrations` row: `view`, `diff`, and later `edit`. A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. The FE removes a registration by unregistering. The registrations are not an audit log.
+The `kind` of a registration is the same value that the BE stores in its `datarecord_session_registrations` row: `view`, `diff`, and later `edit`. A registration is a revision of a store that the FE asked to access. When the datarecord session wakes from suspend, `ensure_datarecord_session` replays the registrations to rebuild it. It skips a registration that the session refuses with 404 or 422, logs a warning and keeps the row. The FE removes a registration by unregistering. The registrations are not an audit log.
 
 ### Rules
 

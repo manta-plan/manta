@@ -9,7 +9,7 @@ What the BE gains: the session tables and routes, the launcher, the lifetime pol
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack auth check](#5-routes-and-quack-auth-check) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. Every session route and every Quack request runs `ensure_datarecord_session`, so a stopped session comes back by itself. The FE reaches the session API only through the BE. Quack requests go from Caddy straight to the session, after the BE has checked them.
+This note covers the BE side of the plan. Three sections apply to the MVP: [session lifetime](#3-session-lifetime), [launcher](#4-launcher), and [routes and Quack auth check](#5-routes-and-quack-auth-check) with the two session tables. The BE starts one session per user and project through a launcher, and stops it again after a time without activity. The session routes run `ensure_datarecord_session`, so a stopped session comes back at the next session call. A Quack request never starts a session: the BE's check only reads the session row. The FE reaches the session API only through the BE. Quack requests go from Caddy straight to the session, after the BE has checked them.
 
 Two sections describe the step after the MVP: [revision index](#1-revision-index) and [runs and blocks](#2-runs-and-blocks). In that step the BE keeps an index of stores, revisions and references in Postgres. Postgres holds the contents of `store.json` and the metadata of the manifests, without the schema data, so that API requests can query and filter them. The data in S3 stays the truth. A reference gives a revision its name and moves by compare-and-set. Runs record their revisions in the same index. In the MVP the BE reads stores, revisions and references from DR and `store.json` instead ([MVP backend note](backend-mvp.md)).
 
@@ -243,7 +243,7 @@ stopped --ensure_datarecord_session--> starting --healthy + replay--> active --n
 
 ### Activity and presence
 
-- **Activity** is any proxied API call or Quack request. It sets `last_used_at`.
+- **Activity** is any proxied API call or Quack request. It sets `last_used_at`. A Quack request writes it at most once a minute.
 - **Presence** is an explicit FE call, `POST /v1/projects/{id}/datarecord-session/heartbeat`. The BE answers it alone.
 
 The FE's `SELECT 1` link check (F7) is removed. The auth check cannot tell it from a query.
@@ -266,7 +266,9 @@ A session with unsaved edits and a live presence is exempt from both stages. Thi
 1. The BE calls `POST /suspend` on the session. For views this is a no-op.
 2. The BE stops the instance.
 
-**Restore:** the next request runs `ensure_datarecord_session`. `ensure_datarecord_session` starts an instance and replays the registration rows. The FE sees a slow request, not an error.
+**Restore:** the next call of a session route runs `ensure_datarecord_session`, which starts an instance and replays the registration rows. A Quack request does not restore the session. The BE's check answers 409, and the FE then calls `POST .../datarecord-session` ([Quack auth check](#quack-auth-check)). The FE sees one slow request after that error.
+
+The replay skips a registration that the new instance refuses with 404 or 422, such as a revision whose store is gone. The BE logs a warning and keeps the row, so the FE can still `GET`, `PUT` or `DELETE` it. Any other error of the session aborts the start.
 
 ### Generation
 
@@ -298,7 +300,7 @@ The first implementation uses Docker. Kubernetes follows next year. A sub-proces
 
 `POST /v1/projects/{id}/datarecord-session` opens the project's session. It is a call of its own, apart from login and from reading the project. Pages that only list or configure a project do not start an instance.
 
-`ensure_datarecord_session` means "start the session if none runs". It locks the session row, starts an instance when needed, and replays the registration rows (see [session lifetime](#3-session-lifetime)). The open call runs `ensure_datarecord_session`. The registration routes, the commit route and every Quack request run it too. So a stopped session comes back by itself. Two routes do not run it: the heartbeat, which the BE answers alone, and `DELETE .../datarecord-session`, which suspends.
+`ensure_datarecord_session` means "start the session if none runs". It locks the session row and asks a running instance for `GET /health`. It stops an instance that does not answer, starts a new one when needed, waits up to 30 s for it to become healthy, and replays the registration rows (see [session lifetime](#3-session-lifetime)). The open call runs it, and so do `PUT` and `GET` of a registration and the commit route. So a stopped session comes back at the next of these calls. Four routes do not run it. The BE answers the heartbeat alone, and `DELETE .../datarecord-session` suspends. `DELETE` of a registration removes the row and tells only a running, healthy instance. The Quack auth check reads the session row only ([Quack auth check](#quack-auth-check)).
 
 ### Routes
 
@@ -314,9 +316,9 @@ All routes are behind Keycloak auth and a project ownership check.
 | `POST /v1/projects/{id}/datarecord-session` | Open the project's session: runs `ensure_datarecord_session`. Returns `{status, generation, quack: {uri, token}}`. |
 | `DELETE /v1/projects/{id}/datarecord-session` | Suspend now. |
 | `POST /v1/projects/{id}/datarecord-session/heartbeat` | Presence. |
-| `GET`, `PUT`, `DELETE /v1/projects/{id}/datarecord-session/registrations/{name}` | Write the row, then apply it to the session. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
+| `GET`, `PUT`, `DELETE /v1/projects/{id}/datarecord-session/registrations/{name}` | `PUT` writes the row, then applies it to the session, and keeps no row that the session refuses. `GET` reads the row and the session's registration. `DELETE` removes the row, then the registration in a running instance. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |
 | `GET /v1/projects/{id}/datarecord-session/changes` with `store`, `after`, optional `before` | The change summary of the reference `after` against the fork point with its base reference. With `before`, an explicit compare. `after` and `before` are reference names or revision ids. Without `before`, the baseline is the fork point with the base of `after`. The BE runs `ensure_datarecord_session`, calls the session's `POST /summaries`, and passes the answer through. Nothing is stored. |
-| `GET /v1/datarecord-session/quack-auth` | Caddy's auth check for a Quack request, for the project in `X-Manta-Project`. Runs `ensure_datarecord_session` and returns the session's address in `X-Session-Upstream`, see below. |
+| `GET /v1/datarecord-session/quack-auth` | Caddy's auth check for a Quack request, for the project in `X-Manta-Project`. Returns the address of the active session in `X-Session-Upstream`, or 409 when no session is active. It never starts a session, see below. |
 
 In the MVP the store, revision and reference routes read from DR and `store.json`. They change `store.json` by one read, one check and one conditional PUT ([references in `store.json`](backend-mvp.md#6-references-in-storejson)). Later, with the revision index, they read from Postgres and write SQL first, then `store.json`. Only the source changes; the responses stay the same ([the shared contract](backend-mvp.md#3-the-shared-contract)).
 
@@ -360,21 +362,33 @@ For each `POST /quack`, Caddy and the BE act in four steps:
 
 1. Caddy receives the request with the two headers from the secret.
 2. Caddy removes any `X-Session-Upstream` header that the client sent. It then sends a subrequest without the body to `GET /v1/datarecord-session/quack-auth` on the BE (Caddy's `forward_auth`). The BE sees the original method and path in `X-Forwarded-Method` and `X-Forwarded-Uri`.
-3. The BE authenticates the bearer token as on every route and finds the session by user and project. It runs `ensure_datarecord_session` and sets `last_used_at`. It answers 204 with `X-Session-Upstream: <host:port>` of the session container. On a bad token or a foreign project it answers 401 or 403, and Caddy passes that answer to the client.
+3. The BE authenticates the bearer token as on every route and checks that the user owns the project. It reads the session row of user and project, without a lock and without asking the session. When the row is active, it answers 204 with `X-Session-Upstream: <host:port>` of the session container, and sets `last_used_at` if the stored time is more than a minute old. When no session is active, it answers 409 with a `detail` that names `POST /v1/projects/<id>/datarecord-session`. On a bad token it answers 401, on a foreign project 403, and on an unknown project 404. Caddy passes any such answer to the client.
 4. Caddy copies `X-Session-Upstream` into the original request and proxies it, body unchanged, to that address.
 
 ```caddyfile
-route /quack {
-	request_header -X-Session-Upstream
-	forward_auth {$BACKEND_URL} {
-		uri /v1/datarecord-session/quack-auth
-		copy_headers X-Session-Upstream
+@session_quack {
+	path /quack
+	header X-Manta-Project *
+}
+handle @session_quack {
+	route {
+		request_header -X-Session-Upstream
+		forward_auth {$BACKEND_URL} {
+			uri /v1/datarecord-session/quack-auth
+			copy_headers X-Session-Upstream
+		}
+		@badup not header_regexp X-Session-Upstream ^datarecord-session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:9494$
+		respond @badup "no session upstream" 502
+		reverse_proxy {header.X-Session-Upstream} {
+			header_up -Authorization
+			header_up -X-Manta-Project
+			header_up -X-Session-Upstream
+		}
 	}
-	@badup not header_regexp X-Session-Upstream ^datarecord-session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:9494$
-	respond @badup "no session upstream" 502
-	reverse_proxy {header.X-Session-Upstream}
 }
 ```
+
+The proxied request carries none of the three headers, because the session runs user SQL. A `/quack` request without `X-Manta-Project` still goes to `docker/quack-server` until the switch.
 
 The pattern in `header_regexp` must match the addresses that the launcher returns as `endpoint`, and nothing else. When the header has any other form, Caddy answers 502 and proxies nothing. Caddy 2.11 already removes a client's `X-Session-Upstream` when the auth answer has none (S8). The `request_header` line and the pattern keep the route safe even if that behaviour changes.
 
@@ -382,7 +396,7 @@ Caddy must reach the session containers on the network, as the BE does. With the
 
 The Quack token still travels inside the body. The session checks it. It is a second factor and plays no part in routing.
 
-Wake-up and activity stay per request, because every Quack request passes the auth check. So the FE needs no keep-alive of its own. The BE handles one small request per query, with headers only.
+Activity stays per request, because every Quack request passes the auth check. So the FE needs no keep-alive of its own. Wake-up does not: the check takes no lock, asks no instance and writes `last_used_at` at most once a minute. The BE thus handles one small request per query, with headers only, and never waits for a container. When the container is gone while its row is still active, Caddy cannot reach the upstream and answers 502. The FE then calls `POST .../datarecord-session`, which runs the full `ensure_datarecord_session`: lock, health probe, restart and replay.
 
 A relay in the BE was the alternative: the BE would stream every body to the session and every result back. Caddy does the same work without the BE in the data path, so large results put no load on the BE's workers. The BE keeps every decision: who may query, which session, and when it wakes.
 

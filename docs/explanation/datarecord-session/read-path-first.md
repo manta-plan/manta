@@ -41,11 +41,11 @@ These must hold on Monday, or the first work package waits.
 
 | # | Package | Depends on | Done when |
 |---|---|---|---|
-| W1 | Session service. The package `datarecord-session/` with start-up, Quack, the guard moved from `docker/quack-server`, the internal registration API and the `pypsa-eur` view pack. One fixed instance in compose. | preconditions 1 and 2 | A native Quack client reads `manta.<name>.attributes.p_nom` of a registered revision. A statement other than SELECT is refused. |
+| W1 | Session service. The package `datarecord-session/` with start-up, Quack, the guard moved from `docker/quack-server`, the internal registration API and the `pypsa-eur` view pack. A one-shot compose service, `datarecord-session-image-builder`, builds its image and exits. | preconditions 1 and 2 | A native Quack client reads `manta.<name>.attributes.p_nom` of a registered revision. A statement other than SELECT is refused. |
 | W2 | BE store and revision listings. The two `GET` routes over an S3 listing, DR and `store.json`. | preconditions 1 and 2 | The listing of a test store shows its revisions and references. No route starts a session. |
 | W3 | BE sessions. The two tables with a migration, the Docker launcher, `ensure_datarecord_session`, and the open, suspend and registration routes. | W1 | Two users of one project get two containers. A registration survives `DELETE .../datarecord-session` and the next request. |
-| W4 | Quack auth check. The `quack-auth` route, the `/quack` route in `frontend/Caddyfile`, and a network that Caddy shares with the session containers. | W3 | A query with a valid token reaches the user's own container. A bad token gets 401, a foreign project 403, and a spoofed `X-Session-Upstream` changes nothing. |
-| W5 | Lifetime. A BE task stops a session after 60 minutes without activity and stops labelled containers without an active row. | W3 | A session that is not used stops, and the next query starts it again. |
+| W4 | Quack auth check. The `quack-auth` route, the `/quack` route in `frontend/Caddyfile`, and a network that Caddy shares with the session containers. | W3 | A query with a valid token reaches the user's own container. A bad token gets 401, a foreign project 403, a project without an active session 409, and a spoofed `X-Session-Upstream` changes nothing. |
+| W5 | Lifetime. A BE task stops a session after 60 minutes without activity and stops labelled containers without an active row. | W3 | A session that is not used stops. The next query gets 409, and the next `POST .../datarecord-session` starts the session again. |
 | W6 | FE. `manta/frontend`'s record client, already ported from `baby-manta`, moves to the BE routes: open the session, register, attach, re-attach after `Invalid connection id` (S4). | W2, W4 | The app shows a registered revision from a session behind Caddy. The `SELECT 1` keep-alive is gone. |
 | W7 | Switch. Compose and the deployment start no `docker/quack-server`. | W4, W6 | The pentest deployment has no route to the temporary server. |
 
@@ -55,10 +55,10 @@ The backend work lands as a stack of four pull requests. Each one builds on the 
 
 | # | Pull request | Packages | Base | What a reviewer can run |
 |---|---|---|---|---|
-| 1 | The session service: the package `datarecord-session/`, its image and one fixed instance in compose | W1 | `main` | The service alone, with a native Quack client. `docker/quack-server` still serves the app. |
-| 2 | BE sessions: the two tables with a migration, the launcher interface with the Docker implementation, `ensure_datarecord_session`, the open, suspend and registration routes | W3 | 1 | The routes with the BE's tests. A container starts per user and project, and a registration is replayed. |
+| 1 | The session service: the package `datarecord-session/`, its image, and the one-shot compose service `datarecord-session-image-builder` that builds the image | W1 | `main` | The package's tests, which start the service and query it with a native Quack client, or the image run by hand. No session runs in compose. `docker/quack-server` still serves the app. |
+| 2 | BE sessions: the two tables with a migration, the launcher interface with the Docker implementation, `ensure_datarecord_session`, the open, suspend and registration routes. In compose the BE waits for the image builder. | W3 | 1 | The routes with the BE's tests. A container starts per user and project, and a registration is replayed. |
 | 3 | The Quack auth check: the `quack-auth` route, the `/quack` route in `frontend/Caddyfile`, the shared network | W4 | 2 | A query from a native client through Caddy to the user's own container. |
-| 4 | Lifetime: the forced stop and the removal of orphans | W5 | 3 | A session that stops after the limit and comes back on the next query. |
+| 4 | Lifetime: the forced stop and the removal of orphans | W5 | 3 | A session that stops after the limit and comes back on the next `POST .../datarecord-session`. |
 | | The store and revision listings | W2 | `main` | The two `GET` routes on a test store. |
 
 The stack merges from the bottom. Pull request 1 adds a service that nothing calls, and pull requests 2 to 4 add routes that the FE does not use yet. So each one can merge to `main` when its review is done, and none waits for the FE.

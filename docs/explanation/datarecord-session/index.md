@@ -25,8 +25,8 @@ The session replaces `docker/quack-server` (issue #223). That server has one sha
 Browser                       Frontend Caddy      BE (FastAPI)                            Session (one per user + project)
 -------                       --------------      ------------                            --------------------------------
 DuckDB-WASM --POST /quack---> route /quack -----> quack-auth: checks token,
-                              forward_auth <----- ensure_datarecord_session,
-                                    |             204 + X-Session-Upstream
+                              forward_auth <----- reads the active session,
+                                    |             204 + X-Session-Upstream, or 409
                                     +-- body unchanged, not through the BE --------------> Quack server (read-only SQL)
 session client --/v1/...----> /v1/* ------------> session routes ------------------------> session API
                                                   DatarecordSessionService                    |
@@ -88,7 +88,7 @@ Detail: [Stores of a project](backend-mvp.md#4-stores-of-a-project), [Revisions]
 
 1. The FE reads stores, revisions and references from the BE, which reads them from S3 (flow 3). No session runs yet.
 2. The FE opens the project's session: `POST /v1/projects/{id}/datarecord-session`. This is a call of its own, apart from login and from reading the project. A session belongs to a user and a project, and pages that only list or configure a project must not start a container.
-   - 2.1 The BE checks that the user owns the project and runs `ensure_datarecord_session` for the pair of user and project. `ensure_datarecord_session` means "start the session if none runs": it locks the datarecord session's row, starts a container when needed, and repeats the stored registrations. The BE stores the datarecord session's metadata in that row, so it can recreate the connection and continue operations later. The lock makes parallel requests start one container. Every later session call and every query runs `ensure_datarecord_session` too, so a stopped session comes back by itself.
+   - 2.1 The BE checks that the user owns the project and runs `ensure_datarecord_session` for the pair of user and project. `ensure_datarecord_session` means "start the session if none runs": it locks the datarecord session's row, starts a container when needed, and repeats the stored registrations. The BE stores the datarecord session's metadata in that row, so it can recreate the connection and continue operations later. The lock makes parallel requests start one container. `PUT` and `GET` of a registration run `ensure_datarecord_session` too. A query does not: the BE's check of a Quack request only reads the session row, and answers 409 when no session is active (flow 8).
    - 2.2 If no container runs, the BE's launcher starts one. It passes four inputs: the project's folder `s3://<bucket>/<project_uuid>/`, an S3 token that can only read that folder, a Quack token, and a secret for the API.
    - 2.3 The session opens one DuckDB connection and creates one DR workspace on it, attached as the catalog `manta`. It starts the Quack server on the same connection, installs the SQL guard, and reports ready. This takes under a second.
    - 2.4 The BE returns the Quack address and the Quack token to the FE.
@@ -120,7 +120,7 @@ Detail: [Session service](session.md#3-session-service), [Names in DuckDB](sessi
 
 1. The FE runs a query that names its views in full, with the prefix of the registration, for example `manta.<name>.attributes.p_nom`. DuckDB-WASM sends it as one HTTP request to `/quack` on the app's origin, where the frontend Caddy receives it. A Quack client can only post to `/quack` at the root of a host, so the route lives there, outside `/v1`.
 2. The request carries two HTTP headers from a Quack secret that the FE created: the user's Keycloak token and the project id.
-3. Caddy asks the BE with a subrequest that has the headers but no body. The BE authenticates the token, finds the session of that user and project, and runs `ensure_datarecord_session`. It answers with the container's address, and Caddy proxies the request there, body unchanged.
+3. Caddy asks the BE with a subrequest that has the headers but no body. The BE authenticates the token and reads the active session of that user and project, without asking the session. It answers with the container's address, and Caddy proxies the request there, body unchanged. Without an active session the BE answers 409, and it never starts one.
 4. The session checks the Quack token inside the body. Two guards then apply. DuckDB's settings forbid HTTP file access and lock the configuration. A statement check lets only SELECT pass.
 5. DuckDB runs the query on the views. The views read Parquet files from S3 with the read token. A filter on an entity reaches the Parquet scan, so a query for one entity reads only the matching part of a file.
 6. The rows travel back through Caddy, raw, as the layers store them. They do not pass the BE.
@@ -219,12 +219,13 @@ Detail: [Commit flow](storage-commit.md#1-commit-flow), [References in `store.js
 
 ## 8. A session stops and comes back
 
-1. Every Quack request that the BE checks counts as activity and sets a time on the session row. Presence is a separate call that the FE sends while the tab is open. Today's `SELECT 1` every 15 seconds goes away, because the BE cannot tell it from a real query.
+1. Every Quack request that the BE checks counts as activity and sets a time on the session row, at most once a minute. Presence is a separate call that the FE sends while the tab is open. Today's `SELECT 1` every 15 seconds goes away, because the BE cannot tell it from a real query.
 2. After 10 minutes without activity the session is idle. The BE may stop it when it needs capacity, and it picks the session that was used least recently.
 3. After 60 minutes without activity the BE stops the session at once.
 4. Nothing is lost, because the session holds only views.
-5. At the next request `ensure_datarecord_session` starts a new container and repeats every registration from the rows of flow 4.
-6. The FE's attached client gets the error `Invalid connection id` on its next query. The FE calls `POST /v1/projects/{id}/datarecord-session` again, detaches, attaches, and repeats the query. The user sees one slow request.
+5. The next query gets 409 from the BE's check, because no session is active. If the container is gone while its row is still active, Caddy answers 502 instead.
+6. On either answer the FE calls `POST /v1/projects/{id}/datarecord-session`. `ensure_datarecord_session` starts a new container and repeats every registration from the rows of flow 4. It skips a registration that the new session refuses with 404 or 422, logs a warning and keeps the row.
+7. The FE detaches, attaches and repeats the query. A restart that another call caused shows as `Invalid connection id` on the next query, and the FE recovers the same way. The user sees one slow request.
 
 A task in the BE stops containers that no session row claims. A container also exits by itself after a hard limit.
 
@@ -302,7 +303,7 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 |---|---|---|---|---|
 | [#281](https://github.com/manta-plan/manta/pull/281) feat: use `store.json` and per-revision `meta` keys | prerequisite | The plan builds on `store.json` and the `manta.` keys of the commit `meta`. The first step of phase 2 makes the example data import read `store.json`. The PR's slug scheme (`<scenario>/<playbook>`) differs from the plan's references, which carry a `base` and take their kind from the revision they point to. | [the `store.json` form](backend-mvp.md#the-storejson-form) | 2 |
 | [#287](https://github.com/manta-plan/manta/pull/287) feat: wire data records metadata with projects, data catalogue, and playbook | affected | The PR reads the catalogue and the `inputs` revision from the temporary record server. In the plan both come from the BE's store and revision routes, and `record-server.ts` goes in phase 2. | [phases](appendix.md#4-phases), [revision index](backend.md#1-revision-index) | 2 |
-| [#301](https://github.com/manta-plan/manta/pull/301) feat: update docker setup for quack server | affected | The PR configures the temporary server. Phase 3 puts one fixed session instance in compose in its place, and phase 7 removes the server. | [phases](appendix.md#4-phases) | 3, 7 |
+| [#301](https://github.com/manta-plan/manta/pull/301) feat: update docker setup for quack server | affected | The PR configures the temporary server. Phase 3 adds the session image, which a one-shot compose service builds. Phase 4 starts sessions from it, and phase 7 removes the server. | [phases](appendix.md#4-phases) | 3, 7 |
 | [#209](https://github.com/manta-plan/manta/pull/209) docs: datarecord integration, vendored fork and step 1 requirements | affected | The plan continues this work on DR's own stack. Its pin (D19) is the stack tip, not the vendored fork at `521fef2`. | [decisions](appendix.md#2-decisions) | 0 |
 
 ### manta-plan/manta: recently closed issues
