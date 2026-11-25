@@ -5,9 +5,11 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # ADR N: The decision, as a short statement
 
-- **Status:** Proposed, Accepted, Implemented, or Superseded by ADR N (linked), with its date
-- **Decided in:** the meeting, issue, or PR where it was decided, linked
-- **Plan:** the plan folder while Proposed or Accepted, and the plan at its last commit once Implemented (omit if there is none)
+| ADR        | N                                                                                                           |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| Status     | Proposed, Accepted, Implemented, or Superseded by ADR N (linked), with its date                             |
+| Decided in | the meeting, issue, or PR where it was decided, linked                                                      |
+| Plan       | the plan folder while Proposed or Accepted, and the plan at its last commit once Implemented (omit if none) |
 
 ## Context
 

@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Architecture decision records
 
 An architecture decision record (ADR) is a page that records one decision about how Manta is built: what was decided, why, and the design that came out of it.
-Its reader is someone who joins later and asks why the code is the way it is.
+It is written for Manta developers who were not part of the discussion.
 
 ## When to write one
 
@@ -19,16 +19,22 @@ Neither does a choice inside one module that the code and its review explain.
 
 A large decision, such as a new service, starts as a detailed plan and ends as an ADR that summarizes it.
 
-1. **Proposed.**
-   A PR adds the ADR as `NNNN-title.md` with the status Proposed, and the detailed plan in a folder `NNNN-title/` next to it.
-   The ADR states the decision and a summary of the design, and links to the plan.
-   The team reviews both in the PR.
-2. **Accepted.**
-   Once the team agrees, the PR merges with the status Accepted.
-   Implementation PRs link to the plan, and update it where the build departs from it.
-3. **Implemented.**
-   Once the plan is built, a PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, and sets the status to Implemented.
-   The ADR links to the plan at its last commit, so the detail stays reachable in the history.
+A plan PR adds the ADR as `NNNN-title.md` with the status Proposed, and the detailed implementation plan in a folder `NNNN-title/` next to it.
+The ADR states the decision and a summary of the design, and links to the plan.
+The team reviews both in the plan PR.
+Implementation PRs link to the plan, and update it where the build departs from it.
+
+Once the team agrees on the plan, it continues in one of two ways:
+
+- **The plan PR merges before the implementation**, with the status Accepted.
+  This suits a plan built over several PRs, which then link to the plan on `main`.
+  When the last of them is merged, a final PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, and sets the status to Implemented.
+- **The plan PR stays open during the implementation.**
+  This suits a plan built in one PR, or one the team expects to change while it is built.
+  Once the implementation is approved and merged, the plan PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, sets the status to Implemented, and merges.
+  The plan folder never reaches `main`.
+
+Either way, the ADR then links to the plan at its last commit, so the detail stays reachable in the history.
 
 A small decision needs no plan.
 Its ADR is usually written after the decision was made in a meeting, an issue, or a PR review, and links to where it was made.
