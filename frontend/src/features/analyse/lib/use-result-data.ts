@@ -125,7 +125,10 @@ function followedFilters(request: QueryRequest): Partial<InspectFilters> {
   );
   return {
     ...(placeholders.has("buses") ? { buses: request.filters.buses } : {}),
-    ...(placeholders.has("period") ? { period: request.filters.period } : {}),
+    // Snapshot labels carry their period only while no single period is picked.
+    ...(placeholders.has("period") || request.query.groupBy.includes("snapshot")
+      ? { period: request.filters.period }
+      : {}),
     ...(placeholders.has("carriers") ? { carriers: request.filters.carriers } : {}),
   };
 }
@@ -153,9 +156,10 @@ export function useResultQuery(query: CustomQuery | null, resultId: string | nul
     true,
   );
   return useMemo((): QueryState => {
-    if (data) return { status: "ready", data, isRefreshing: isLoading };
+    // This request's failure comes first: `data` may be the previous query's, kept while this one loaded.
     if (error !== undefined)
       return { status: "error", error: errorMessage(error), retry: () => void mutate() };
+    if (data) return { status: "ready", data, isRefreshing: isLoading };
     return { status: "loading" };
   }, [data, error, isLoading, mutate]);
 }

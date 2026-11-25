@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import clsx from "clsx";
 import { LuChartBar, LuFilePlus, LuPencilLine, LuX } from "react-icons/lu";
@@ -83,9 +83,13 @@ export function NewReportDrawer() {
     if (activeTab !== "analyse") closeNewReportDrawer();
   }, [activeTab, closeNewReportDrawer]);
 
+  const nameInput = useRef<HTMLInputElement>(null);
+
   // Seeds once per open.
   useEffect(() => {
     if (!isOpen) return;
+    // The closed drawer is inert, so focus moves in once it is open.
+    requestAnimationFrame(() => nameInput.current?.focus());
     setName(editingReport?.name ?? "");
     setSize(editingReport?.page.size ?? "a4");
     setOrientation(editingReport?.page.orientation ?? "portrait");
@@ -116,6 +120,8 @@ export function NewReportDrawer() {
 
   return (
     <aside
+      inert={!isOpen}
+      aria-hidden={!isOpen}
       className={clsx(
         "absolute top-0 left-0 z-20 flex h-full w-72 flex-col border-r border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-transform duration-200 ease-out",
         isOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none",
@@ -138,10 +144,10 @@ export function NewReportDrawer() {
         <label className="flex flex-col gap-1">
           <span className="text-surface-400 text-[11px] font-medium">Report Name</span>
           <input
+            ref={nameInput}
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="e.g. Winter adequacy summary"
-            autoFocus
             className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 h-8 rounded border px-2 text-[13px] outline-none"
           />
         </label>

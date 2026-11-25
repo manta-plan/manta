@@ -167,9 +167,12 @@ function periodsKept(query: QueryRequest["query"], request: QueryRequest): numbe
       condition.column === "period" &&
       condition.values.length > 0,
   );
-  return picked.length > 0
-    ? Math.min(...picked.map((condition) => new Set(condition.values).size))
-    : null;
+  if (picked.length === 0) return null;
+  // The conditions are ANDed, so only the periods every one of them names are kept.
+  const kept = picked
+    .map((condition) => new Set(condition.values))
+    .reduce((common, values) => new Set([...common].filter((value) => values.has(value))));
+  return Math.max(kept.size, 1);
 }
 
 /**
@@ -205,6 +208,8 @@ function widgetSql(source: ResultQuery, request: QueryRequest): string {
     aggregate === "sum" &&
     source.columns.includes("period") &&
     !groups.includes("period") &&
+    // A snapshot belongs to one period, so its group is already a period's.
+    !groups.includes("snapshot") &&
     periods !== 1
       ? periods === null
         ? " / (SELECT count(DISTINCT snapshot.period) FROM dims.snapshot)"
@@ -256,13 +261,15 @@ async function runQuery(request: QueryRequest): Promise<QueryResult> {
   const seriesLabels = seriesColumn
     ? [...new Set(rows.map((row) => row.s ?? ""))].sort(byName)
     : [null];
-  const cells = new Map(
-    rows.map((row) => [
-      `${row.x ?? ""}\n${row.s ?? ""}`,
-      row.value === null ? null : roundValue(Number(row.value)),
-    ]),
-  );
-  let matrix = xLabels.map((x) => seriesLabels.map((s) => cells.get(`${x}\n${s ?? ""}`) ?? null));
+  // Labels can hold any character, so cells are keyed by x then series, not by a joined string.
+  const cells = new Map<string, Map<string, number | null>>();
+  for (const row of rows) {
+    const x = row.x ?? "";
+    if (!cells.has(x)) cells.set(x, new Map());
+    cells.get(x)!.set(row.s ?? "", row.value === null ? null : Number(row.value));
+  }
+  // Unrounded, so ordering and the limit don't tie values that only differ past the rounding.
+  let matrix = xLabels.map((x) => seriesLabels.map((s) => cells.get(x)?.get(s ?? "") ?? null));
 
   // Ordering and the limit pick X-axis labels; with series, by their total.
   if (query.orderBy) {
@@ -286,7 +293,7 @@ async function runQuery(request: QueryRequest): Promise<QueryResult> {
   const series = seriesLabels
     .map((label, index) => ({
       name: label ?? source.valueLabel,
-      values: matrix.map((row) => row[index]),
+      values: matrix.map((row) => (row[index] === null ? null : roundValue(row[index]))),
     }))
     .filter((item) => item.values.some((value) => value !== null));
   return {

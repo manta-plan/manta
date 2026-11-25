@@ -12,6 +12,11 @@ export function createDrawerSlice(set: ProjectStoreSet) {
       set({
         configuringRunNodeId: null,
         scenarioChange: null,
+        // The Analyse drawers are the tab's own too: they shouldn't reopen on return.
+        isNewReportDrawerOpen: false,
+        editingReportId: null,
+        isNewInspectionDrawerOpen: false,
+        editingInspectionId: null,
       }),
 
     configuringRunNodeId: null,

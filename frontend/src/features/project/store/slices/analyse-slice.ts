@@ -37,6 +37,13 @@ let inspectionSaveTimeout: ReturnType<typeof setTimeout> | undefined;
 // What the Analyse tab keeps: the project's views (inspections) and reports,
 // which of them is open, and the drawers that make and rename them.
 export function createAnalyseSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
+  // Writes a waiting inspection edit now, to the project the inspections belong to.
+  const flushInspectionSave = () => {
+    if (inspectionSaveTimeout === undefined) return;
+    clearTimeout(inspectionSaveTimeout);
+    inspectionSaveTimeout = undefined;
+    saveProjectInspections(get().inspectionsProjectId, get().inspections);
+  };
   // Changes one report and records the change for undo. `apply` returns the
   // report as it should become, or the same one when there's nothing to change.
   const editReport = (
@@ -78,13 +85,16 @@ export function createAnalyseSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
     selectView: (id: string | null) => set({ selectedViewId: id }),
     inspections: [] as InspectionCanvas[],
     inspectionsProjectId: null as string | null,
-    loadProjectInspections: (projectId: string) =>
+    loadProjectInspections: (projectId: string) => {
+      // An edit of the project being left would otherwise be saved over this one's.
+      flushInspectionSave();
       set({
         inspections: loadProjectInspections(projectId),
         inspectionsProjectId: projectId,
         selectedInspectionId: null,
         selectedViewId: null,
-      }),
+      });
+    },
     // Leaves selection to the route, so creating one from a widget's menu
     // doesn't pull the user away from the page they're on.
     createInspection: ({ name, description, ...content }: NewInspectionInput) => {
@@ -120,10 +130,7 @@ export function createAnalyseSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
         ),
       }));
       clearTimeout(inspectionSaveTimeout);
-      inspectionSaveTimeout = setTimeout(
-        () => saveProjectInspections(get().currentProjectId, get().inspections),
-        400,
-      );
+      inspectionSaveTimeout = setTimeout(flushInspectionSave, 400);
     },
     deleteInspection: (id: string) =>
       set((state) => {
@@ -245,12 +252,23 @@ export function createAnalyseSlice(set: ProjectStoreSet, get: ProjectStoreGet) {
       set((state) => {
         const projectId = state.currentProjectId;
         if (!projectId) return {};
+        const reports = state.reportsProjectId === projectId ? loadProjectReports(projectId) : null;
         return {
-          ...(state.inspectionsProjectId === projectId
+          // An edit still waiting to be saved would be lost by a reload: keep this tab's list until it is written.
+          ...(state.inspectionsProjectId === projectId && inspectionSaveTimeout === undefined
             ? { inspections: loadProjectInspections(projectId) }
             : {}),
-          ...(state.reportsProjectId === projectId
-            ? { reports: loadProjectReports(projectId) }
+          ...(reports
+            ? {
+                reports,
+                // Undo restores whole reports, which would overwrite what the other tab changed.
+                reportHistory: reports.reduce((histories, report) => {
+                  const mine = state.reports.find((item) => item.id === report.id);
+                  return mine && JSON.stringify(mine) !== JSON.stringify(report)
+                    ? forgetHistory(histories, report.id)
+                    : histories;
+                }, state.reportHistory),
+              }
             : {}),
         };
       }),

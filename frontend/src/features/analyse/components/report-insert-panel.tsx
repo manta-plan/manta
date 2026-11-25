@@ -102,8 +102,8 @@ export function ReportInsertPanel({
     item.label.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
-  const add = (content: BlockContent) => {
-    const placement = placeBlock(report, content, selectedPageId);
+  const add = (content: BlockContent, from: Report = report) => {
+    const placement = placeBlock(from, content, selectedPageId);
     if (!placement) {
       setMessage(
         `No free spot on ${selectedPageId ? "this page" : "the pages"} is big enough for it. Add a page, or make space.`,
@@ -120,7 +120,9 @@ export function ReportInsertPanel({
   const addImage = async (file: File) => {
     try {
       const { src, name } = await prepareReportImage(file);
-      add({ kind: "image", src, alt: name });
+      // Preparing the image takes a moment, in which other blocks may have been added: place it on the report as it is now.
+      const current = useProjectStore.getState().reports.find((item) => item.id === report.id);
+      add({ kind: "image", src, alt: name }, current ?? report);
     } catch (error) {
       setMessage(error instanceof ReportImageError ? error.message : "Couldn't add that image.");
     }

@@ -706,6 +706,7 @@ export function CustomWidgetEditor({
         <div className="mb-3 flex flex-col gap-2">
           <Field label="Title">
             <input
+              aria-label="Title"
               value={state.title}
               onChange={(event) => onChange({ title: event.target.value })}
               placeholder="From the query"
@@ -714,6 +715,7 @@ export function CustomWidgetEditor({
           </Field>
           <Field label="Subtitle">
             <input
+              aria-label="Subtitle"
               value={state.subtitle}
               onChange={(event) => onChange({ subtitle: event.target.value })}
               placeholder="From the query"

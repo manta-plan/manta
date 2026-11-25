@@ -534,7 +534,7 @@ function InspectionPage({ inspectionId }: { inspectionId: string }) {
             >
               {pageRows(
                 items.filter((item) => item.kind !== "preset" || PRESET_WIDGETS[item.widgetId]),
-              ).map((row) => {
+              ).map((row, rowIndex) => {
                 const slot = (item: WidgetSetItem, axis: "x" | "y", className?: string) => (
                   <ReorderSlot
                     key={item.id}
@@ -562,7 +562,8 @@ function InspectionPage({ inspectionId }: { inspectionId: string }) {
                 // Numbers next to each other share a row; one being edited takes the whole row.
                 return (
                   <div
-                    key={`numbers-${row.items[0].id}`}
+                    // Not the first widget's id: removing or moving it would remount the row and reset the others.
+                    key={`numbers-${rowIndex}`}
                     className={`grid shrink-0 gap-3 ${comparisonRun ? "grid-cols-2" : "grid-cols-3"}`}
                   >
                     {row.items.map((item) => slot(item, "x", "has-[[data-editing]]:col-span-full"))}

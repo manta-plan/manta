@@ -5,7 +5,6 @@ import type { IconType } from "react-icons";
 import { GiMagnifyingGlass } from "react-icons/gi";
 import {
   LuArrowRight,
-  LuBookOpen,
   LuChartBar,
   LuChevronDown,
   LuDatabase,
@@ -15,7 +14,6 @@ import {
 } from "react-icons/lu";
 import { HiOutlineDocumentMagnifyingGlass } from "react-icons/hi2";
 import { Link, useLocation, useParams } from "wouter";
-import { documentationHref } from "../data/documentation";
 import { BUILT_IN_INSPECTIONS } from "../data/inspections";
 import { computedPageId } from "../lib/data-pages";
 import { selectComparison, selectResult } from "../lib/inspect-result-selection";
@@ -84,15 +82,6 @@ function HowAnalyseWorks({ resultCount }: { resultCount: number }) {
     <section className="border-surface-700 border-b">
       <OverviewSectionHeader title="How Analyse works">
         <div className="flex items-center gap-1">
-          <a
-            href={documentationHref("report-builder")}
-            target="_blank"
-            rel="noreferrer"
-            className="text-surface-300 hover:bg-surface-800 hover:text-surface-50 flex h-6 items-center gap-1.5 rounded px-2 text-[11px] font-medium outline-none"
-          >
-            <LuBookOpen size={12} />
-            Read the guide
-          </a>
           <OverviewTourButton onClick={startAnalyseWorkspaceTour} />
         </div>
       </OverviewSectionHeader>

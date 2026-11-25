@@ -10,8 +10,11 @@ import { ReportsPanel } from "./reports-panel";
 
 // Data, Views and Reports at 1:2:1, so Views stays the main list.
 const DEFAULT_TOP_SHARE = 75;
-const MINIMUM_PANEL_HEIGHT = 160;
+const MINIMUM_REPORTS_HEIGHT = 160;
 const MINIMUM_DATA_VIEWS_HEIGHT = 96;
+const SEPARATOR_HEIGHT = 4;
+// Data and Views each keep their minimum, with the separator between them.
+const MINIMUM_TOP_HEIGHT = 2 * MINIMUM_DATA_VIEWS_HEIGHT + SEPARATOR_HEIGHT;
 
 const tooltipPopupClassName =
   "border-surface-600 bg-surface-950 text-surface-100 rounded border px-2 py-1 text-[11px] shadow-lg";
@@ -61,13 +64,15 @@ const separatorClassName =
 /** A divider that resizes the panel above it, from a drag or the arrow keys. */
 function useDivider(
   containerRef: React.RefObject<HTMLElement | null>,
-  minimum: number,
+  /** The least the panel above may be, and the least left below. */
+  minimumAbove: number,
+  minimumBelow: number,
   share: number,
 ) {
   const [height, setHeight] = useState<number | null>(null);
   const update = (next: number) => {
     const total = containerRef.current?.clientHeight ?? 0;
-    setHeight(Math.max(minimum, Math.min(next, total - minimum)));
+    setHeight(Math.max(minimumAbove, Math.min(next, total - minimumBelow)));
   };
   const fromPointer = (event: PointerEvent<HTMLDivElement>) => {
     const top = containerRef.current?.getBoundingClientRect().top;
@@ -89,8 +94,8 @@ function useDivider(
       event.preventDefault();
       const total = containerRef.current?.clientHeight ?? 0;
       const current = height ?? total * share;
-      if (event.key === "Home") update(minimum);
-      else if (event.key === "End") update(total - minimum);
+      if (event.key === "Home") update(minimumAbove);
+      else if (event.key === "End") update(total - minimumBelow);
       else update(current + (event.key === "ArrowUp" ? -24 : 24));
     },
   };
@@ -105,9 +110,14 @@ export function AnalyseSidebar() {
   const [isFindingView, setFindingView] = useState(false);
   const openNewReportDrawer = useProjectStore((s) => s.openNewReportDrawer);
   const openNewInspectionDrawer = useProjectStore((s) => s.openNewInspectionDrawer);
-  const primary = useDivider(sidebarRef, MINIMUM_PANEL_HEIGHT, DEFAULT_TOP_SHARE / 100);
+  const primary = useDivider(
+    sidebarRef,
+    MINIMUM_TOP_HEIGHT,
+    MINIMUM_REPORTS_HEIGHT + SEPARATOR_HEIGHT,
+    DEFAULT_TOP_SHARE / 100,
+  );
   // Data starts at a third of the top part (1 of Data:Views 1:2).
-  const data = useDivider(topRef, MINIMUM_DATA_VIEWS_HEIGHT, 1 / 3);
+  const data = useDivider(topRef, MINIMUM_DATA_VIEWS_HEIGHT, MINIMUM_DATA_VIEWS_HEIGHT, 1 / 3);
 
   return (
     <aside
@@ -115,12 +125,9 @@ export function AnalyseSidebar() {
       className="border-surface-600 bg-surface-800 flex h-full w-72 shrink-0 flex-col border-r"
     >
       <div
-        className="min-h-40 shrink-0 overflow-hidden"
+        className="shrink-0 overflow-hidden"
         style={{
-          height:
-            primary.height === null
-              ? `${DEFAULT_TOP_SHARE}%`
-              : `clamp(10rem, ${primary.height}px, calc(100% - 10rem))`,
+          height: `clamp(${MINIMUM_TOP_HEIGHT}px, ${primary.height === null ? `${DEFAULT_TOP_SHARE}%` : `${primary.height}px`}, calc(100% - ${MINIMUM_REPORTS_HEIGHT + SEPARATOR_HEIGHT}px))`,
         }}
       >
         <div ref={topRef} className="flex h-full flex-col">

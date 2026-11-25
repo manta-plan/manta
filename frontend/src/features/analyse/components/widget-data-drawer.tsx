@@ -1,4 +1,4 @@
-import { useMemo, useState, type PointerEvent } from "react";
+import { useMemo, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { LuArrowDown, LuArrowUp, LuDownload, LuTable, LuX } from "react-icons/lu";
@@ -24,6 +24,14 @@ export function WidgetDataDrawer({
   onHeightChange: (height: number) => void;
   onBodyRef: (element: HTMLDivElement | null) => void;
 }) {
+  const clampHeight = (value: number) =>
+    Math.max(DATA_DRAWER_MIN_HEIGHT, Math.min(value, window.innerHeight * 0.92));
+  const resizeByKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.key === "ArrowUp" ? 24 : event.key === "ArrowDown" ? -24 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    onHeightChange(clampHeight(height + step));
+  };
   const resize = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
     onHeightChange(
@@ -45,6 +53,10 @@ export function WidgetDataDrawer({
         role="separator"
         aria-label="Resize data drawer"
         aria-orientation="horizontal"
+        aria-valuenow={Math.round(height)}
+        aria-valuemin={DATA_DRAWER_MIN_HEIGHT}
+        tabIndex={0}
+        onKeyDown={resizeByKey}
         onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
         onPointerMove={resize}
         className="flex h-3 shrink-0 cursor-row-resize touch-none items-center justify-center"

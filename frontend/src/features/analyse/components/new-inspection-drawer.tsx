@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import clsx from "clsx";
 import { Select } from "@base-ui/react/select";
@@ -124,8 +124,11 @@ export function NewInspectionDrawer() {
   // Seeds once per open (or per inspection being edited). `editingInspection`
   // is a fresh object every render, so it can't be a dependency — that would
   // re-run this on each keystroke and wipe the fields as the user types.
+  const nameInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!isOpen) return;
+    // The closed drawer is inert, so focus moves in once it is open.
+    requestAnimationFrame(() => nameInput.current?.focus());
     setName(editingInspection?.name ?? "");
     setDescription(editingInspection?.description ?? "");
     setStartFrom(BLANK);
@@ -148,6 +151,8 @@ export function NewInspectionDrawer() {
 
   return (
     <aside
+      inert={!isOpen}
+      aria-hidden={!isOpen}
       className={clsx(
         "absolute top-0 left-0 z-20 flex h-full w-72 flex-col border-r border-surface-600/60 bg-surface-800/70 backdrop-blur-xl transition-transform duration-200 ease-out",
         isOpen ? "pointer-events-auto translate-x-0" : "pointer-events-none -translate-x-full",
@@ -172,7 +177,7 @@ export function NewInspectionDrawer() {
         <label className="flex flex-col gap-1">
           <span className="text-surface-400 text-[11px] font-medium">View Name</span>
           <input
-            autoFocus
+            ref={nameInput}
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && submit()}

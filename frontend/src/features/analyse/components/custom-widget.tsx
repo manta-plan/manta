@@ -160,30 +160,44 @@ function periodContext(
     : span;
 }
 
-/** The selected result minus the compared one, label by label and series by series (a missing value counts as nothing there). */
-function differenceOf(primary: QueryResult, other: QueryResult): QueryResult {
-  const names = [
+/** The selected result's labels, then the compared result's extra ones. */
+function unionLabels(primary: QueryResult, other: QueryResult): string[] {
+  return [...primary.xLabels, ...other.xLabels.filter((label) => !primary.xLabels.includes(label))];
+}
+
+/** The series names of both results, the selected one's first. */
+function unionSeriesNames(primary: QueryResult, other: QueryResult): string[] {
+  return [
     ...primary.series.map((item) => item.name),
     ...other.series
       .map((item) => item.name)
       .filter((name) => !primary.series.some((item) => item.name === name)),
   ];
-  const valuesOf = (result: QueryResult, name: string) =>
-    result.series.find((item) => item.name === name)?.values ?? [];
+}
+
+/** A series' value at a label, or null when the result has no such series or label. */
+function valueAt(result: QueryResult, name: string, label: string): number | null {
+  const position = result.xLabels.indexOf(label);
+  return position < 0
+    ? null
+    : (result.series.find((item) => item.name === name)?.values[position] ?? null);
+}
+
+/** The selected result minus the compared one, label by label and series by series (a missing value counts as nothing there). */
+function differenceOf(primary: QueryResult, other: QueryResult): QueryResult {
+  const labels = unionLabels(primary, other);
   return {
     ...primary,
-    series: names.map((name) => {
-      const [mine, theirs] = [valuesOf(primary, name), valuesOf(other, name)];
-      return {
-        name,
-        values: primary.xLabels.map((_, index) =>
-          (mine[index] === null || mine[index] === undefined) &&
-          (theirs[index] === null || theirs[index] === undefined)
-            ? null
-            : Math.round(((mine[index] ?? 0) - (theirs[index] ?? 0)) * 1000) / 1000,
-        ),
-      };
-    }),
+    xLabels: labels,
+    series: unionSeriesNames(primary, other).map((name) => ({
+      name,
+      values: labels.map((label) => {
+        const [mine, theirs] = [valueAt(primary, name, label), valueAt(other, name, label)];
+        return mine === null && theirs === null
+          ? null
+          : Math.round(((mine ?? 0) - (theirs ?? 0)) * 1000) / 1000;
+      }),
+    })),
   };
 }
 
@@ -673,19 +687,18 @@ function comparisonData(
     `${comparisonRun.label} [${unit}]`,
     `Difference [${unit}]`,
   ];
-  const rows = result.series.flatMap((item) => {
-    const compared = comparison.series.find((other) => other.name === item.name);
-    return result.xLabels.map((label, index) => {
-      const value = item.values[index];
-      const comparedIndex = comparison.xLabels.indexOf(label);
-      const comparedValue = compared && comparedIndex >= 0 ? compared.values[comparedIndex] : null;
+  const labels = unionLabels(result, comparison);
+  const rows = unionSeriesNames(result, comparison).flatMap((name) =>
+    labels.map((label) => {
+      const value = valueAt(result, name, label);
+      const comparedValue = valueAt(comparison, name, label);
       const difference =
         value !== null && comparedValue !== null
           ? Math.round((value - comparedValue) * 1000) / 1000
           : null;
-      return [label, ...(result.seriesColumn ? [item.name] : []), value, comparedValue, difference];
-    });
-  });
+      return [label, ...(result.seriesColumn ? [name] : []), value, comparedValue, difference];
+    }),
+  );
   return { columns, rows };
 }
 

@@ -175,14 +175,37 @@ function parseStrings(list: string): string[] | null {
   return values.every((value) => value !== undefined) ? (values as string[]) : null;
 }
 
+/** Drops comments and collapses whitespace, leaving quoted values as they are. */
+function normalizeSql(sql: string): string {
+  let out = "";
+  let inQuote = false;
+  for (let i = 0; i < sql.length; i++) {
+    const character = sql[i];
+    if (inQuote) {
+      out += character;
+      // A doubled quote is an escaped one and leaves the string open.
+      if (character === "'") {
+        if (sql[i + 1] === "'") out += sql[++i];
+        else inQuote = false;
+      }
+    } else if (character === "'") {
+      inQuote = true;
+      out += character;
+    } else if (character === "-" && sql[i + 1] === "-") {
+      while (i < sql.length && sql[i] !== "\n") i++;
+      if (!out.endsWith(" ")) out += " ";
+    } else if (/\s/.test(character)) {
+      if (!out.endsWith(" ")) out += " ";
+    } else {
+      out += character;
+    }
+  }
+  return out.trim();
+}
+
 /** Reads the SQL the builder writes back into a query, or says what it can't read. */
 export function parseQuerySql(sql: string, tables: ResultTableInfo[]): ParseResult {
-  const text = sql
-    .replaceAll(/--[^\n]*/g, "")
-    .replaceAll(/\s+/g, " ")
-    .trim()
-    .replace(/;$/, "")
-    .trim();
+  const text = normalizeSql(sql).replace(/;$/, "").trim();
   const match = text.match(
     /^SELECT (.+?) FROM ([\w.]+)(?: WHERE (.+?))?(?: GROUP BY (.+?))?(?: ORDER BY (.+?))?(?: LIMIT (\d+))?$/i,
   );
