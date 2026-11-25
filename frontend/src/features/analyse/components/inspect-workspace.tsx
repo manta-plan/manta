@@ -407,14 +407,17 @@ function InspectionPage({ inspectionId }: { inspectionId: string }) {
     if (item.kind === "custom") {
       return (
         <WidgetItemContext.Provider value={{ item, onRemove, reorder: reorderOf(item.id) }}>
-          <CustomWidget
-            item={item}
-            onChange={(patch) => updateCustomItem(item.id, patch)}
-            onDuplicate={() => duplicateItem(item.id)}
-            selectedRun={selectedRun}
-            comparisonRun={comparisonRun}
-            startsEditing={item.id === freshItemId}
-          />
+          {/* So "Add to" sends the widget to a report with the result this page shows. */}
+          <ResultContext.Provider value={selectedRun.id}>
+            <CustomWidget
+              item={item}
+              onChange={(patch) => updateCustomItem(item.id, patch)}
+              onDuplicate={() => duplicateItem(item.id)}
+              selectedRun={selectedRun}
+              comparisonRun={comparisonRun}
+              startsEditing={item.id === freshItemId}
+            />
+          </ResultContext.Provider>
         </WidgetItemContext.Provider>
       );
     }
