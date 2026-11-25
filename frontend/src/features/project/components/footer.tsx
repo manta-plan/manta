@@ -1,9 +1,8 @@
-import { useLocation } from "wouter";
 import { LuWifi, LuWifiOff, LuLoaderCircle, LuCloud, LuCircleUser } from "react-icons/lu";
 import { useSessionUser } from "../../auth/session";
 import { useAppStore } from "../../home/store";
 import { useProjectStore } from "../store/project-store";
-import { getActiveProjectTab } from "../lib/project-route";
+import { useWorkspaceView } from "../lib/use-workspace-view";
 
 function ConnectionButton() {
   const connectionStatus = useProjectStore((s) => s.connectionStatus);
@@ -36,14 +35,12 @@ function formatCoord(v: number) {
 }
 
 export function Footer() {
-  const [location] = useLocation();
-  const activeTab = getActiveProjectTab(location);
   const cursorPosition = useProjectStore((s) => s.cursorPosition);
   const viewState = useProjectStore((s) => s.viewState);
   const statusMessage = useAppStore((s) => s.statusMessage);
   const username = useSessionUser()?.username;
 
-  const mainView = activeTab === "model" ? "map" : "blank";
+  const mainView = useWorkspaceView().isMapShown ? "map" : "blank";
 
   return (
     <footer className="border-surface-600 bg-surface-800 text-surface-400 flex h-6 shrink-0 items-center justify-between border-t px-3 text-[11px]">

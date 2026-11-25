@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
-from playbook.blocks import DataRecord
+from playbook.blocks import RevisionRef
 from playbook.playbooks import BlockStep, NestedPlaybookStep, Playbook, parse_doc, playbook_from_doc
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
@@ -133,15 +133,15 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
 
 
 def _flow_run_data_record(flow_run: FlowRun) -> DataRecordResult:
-    # TODO(post-MVP): the same shortcut as _flow_run_config. Store the record a run
+    # TODO(post-MVP): the same shortcut as _flow_run_config. Store the revision a run
     # started from on Run itself once data records are tracked in Manta's database.
-    return _data_record_result(flow_run.parameters["record"])
+    return _data_record_result(flow_run.parameters["revision"])
 
 
 def _data_record_result(data: dict) -> DataRecordResult:
-    """A record as runner.flows passes it around (DataRecord.to_dict()), for the API."""
-    record = DataRecord.from_dict(data)
-    return DataRecordResult(store_url=record.url, revision_uuid=record.uuid)
+    """A revision as runner.flows passes it around (RevisionRef.to_dict()), for the API."""
+    ref = RevisionRef.from_dict(data)
+    return DataRecordResult(store_url=ref.store, revision_uuid=ref.id)
 
 
 def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
@@ -158,7 +158,7 @@ def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
 
 
 def _read_block_run_outputs(block_runs: list[FlowRun]) -> dict[UUID, DataRecordResult]:
-    """The output record each block run published, by block run id. A block run that
+    """The output revision each block run published, by block run id. A block run that
     hasn't finished has none yet."""
     # TODO(post-MVP): a run's outputs are only found through the artifacts its block
     # runs publish to Prefect (see runner.flows.run_block). Once data records are
@@ -275,7 +275,7 @@ class RunService:
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
                 "config": run_config,
-                "record": {"url": store_url, "uuid": str(revision_uuid)},
+                "revision": RevisionRef(store=store_url, id=revision_uuid).to_dict(),
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
             timeout=0,

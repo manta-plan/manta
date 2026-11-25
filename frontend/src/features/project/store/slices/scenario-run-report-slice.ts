@@ -109,7 +109,6 @@ export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectS
           ...(wasActive
             ? {
                 scenarioSelection: { scenarioId: "scenario-base", mutationId: null },
-                itemDrawer: null,
               }
             : {}),
         };
@@ -178,14 +177,12 @@ export function createScenarioRunReportSlice(set: ProjectStoreSet, get: ProjectS
     selectScenario: (scenarioId: string) =>
       set({
         scenarioSelection: { scenarioId, mutationId: null },
-        itemDrawer: null,
         isNewScenarioDrawerOpen: false,
         newMutationScenarioId: null,
       }),
     selectMutation: (scenarioId: string, mutationId: string) =>
       set({
         scenarioSelection: { scenarioId, mutationId },
-        itemDrawer: null,
         isNewScenarioDrawerOpen: false,
         newMutationScenarioId: null,
       }),
