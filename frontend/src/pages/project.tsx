@@ -2,11 +2,18 @@ import { useEffect } from "react";
 import { Redirect, useLocation, useParams } from "wouter";
 import { useAppStore } from "../features/home/store";
 import { levelOfPageId } from "../features/level/level";
+import { AnalyseOverview } from "../features/analyse/components/analyse-overview";
+import { DataWorkspace } from "../features/analyse/components/data-workspace";
+import { InspectWorkspace } from "../features/analyse/components/inspect-workspace";
+import { ReportDashboard } from "../features/analyse/components/report-dashboard";
+import { builtInInspection } from "../features/analyse/data/inspections";
+import { dataPageOf, isDataPageId } from "../features/analyse/lib/data-pages";
 import { RecordPages } from "../features/level/record-pages";
 import { ProjectLayout } from "../features/project/components/project-layout";
 import { WelcomeDialog } from "../features/project/components/welcome-dialog";
 import {
   getActiveProjectTab,
+  projectAnalyseHref,
   projectTabHref,
   type ProjectTab,
 } from "../features/project/lib/project-route";
@@ -75,6 +82,52 @@ export function ProjectPage() {
     }
   }, [activeTab, namesNoLevel, projectId, setLocation]);
 
+  // The Analyse address opens a Data page, a report, or a view (built-in or the project's own).
+  const selectedViewId = useProjectStore((state) => state.selectedViewId);
+  const selectView = useProjectStore((state) => state.selectView);
+  const selectedReportId = useProjectStore((state) => state.selectedReportId);
+  const selectReport = useProjectStore((state) => state.selectReport);
+  const inspections = useProjectStore((state) => state.inspections);
+  const inspectionsProjectId = useProjectStore((state) => state.inspectionsProjectId);
+  const reports = useProjectStore((state) => state.reports);
+  const reportsProjectId = useProjectStore((state) => state.reportsProjectId);
+  useEffect(() => {
+    if (activeTab !== "analyse") return;
+    if (!detailId) {
+      if (selectedReportId) selectReport(null);
+      if (selectedViewId) selectView(null);
+      return;
+    }
+    // Wait for ProjectLayout to load this project's reports and views.
+    if (reportsProjectId !== projectId || inspectionsProjectId !== projectId) return;
+    if (isDataPageId(detailId)) {
+      if (selectedViewId) selectView(null);
+      if (selectedReportId) selectReport(null);
+      if (!dataPageOf(detailId)) setLocation(projectAnalyseHref(projectId));
+    } else if (reports.some((report) => report.id === detailId)) {
+      if (selectedViewId) selectView(null);
+      if (selectedReportId !== detailId) selectReport(detailId);
+    } else if (builtInInspection(detailId) || inspections.some((view) => view.id === detailId)) {
+      if (selectedReportId) selectReport(null);
+      if (selectedViewId !== detailId) selectView(detailId);
+    } else {
+      setLocation(projectAnalyseHref(projectId));
+    }
+  }, [
+    activeTab,
+    detailId,
+    inspections,
+    inspectionsProjectId,
+    projectId,
+    reports,
+    reportsProjectId,
+    selectedReportId,
+    selectedViewId,
+    selectReport,
+    selectView,
+    setLocation,
+  ]);
+
   // /project/:id, and any tab that isn't one, opens Build (keeping `?scenario=`).
   if (!tab || !TABS.includes(tab)) {
     return (
@@ -90,12 +143,16 @@ export function ProjectPage() {
 
       {activeTab === "run" && <RunsView />}
 
-      {/* Analyse arrives with its own page (a separate issue). */}
-      {activeTab === "analyse" && (
-        <div className="text-surface-400 flex h-full items-center justify-center text-sm">
-          This tab is not available yet.
-        </div>
-      )}
+      {activeTab === "analyse" &&
+        (isDataPageId(detailId) ? (
+          <DataWorkspace pageId={detailId} />
+        ) : selectedViewId ? (
+          <InspectWorkspace pageId={selectedViewId} />
+        ) : selectedReportId ? (
+          <ReportDashboard />
+        ) : (
+          <AnalyseOverview />
+        ))}
 
       <WelcomeDialog />
     </ProjectLayout>
