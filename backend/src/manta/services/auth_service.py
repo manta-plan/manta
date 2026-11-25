@@ -19,7 +19,6 @@ from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
 from manta.services.results.login_result import LoginResult
-from manta.services.results.register_result import RegisterResult
 
 logger = logging.getLogger(__name__)
 
@@ -180,16 +179,6 @@ class AuthService:
             expires_in=token["expires_in"],
             refresh_token=token["refresh_token"],
             refresh_expires_in=token["refresh_expires_in"],
-        )
-
-    def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
-        user = self._find_or_create_user(username, idp_subject, idp_source)
-        return RegisterResult(
-            uuid=user.uuid,
-            username=user.username,
-            idp_subject=user.idp_subject,
-            idp_source=user.idp_source,
-            created_at=user.created_at,
         )
 
     def _find_or_create_user(self, username: str, idp_subject: str, idp_source: str) -> User:

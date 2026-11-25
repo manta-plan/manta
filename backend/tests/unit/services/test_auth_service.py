@@ -1,6 +1,4 @@
-from datetime import UTC, datetime
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 import pytest
 from keycloak.exceptions import KeycloakError, KeycloakPostError
@@ -108,6 +106,22 @@ def test_login_creates_user_from_token_claims_on_first_login(mock_db, mock_kc_cl
     example_data.create_project.assert_called_once_with(owner=user)
     assert result.access_token == "some-access"  # noqa: S105 It's not a password
     assert result.refresh_token == "some-refresh"  # noqa: S105 It's not a password
+
+
+def test_login_creates_no_example_project_when_disabled(
+    mock_db, mock_kc_client, monkeypatch
+) -> None:
+    # Given
+    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    mock_db.add.assert_called_once()
+    example_data.create_project.assert_not_called()
 
 
 def test_login_does_not_recreate_existing_user(mock_db_class, mock_kc_client) -> None:
@@ -296,57 +310,6 @@ def test_logout_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
     # When / Then
     with pytest.raises(AuthenticationError):
         AuthService(db=mock_db, kc_client=mock_kc_client).logout("bad-refresh")
-
-
-def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
-    # Given
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    assert result.username == "alice"
-    assert result.idp_subject == "abc-123"
-    assert result.idp_source == ISSUER
-    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
-    mock_db.commit.assert_called_once()
-    example_data.create_project.assert_called_once_with(owner=user)
-
-
-def test_register_creates_no_example_project_when_disabled(
-    mock_db, mock_kc_client, monkeypatch
-) -> None:
-    # Given
-    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    example_data.create_project.assert_not_called()
-
-
-def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client) -> None:
-    # Given
-    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-    existing_user.id = 1
-    existing_user.uuid = uuid4()
-    existing_user.created_at = datetime.now(UTC)
-    mock_db = mock_db_class(query_results={User: existing_user})
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    assert result.username == existing_user.username
-    mock_db.add.assert_not_called()
-    example_data.create_project.assert_not_called()
 
 
 def _guest_service(mock_db, mock_kc_client, kc_admin=None, example_data=None) -> AuthService:

@@ -69,9 +69,5 @@ def login_as_guest(service: AuthService = Depends()) -> LoginResult:
     return service.login_as_guest()
 
 
-# Disabled for the MVP: it trusts the identity in the request body (see #273),
-# and login now creates the user. To be reintroduced behind a bearer token.
-#
-# @router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)
-# def register(request: RegisterRequest, service: AuthService = Depends()) -> RegisterResult:
-#     return service.register(request.username, request.idp_subject, request.idp_source)
+# There is no register endpoint for the MVP: login creates the user. See #273 for
+# how one should be reintroduced.
