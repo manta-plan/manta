@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+name: expand_and_dispatch
+
+initial_data:
+  dims: [snapshot]
+
+inputs:
+  dispatch_resolution: {type: string, default: 1w}
+
+steps:
+  - id: plan
+    playbook: capacity_expansion
+    inputs: inherit
+
+  - id: partition_weekly
+    block: timeseries_partitioning
+    with:
+      method: resample
+      resolution: ${{ inputs.dispatch_resolution }}
+      property: weekly
+
+  - id: dispatch
+    block: dispatch_optimisation
+    with:
+      aggregation:
+        snapshot: weekly
+        bus: ${{ inputs.bus }}

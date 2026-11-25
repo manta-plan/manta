@@ -116,7 +116,7 @@ The MVP's guest access already limits the size and number of runs, so this is no
 
 ### Can a condition ever read data? {#conditions-on-data}
 
-A `when` condition reads only settings, never the data, which makes a playbook checkable before it runs.
+An `if` condition reads only inputs, never the data, which makes a playbook checkable before it runs.
 It rules out a step such as "run only if the network has more than 100 buses".
 If that limit is not acceptable for good, something has to replace it without losing the checks before a run.
 Nothing needs it yet, and recording it here keeps it from being rediscovered later.

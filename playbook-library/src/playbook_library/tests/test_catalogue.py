@@ -41,11 +41,6 @@ def test_the_committed_catalogue_carries_enough_to_offer_a_blocks_settings():
         assert "properties" in description.config_schema, name
 
 
-def test_the_committed_catalogue_records_which_settings_are_wired_up():
-    dispatch = library_catalogue().blocks["rolling_horizon_dispatch"]
-    assert dispatch.inputs == frozenset({"capacity_source"})
-
-
 @pytest.mark.pypsa
 def test_the_committed_catalogue_is_not_stale():
     # Regenerate with: pixi run -e pypsa catalogue

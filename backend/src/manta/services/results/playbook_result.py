@@ -48,21 +48,20 @@ class PlaybookStepResult(BaseModel):
 
     block_config_schema: dict | None
     """The block's settings, as a JSON schema. The values themselves go in a run's
-    config under this step's `name`. Settings tagged `x-manta-input` are filled in by
-    another step (see `inputs`), not typed by a user."""
+    config under this step's `name`."""
 
     when: PlaybookStepConditionResult | None
     """None means the step always runs."""
 
     inputs: dict[str, str]
-    """Each wired-in setting, and the `${steps.<step>.<output>}` reference feeding it."""
+    """Always empty: a step is no longer fed by another step's output."""
 
 
 class GetPlaybookResult(BaseModel):
     name: str
     default_config: dict
-    """The config a run uses when it is created without one: values filed by step
-    name, plus a `globals` section every step can see."""
+    """The config a run uses when it is created without one: the default of each of
+    the playbook's inputs under `globals`, and each step's `with` under its name."""
 
     steps: list[PlaybookStepResult]
 
@@ -72,9 +71,9 @@ class PlaybookIssueResult(BaseModel):
     playbook.playbooks.PlaybookIssue)."""
 
     kind: PlaybookIssueKind
-    """What sort of problem it is: `structure`, `wiring` (how a step is fed), `dims`
-    (a dimension a step needs is missing), `config`, `when` (a condition on a setting
-    nobody set) or `environment`."""
+    """What sort of problem it is: `structure`, `reference` (an expression reading an
+    input that does not exist), `inputs` (a value under `globals` that does not fit),
+    `dims` (a dimension a step needs was removed), `config` or `environment`."""
 
     message: str
 
@@ -90,8 +89,7 @@ class PlaybookIssueResult(BaseModel):
     about one setting, such as a missing dimension."""
 
     input: str | None
-    """The wired-in setting this is about (a key of the step's `inputs`), for a
-    problem with how a step is fed."""
+    """Always None: a step is no longer fed by another step's output."""
 
 
 class ValidatePlaybookConfigResult(BaseModel):

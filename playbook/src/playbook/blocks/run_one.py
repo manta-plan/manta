@@ -5,7 +5,7 @@
 """Run a single block from the command line.
 
     python -m playbook.blocks.run_one <block> --revision '{"store": ..., "id": ...}' \
-        [--source <block library>] [--config '<json>'] [--inputs '<json>']
+        [--source <block library>] [--config '<json>']
 
 This is the whole contract between a block container and whatever drives it -
 Manta, a shell, a CI job: plain arguments in, ordinary log output, and one final
@@ -56,11 +56,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--config", default="{}", help="the block's settings, as JSON")
     parser.add_argument(
-        "--inputs",
-        default="{}",
-        help="wired-in revisions by setting name, as JSON: {name: {store: ..., id: ...}, ...}",
-    )
-    parser.add_argument(
         "--source",
         action="append",
         default=[],
@@ -80,9 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     # holding the one being asked for has to be named before it can be looked up.
     load_block_sources(args.source or None)
 
-    block_cls = get_block(args.block)
-    wired = {name: RevisionRef.from_dict(value) for name, value in json.loads(args.inputs).items()}
-    block = block_cls(block_cls.merge_config(json.loads(args.config), wired))
+    block = get_block(args.block)(json.loads(args.config))
     with closing(Workspace()) as workspace:
         base = open_revision(workspace, RevisionRef.from_dict(json.loads(args.revision)))
         result = RevisionRef.from_revision(block.run(base))

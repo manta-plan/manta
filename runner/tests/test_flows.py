@@ -21,7 +21,7 @@ from playbook.blocks import Catalogue, RevisionRef
 from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock
 from playbook.blocks.registry import BlockDescription, BlockSpec, register
 from playbook.blocks.tests.fakes import commit_root, commit_step, steps
-from playbook.playbooks.yaml_io import PlaybookDoc, StepDoc
+from playbook.playbooks import BlockStepDoc, PlaybookDoc
 
 from runner import flows
 from runner.config import UnknownEnvironmentError
@@ -36,13 +36,11 @@ from runner.flows import (
 
 STORE = "s3://bucket/store"
 REVISION_ID = "00000000-0000-0000-0000-000000000000"
-EARLIER_ID = "00000000-0000-0000-0000-000000000001"
 OUTPUT_ID = "00000000-0000-0000-0000-000000000002"
 
 
 class _FakeConfig(ConfigSchema):
     label: str = ""
-    source: RevisionRef | None = None
 
 
 @register("runtime_fake")
@@ -52,11 +50,9 @@ class _RuntimeFake(MantaBlock[_FakeConfig]):
     ENV = "default"
     CONFIG = _FakeConfig
     DIMS = BlockDims()
-    INPUTS = frozenset({"source"})
 
     def run(self, base: Revision) -> Revision:
-        wired = str(self.config.source.id) if self.config.source else "-"
-        return commit_step(base, f"{self.config.label}|{wired}")
+        return commit_step(base, f"{self.config.label}|")
 
 
 def _spec(name: str = "runtime_fake", env: str = "default") -> BlockSpec:
@@ -122,15 +118,10 @@ def _completed(output: dict | None):
 
 
 @pytest.mark.parametrize(
-    ("config", "inputs", "label"),
-    [
-        ({"label": "tidy"}, {"source": {"store": STORE, "id": EARLIER_ID}}, f"tidy|{EARLIER_ID}"),
-        ({}, None, "|-"),
-    ],
-    ids=["wired", "nothing-wired"],
+    ("config", "label"), [({"label": "tidy"}, "tidy|"), ({}, "|")], ids=["set", "default"]
 )
-def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs(
-    root: dict, config: dict, inputs: dict | None, label: str
+def test_the_block_flow_runs_the_named_block_with_its_config(
+    root: dict, config: dict, label: str
 ) -> None:
     # When: the flow's own body, as it runs inside the block's container
     result = flows.run_block.fn(
@@ -138,10 +129,9 @@ def test_the_block_flow_runs_the_named_block_with_its_config_and_inputs(
         step_name="cluster",
         config=config,
         revision=root,
-        inputs=inputs,
     )
 
-    # Then: the revision, the settings and the wired input all arrived, and the
+    # Then: the revision and the settings both arrived, and the
     # result comes back as plain data, a new revision in the input's own store.
     output = RevisionRef.from_dict(result)
     assert output.store == root["store"]
@@ -157,7 +147,6 @@ def test_the_block_flow_publishes_its_output_revision_as_an_artifact(
         step_name="cluster",
         config={},
         revision=root,
-        inputs=None,
     )
 
     # Then
@@ -179,7 +168,6 @@ def test_the_block_flow_imports_the_job_containers_block_library_before_looking_
         step_name="cluster",
         config={},
         revision=root,
-        inputs=None,
     )
 
     load_sources.assert_called_once_with()
@@ -195,10 +183,9 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     # When
     result = PrefectBlockRunner().run_block(
         _spec(),
-        step_name="cluster",
+        step_path=("plan", "cluster"),
         config={"label": "tidy"},
         revision=RevisionRef(store=STORE, id=REVISION_ID),
-        inputs={"source": RevisionRef(store=STORE, id=EARLIER_ID)},
     )
 
     # Then: one deployment for every block, with the block named as a parameter,
@@ -207,10 +194,9 @@ def test_a_step_is_dispatched_at_the_block_deployment_fully_spelled_out(
     assert dispatch.call_args.kwargs["job_variables"] == {"image": "block-prefect-runtime:default"}
     assert dispatch.call_args.kwargs["parameters"] == {
         "block": "runtime_fake",
-        "step_name": "cluster",
+        "step_name": "plan/cluster",
         "config": {"label": "tidy"},
         "revision": {"store": STORE, "id": REVISION_ID},
-        "inputs": {"source": {"store": STORE, "id": EARLIER_ID}},
     }
     assert result == RevisionRef(store=STORE, id=OUTPUT_ID)
 
@@ -229,10 +215,9 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
     with pytest.raises(BlockRunFailedError) as exc_info:
         PrefectBlockRunner().run_block(
             _spec(),
-            step_name="cluster",
+            step_path=("cluster",),
             config={},
             revision=RevisionRef(store=STORE, id=REVISION_ID),
-            inputs={},
         )
     message = str(exc_info.value)
     assert "cluster" in message
@@ -251,10 +236,9 @@ def test_a_step_that_completed_without_publishing_its_output_fails_the_playbook(
     with pytest.raises(BlockRunFailedError, match="without publishing its output revision"):
         PrefectBlockRunner().run_block(
             _spec(),
-            step_name="cluster",
+            step_path=("cluster",),
             config={},
             revision=RevisionRef(store=STORE, id=REVISION_ID),
-            inputs={},
         )
 
 
@@ -269,10 +253,9 @@ def test_a_step_with_no_state_at_all_fails_rather_than_returning_nothing(
     with pytest.raises(BlockRunFailedError, match="UNKNOWN"):
         PrefectBlockRunner().run_block(
             _spec(),
-            step_name="cluster",
+            step_path=("cluster",),
             config={},
             revision=RevisionRef(store=STORE, id=REVISION_ID),
-            inputs={},
         )
 
 
@@ -286,10 +269,9 @@ def test_a_step_runs_in_its_own_environments_image(monkeypatch: pytest.MonkeyPat
     for env in ("default", "pypsa"):
         runner.run_block(
             _spec(env=env),
-            step_name="step",
+            step_path=("step",),
             config={},
             revision=RevisionRef(store=STORE, id=REVISION_ID),
-            inputs={},
         )
 
     # Then each went to the image its own environment names — which is what lets
@@ -311,10 +293,9 @@ def test_a_step_needing_an_unconfigured_environment_says_so(
     with pytest.raises(UnknownEnvironmentError) as exc_info:
         PrefectBlockRunner().run_block(
             _spec(env="julia"),
-            step_name="step",
+            step_path=("step",),
             config={},
             revision=RevisionRef(store=STORE, id=REVISION_ID),
-            inputs={},
         )
     assert "julia" in str(exc_info.value)
     assert "MANTA_ENV_IMAGES" in str(exc_info.value)
@@ -362,13 +343,19 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
         }
     )
     doc = PlaybookDoc(
-        name="single-step", steps=[StepDoc(name="cluster", block="catalogue_only_fake")]
+        name="single-step",
+        inputs={"label": {"type": "string", "default": "tidy"}},
+        steps=[
+            BlockStepDoc(
+                id="cluster", block="catalogue_only_fake", with_={"label": "${{ inputs.label }}"}
+            )
+        ],
     )
 
     # When
     result = run_playbook.fn(
-        playbook=doc.model_dump(mode="json"),
-        config={"cluster": {"label": "tidy"}},
+        playbook=doc.model_dump(mode="json", by_alias=True),
+        inputs={"label": "given"},
         revision={"store": STORE, "id": REVISION_ID},
         catalogue=catalogue_parameter(catalogue),
     )
@@ -376,3 +363,4 @@ def test_the_playbook_flow_resolves_every_block_purely_from_the_catalogue_parame
     # Then: the block ran through the docker-pool transport, not in this process.
     assert result == {"store": STORE, "id": OUTPUT_ID}
     assert dispatch.call_args.kwargs["parameters"]["block"] == "catalogue_only_fake"
+    assert dispatch.call_args.kwargs["parameters"]["config"] == {"label": "given"}

@@ -44,3 +44,4 @@ dev/
 # Docs
 .docs/
 docs/reference/backend/rest-api.md
+docs/reference/playbook/schema.md

@@ -53,15 +53,14 @@ def build_example_network() -> pypsa.Network:
 def main(argv: list[str]) -> int:
     url = argv[0] if argv else tempfile.mkdtemp(prefix="playbook-example-")
 
-    entry = library_playbooks()[EXAMPLE_PLAYBOOK]
-    playbook = playbook_from_doc(entry.doc)
+    playbook = playbook_from_doc(library_playbooks()[EXAMPLE_PLAYBOOK])
     with closing(Workspace()) as workspace:
         ref = RevisionRef.from_revision(
             store_network(build_example_network(), workspace.store(url))
         )
 
     print(f"Running {EXAMPLE_PLAYBOOK!r} on revision {ref.id} of {ref.store}")
-    result = playbook.run(ref, entry.default_config)
+    result = playbook.run(ref, {})
     print(f"Done. Final result: revision {result.id} of {result.store}")
     return 0
 

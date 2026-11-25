@@ -37,7 +37,7 @@ pytestmark = pytest.mark.pypsa
 
 
 def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
-    return playbook_from_doc(library_playbooks()[name].doc)
+    return playbook_from_doc(library_playbooks()[name])
 
 
 @pytest.fixture
@@ -45,19 +45,11 @@ def network(store_revision) -> Revision:
     return store_revision(build_example_network(), "start")
 
 
-CLUSTER_EXPAND_DISPATCH_CONFIG = {
-    "globals": {"expansion_mode": "overnight"},
-    "cluster": {"n_hours": 3},
-    "expansion_overnight": {},
-    "expansion_myopic": {},
-    "dispatch": {"optimize_config": {"horizon": 4}},
-}
+SHORT_HORIZON = {"dispatch": {"optimize_config": {"horizon": 4}}}
 
 
 def test_the_example_playbook_runs_from_one_network_to_another(network, workspace):
-    ref = build_playbook().run(
-        RevisionRef.from_revision(network), library_playbooks()[EXAMPLE_PLAYBOOK].default_config
-    )
+    ref = build_playbook().run(RevisionRef.from_revision(network), {})
     result = open_revision(workspace, ref)
 
     assert result.store is network.store
@@ -67,9 +59,11 @@ def test_the_example_playbook_runs_from_one_network_to_another(network, workspac
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, workspace):
-    ref = build_playbook("cluster-expand-dispatch").run(
-        RevisionRef.from_revision(network), CLUSTER_EXPAND_DISPATCH_CONFIG
+def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(
+    network, workspace, tuned_playbook
+):
+    ref = tuned_playbook("cluster-expand-dispatch", SHORT_HORIZON).run(
+        RevisionRef.from_revision(network), {}
     )
     result = open_revision(workspace, ref)
 
@@ -85,9 +79,9 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, 
     assert n.generators.p_nom["gen"] == pytest.approx(50.0, rel=1e-3)
 
 
-def test_the_network_the_playbook_started_from_is_left_alone(network):
-    build_playbook("cluster-expand-dispatch").run(
-        RevisionRef.from_revision(network), CLUSTER_EXPAND_DISPATCH_CONFIG
+def test_the_network_the_playbook_started_from_is_left_alone(network, tuned_playbook):
+    tuned_playbook("cluster-expand-dispatch", SHORT_HORIZON).run(
+        RevisionRef.from_revision(network), {}
     )
     n = to_network(network)
     assert len(n.snapshots) == 24

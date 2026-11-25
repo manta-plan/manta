@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Checking a playbook, and the settings it is about to run with, before anything runs.
+"""Checking a playbook, and the inputs it is about to run with, before anything runs.
 
 Settings are checked two ways: by the block's own settings model where the block can
 be imported, and by its catalogue description where it cannot - the ordinary case for
@@ -11,286 +11,221 @@ anything driving playbooks from outside. Where both apply, they have to agree.
 
 import pytest
 
-from playbook.blocks import BlockSpec, describe_block
+from playbook.blocks import Catalogue, describe_block
 from playbook.blocks.tests.fakes import (
-    FakeAddsClustered,
-    FakeNeedsUpstream,
     FakeNestedSettings,
     FakeOtherEnv,
     FakePassthrough,
-    FakeRemovesInvestmentPeriod,
-    FakeRequiresInvestmentPeriod,
     FakeStrictConfig,
 )
-from playbook.playbooks.playbook import Playbook, When
-from playbook.playbooks.validation import PlaybookHasIssuesError, find_playbook_issues
+from playbook.playbooks.tests.specs import SPEC_PLAYBOOKS
+from playbook.playbooks.validation import find_playbook_issues
 
-
-def _issue_kinds(exc) -> set[str]:
-    return {issue.kind for issue in exc.value.issues}
-
-
-def _described(block) -> BlockSpec:
-    """A block as a catalogue describes it: no class, as if it lived elsewhere."""
-    return BlockSpec(describe_block(block).description)
-
-
-IMPORTED_OR_DESCRIBED = pytest.mark.parametrize(
-    "as_step_block", [lambda block: block, _described], ids=["imported", "described"]
+DESCRIBED = Catalogue(
+    blocks={
+        f"described_{block.name}": block.description.model_copy(
+            update={"name": f"described_{block.name}"}
+        )
+        for block in map(describe_block, [FakeStrictConfig, FakePassthrough, FakeNestedSettings])
+    }
 )
+IMPORTED_OR_DESCRIBED = pytest.mark.parametrize("prefix", ["", "described_"])
 
 
-def test_a_well_wired_playbook_has_no_issues():
-    pb = Playbook(name="happy")
-    pb.add("cluster", FakeAddsClustered)
-    a = pb.add("expand", FakePassthrough)
-    pb.add("dispatch", FakeNeedsUpstream, inputs={"source": a.output})
-    pb.raise_for_issues()  # structure and wiring only, no settings given
-    pb.raise_for_issues(config={})  # everything, still nothing wrong
+def steps(*listed: dict, **inputs: dict) -> dict:
+    return {"name": "p", "inputs": inputs, "steps": list(listed)}
 
 
-def test_the_checks_that_need_no_settings_run_without_them():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough)
-    pb.add("a", FakePassthrough)  # duplicate name
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues()
-    assert "structure" in _issue_kinds(exc)
+def with_period(doc: dict) -> dict:
+    return {**doc, "initial_data": {"dims": ["period"]}}
 
 
-def test_the_function_and_the_method_find_the_same_issues():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough)
-    pb.add("a", FakePassthrough)
+def block(step_id: str, name: str = "fake_passthrough", **extra: object) -> dict:
+    return {"id": step_id, "block": name, **extra}
+
+
+def found(pb, inputs: dict | None) -> list[tuple]:
+    return [(i.kind, i.step_path) for i in find_playbook_issues(pb, inputs)]
+
+
+@pytest.mark.parametrize("name", SPEC_PLAYBOOKS)
+@pytest.mark.parametrize("inputs", [None, {}])
+def test_a_spec_playbook_has_no_issues(request, name, inputs):
+    assert request.getfixturevalue(name).find_issues(inputs) == []
+
+
+def test_the_function_and_the_method_find_the_same_issues(build_playbook):
+    pb = build_playbook(steps(block("a"), block("a")))
     assert find_playbook_issues(pb, {}) == pb.find_issues({}) != []
 
 
-def test_duplicate_step_names():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough)
-    pb.add("a", FakePassthrough)
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues()
-    assert any(i.kind == "structure" and "duplicate" in i.message for i in exc.value.issues)
+@pytest.mark.parametrize(
+    ("doc", "issues"),
+    [
+        pytest.param(steps(block("a"), block("a")), [("structure", ("a",))], id="duplicate-id"),
+        pytest.param(
+            steps(
+                {"id": "plan", "playbook": "capacity_expansion", "inputs": "inherit"},
+                solver={"type": "string", "default": "highs"},
+            ),
+            [("structure", ("plan",))],
+            id="inherited-input-clash",
+        ),
+    ],
+)
+def test_a_problem_with_the_playbook_itself_is_found_without_inputs(
+    build_playbook, spec_catalogue, doc, issues
+):
+    pb = build_playbook(doc, spec_catalogue)
+    assert found(pb, None) == found(pb, {}) == issues
 
 
-def test_a_step_cannot_be_called_globals():
-    # Its settings would be filed under the same key as the settings every step sees.
-    pb = Playbook(name="p")
-    pb.add("globals", FakePassthrough)
-    issues = pb.find_issues()
-    assert [(i.kind, i.step_path) for i in issues] == [("structure", ("globals",))]
+@pytest.mark.parametrize(
+    ("step", "message"),
+    [
+        (block("a", **{"if": "${{ inputs.nope }}"}), "no input 'nope'"),
+        (block("a", **{"with": {"label": "${{ inputs.mode.x }}"}}), "does not have"),
+        (block("a", **{"with": {"label": "${{ inputs }}"}}), "as a whole"),
+    ],
+)
+def test_an_expression_reading_something_that_does_not_exist_is_reported(
+    build_playbook, step, message
+):
+    pb = build_playbook(steps(step, mode={"type": "string", "default": "a"}))
+    [issue] = pb.find_issues()
+    assert (issue.kind, issue.step_path) == ("reference", ("a",))
+    assert message in issue.message
 
 
-def test_a_step_fed_from_a_later_step_is_reported():
-    pb = Playbook(name="p")
-    pb.add("a", FakeNeedsUpstream, inputs={"source": {"step": "b", "output": "output"}})
-    pb.add("b", FakePassthrough)
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues()
-    assert any(i.kind == "wiring" and "does not come before" in i.message for i in exc.value.issues)
+def test_a_nested_playbook_given_an_input_it_does_not_have_is_reported(
+    build_playbook, spec_catalogue
+):
+    nested = {"id": "plan", "playbook": "capacity_expansion", "with": {"solvr": "highs"}}
+    [issue] = build_playbook(steps(nested), spec_catalogue).find_issues()
+    assert (issue.kind, issue.step_path, issue.input_path) == ("reference", ("plan",), ("solvr",))
 
 
-def test_a_step_fed_from_a_step_that_does_not_exist_is_reported():
-    pb = Playbook(name="p")
-    pb.add("a", FakeNeedsUpstream, inputs={"source": {"step": "nope", "output": "output"}})
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues(config={})
-    # Once, as a wiring mistake - not again as a step that does not run.
-    assert [(i.kind, i.message) for i in exc.value.issues if i.kind == "wiring"] == [
-        ("wiring", "is fed from step 'nope', which does not exist (earlier steps: [])")
-    ]
-
-
-def test_a_step_fed_from_a_result_its_source_does_not_offer_is_reported():
-    pb = Playbook(name="p")
-    a = pb.add("a", FakePassthrough)
-    pb.add("b", FakeNeedsUpstream, inputs={"source": a.out("bogus")})
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues()
-    assert any(i.kind == "wiring" and "bogus" in i.message for i in exc.value.issues)
-
-
-def test_wiring_an_input_the_block_does_not_have_is_reported():
-    pb = Playbook(name="p")
-    a = pb.add("a", FakePassthrough)
-    pb.add("b", FakePassthrough, inputs={"not_a_real_input": a.output})
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues()
-    assert any(i.kind == "wiring" and "no input called" in i.message for i in exc.value.issues)
-
-
-def test_an_issue_says_which_input_it_is_about():
-    pb = Playbook(name="p")
-    a = pb.add("a", FakePassthrough)
-    pb.add("b", FakePassthrough, inputs={"not_a_real_input": a.output})
-    issues = pb.find_issues()
-    assert any(i.input == "not_a_real_input" and i.step_path == ("b",) for i in issues)
-
-
-def test_a_missing_dim_reports_which_step_removed_it():
-    pb = Playbook(name="p", initial_dims=frozenset({"period"}))
-    pb.add("collapse", FakeRemovesInvestmentPeriod)
-    pb.add("needs_it", FakeRequiresInvestmentPeriod)
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues(config={})
-    dims_issues = [i for i in exc.value.issues if i.kind == "dims"]
-    assert len(dims_issues) == 1
-    assert dims_issues[0].step_path == ("needs_it",)
-    assert "step 'collapse' removed it" in dims_issues[0].message
-
-
-def test_the_same_block_twice_with_different_settings_is_fine():
-    pb = Playbook(name="p")
-    pb.add("first", FakePassthrough)
-    pb.add("second", FakePassthrough)
-    pb.raise_for_issues(config={"first": {"label": "one"}, "second": {"label": "two"}})
-
-
-def test_settings_for_a_step_that_does_not_exist_are_reported():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough)
-    issues = pb.find_issues(config={"a": {}, "not_a_step": {}})
-    assert [(i.kind, i.step_path, i.config_path) for i in issues] == [
-        ("config", (), ("not_a_step",))
-    ]
-    assert "no step called" in issues[0].message
-
-
-@IMPORTED_OR_DESCRIBED
-def test_a_settings_problem_points_at_the_exact_setting(as_step_block):
-    pb = Playbook(name="p")
-    pb.add("strict", as_step_block(FakeStrictConfig))
-    issues = pb.find_issues(config={"strict": {"required_field": "not a number"}})
-    # A user interface can mark this one field, rather than the whole step. The path
-    # counts from the top of the settings, so it can be followed without knowing which
-    # step it belongs to.
-    assert [(i.kind, i.step_path, i.config_path) for i in issues] == [
-        ("config", ("strict",), ("strict", "required_field"))
-    ]
-
-
-@IMPORTED_OR_DESCRIBED
-def test_a_missing_setting_is_reported_at_the_setting_itself(as_step_block):
-    pb = Playbook(name="p")
-    pb.add("strict", as_step_block(FakeStrictConfig))
-    issues = pb.find_issues(config={"strict": {}})
-    assert [(i.config_path, i.message) for i in issues] == [
-        (("strict", "required_field"), "this setting is required")
-    ]
-
-
-@IMPORTED_OR_DESCRIBED
-def test_a_misspelt_setting_is_reported_rather_than_ignored(as_step_block):
-    # Ignoring it would quietly run the block with the default in its place.
-    pb = Playbook(name="p")
-    pb.add("a", as_step_block(FakePassthrough))
-    issues = pb.find_issues(config={"a": {"lable": "typo"}})
-    assert [(i.config_path, i.message) for i in issues] == [
-        (("a", "lable"), "there is no setting called 'lable'")
-    ]
-
-
-@IMPORTED_OR_DESCRIBED
-def test_a_problem_inside_an_optional_group_of_settings_points_at_the_setting(as_step_block):
-    pb = Playbook(name="p")
-    pb.add("a", as_step_block(FakeNestedSettings))
-    issues = pb.find_issues(config={"a": {"group": {"size": "big"}}})
-    assert [i.config_path for i in issues] == [("a", "group", "size")]
-
-
-@IMPORTED_OR_DESCRIBED
-def test_a_wired_in_setting_is_not_asked_of_the_settings(as_step_block):
-    # The wiring fills it in, so leaving it out of the settings is not a mistake.
-    pb = Playbook(name="p")
-    a = pb.add("a", FakePassthrough)
-    pb.add("b", as_step_block(FakeNeedsUpstream), inputs={"source": a.output})
-    assert pb.find_issues(config={"a": {}, "b": {}}) == []
-
-
-def test_each_settings_problem_is_reported_separately():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough)
-    issues = pb.find_issues(config={"a": {"label": [], "source": 7}})
-    assert {i.config_path for i in issues if i.kind == "config"} == {
-        ("a", "label"),
-        ("a", "source"),
+def test_input_values_that_do_not_fit_are_reported_before_anything_else(capacity_expansion):
+    issues = capacity_expansion.find_issues({"solver": "cplex", "region": "x"})
+    assert {(i.kind, i.input_path) for i in issues} == {
+        ("inputs", ("solver",)),
+        ("inputs", ("region",)),
     }
 
 
-def test_a_conditional_branch_can_have_different_dims_validity():
-    pb = Playbook(name="p")
-    pb.add(
-        "needs_period",
-        FakeRequiresInvestmentPeriod,
-        when=When(config="globals.mode", equals="a"),
+@IMPORTED_OR_DESCRIBED
+@pytest.mark.parametrize(
+    ("name", "settings", "expected"),
+    [
+        (
+            "fake_strict_config",
+            {"required_field": "not a number"},
+            [("required_field",)],
+        ),
+        ("fake_strict_config", {}, [("required_field",)]),
+        ("fake_passthrough", {"lable": "typo"}, [("lable",)]),
+        ("fake_nested_settings", {"group": {"size": "big"}}, [("group", "size")]),
+        ("fake_passthrough", {"label": [], "lable": 7}, [("label",), ("lable",)]),
+    ],
+)
+def test_a_settings_problem_points_at_the_exact_setting(
+    build_playbook, prefix, name, settings, expected
+):
+    pb = build_playbook(steps(block("a", f"{prefix}{name}", **{"with": settings})), DESCRIBED)
+    issues = pb.find_issues({})
+    assert {(i.kind, i.step_path) for i in issues} == {("config", ("a",))}
+    assert sorted(i.setting_path for i in issues) == expected
+
+
+@IMPORTED_OR_DESCRIBED
+@pytest.mark.parametrize(
+    ("settings", "message"),
+    [({}, "this setting is required"), ({"required_field": 1, "x": 1}, "no setting called 'x'")],
+)
+def test_a_settings_problem_reads_the_same_imported_or_described(
+    build_playbook, prefix, settings, message
+):
+    doc = steps(block("a", f"{prefix}fake_strict_config", **{"with": settings}))
+    [issue] = build_playbook(doc, DESCRIBED).find_issues({})
+    assert message in issue.message
+
+
+def test_settings_come_from_the_inputs_before_they_are_checked(build_playbook):
+    doc = steps(
+        block("a", "fake_strict_config", **{"with": {"required_field": "${{ inputs.size }}"}}),
+        size={"type": "number", "default": 1},
     )
-    pb.add("no_requirement", FakePassthrough, when=When(config="globals.mode", equals="b"))
-
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues(config={"globals": {"mode": "a"}})
-    assert any(i.kind == "dims" for i in exc.value.issues)
-
-    pb.raise_for_issues(config={"globals": {"mode": "b"}})  # nothing wrong
+    pb = build_playbook(doc)
+    assert pb.find_issues({}) == []
+    assert [i.setting_path for i in pb.find_issues({"size": 1.5})] == [("required_field",)]
 
 
-def test_a_step_that_runs_cannot_be_fed_by_one_that_does_not():
-    pb = Playbook(name="p")
-    a = pb.add("a", FakePassthrough, when=When(config="globals.mode", equals="b"))
-    pb.add("b", FakeNeedsUpstream, inputs={"source": a.output})
-
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues(config={"globals": {"mode": "a"}})  # a does not run
-    assert any(i.kind == "wiring" and "does not run" in i.message for i in exc.value.issues)
+def test_a_step_removed_by_its_if_is_not_checked(build_playbook):
+    removed = block("a", "fake_strict_config", **{"if": "${{ inputs.on }}"})
+    pb = build_playbook(steps(removed, on={"type": "boolean", "default": False}))
+    assert pb.find_issues({}) == []
+    assert found(pb, {"on": True}) == [("config", ("a",))]
 
 
-def test_settings_for_a_branch_that_does_not_run_are_still_allowed():
-    pb = Playbook(name="p")
-    pb.add("branch_a", FakePassthrough, when=When(config="globals.mode", equals="a"))
-    pb.add("branch_b", FakePassthrough, when=When(config="globals.mode", equals="b"))
-    # One settings document carries both branches; only "a" runs here.
-    pb.raise_for_issues(
-        config={
-            "globals": {"mode": "a"},
-            "branch_a": {"label": "A"},
-            "branch_b": {"label": "B"},
-        }
+@pytest.mark.parametrize(
+    ("doc", "message"),
+    [
+        pytest.param(steps(block("needs", "fake_requires_period")), "(it has: [])", id="never"),
+        pytest.param(
+            with_period(
+                steps(
+                    block("collapse", "fake_removes_period"),
+                    block("needs", "fake_requires_period"),
+                )
+            ),
+            "step 'collapse' removed it",
+            id="removed",
+        ),
+        pytest.param(
+            with_period(
+                steps(
+                    {
+                        "id": "nested",
+                        "playbook": with_period(steps(block("c", "fake_removes_period"))),
+                    },
+                    block("needs", "fake_requires_period"),
+                )
+            ),
+            "step 'nested' removed it",
+            id="removed-by-a-nested-playbook",
+        ),
+    ],
+)
+def test_a_dimension_the_data_lacks_when_a_step_runs_is_reported(build_playbook, doc, message):
+    [issue] = build_playbook(doc).find_issues({})
+    assert (issue.kind, issue.step_path) == ("dims", ("needs",))
+    assert message in issue.message
+
+
+def test_a_dimension_the_data_starts_with_is_there(build_playbook):
+    pb = build_playbook(with_period(steps(block("needs", "fake_requires_period"))))
+    assert pb.find_issues({}) == []
+
+
+def test_a_nested_playbook_needs_the_dimensions_its_data_starts_with(build_playbook):
+    pb = build_playbook(steps({"id": "nested", "playbook": with_period(steps(block("a")))}))
+    [issue] = pb.find_issues({})
+    assert (issue.kind, issue.step_path) == ("dims", ("nested",))
+
+
+def test_blocks_disagreeing_about_an_environment_are_reported(build_playbook):
+    relocated = describe_block(FakeOtherEnv).description.model_copy(
+        update={"name": "relocated", "manifest": "other/pixi.toml"}
     )
+    catalogue = Catalogue(blocks={"relocated": relocated})
+    pb = build_playbook(
+        steps(block("first", "fake_other_env"), block("second", "relocated")), catalogue
+    )
+    assert found(pb, {}) == [("environment", ("second",))]
 
 
-def test_a_condition_on_a_setting_nobody_set_is_reported():
-    pb = Playbook(name="p")
-    pb.add("a", FakePassthrough, when=When(config="globals.does_not_exist", equals="x"))
-    with pytest.raises(PlaybookHasIssuesError) as exc:
-        pb.raise_for_issues(config={"globals": {}})
-    when_issues = [i for i in exc.value.issues if i.kind == "when"]
-    assert when_issues[0].step_path == ("a",)
-    assert when_issues[0].config_path == ("globals", "does_not_exist")
-
-
-def test_a_described_block_with_acceptable_settings_has_no_issues():
-    pb = Playbook(name="p")
-    pb.add("strict", _described(FakeStrictConfig))
-    assert _described(FakeStrictConfig).config_model() is None
-    pb.raise_for_issues(config={"strict": {"required_field": 3}})
-
-
-def test_blocks_disagreeing_about_an_environment_are_reported():
-    # Same environment name, but one of them says it lives somewhere particular.
-    elsewhere = describe_block(FakeOtherEnv).description
-    relocated = BlockSpec(elsewhere.model_copy(update={"manifest": "other/pixi.toml"}))
-
-    pb = Playbook(name="p")
-    pb.add("first", FakeOtherEnv)
-    pb.add("second", relocated)
-    issues = pb.find_issues(config={})
-    assert [(i.kind, i.step_path) for i in issues] == [("environment", ("second",))]
-
-
-def test_an_issue_reads_well_when_printed():
-    pb = Playbook(name="p")
-    pb.add("strict", FakeStrictConfig)
-    issue = next(i for i in pb.find_issues(config={"strict": {}}) if i.kind == "config")
+def test_an_issue_reads_well_when_printed(build_playbook):
+    [issue] = build_playbook(steps(block("strict", "fake_strict_config"))).find_issues({})
     assert str(issue) == (
-        "[config] step 'strict', setting 'strict.required_field': this setting is required"
+        "[config] step 'strict', setting 'required_field': this setting is required"
     )

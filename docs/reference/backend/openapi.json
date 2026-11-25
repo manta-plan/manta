@@ -1445,10 +1445,10 @@
             "type": "string",
             "enum": [
               "structure",
-              "wiring",
+              "reference",
+              "inputs",
               "dims",
               "config",
-              "when",
               "environment"
             ],
             "title": "Kind"

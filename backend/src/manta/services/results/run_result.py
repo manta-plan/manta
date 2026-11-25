@@ -58,7 +58,7 @@ class RunStepResult(BaseModel):
     """Prefect's own state for the step's block run (COMPLETED, RUNNING, FAILED, ...),
     or, for a step with no block run:
 
-    - SKIPPED: its `when` condition is false for this run's config, so it never runs.
+    - SKIPPED: its `if` is false for this run's inputs, so it never runs.
     - NOT_STARTED: it should run, but hasn't started yet — or never will, if an
       earlier step failed.
     - UNKNOWN: it runs a nested playbook, whose own steps aren't tracked here yet.

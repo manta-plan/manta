@@ -99,15 +99,14 @@ def run_block(
     step_name: str,
     config: dict,
     revision: dict,
-    inputs: dict[str, dict] | None,
 ) -> dict:
     """Run one block by name, in this container, and report where its result went.
 
     There is one deployment of this flow, shared by every block: the block to run
-    arrives as a parameter, and `step_name` — the name of the step using this
-    block within its own playbook, distinct from the block itself since the same
-    block can be used by more than one step — only names the flow run above; it
-    plays no part in running the block.
+    arrives as a parameter, and `step_name` — the path of the step using this
+    block within its playbook, its ids joined by `/`, distinct from the block itself
+    since the same block can be used by more than one step — only names the flow run
+    above; it plays no part in running the block.
 
     This is the only code in this runtime that runs inside a block's own
     environment, and it does not import a block until asked for one by name.
@@ -122,9 +121,7 @@ def run_block(
     # importing it registers its blocks. Skipping this leaves every run failing
     # with BlockNotRegisteredError.
     load_block_sources()
-    block_cls = get_block(block)
-    wired = {name: RevisionRef.from_dict(value) for name, value in (inputs or {}).items()}
-    instance = block_cls(block_cls.merge_config(config, wired))
+    instance = get_block(block)(config)
     with closing(Workspace()) as workspace:
         result = instance.run(open_revision(workspace, RevisionRef.from_dict(revision)))
         output = RevisionRef.from_revision(result).to_dict()
@@ -150,11 +147,11 @@ class PrefectBlockRunner:
         self,
         block: BlockSpec,
         *,
-        step_name: str,
+        step_path: tuple[str, ...],
         config: dict,
         revision: RevisionRef,
-        inputs: dict[str, RevisionRef],
     ) -> RevisionRef:
+        step_name = "/".join(step_path)
         # Dispatching from inside a flow makes the block run a child of the
         # playbook run, which is what groups a run's steps under it in Prefect.
         # Prefect records job_variables on the flow run, so which image ran a
@@ -167,7 +164,6 @@ class PrefectBlockRunner:
                 "step_name": step_name,
                 "config": config,
                 "revision": revision.to_dict(),
-                "inputs": {name: value.to_dict() for name, value in inputs.items()},
             },
         )
         state = flow_run.state
@@ -202,8 +198,8 @@ def _block_output(flow_run_id: UUID, step_name: str) -> RevisionRef:
 
 
 @flow(name=PLAYBOOK_FLOW_NAME)
-def run_playbook(playbook: dict, config: dict, revision: dict, catalogue: str) -> dict:
-    """Run a whole playbook, given its document rather than the playbook itself.
+def run_playbook(playbook: dict, inputs: dict, revision: dict, catalogue: str) -> dict:
+    """Run a whole playbook with `inputs`, given its document rather than the playbook itself.
 
     `catalogue` is what `playbook`'s blocks are resolved against — this process
     never imports a block library itself (see runner/tests/test_isolation.py), so the
@@ -215,7 +211,7 @@ def run_playbook(playbook: dict, config: dict, revision: dict, catalogue: str) -
     result = execute_playbook(
         built,
         RevisionRef.from_dict(revision),
-        config,
+        inputs,
         runner=PrefectBlockRunner(),
     )
     return result.to_dict()

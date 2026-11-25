@@ -14,7 +14,7 @@ from runner.flows import OUTPUT_ARTIFACT_KEY, catalogue_parameter
 from manta.entities import Project, Run, User
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
-from manta.services.playbook_service import PlaybookService
+from manta.services.playbook_service import PlaybookService, config_of_run
 from manta.services.results.run_result import DataRecordResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -45,20 +45,34 @@ def _patch_get_client(monkeypatch: pytest.MonkeyPatch, client) -> None:
     )
 
 
-def _fake_flow_run(state_type: str, config: dict | None = None):
+def _library_playbook_service() -> PlaybookService:
+    return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
+
+
+_DEFAULT_CONFIG = _library_playbook_service().default_config(_LIBRARY_PLAYBOOK)
+_MYOPIC_CONFIG = {**_DEFAULT_CONFIG, "globals": {"expansion_mode": "myopic"}}
+
+
+def _dispatched(config: dict) -> dict:
+    """The playbook and inputs a run of the library playbook with `config` is dispatched
+    with (see RunService.create_run)."""
+    doc = _library_playbook_service().run_document(_LIBRARY_PLAYBOOK, config)
+    return {
+        "playbook": doc.model_dump(mode="json", by_alias=True, exclude_unset=True),
+        "inputs": config["globals"],
+    }
+
+
+def _fake_flow_run(state_type: str, config: dict = _DEFAULT_CONFIG):
     # `_flow_run_status` reads `flow_run.state.type.value`, and `_flow_run_config`
     # reads the config back from the parameters Prefect stored on the flow run.
     return SimpleNamespace(
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={
-            "config": config if config is not None else {},
+            **_dispatched(config),
             "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
         },
     )
-
-
-def _library_playbook_service() -> PlaybookService:
-    return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
 
 
 def _existing_user(user_id: int = 1, username: str = "alice") -> User:
@@ -146,11 +160,11 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     # library's own default_config (none was supplied), the record as plain
     # data, and the catalogue encoded
     # as a JSON string (never a dict — see runner.flows.catalogue_parameter).
-    library_playbook = library_playbooks()[_LIBRARY_PLAYBOOK]
     assert dispatch.call_args.args[0] == run_service_module.PLAYBOOK_DEPLOYMENT
     parameters = dispatch.call_args.kwargs["parameters"]
-    assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
-    assert parameters["config"] == library_playbook.default_config
+    assert parameters["playbook"]["name"] == _LIBRARY_PLAYBOOK
+    assert parameters["inputs"] == {"expansion_mode": "overnight"}
+    assert config_of_run(parameters["playbook"], parameters["inputs"]) == _DEFAULT_CONFIG
     assert parameters["revision"] == {"store": _store_url(project), "id": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
@@ -165,8 +179,7 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
     dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
     service = _dispatching_service(db, mock_s3_client)
-    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
-    custom_config = {**default_config, "expansion_overnight": {"period": 2050}}
+    custom_config = {**_DEFAULT_CONFIG, "expansion_overnight": {"period": 2050}}
 
     # When
     service.create_run(
@@ -179,7 +192,9 @@ def test_create_run_uses_an_explicitly_supplied_config_instead_of_the_default(
     )
 
     # Then
-    assert dispatch.call_args.kwargs["parameters"]["config"] == custom_config
+    parameters = dispatch.call_args.kwargs["parameters"]
+    assert parameters["inputs"] == {"expansion_mode": "overnight"}
+    assert config_of_run(parameters["playbook"], parameters["inputs"]) == custom_config
 
 
 def test_create_run_logs_orphaned_flow_run_when_commit_fails(
@@ -244,7 +259,9 @@ def test_create_run_with_unknown_playbook_raises_404(
     db = mock_db_class(query_results={Project: project})
     dispatch = MagicMock()
     monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
-    service = RunService(db=db, user_service=UserService(db))
+    service = RunService(
+        db=db, playbook_service=_library_playbook_service(), user_service=UserService(db)
+    )
 
     # When/Then
     with pytest.raises(HTTPException) as exc_info:
@@ -275,15 +292,13 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
     service = RunService(
         db=db, playbook_service=_library_playbook_service(), user_service=UserService(db)
     )
-    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
-    myopic_config = {**default_config, "globals": {"expansion_mode": "myopic"}}
 
     # When
     with pytest.raises(HTTPException) as exc_info:
         service.create_run(
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
-            config=myopic_config,
+            config=_MYOPIC_CONFIG,
             store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
@@ -374,10 +389,7 @@ def test_get_run_returns_dto_for_a_known_run(
     user = _existing_user()
     run = _existing_run(project)
     db = mock_db_class(query_results={Run: run, Project: project})
-    started_with_config = {
-        "globals": {"expansion_mode": "overnight"},
-        "expansion_overnight": {"period": 2050},
-    }
+    started_with_config = {**_DEFAULT_CONFIG, "expansion_overnight": {"period": 2050}}
     fake_client = MagicMock(
         read_flow_run=MagicMock(return_value=_fake_flow_run("COMPLETED", started_with_config))
     )
@@ -446,8 +458,8 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
         "_read_flow_runs",
         MagicMock(
             return_value={
-                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED", {"cluster": {}}),
-                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING", {"dispatch": {}}),
+                first_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                second_run.prefect_flow_run_id: _fake_flow_run("RUNNING", _MYOPIC_CONFIG),
             }
         ),
     )
@@ -472,7 +484,7 @@ def test_list_runs_returns_project_runs_with_prefect_statuses(
     assert [run.project_uuid for run in result.items] == [project.uuid, project.uuid]
     assert [run.playbook for run in result.items] == [_LIBRARY_PLAYBOOK, _LIBRARY_PLAYBOOK]
     assert [run.status for run in result.items] == ["COMPLETED", "RUNNING"]
-    assert [run.config for run in result.items] == [{"cluster": {}}, {"dispatch": {}}]
+    assert [run.config for run in result.items] == [_DEFAULT_CONFIG, _MYOPIC_CONFIG]
     assert [run.created_at for run in result.items] == [first_run.created_at, second_run.created_at]
 
 
@@ -597,16 +609,13 @@ def test_list_runs_with_unknown_project_raises_404(mock_db_class) -> None:
     assert exc_info.value.status_code == 404
 
 
-def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | None = None):
+def _fake_playbook_flow_run(state_type: str, dispatched: dict):
     """The playbook's own flow run, carrying the parameters it was dispatched with."""
-    if playbook_doc is None:
-        playbook_doc = library_playbooks()[_LIBRARY_PLAYBOOK].doc.model_dump(mode="json")
     return SimpleNamespace(
         id=uuid4(),
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={
-            "playbook": playbook_doc,
-            "config": config,
+            **dispatched,
             "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
             "catalogue": catalogue_parameter(library_catalogue()),
         },
@@ -655,7 +664,7 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
     started = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
     fake_client = _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        _fake_playbook_flow_run("RUNNING", _dispatched(_DEFAULT_CONFIG)),
         [
             _fake_block_run(
                 "expansion_overnight", "overnight_capacity_expansion", "RUNNING", started
@@ -672,7 +681,7 @@ def test_get_run_steps_reports_every_step_with_its_own_status(
     assert result.run_status == "RUNNING"
     assert [(step.name, step.block, step.status) for step in result.steps] == [
         ("expansion_overnight", "overnight_capacity_expansion", "RUNNING"),
-        # Their `when` is false for this run's config, so they never run.
+        # Their `if` is false for this run's inputs, so they never run.
         ("expansion_myopic", "myopic_capacity_expansion", "SKIPPED"),
         ("expansion_perfect", "perfect_capacity_expansion", "SKIPPED"),
     ]
@@ -695,7 +704,7 @@ def test_get_run_steps_decides_skipped_steps_from_the_runs_own_config(
     db = mock_db_class(query_results={Run: run, Project: project})
     _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("PENDING", {"globals": {"expansion_mode": "myopic"}}),
+        _fake_playbook_flow_run("PENDING", _dispatched(_MYOPIC_CONFIG)),
         [],
     )
     service = RunService(db=db, user_service=UserService(db))
@@ -722,7 +731,7 @@ def test_get_run_steps_reports_the_latest_block_run_of_a_step_run_twice(
     second = datetime(2026, 10, 2, 13, 0, tzinfo=UTC)
     _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("RUNNING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        _fake_playbook_flow_run("RUNNING", _dispatched(_DEFAULT_CONFIG)),
         # Deliberately newest first, so list order can't be what decides it.
         [
             _fake_block_run(
@@ -757,7 +766,7 @@ def test_get_run_steps_reports_the_output_record_each_block_run_published(
     output_uuid = uuid4()
     fake_client = _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("COMPLETED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        _fake_playbook_flow_run("COMPLETED", _dispatched(_DEFAULT_CONFIG)),
         [block_run],
         [_fake_output_artifact(block_run, {"store": _store_url(project), "id": str(output_uuid)})],
     )
@@ -787,7 +796,7 @@ def test_get_run_steps_reads_no_artifacts_before_any_block_has_run(
     db = mock_db_class(query_results={Run: run, Project: project})
     fake_client = _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("PENDING", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        _fake_playbook_flow_run("PENDING", _dispatched(_DEFAULT_CONFIG)),
         [],
     )
     service = RunService(db=db, user_service=UserService(db))
@@ -810,7 +819,7 @@ def test_get_run_steps_reports_why_a_step_failed(
     message = "Flow run encountered an exception: SolveError: solver status infeasible"
     _patch_flow_runs(
         monkeypatch,
-        _fake_playbook_flow_run("FAILED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
+        _fake_playbook_flow_run("FAILED", _dispatched(_DEFAULT_CONFIG)),
         [
             _fake_block_run(
                 "expansion_overnight",
@@ -840,17 +849,18 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
     playbook_doc = {
         "name": "outer",
         "steps": [
-            {"name": "cluster", "block": "cluster_time"},
+            {"id": "cluster", "block": "cluster_time"},
             {
-                "name": "inner",
+                "id": "inner",
                 "playbook": {
                     "name": "inner",
-                    "steps": [{"name": "dispatch", "block": "rolling_horizon_dispatch"}],
+                    "steps": [{"id": "dispatch", "block": "rolling_horizon_dispatch"}],
                 },
             },
         ],
     }
-    _patch_flow_runs(monkeypatch, _fake_playbook_flow_run("RUNNING", {}, playbook_doc), [])
+    dispatched = {"playbook": playbook_doc, "inputs": {}}
+    _patch_flow_runs(monkeypatch, _fake_playbook_flow_run("RUNNING", dispatched), [])
     service = RunService(db=db, user_service=UserService(db))
 
     # When

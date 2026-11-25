@@ -48,48 +48,9 @@ def test_a_block_runs_and_reports_where_its_result_went(capsys, initial_revision
     assert steps(result) == ["ran"]
 
 
-def test_wired_inputs_reach_the_block_and_open_beside_its_input(capsys, initial_revision):
-    main(
-        [
-            "fake_passthrough",
-            "--revision",
-            json.dumps(initial_revision.to_dict()),
-            "--config",
-            json.dumps({"label": "upstream"}),
-        ]
-    )
-    upstream = _result_from(capsys)
-    main(
-        [
-            "fake_needs_upstream",
-            "--revision",
-            json.dumps(initial_revision.to_dict()),
-            "--inputs",
-            json.dumps({"source": upstream.to_dict()}),
-        ]
-    )
-
-    assert steps(_result_from(capsys)) == ["needs(upstream)"]
-
-
 def test_an_unknown_block_fails_rather_than_guessing():
     with pytest.raises(BlockNotRegisteredError):
         main(["no_such_block", "--revision", "{}"])
-
-
-def test_a_wrongly_wired_input_is_refused_before_the_block_runs(initial_revision):
-    # `label` is text; a revision cannot go there. The container exits non-zero
-    # instead of running the block against nonsense.
-    with pytest.raises(Exception, match="label"):
-        main(
-            [
-                "fake_passthrough",
-                "--revision",
-                json.dumps(initial_revision.to_dict()),
-                "--inputs",
-                json.dumps({"label": initial_revision.to_dict()}),
-            ]
-        )
 
 
 def test_an_unknown_block_library_is_reported_rather_than_ignored(initial_revision):

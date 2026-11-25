@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Manta contributors
+#
+# SPDX-License-Identifier: MIT
+
+name: capacity_expansion
+
+initial_data:
+  dims: [snapshot]
+
+inputs:
+  snapshot: {type: string, default: resampled, description: The property the partition step writes.}
+  bus: {type: string, default: null, description: For example busmap_country.}
+  resolution: {type: string, default: 3h, description: Target resolution of the time partition.}
+  expansion_method: {type: choice, options: [overnight, myopic, perfect], default: overnight}
+  solver: {type: choice, options: [highs, gurobi], default: highs}
+
+steps:
+  - id: partition
+    block: timeseries_partitioning
+    if: ${{ inputs.snapshot != null }}
+    with:
+      method: resample
+      resolution: ${{ inputs.resolution }}
+      property: ${{ inputs.snapshot }}
+
+  - id: expand
+    block: capacity_expansion
+    with:
+      method: ${{ inputs.expansion_method }}
+      aggregation:
+        snapshot: ${{ inputs.snapshot }}
+        bus: ${{ inputs.bus }}
+      solver: ${{ inputs.solver }}

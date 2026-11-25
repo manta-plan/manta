@@ -9,14 +9,13 @@ import pytest
 from playbook.blocks import registry
 from playbook.blocks.registry import (
     CATALOGUE_VERSION,
-    INPUT_MARKER,
     BlockDescription,
     BlockRegistrationError,
     Catalogue,
     catalogue,
     merge_catalogues,
 )
-from playbook.blocks.tests.fakes import FakeNeedsUpstream
+from playbook.blocks.tests.fakes import FakePassthrough
 
 
 def test_catalogue_works_without_the_environments_it_describes():
@@ -30,20 +29,11 @@ def test_catalogue_works_without_the_environments_it_describes():
 
 
 def test_catalogue_describes_a_block_fully_enough_to_draw_and_configure_it():
-    entry = catalogue().blocks["fake_needs_upstream"]
-    assert entry.name == "fake_needs_upstream"
+    entry = catalogue().blocks["fake_passthrough"]
+    assert entry.name == "fake_passthrough"
     assert entry.env == "default"
-    assert entry.module.endswith(":FakeNeedsUpstream")
-    assert entry.inputs == frozenset({"source"})
+    assert entry.module.endswith(":FakePassthrough")
     assert "properties" in entry.config_schema
-
-
-def test_catalogue_marks_settings_that_another_block_fills_in():
-    entry = catalogue().blocks["fake_needs_upstream"]
-    properties = entry.config_schema["properties"]
-    assert properties["source"][INPUT_MARKER] is True
-    # A setting the user fills in themselves carries no such mark.
-    assert INPUT_MARKER not in properties["label"]
 
 
 def test_catalogue_records_the_environments_its_blocks_need():
@@ -99,9 +89,9 @@ def test_a_block_that_cannot_be_imported_here_is_left_out(monkeypatch):
 
     assert "needs_another_env" not in blocks
     # The blocks that can be imported are still described.
-    assert "fake_needs_upstream" in blocks
+    assert "fake_passthrough" in blocks
 
 
 def test_a_block_that_can_be_imported_here_is_described_from_the_real_class():
-    entry = catalogue().blocks["fake_needs_upstream"]
-    assert entry.module.endswith(FakeNeedsUpstream.__qualname__)
+    entry = catalogue().blocks["fake_passthrough"]
+    assert entry.module.endswith(FakePassthrough.__qualname__)

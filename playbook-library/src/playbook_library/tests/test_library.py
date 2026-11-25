@@ -16,7 +16,7 @@ pypsa = pytest.importorskip("pypsa", reason="the PyPSA blocks need PyPSA install
 
 import pandas as pd
 from datarecord import Revision
-from playbook.blocks.core import RevisionRef, SolveError
+from playbook.blocks.core import SolveError
 
 from playbook_library.examples import build_example_network
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.pypsa
 
 def _run(block_cls, config: dict, base: Revision) -> Revision:
     """Run a block on `base`, inside the test's own workspace."""
-    return block_cls(block_cls.merge_config(config, {})).run(base)
+    return block_cls(config).run(base)
 
 
 @pytest.fixture
@@ -199,17 +199,10 @@ def test_myopic_expansion_never_builds_a_cohort_before_the_first_period(store_re
     assert dispatch == pytest.approx(expected, abs=1e-3)
 
 
-def test_dispatch_can_run_against_capacities_another_block_chose(single_period):
+def test_dispatch_runs_against_the_capacities_the_expansion_before_it_chose(single_period):
     expanded = _run(OvernightCapacityExpansion, {}, single_period)
 
-    result = _run(
-        RollingHorizonDispatch,
-        {
-            "capacity_source": RevisionRef.from_revision(expanded),
-            "optimize_config": {"horizon": 12},
-        },
-        single_period,
-    )
+    result = _run(RollingHorizonDispatch, {"optimize_config": {"horizon": 12}}, expanded)
     n = to_network(result)
 
     # Capacities came across as given, so dispatch could not change them.
@@ -218,17 +211,15 @@ def test_dispatch_can_run_against_capacities_another_block_chose(single_period):
 
 
 @pytest.mark.parametrize("component", ["Generator", "Line", "Transformer"])
-def test_dispatch_fixes_the_capacities_its_source_decided(component):
+def test_dispatch_fixes_only_the_capacities_its_revision_decided(component):
     attr = nominal_attr(component)
     n = _assets(2030, 30.0, component)
-    source = _assets(2030, 30.0, component)
-    source.c[component].static[attr + "_opt"] = [40.0, 10.0]
 
-    RollingHorizonDispatch.apply_optimised_capacities(n, source)
+    RollingHorizonDispatch.apply_decided_capacities(n, pd.Series({"built": 40.0}))
 
     static = n.c[component].static
-    assert static[attr].to_dict() == {"built": 40.0, "new": 10.0}
-    assert not static[attr + "_extendable"].any()
+    assert static.loc["built", attr] == 40.0
+    assert static[attr + "_extendable"].to_dict() == {"built": False, "new": True}
 
 
 def test_dispatch_can_run_on_its_own(single_period, store_revision):
@@ -244,17 +235,4 @@ def test_dispatch_can_run_on_its_own(single_period, store_revision):
 
 def test_a_rolling_horizon_must_move_forward():
     with pytest.raises(Exception, match="overlap"):
-        RollingHorizonDispatch.merge_config({"optimize_config": {"horizon": 4, "overlap": 4}}, {})
-
-
-def test_a_wired_capacity_source_is_checked_like_any_other_setting():
-    with pytest.raises(Exception, match="capacity_source"):
-        RollingHorizonDispatch.merge_config({}, {"capacity_source": "not-a-revision"})
-
-
-def test_a_capacity_source_can_be_given_by_its_field_name():
-    # It also has a friendlier name for display, which must not stop the field itself
-    # being set the ordinary way.
-    source = {"store": "somewhere", "id": "00000000-0000-0000-0000-000000000000"}
-    config = RollingHorizonDispatch.merge_config({"capacity_source": source}, {})
-    assert config.capacity_source.store == "somewhere"
+        RollingHorizonDispatch({"optimize_config": {"horizon": 4, "overlap": 4}})

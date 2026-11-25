@@ -22,6 +22,8 @@ dependencies = [
     # itself cannot be imported (see playbook/playbooks/validation.py). 4.18 is the
     # first release resolving a schema's own `$defs` the way the validator does here.
     "jsonschema>=4.18",
+    # Parses the `${{ ... }}` expressions of a playbook (playbook/playbooks/expressions.py).
+    "lark>=1.2",
     "pydantic>=2",
     "pyyaml>=6",
 ]

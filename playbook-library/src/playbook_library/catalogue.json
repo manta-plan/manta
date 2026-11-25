@@ -41,13 +41,9 @@
       },
       "doc": "Shorten a model's time series, so later blocks have less to solve.",
       "env": "pypsa",
-      "inputs": [],
       "manifest": null,
       "module": "playbook_library.time_cluster:ClusterTime",
-      "name": "cluster_time",
-      "outputs": [
-        "output"
-      ]
+      "name": "cluster_time"
     },
     "myopic_capacity_expansion": {
       "config_schema": {
@@ -250,13 +246,9 @@
       },
       "doc": "Decide what to build one investment period at a time, in order.",
       "env": "pypsa",
-      "inputs": [],
       "manifest": null,
       "module": "playbook_library.myopic_capacity_expansion:MyopicCapacityExpansion",
-      "name": "myopic_capacity_expansion",
-      "outputs": [
-        "output"
-      ]
+      "name": "myopic_capacity_expansion"
     },
     "overnight_capacity_expansion": {
       "config_schema": {
@@ -470,13 +462,9 @@
       },
       "doc": "Decide what to build, treating the whole model as one moment in time.",
       "env": "pypsa",
-      "inputs": [],
       "manifest": null,
       "module": "playbook_library.overnight_capacity_expansion:OvernightCapacityExpansion",
-      "name": "overnight_capacity_expansion",
-      "outputs": [
-        "output"
-      ]
+      "name": "overnight_capacity_expansion"
     },
     "perfect_capacity_expansion": {
       "config_schema": {
@@ -679,13 +667,9 @@
       },
       "doc": "Decide what to build in every investment period at once, with perfect foresight.",
       "env": "pypsa",
-      "inputs": [],
       "manifest": null,
       "module": "playbook_library.perfect_capacity_expansion:PerfectCapacityExpansion",
-      "name": "perfect_capacity_expansion",
-      "outputs": [
-        "output"
-      ]
+      "name": "perfect_capacity_expansion"
     },
     "rolling_horizon_dispatch": {
       "config_schema": {
@@ -835,26 +819,6 @@
             "title": "PyPSAOptimizeRollingHorizonConfig",
             "type": "object"
           },
-          "RevisionRef": {
-            "description": "Where a block's data lives, as it travels between processes.\n\nOnly ever a pointer - never the data itself - because it is passed between\nprocesses and machines, which a loaded model could not survive. `store` names a\ndatarecord store, either a local directory or an `s3://` address, and `id` names\none revision in that store: the fields a datarecord `Revision` serialises to.",
-            "properties": {
-              "id": {
-                "format": "uuid",
-                "title": "Id",
-                "type": "string"
-              },
-              "store": {
-                "title": "Store",
-                "type": "string"
-              }
-            },
-            "required": [
-              "store",
-              "id"
-            ],
-            "title": "RevisionRef",
-            "type": "object"
-          },
           "_PyPSAOptimizeTransmissionLossesSchema": {
             "additionalProperties": false,
             "properties": {
@@ -901,19 +865,6 @@
         },
         "additionalProperties": false,
         "properties": {
-          "capacity_source": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/RevisionRef"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Capacity data source",
-            "x-manta-input": true
-          },
           "optimize_config": {
             "$ref": "#/$defs/PyPSAOptimizeRollingHorizonConfig"
           }
@@ -930,18 +881,12 @@
       },
       "doc": "Decide how to run a system, a stretch of time at a time.",
       "env": "pypsa",
-      "inputs": [
-        "capacity_source"
-      ],
       "manifest": null,
       "module": "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
-      "name": "rolling_horizon_dispatch",
-      "outputs": [
-        "output"
-      ]
+      "name": "rolling_horizon_dispatch"
     }
   },
-  "catalogue_version": 1,
+  "catalogue_version": 2,
   "environments": {
     "pypsa": {
       "image": null,
