@@ -304,3 +304,14 @@ volumes:
   postgres-data:
   seaweedfs-data:
   quack-cache:
+
+networks:
+  # A fixed subnet, so the frontend's Caddy can have a fixed address (see
+  # compose-dev-fullstack.yaml) that the backend trusts for X-Forwarded-For.
+  # Dynamic addresses come only from ip_range, so no other container can get
+  # the Caddy address, even when the frontend isn't running.
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25

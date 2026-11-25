@@ -4,7 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy.orm import Session
 
-from manta.config.app_config import app_host, app_port
+from manta.config.app_config import app_host, app_port, forwarded_allow_ips
 from manta.config.database_config import get_engine
 from manta.config.example_data_config import example_data_seed_enabled, example_data_stores
 from manta.config.keycloak_config import get_keycloak_openid, well_known
@@ -55,7 +55,13 @@ app = create_app()
 
 
 def main():
-    uvicorn.run(app, host=app_host(), port=app_port())
+    uvicorn.run(
+        app,
+        host=app_host(),
+        port=app_port(),
+        proxy_headers=True,
+        forwarded_allow_ips=forwarded_allow_ips(),
+    )
 
 
 if __name__ == "__main__":
