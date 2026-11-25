@@ -10,6 +10,7 @@ from keycloak import KeycloakAdmin, KeycloakConnectionError, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 from keycloak.keycloak_openid import KeycloakAuthenticationError
 from keycloak.openid_connection import KeycloakPostError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
@@ -117,9 +118,16 @@ class AuthService:
         # A session can outlive many logins, so a rename in the IdP has to be
         # picked up here too. Only login creates users: an unknown one is left
         # for the authenticated routes to reject.
-        user = _find_user_by_credentials(self.db, claims["sub"], claims["iss"])
-        if user is not None:
-            self._sync_user_data_with_idp(user, claims)
+        try:
+            user = _find_user_by_credentials(self.db, claims["sub"], claims["iss"])
+            if user is not None:
+                self._sync_user_data_with_idp(user, claims)
+        except SQLAlchemyError:
+            # Keycloak has already issued the new tokens, and may have revoked the
+            # old refresh token, so they must reach the caller: losing them would
+            # end the session. The next refresh or login retries the sync.
+            logger.exception("Could not sync user %s with the IdP on refresh", claims["sub"])
+            self.db.rollback()
         # Keycloak issues a new refresh token on every refresh. Callers must
         # replace the one they hold: if the realm's "Revoke Refresh Token"
         # setting is turned on, the old one stops working after one use.

@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from keycloak.exceptions import KeycloakError, KeycloakPostError
+from sqlalchemy.exc import OperationalError
 
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
@@ -260,6 +261,23 @@ def test_refresh_does_not_create_an_unknown_user(mock_db, mock_kc_client) -> Non
     assert result.access_token == "new-access"  # noqa: S105 It's not a password
     mock_db.add.assert_not_called()
     mock_db.commit.assert_not_called()
+
+
+def test_refresh_returns_new_tokens_when_the_sync_fails(mock_db_class, mock_kc_client) -> None:
+    # Given - the database fails while saving a username renamed in the IdP
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_db.commit.side_effect = OperationalError("UPDATE users", {}, Exception("down"))
+    mock_db.rollback = MagicMock()
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    result = service.refresh("old-refresh")
+
+    # Then - Keycloak may have revoked the old refresh token, so the new ones must get out
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "new-refresh"  # noqa: S105 It's not a password
+    mock_db.rollback.assert_called_once()
 
 
 def test_refresh_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
