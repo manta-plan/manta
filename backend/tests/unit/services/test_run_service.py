@@ -220,13 +220,13 @@ def test_create_run_dispatches_settings_merged_and_reads_them_back_evaluated(
     # Then the step gets exactly the given settings...
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"]["steps"][0]["with"] == {"segments": 10}
-    # ...and the config read back has the input defaults and every expression evaluated
-    solver = {"optimize_config": {"solver_name": "highs"}}
+    # ...and the config read back has the input defaults, every expression of a step
+    # that runs evaluated, and the `with` of the step that does not run as written
     assert _config_read_back(parameters) == {
         "inputs": {"expansion_mode": "overnight", "solver_name": "highs"},
         "cluster": {"segments": 10},
-        "expansion_overnight": solver,
-        "expansion_myopic": solver,
+        "expansion_overnight": {"optimize_config": {"solver_name": "highs"}},
+        "expansion_myopic": {"optimize_config": {"solver_name": "${{ inputs.solver_name }}"}},
         "dispatch": {"optimize_config": {"solver_name": "highs", "horizon": 168, "overlap": 24}},
     }
 

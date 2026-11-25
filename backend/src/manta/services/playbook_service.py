@@ -2,18 +2,24 @@ from fastapi import Depends, HTTPException
 from playbook.blocks import Catalogue
 from playbook.playbooks import (
     BlockStepDoc,
+    Planned,
+    PlannedBlock,
+    PlannedGroup,
     Playbook,
     PlaybookDoc,
     PlaybookHasIssuesError,
     PlaybookIssue,
+    PlaybookStep,
+    Step,
     StepDoc,
     apply_settings,
     effective_inputs,
     find_playbook_issues,
+    plan,
     playbook_from_doc,
     resolve_inputs,
 )
-from playbook.playbooks.expressions import Compare, Const, Ref, parse, substitute
+from playbook.playbooks.expressions import Compare, Const, Ref, parse
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
 # MVP corner-cut, not the intended shape — see the TODO on these two
@@ -75,15 +81,28 @@ def run_inputs(config: dict) -> object:
 def config_of_run(playbook: Playbook, inputs: dict) -> dict:
     """Return the config a run started with, from its playbook and the inputs of its dispatch.
 
-    The inputs are given with their defaults filled in, and each step under its id
-    with its `with`, every expression in it evaluated against those inputs.
+    The config has the inputs with their defaults filled in, and the settings of each
+    step under its id. A step that ran has every expression in its settings evaluated.
+    A step that did not run has its `with` as written. A nested playbook step has the
+    settings of its own steps, by their ids.
 
     Raises:
-        PlaybookHasIssuesError: If `inputs` do not fit the inputs of `playbook`.
+        PlaybookHasIssuesError: If `inputs` do not fit `playbook`.
     """
     resolved = resolve_inputs(effective_inputs(playbook), inputs)
-    settings = {step.id: substitute(step.with_, {"inputs": resolved}) for step in playbook.steps}
-    return {"inputs": resolved, **settings}
+    return {"inputs": resolved, **_settings_of(playbook.steps, plan(playbook, inputs).steps)}
+
+
+def _settings_of(steps: list[Step], planned: tuple[Planned, ...]) -> dict:
+    ran = {step.path[-1]: step for step in planned}
+    return {step.id: _step_settings(step, ran.get(step.id)) for step in steps}
+
+
+def _step_settings(step: Step, planned: Planned | None) -> dict:
+    if isinstance(step, PlaybookStep):
+        inner = planned.steps if isinstance(planned, PlannedGroup) else ()
+        return _settings_of(step.playbook.steps, inner)
+    return planned.settings if isinstance(planned, PlannedBlock) else step.with_
 
 
 class PlaybookService:

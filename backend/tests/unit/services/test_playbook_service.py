@@ -4,7 +4,7 @@ from playbook.playbooks import parse_doc
 from playbook_library import library_catalogue
 from playbook_library.playbooks import LibraryPlaybook, library_playbooks
 
-from manta.services.playbook_service import PlaybookService
+from manta.services.playbook_service import PlaybookService, config_of_run
 from manta.services.results.playbook_result import (
     PlaybookIssueResult,
     ValidatePlaybookConfigResult,
@@ -211,6 +211,39 @@ def test_get_playbook_lists_a_nested_playbook_step_without_a_block() -> None:
     assert nested_step.block is None
     assert nested_step.block_summary is None
     assert nested_step.block_config_schema is None
+
+
+def test_config_of_run_keeps_a_skipped_step_as_written_and_lists_nested_settings() -> None:
+    # Given a step that does not run and whose `with` cannot be evaluated, and a nested
+    # playbook whose step gets a setting from the run
+    child = {
+        "name": "child",
+        "initial_data": {"dims": ["snapshot"]},
+        "steps": [{"id": "x", "block": "cluster_time"}],
+    }
+    skipped = {
+        "id": "cluster",
+        "block": "cluster_time",
+        "if": "${{ inputs.mode == 'on' }}",
+        "with": {"n_hours": "${{ inputs.mode < 5 }}"},
+    }
+    raw = {
+        "name": "nesting",
+        "initial_data": {"dims": ["snapshot"]},
+        "inputs": {"mode": {"type": "string", "default": "off"}},
+        "steps": [skipped, {"id": "inner", "playbook": child}],
+    }
+    playbook = _service_of(raw).run_playbook("nesting", {"inner": {"x": {"n_hours": 3}}})
+
+    # When
+    config = config_of_run(playbook, {})
+
+    # Then
+    assert config == {
+        "inputs": {"mode": "off"},
+        "cluster": {"n_hours": "${{ inputs.mode < 5 }}"},
+        "inner": {"x": {"n_hours": 3}},
+    }
 
 
 def test_get_playbook_with_unknown_name_raises_404() -> None:

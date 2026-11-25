@@ -106,7 +106,8 @@ one for the requests.
 7. Follow the run. The first request returns the run's overall `status`, and the
    `config` and `data_record` it was started with. The `config` is resolved: it has the
    default of each input that the run left out, and each step has its `with` merged
-   in, with every expression evaluated. A run cannot set what `with` sets, so for a playbook with
+   in. A step that runs has every expression evaluated, and a step that does not run has
+   its `with` as written. A run cannot set what `with` sets, so for a playbook with
    settings in `with`, the backend refuses this `config` for a new run. The second
    returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it

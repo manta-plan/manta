@@ -162,24 +162,25 @@ def _reference_issues(
     return issues
 
 
-def _dims_issues(group: PlannedGroup) -> tuple[frozenset[str], list[PlaybookIssue]]:
-    """Return the dimensions of the data after `group`, and an issue for each step that lacks one.
+def _dims_issues(group: PlannedGroup) -> tuple[BlockDims, list[PlaybookIssue]]:
+    """Return the effect of `group` on the dimensions, and an issue for each step that lacks one.
 
     The outer playbook treats a nested playbook as one step, which requires the
     dimensions that its `initial_data` states. The steps of the nested playbook are
-    checked against those dimensions.
+    checked against those dimensions. The nested step removes each dimension that one
+    of its steps removes and no later step adds back, including dimensions that its
+    `initial_data` does not state.
     """
     dims = group.initial_dims
+    removed: frozenset[str] = frozenset()
     removed_by: dict[str, tuple[str, ...]] = {}
     issues = []
     for step in group.steps:
         if isinstance(step, PlannedBlock):
             effect = step.block.dims
         else:
-            final, inner = _dims_issues(step)
+            effect, inner = _dims_issues(step)
             issues.extend(inner)
-            initial = step.initial_dims
-            effect = BlockDims(requires=initial, adds=final - initial, removes=initial - final)
         for dim in sorted(effect.requires - dims):
             message = (
                 f"needs the {dim!r} dimension, which the data does not have at this "
@@ -191,7 +192,9 @@ def _dims_issues(group: PlannedGroup) -> tuple[frozenset[str], list[PlaybookIssu
         for dim in effect.removes & dims:
             removed_by[dim] = step.path
         dims = effect.apply(dims)
-    return dims, issues
+        removed = (removed | effect.removes) - effect.adds
+    initial = group.initial_dims
+    return BlockDims(requires=initial, adds=dims - initial, removes=removed), issues
 
 
 def _config_issues(blocks: list[PlannedBlock]) -> list[PlaybookIssue]:

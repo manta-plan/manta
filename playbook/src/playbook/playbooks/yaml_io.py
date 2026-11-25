@@ -120,14 +120,14 @@ def _step_from_doc(
 ) -> Step:
     match doc:
         case BlockStepDoc():
-            shared = doc.model_dump(exclude_unset=True, exclude={"block"})
+            shared = doc.model_dump(exclude_defaults=True, exclude={"block"})
             try:
                 block = resolve_block(doc.block, catalogue)
             except (BlockNotRegisteredError, BlockUnavailableError) as exc:
                 raise PlaybookLoadError(f"step {doc.id!r}: {exc}") from exc
             return BlockStep(**shared, block=block)
         case PlaybookStepDoc():
-            shared = doc.model_dump(exclude_unset=True, exclude={"playbook", "inputs"})
+            shared = doc.model_dump(exclude_defaults=True, exclude={"playbook", "inputs"})
             child = _nested_playbook(doc, loader, catalogue, chain)
             return PlaybookStep(**shared, playbook=child, inherit=doc.inputs == "inherit")
 
@@ -168,10 +168,10 @@ def playbook_to_doc(playbook: Playbook) -> PlaybookDoc:
 def _step_to_doc(step: Step) -> StepDoc:
     match step:
         case BlockStep():
-            shared = step.model_dump(exclude_unset=True, exclude={"block"})
+            shared = step.model_dump(exclude_defaults=True, exclude={"block"})
             return BlockStepDoc(**shared, block=step.block.name)
         case PlaybookStep():
-            shared = step.model_dump(exclude_unset=True, exclude={"playbook", "inherit"})
+            shared = step.model_dump(exclude_defaults=True, exclude={"playbook", "inherit"})
             inherit = {"inputs": "inherit"} if step.inherit else {}
             return PlaybookStepDoc(**shared, **inherit, playbook=playbook_to_doc(step.playbook))
 

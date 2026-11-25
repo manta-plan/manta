@@ -98,6 +98,8 @@ def test_refs_lists_what_an_expression_reads(text, expected):
         "${{ inputs.solver 'highs' }}",
         "${{ 1 < 2 < 3 }}",
         "${{ inputs.a + 1 }}",
+        "${{ " + "''" * 20_000 + "x }}",
+        "${{" + "'" * 40_001,
     ],
 )
 def test_a_malformed_expression_is_refused(text):

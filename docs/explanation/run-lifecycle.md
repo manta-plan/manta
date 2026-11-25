@@ -19,7 +19,7 @@ The one-shot `block-image-builder-pypsa` service builds the image for the `pypsa
 That image contains `playbook-library`, the environment's own dependencies, Prefect and `runner`.
 The `MANTA_ENV_IMAGES` variable maps each environment name to its image.
 
-The second is the work pools, the deployments and the result storage.
+The second is the work pools and the deployments.
 The one-shot `playbooks-provision` service runs `python -m runner.deploy`, which creates or updates all of them.
 The two workers start once it has finished.
 
@@ -115,7 +115,7 @@ This is the first point at which any process imports the block's class, and the 
 `run-block` imports the libraries named in `MANTA_BLOCK_SOURCES` and looks the block up by name.
 It checks the settings against the block's settings model, creates a fresh instance of the block, and calls `run` with the input record.
 The block reads its input revision from the store, does its work, and writes its result as a new revision.
-`run-block` returns the new record, which Prefect writes to result storage on the object store.
+`run-block` then publishes the new record as a table artifact on its flow run, through the Prefect API.
 
 The container gets the Prefect API address, the object store address and credentials, and the block libraries to import.
 It gets no route to the application database or the identity provider.
@@ -127,16 +127,17 @@ Steps run in separate containers, possibly on separate machines, and share no me
 ```mermaid
 flowchart LR
     a["Step A<br/>(block container)"] -- "writes a revision" --> store[("Datarecord store<br/>(object store)")]
-    a -- "returns the record" --> results[("Prefect result storage<br/>(object store)")]
+    a -- "publishes the record" --> results[("Table artifact<br/>(Prefect API)")]
     results -- "reads the record" --> pw["Playbook worker"]
     pw -- "passes the record" --> b["Step B<br/>(block container)"]
     store -- "reads the revision" --> b
 ```
 
 Two paths have to work for a step to read the step before it.
-The record, a store URL and a revision uuid, goes through Prefect's result storage to the playbook worker, which passes it to the next step.
+The record, a store URL and a revision uuid, goes through a table artifact in Prefect to the playbook worker, which passes it to the next step.
 The model data goes through the datarecord store, written by one container and read by the next.
-Both live on the object store, because a shared volume would tie every container to one machine.
+The model data is on the object store, because a shared volume would tie every container to one machine.
+The table artifact is in Prefect's database, which every container reaches through the Prefect API.
 
 ## Following a run
 

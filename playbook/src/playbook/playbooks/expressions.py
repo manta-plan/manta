@@ -9,7 +9,6 @@ expression, so an expression always evaluates to a value of its own type.
 """
 
 import operator
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -20,8 +19,8 @@ ROOTS = frozenset({"inputs"})
 """The names a reference can start with."""
 
 EXPRESSION_START = "${{"
+EXPRESSION_END = "}}"
 
-_WHOLE = re.compile(r"^\$\{\{(?P<body>(?:'(?:[^']|'')*'|(?!\}\}).)*)\}\}$", re.DOTALL)
 _GRAMMAR = r"""
 ?start: disjunction
 ?disjunction: conjunction ("||" conjunction)*
@@ -123,11 +122,20 @@ class _Build(Transformer[Token, Node]):
 _PARSER = Lark(_GRAMMAR, parser="lalr", transformer=_Build())
 
 
-def _parse_body(body: str) -> Node:
+def _mixed(text: str) -> ExpressionError:
+    return ExpressionError(
+        f"{text!r} mixes an expression with other text. Write one whole "
+        f"`${{{{ ... }}}}` expression, or a value that contains none."
+    )
+
+
+def _parse_body(body: str, text: str) -> Node:
     try:
         node: Node = _PARSER.parse(body)
     except UnexpectedCharacters as exc:
         rest = body[exc.pos_in_stream :].strip()
+        if rest.startswith(EXPRESSION_END):
+            raise _mixed(text) from exc
         raise ExpressionError(
             f"The expression {body!r} cannot be read from {rest!r} onwards"
         ) from exc
@@ -153,13 +161,10 @@ def is_expression(value: object) -> bool:
 
 def parse(text: str) -> Node:
     """Parse a whole `${{ ... }}` expression."""
-    match = _WHOLE.match(text.strip())
-    if match is None:
-        raise ExpressionError(
-            f"{text!r} mixes an expression with other text. Write one whole "
-            f"`${{{{ ... }}}}` expression, or a value that contains none."
-        )
-    return _parse_body(match.group("body"))
+    whole = text.strip()
+    if not (whole.startswith(EXPRESSION_START) and whole.endswith(EXPRESSION_END)):
+        raise _mixed(text)
+    return _parse_body(whole.removeprefix(EXPRESSION_START).removesuffix(EXPRESSION_END), text)
 
 
 def check_expression(text: str) -> str:

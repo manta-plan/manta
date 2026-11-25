@@ -23,7 +23,8 @@ class GetRunResult(BaseModel):
     config: dict
     """The config this run was started with: the value of each input under `inputs`,
     with the defaults filled in, and the settings of each step under its id, with the
-    `with` of the playbook included and every expression evaluated. The settings come
+    `with` of the playbook included. A step that ran has every expression evaluated,
+    and a step that did not run has its `with` as written. The settings come
     from the caller's own config, or from the playbook's default_config when none was
     given (see GET /v1/playbooks/{name} for those defaults). This is the resolved
     config, so it cannot be posted as the config of a new run as it is: the settings

@@ -31,7 +31,7 @@ def apply_settings(playbook: Playbook, settings: Mapping[str, object]) -> Playbo
             step, is not a mapping, sets a setting that the playbook sets, or contains
             an expression.
     """
-    applied, issues = _apply(playbook, settings, ())
+    applied, issues = _apply(playbook.model_copy(deep=True), settings, ())
     if issues:
         raise PlaybookHasIssuesError(issues)
     return applied

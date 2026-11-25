@@ -228,6 +228,16 @@ def test_a_step_removed_by_its_if_is_not_checked(build_playbook):
             "step 'nested' removed it",
             id="removed-by-a-nested-playbook",
         ),
+        pytest.param(
+            with_period(
+                steps(
+                    {"id": "nested", "playbook": steps(block("c", "fake_removes_period"))},
+                    block("needs", "fake_requires_period"),
+                )
+            ),
+            "step 'nested' removed it",
+            id="removed-by-a-nested-playbook-that-does-not-state-it",
+        ),
     ],
 )
 def test_a_dimension_the_data_lacks_when_a_step_runs_is_reported(build_playbook, doc, message):

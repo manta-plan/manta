@@ -88,6 +88,16 @@ def test_a_step_is_written_without_the_keys_it_leaves_unset(capacity_expansion):
     }
 
 
+def test_a_setting_added_in_place_is_kept_on_reading_and_on_writing(spec_catalogue):
+    doc = parse_doc({"name": "x", "steps": [{"id": "a", "block": "timeseries_partitioning"}]})
+    doc.steps[0].with_["method"] = "resample"
+    playbook = playbook_from_doc(doc, SPEC_LOADER, spec_catalogue)
+    assert playbook.steps[0].with_ == {"method": "resample"}
+    playbook.steps[0].with_["resolution"] = 3
+    written = playbook.to_doc().model_dump(by_alias=True, exclude_unset=True)
+    assert written["steps"][0]["with"] == {"method": "resample", "resolution": 3}
+
+
 def test_committed_schema_matches_playbook_doc():
     assert SCHEMA_PATH.read_text() == schema_text()
 

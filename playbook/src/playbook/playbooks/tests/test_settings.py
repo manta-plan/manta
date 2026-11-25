@@ -45,10 +45,13 @@ def test_settings_are_merged_into_with_and_written_out(build_playbook):
 
 def test_applying_settings_leaves_the_playbook_and_the_settings_as_they_were(build_playbook):
     pb = build_playbook(DOC)
-    settings = deepcopy(SETTINGS)
-    apply_settings(pb, settings).steps[0].with_["other"].append(2)
+    settings = {"grouped": deepcopy(SETTINGS["grouped"])}
+    grouped, label, _ = apply_settings(pb, settings).steps
+    grouped.with_["other"].append(2)
+    grouped.with_["group"]["size"] = 0
+    label.with_["label"] = "z"
     assert pb == build_playbook(DOC)
-    assert settings == SETTINGS
+    assert settings == {"grouped": SETTINGS["grouped"]}
 
 
 @pytest.mark.parametrize(

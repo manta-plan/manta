@@ -94,10 +94,7 @@ class FakeRequiresInvestmentPeriod(FakeBlock):
 
 @register("fake_removes_period")
 class FakeRemovesInvestmentPeriod(FakeBlock):
-    DIMS = BlockDims(
-        requires=frozenset({"period"}),
-        removes=frozenset({"period"}),
-    )
+    DIMS = BlockDims(removes=frozenset({"period"}))
 
 
 class StrictConfig(ConfigSchema):
