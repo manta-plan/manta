@@ -34,8 +34,8 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     def decided_capacities(rev: Revision) -> pd.Series:
         """Return the optimised capacity of each asset that `rev` has one for, by asset name.
 
-        It reads the revision, not a network built from it, because a network fills an
-        undecided capacity with 0.
+        The method reads the revision and not a network built from it, because a built
+        network has 0 for an undecided capacity.
         """
         names = {nominal_attr(c) + "_opt" for c in BUILT_COMPONENTS} & set(rev.record.attributes)
         frames = [rev.record.attributes[name].df().set_index("entity")["value"] for name in names]
@@ -45,9 +45,10 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
     def apply_decided_capacities(n: pypsa.Network, decided: pd.Series) -> None:
         """Fix in `n` the capacity of each asset that `decided` has one for, matched by name.
 
-        This is how the dispatch runs against the capacities an expansion block before it
-        chose. Each such asset takes its capacity as given and stops being extendable, so
-        the dispatch cannot change it. Assets that `decided` lacks keep their settings.
+        The rolling horizon dispatch then runs against the capacities that an earlier
+        capacity expansion block optimised. Each such asset takes its capacity as given
+        and is not extendable, so the dispatch cannot change it. An asset that `decided`
+        lacks keeps its settings.
         """
         for c in n.components[BUILT_COMPONENTS]:
             attr = nominal_attr(c.name)

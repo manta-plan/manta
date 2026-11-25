@@ -45,8 +45,8 @@ def store_revision(tmp_path: Path, workspace: "Workspace") -> Callable[..., "Rev
 def tuned_playbook() -> Callable[..., Playbook]:
     """Build a library playbook with the settings of some steps replaced.
 
-    It takes the playbook's name, then the settings of each step to replace, by step id
-    and setting name. Everything else is as the library ships it.
+    The fixture takes the name of the playbook, then the settings to replace, by step id
+    and setting name. Every other setting is as the library ships it.
     """
 
     def tune(name: str, settings: dict[str, dict]) -> Playbook:

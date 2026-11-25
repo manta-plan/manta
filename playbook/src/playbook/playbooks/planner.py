@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""What a playbook will run, given values for its inputs, worked out without reading any data.
+"""Plan the steps a playbook runs with given input values, without reading any data.
 
-Planning resolves the inputs, removes each step whose `if` is false, evaluates every
+`plan` resolves the inputs, removes each step whose `if` is false, evaluates every
 expression in `with`, and expands each nested playbook into a group of its own steps.
 
-The validator, the executor and anything listing a run's steps all plan the same way,
-so what a playbook is understood to do and what it does cannot drift apart.
+`find_playbook_issues`, `execute_playbook`, and any caller that lists the steps of a
+run all call `plan`. The steps that are checked are therefore the steps that run.
 """
 
 from collections.abc import Iterator, Mapping
@@ -26,7 +26,7 @@ Scope = Mapping[str, Any]
 
 @dataclass(frozen=True)
 class PlannedBlock:
-    """A block that will run, with its settings worked out."""
+    """A block that runs, with its settings evaluated."""
 
     path: tuple[str, ...]
     block: BlockSpec
@@ -35,19 +35,19 @@ class PlannedBlock:
 
 @dataclass(frozen=True)
 class PlannedGroup:
-    """Steps that will run in order: a nested playbook, or the whole playbook."""
+    """The steps of a nested playbook, or of the whole playbook, in the order they run."""
 
     path: tuple[str, ...]
     steps: tuple["Planned", ...]
     initial_dims: frozenset[str] = frozenset()
-    """The dimensions the playbook these steps belong to states its data starts with."""
+    """The dimensions that `initial_data` states for the playbook of these steps."""
 
 
 Planned = PlannedBlock | PlannedGroup
 
 
 def walk_planned(planned: Planned) -> Iterator[Planned]:
-    """`planned` and every step inside it, in the order they run."""
+    """Yield `planned` and every step inside it, in the order they run."""
     yield planned
     if isinstance(planned, PlannedGroup):
         for step in planned.steps:
@@ -55,10 +55,11 @@ def walk_planned(planned: Planned) -> Iterator[Planned]:
 
 
 def plan(playbook: Playbook, inputs: Mapping[str, object]) -> PlannedGroup:
-    """The steps `playbook` will run with `inputs`.
+    """Return the steps that `playbook` runs with `inputs`.
 
-    Raises `PlaybookHasIssuesError` for input values that do not fit, here or where a
-    step gives a nested playbook its inputs.
+    Raises:
+        PlaybookHasIssuesError: If an input value does not fit, for `playbook` or for a
+            nested playbook whose inputs a step sets.
     """
     steps = _plan_playbook(playbook, inputs, ())
     return PlannedGroup(path=(), steps=steps, initial_dims=playbook.initial_dims)

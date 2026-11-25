@@ -22,8 +22,8 @@ The blocks — single units of work on a model:
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
 
-The playbooks — those blocks chained into something worth running. Each declares
-inputs with defaults, so a user can run it without setting anything:
+The playbooks chain those blocks into something you can run. Each one declares its
+inputs with defaults, so a user can run it without setting any input:
 
 | Playbook | What it does |
 | --- | --- |
@@ -115,18 +115,17 @@ catalogue must all keep working in an environment that has never heard of PyPSA.
 
 ## Adding a playbook
 
-1. Write it as a YAML document in `playbooks/`. See
-   [the playbook syntax](../docs/reference/playbook/syntax.md) for the format, and
-   `expand.yaml` for a real one.
-2. Put every block setting in the step's `with`. Make a setting an input, with a
-   default, only where a user should be able to change it for a run. A user should be
-   able to run the playbook with no inputs set.
-3. Run the tests. `tests/test_playbooks.py` checks every playbook in `playbooks/`
-   with its default inputs, so a default that cannot run fails there. Add a case for
-   anything else the playbook has to get right. Most of those tests run without
-   PyPSA and check against the catalogue. That is the point: anything offering
-   playbooks to a user does so from an environment that cannot import the blocks they
-   name.
+1. Write it as a YAML document in `playbooks/`. For the format, see
+   [the playbook syntax](../docs/reference/playbook/syntax.md), and for a real
+   playbook, see `expand.yaml`.
+2. Write every block setting in the step's `with`. Only where a user should be able to
+   change a setting for a run, declare an input and read it in `with`. Give every
+   input a default, so that a user can run the playbook without setting any.
+3. Run the tests. The tests in `tests/test_playbooks.py` check every playbook in
+   `playbooks/` with its default inputs, so a default that cannot run fails there.
+   Add a case for anything else the playbook has to get right. Anything that offers
+   playbooks to a user cannot import the blocks they name. So most of those tests
+   run without PyPSA, and check against the catalogue.
 
 Playbooks are found by the name written inside the document, not by filename, so
 renaming a file changes nothing and two playbooks claiming one name is an error.

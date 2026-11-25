@@ -4,11 +4,11 @@
 
 """Everything that can be checked about a playbook before running it.
 
-Some checks need no input values at all: step ids that clash, an expression reading an
-input that does not exist. The rest depend on the inputs, because which steps run and
-what their settings are does. Both are reported the same way: a list of issues, each
-saying which step it is about and, where it applies, which input or which setting, so a
-user interface can mark the right field.
+Some checks need no input values, such as two steps with the same id, or an expression
+that reads an input that does not exist. The other checks need the input values,
+because the input values decide which steps run and with which settings. Every check
+reports a list of issues. Each issue has the step and, where it applies, the input or
+the setting, so that a user interface can mark the right field.
 
 Most of this works for a block that cannot be imported here, since its description in
 a catalogue says enough. What cannot travel is a rule a block expresses in code, such
@@ -36,8 +36,8 @@ _BLOCKING = frozenset({"structure", "reference"})
 def find_playbook_issues(playbook: Playbook, inputs: dict | None = None) -> list[PlaybookIssue]:
     """Every problem with `playbook`, returned rather than raised.
 
-    Without `inputs`, only the checks that do not depend on input values are run. With
-    them, the input values are checked, and then every block that would run with them.
+    Without `inputs`, only the checks that need no input values run. With `inputs`,
+    the input values are checked first, and then every block that runs with them.
     """
     circular = _circular_nesting_issues(playbook, frozenset())
     if circular:
@@ -66,7 +66,7 @@ def raise_for_playbook_issues(playbook: Playbook, inputs: dict | None = None) ->
 
 
 def _static_issues(playbook: Playbook, prefix: tuple[str, ...]) -> list[PlaybookIssue]:
-    """What is wrong with a playbook whatever its inputs, nested playbooks included."""
+    """Return the issues of a playbook that hold for any input values, nested playbooks included."""
     specs, issues = collect_inputs(playbook)
     issues = [
         issue.model_copy(update={"step_path": (*prefix, *issue.step_path)}) for issue in issues
@@ -80,7 +80,7 @@ def _static_issues(playbook: Playbook, prefix: tuple[str, ...]) -> list[Playbook
 
 
 def _id_issues(playbook: Playbook, prefix: tuple[str, ...]) -> list[PlaybookIssue]:
-    """Step ids are unique across a playbook."""
+    """Return an issue for each step whose id an earlier step of the playbook has."""
     seen: set[str] = set()
     issues = []
     for step in playbook.steps:
@@ -137,7 +137,7 @@ def _reference_problem(ref: Ref, specs: Mapping[str, InputSpec]) -> str | None:
 def _reference_issues(
     playbook: Playbook, specs: Mapping[str, InputSpec], prefix: tuple[str, ...]
 ) -> list[PlaybookIssue]:
-    """Every expression reads an input that exists."""
+    """Return an issue for each expression that reads an input that does not exist."""
     issues = []
     for step in playbook.steps:
         path = (*prefix, step.id)
@@ -163,10 +163,11 @@ def _reference_issues(
 
 
 def _dims_issues(group: PlannedGroup) -> tuple[frozenset[str], list[PlaybookIssue]]:
-    """The dimensions the data has after `group`, and every step needing one it lacks.
+    """Return the dimensions of the data after `group`, and an issue for each step that lacks one.
 
-    A nested playbook is one step to the playbook nesting it: it needs the dimensions its
-    `initial_data` states, and its own steps are checked against those.
+    The outer playbook treats a nested playbook as one step, which requires the
+    dimensions that its `initial_data` states. The steps of the nested playbook are
+    checked against those dimensions.
     """
     dims = group.initial_dims
     removed_by: dict[str, tuple[str, ...]] = {}
@@ -194,7 +195,7 @@ def _dims_issues(group: PlannedGroup) -> tuple[frozenset[str], list[PlaybookIssu
 
 
 def _config_issues(blocks: list[PlannedBlock]) -> list[PlaybookIssue]:
-    """Each block's settings fit what it accepts."""
+    """Return an issue for each setting that does not fit what its block accepts."""
     return [
         PlaybookIssue(kind="config", message=message, step_path=step.path, setting_path=where)
         for step in blocks
@@ -203,7 +204,7 @@ def _config_issues(blocks: list[PlannedBlock]) -> list[PlaybookIssue]:
 
 
 def _block_settings_problems(block: BlockSpec, values: dict) -> list[tuple[SettingPath, str]]:
-    """Where `values` do not fit what `block` accepts, and why.
+    """Return each place where `values` do not fit what `block` accepts, and the reason.
 
     Where the block can be imported, its own settings model does the checking and
     catches everything. Where it cannot - because it belongs to another environment -
@@ -261,7 +262,7 @@ def _settings_schema_problems(schema: dict, values: dict) -> list[tuple[SettingP
 
 
 def _environment_issues(blocks: list[PlannedBlock]) -> list[PlaybookIssue]:
-    """Blocks naming the same environment agree on what it is."""
+    """Return an issue for each block that describes an environment unlike an earlier block."""
     issues = []
     first_described: dict[str, EnvironmentSpec] = {}
     for step in blocks:

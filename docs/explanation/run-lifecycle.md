@@ -53,7 +53,7 @@ The web app does not use these endpoints yet: it starts the `expand` playbook wi
 1. It finds the project and refuses a user who does not own it.
 2. It finds the playbook by name in `playbook-library`, and takes the playbook's default settings when the request has none.
 3. It checks the playbook against the settings, and refuses the run with HTTP 422 and every issue if any are found.
-4. It starts a `run-playbook` flow run with the playbook document, the playbook's inputs, the starting record and the catalogue, without waiting for it.
+4. It starts a `run-playbook` flow run, without waiting for it. The flow run gets the playbook document with the settings merged into each step's `with`, the input values, the starting record, and the catalogue.
 5. It inserts a `runs` row that links the project and the playbook name to the flow run id.
 
 The request names the starting record itself, as a store URL and a revision uuid.
@@ -72,7 +72,7 @@ Manta checks a run's playbook and settings in three places, each with what it ca
 
 | Where                      | What it checks against                     | What it can catch                                                                         |
 | -------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| The backend                | The catalogue's JSON schemas               | Every structure, reference, input, dimension, settings and environment problem            |
+| The backend                | The catalogue's JSON schemas               | Every structure, reference, input, dimension, settings, and environment problem           |
 | The `run-playbook` flow run | The catalogue it was handed                | The same, before any block container starts                                               |
 | The `run-block` flow run   | The block's own settings model             | Rules the block states in code                                                            |
 
@@ -95,17 +95,17 @@ The flow rebuilds the playbook from its document: it parses the JSON, looks up e
 It imports no block, reads nothing from the object store and loads no modelling framework.
 So the runner image stays small, and rebuilding a playbook takes far less time than any step.
 
-For each block step that runs with the inputs, `execute_playbook`:
+Before any step runs, `execute_playbook` works out which block steps run with the input values, and each step's settings from its `with` and those values.
+Then, for each of those steps in order, it:
 
-1. works out the step's settings from its `with` and the inputs
-2. starts a `run-block` flow run with the block's name, the step's path of ids, the settings, the input record and the image of the block's environment
-3. waits for that flow run to end, and takes the record it returns as the record of the next step
+1. starts a `run-block` flow run with the block's name, the step's path of ids, the settings, the input record, and the image of the block's environment
+2. waits for that flow run to end, and takes the record it returns as the input record of the next step
 
-The worker passes these pointers along and never opens the object store.
-It gets no object store credentials in its environment, and reads each returned record through Prefect's result storage.
+A record is a pointer, so the worker passes records along and never opens the object store.
+It gets no object store credentials in its environment, and reads each returned record from the table artifact that the `run-block` flow run publishes.
 
 A nested playbook runs inside the same `run-playbook` flow run.
-Its blocks become child flow runs of the top-level run, named after their path of step ids.
+Its blocks become child flow runs of the top-level run, each named after its path of step ids and its block.
 
 ## Inside a block container
 

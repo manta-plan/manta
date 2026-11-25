@@ -4,8 +4,9 @@
 
 """Running a playbook.
 
-Each step gets the revision the step above it produced. Each block writes its result
-into the input revision's own store, so the engine never decides where outputs go.
+Each step receives the revision of the last step above it that ran. Each block writes
+its result into the store of the revision it receives, so the engine never decides
+where a result goes.
 
 How a single block actually runs is behind `BlockRunner`. The default runner executes
 blocks in this process, which is what tests and plain local use want. An orchestrator
@@ -13,9 +14,9 @@ blocks in this process, which is what tests and plain local use want. An orchest
 manages - a container, a cluster job - and this package never learns which
 orchestration tool that is.
 
-What runs is decided once, up front, by the planner (see `planner`), and nothing runs
-unless the playbook passes every check against its inputs (see `validation`), so a run
-that cannot work stops before its first step rather than partway through.
+`plan` decides once, before the first step, which steps run (see `planner`). No step
+runs unless the playbook passes every check against its inputs (see `validation`). A
+run that cannot work therefore stops before its first step.
 """
 
 from contextlib import closing
@@ -30,10 +31,10 @@ from playbook.playbooks.validation import raise_for_playbook_issues
 class BlockRunner(Protocol):
     """Runs one block, wherever blocks happen to run.
 
-    `execute_playbook` does all the walking, so a runner never sees a playbook or a
-    step: it is handed one block at a time with everything already spelled out.
-    `step_path` comes along only as a label, for naming the work in whatever system
-    the runner drives.
+    `execute_playbook` walks the steps, so a runner never receives a playbook or a
+    step. It receives one block at a time, with the settings of the block evaluated.
+    `step_path` is a label only, which the runner can use to name the work in the
+    system it drives.
     """
 
     def run_block(
@@ -77,10 +78,11 @@ def execute_playbook(
     *,
     runner: BlockRunner | None = None,
 ) -> RevisionRef:
-    """Run `playbook` with `inputs`, returning the last step's revision.
+    """Run `playbook` with `inputs`, and return the revision of the last step.
 
-    Nothing runs unless the playbook passes every check against `inputs` first:
-    `PlaybookHasIssuesError` lists everything wrong at once.
+    Raises:
+        PlaybookHasIssuesError: If the playbook fails a check against `inputs`. No step
+            runs, and the error lists every issue.
     """
     raise_for_playbook_issues(playbook, inputs)
     return _run(plan(playbook, inputs), revision, runner or LocalBlockRunner())

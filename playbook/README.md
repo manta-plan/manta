@@ -9,10 +9,10 @@ SPDX-License-Identifier: MIT
 A **block** is one unit of work in an energy model workflow. A **playbook** chains blocks
 together into something you can run.
 
-Blocks are written in Python. Playbooks are written in YAML. Each block declares which
+Blocks are written in Python, and playbooks in YAML. Each block declares the
 environment it needs, so one playbook can span environments that could never be
-installed side by side: each step runs where it belongs, and the results are passed
-along.
+installed side by side. Each step runs in the environment of its block, and its result
+passes to the next step.
 
 This package is the *framework*: what a block is, what a playbook is, and how to run
 one. It ships no blocks and no playbooks of its own — the ones Manta ships live next
@@ -112,7 +112,7 @@ its own.
 Between processes a revision travels as a `RevisionRef`: a `store` (a local directory
 or an `s3://` URL) and the `id` of one revision in it.
 
-A block class is checked as soon as it is written: it has to set `ENV` and `CONFIG`.
+When Python defines a block class, `MantaBlock` checks that it sets `ENV` and `CONFIG`.
 
 A block refuses a setting it does not have, so a misspelt name is an error rather than
 a silent fall back to the default. The block's JSON schema says the same
@@ -141,11 +141,13 @@ indirection and use the `@register("name")` decorator on the class instead.
 
 ## Writing a playbook
 
-A playbook is a YAML document with a `name`, the dimensions of its starting data under
-`initial_data`, the `inputs` a user can set, and a list of `steps`. Its keys loosely follow the
-[workflow syntax of GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax),
-so that Manta does not design a YAML workflow syntax from nothing. This one optimises
-capacities in one of three ways:
+A playbook is a YAML document with a `name`, a list of `steps`, and optionally
+`initial_data` and `inputs`. `initial_data` lists the dimensions the data has before
+the first step, and `inputs` declares the values a user can set for a run. Rather than
+design a new YAML syntax, we loosely follow the
+[workflow syntax of GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+This playbook has one step for each of three ways to optimise capacities, and the
+`expansion_mode` input sets which one runs:
 
 ```yaml
 name: expand
@@ -173,53 +175,59 @@ steps:
     if: ${{ inputs.expansion_mode == 'perfect' }}
 ```
 
-Run with `{"expansion_mode": "myopic"}`, only `expansion_myopic` runs. That step needs a
-`period` dimension, which `initial_data` does not list, so the
-[check](#checking-a-playbook) reports it before anything runs.
+With `{"expansion_mode": "myopic"}` as inputs, only `expansion_myopic` runs. Its block
+needs a `period` dimension, which `initial_data` does not list, so the
+[check](#checking-a-playbook) reports a `dims` issue before any step runs.
 
-Read a playbook with `Playbook.from_yaml(path)`, or with `load_playbook(locator, loader)`
-where nested playbooks are found by a loader of your own. A key the format does not
-have is refused when the document is read. For editor completion, point the YAML
-language server at `playbooks/playbook.schema.json`, as the shipped playbooks do in
-their first line. [The playbook syntax](../docs/reference/playbook/syntax.md) lists
-every key, with an example of each in YAML and in Python.
+To read a playbook from a file, call `Playbook.from_yaml(path)`. To fetch playbooks
+from somewhere other than files, pass a loader of your own to
+`load_playbook(path, loader)`. A document with a key the format does not have is
+refused when it is read. For completion in your editor, point the YAML language server
+at `playbooks/playbook.schema.json`, as each shipped playbook does in a comment below
+its licence header. For every key, with an example in YAML and in Python, see
+[the playbook syntax](../docs/reference/playbook/syntax.md).
 
 ### Steps
 
-Steps run in list order. Each step has an `id`, unique within its playbook, and runs
-exactly one of these:
+Steps run in list order. Each step has an `id`, unique within its playbook, and
+exactly one of these keys:
 
-| Key | What the step runs |
+| Key | Value |
 | --- | --- |
-| `block` | One block, by its registered name. |
-| `playbook` | Another playbook, by locator or written out in place. |
+| `block` | The registered name of one block. |
+| `playbook` | The locator of another playbook, or that playbook written out in place. |
 
-Each step receives the revision of the step above it that ran. The first step receives
-the revision the run starts from. A playbook cannot hand a step the revision of any
-other step.
+Each step runs on the revision returned by the last step above it that ran. The first
+step to run gets the revision the run starts from. The format has no key to pass any
+other step's revision to a step.
 
 ### Inputs
 
-An input is a value a user sets for one run. Each input has a `type` (`string`,
-`number`, `boolean` or `choice`, which takes a list of `options`), an optional
-`description` and an optional `default`. An input without a `default` is required.
+An input is a value a user sets for one run. Each input has a `type`, an optional
+`description`, and an optional `default`. The `type` is `string`, `number`, `boolean`,
+or `choice`, and a `choice` input also lists its `options`. An input without a
+`default` is required.
 
-Inputs are resolved before anything runs. An unknown name, a missing required input,
-a value of the wrong type and a choice outside `options` are all refused.
+Before any step runs, `playbook` checks the input values a run is given and fills in
+each missing one from its default. It refuses an unknown name, a missing required
+input, a value of the wrong type, and a choice outside `options`.
 
 ### Expressions
 
-An expression is a whole string of the form `${{ ... }}`. It reads a value with a
-dotted name rooted at `inputs`, such as `${{ inputs.expansion_mode }}`.
-It can compare values with `==`, `!=`, `<`, `<=`, `>` and `>=`, and combine them with
-`&&`, `||`, `!` and brackets. Literals are `'text'`, numbers, `true`, `false` and
-`null`. An expression keeps the type of its result, so `${{ inputs.n_hours }}` stays a
-number. Text with `${{` inside it that is not one whole expression is refused.
+An expression is a string of the form `${{ ... }}` that computes a value from the
+inputs. Inside it, `inputs.<name>` is the value of an input, as in
+`${{ inputs.expansion_mode }}`. The operators are `==`, `!=`, `<`, `<=`, `>`, and `>=`
+for comparison, and `&&`, `||`, and `!` for logic, with brackets for grouping.
+Literals are `'text'`, numbers, `true`, `false`, and `null`.
+
+The value of an expression keeps its type, so `${{ inputs.n_hours }}` is a number, not
+a string. When it reads a document, `playbook` refuses a string that contains `${{` but
+is not one whole expression.
 
 ### Settings with `with`
 
-`with` sets a block's settings. A value can be written in place or read from an
-expression, at any depth:
+`with` sets a block's settings. Each value, at any depth, is either written in place
+or an expression:
 
 ```yaml
   - id: dispatch
@@ -230,30 +238,35 @@ expression, at any depth:
         overlap: 24
 ```
 
-A playbook has no other place for block settings. A setting a run should be able to
-change has to be an input that `with` reads.
+Here `horizon` takes the value of the `horizon` input, and `overlap` is always 24.
+
+A playbook has no other place for block settings. To let a run change a setting, read
+an input in `with`.
 
 Each step has its own `id`, so `overnight_capacity_expansion` can appear as both
 `expansion_2030` and `expansion_2040`, each with its own settings.
 
 ### Conditions with `if`
 
-`if` holds an expression. When it is false, the step does not run, and the next step
-receives the revision the skipped step would have received.
+`if` is an expression. When it is false, `playbook` skips the step, and the next step
+runs on the revision the skipped step would have run on.
 
-Currently `if` can only read inputs. So which steps run is known before anything runs,
-which is what lets a playbook be [checked](#checking-a-playbook) up front. Which steps
-run is decided in exactly one place (`plan`), so what gets run can never disagree with
-what a check of the playbook expects.
+Currently `if` can only refer to inputs. So `playbook` knows which steps run before any
+step runs, and can [check](#checking-a-playbook) a playbook up front. The function
+`plan` alone decides which steps run, so a check of a playbook and its run always
+agree on them.
 
 ### Playbooks inside playbooks
 
-A `playbook` step runs another playbook as a group of its steps. `with` sets the
-nested playbook's inputs. With `inputs: inherit`, every input of the nested playbook
-that `with` does not set becomes an input of the outer playbook:
+In a `playbook` step, the steps of another playbook run as one group. `with` sets the
+inputs of the nested playbook. With `inputs: inherit`, every input of the nested
+playbook that `with` does not set becomes an input of the outer playbook:
 
 ```yaml
 name: expand_and_dispatch
+
+initial_data:
+  dims: [snapshot]
 
 steps:
   - id: plan
@@ -265,15 +278,17 @@ steps:
     if: ${{ inputs.expansion_mode == 'overnight' }}
 ```
 
-A run of `expand_and_dispatch` now takes `expansion_mode`. An inherited input with the
-same name as an input of the outer playbook is a `structure` issue. A playbook document
-that nests itself, directly or through another playbook, raises `PlaybookLoadError`
-when it is read.
+So `expand_and_dispatch` takes the `expansion_mode` input of `expand.yaml`, and the
+`if` of `dispatch` can refer to it. If the outer playbook already has an input of the
+same name as an inherited one, the check reports a `structure` issue.
+`load_playbook` raises `PlaybookLoadError` for a playbook document that nests itself,
+directly or through another playbook.
 
 ## Checking a playbook
 
-Check a playbook against the inputs it will run with before you run it. Every
-mistake is reported at once, with the step, input or setting it is about:
+Before you run a playbook, check it against the inputs it will run with.
+`find_playbook_issues` reports every problem at once, each with the step, input, or
+setting it is about:
 
 ```python
 from playbook.playbooks import find_playbook_issues
@@ -282,48 +297,54 @@ for issue in find_playbook_issues(playbook, inputs):
     print(issue)
 ```
 
-Run against the shipped `expand` playbook with `{"expansion_mode": "greenfield"}`, that
+For the shipped `expand` playbook with `{"expansion_mode": "greenfield"}`, the loop
 prints:
 
 ```text
 [inputs] playbook, input 'expansion_mode': 'greenfield' is not one of ['overnight', 'myopic', 'perfect']
 ```
 
-A playbook whose `cluster` step runs `cluster_time` with `n_hour: 3`, a misspelling of
-`n_hours`, prints:
+`greenfield` is not one of the options, so no step is checked.
+
+For a playbook whose `cluster` step sets `n_hour: 3` for `cluster_time`, a misspelling
+of `n_hours`, the loop prints:
 
 ```text
 [config] step 'cluster', setting 'n_hour': there is no setting called 'n_hour'
 ```
 
+The issue gives the path to the misspelt key within the step's `with`.
+
 `find_playbook_issues` returns a `list[PlaybookIssue]`, empty when nothing is wrong.
 `raise_for_playbook_issues` raises `PlaybookHasIssuesError` instead, carrying the same
 list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as methods.
 
-| Field | What it holds | Example |
+| Field | Value | Example |
 | --- | --- | --- |
 | `kind` | The check it failed (see below). | `"config"` |
 | `message` | What is wrong, in words. | `"there is no setting called 'n_hour'"` |
 | `step_path` | The step, as ids from the outermost playbook inwards. It is empty for the playbook as a whole. | `("plan", "expansion_myopic")` |
-| `input_path` | The input value at fault, or `None`. | `("expansion_mode",)` |
-| `setting_path` | Where in the step's settings the problem is, or `None`. | `("optimize_config", "horizon")` |
+| `input_path` | The input at fault, as a path of names, or `None`. | `("expansion_mode",)` |
+| `setting_path` | The setting at fault, as a path of keys and list indexes, or `None`. | `("optimize_config", "horizon")` |
 
 The checks, by `kind`:
 
 | Kind | Reported when |
 | --- | --- |
 | `structure` | Two steps share an id, two inherited inputs clash, or a playbook contains itself. |
-| `reference` | An expression reads an input that does not exist, or a nested playbook is given an input it does not declare. |
+| `reference` | An expression refers to an input that does not exist, or `with` sets an input the nested playbook does not declare. |
 | `inputs` | An input value is unknown, missing, of the wrong type, or not one of its options. |
 | `dims` | A step needs a dimension that neither `initial_data` lists nor an earlier step adds, or that an earlier step removed. |
-| `config` | Settings do not fit what a block accepts. |
+| `config` | A step's settings do not fit what its block accepts. |
 | `environment` | Two blocks describe the same environment differently. |
 
 Without inputs, `find_playbook_issues(playbook)` runs only the `structure` and
-`reference` checks, which hold whatever the inputs are. With inputs, it plans the run
-and checks the steps that will run. Settings of a step that does not run are not
-checked. The `dims` check starts from the dimensions `initial_data` lists, and a nested
-playbook requires the dimensions its own `initial_data` lists.
+`reference` checks, which do not depend on the inputs. With inputs, it plans the run
+and checks only the steps that will run, so it does not check the settings of a
+skipped step.
+
+The `dims` check starts from the dimensions that `initial_data` lists. A `playbook`
+step needs the dimensions that the `initial_data` of its nested playbook lists.
 
 Where a block can be imported, its own settings model checks its settings. Where it
 cannot, its JSON schema from a [catalogue](#describing-every-block-at-once) does. The
@@ -340,8 +361,8 @@ result = playbook.run(revision, inputs)
 
 `run` [checks](#checking-a-playbook) the playbook against `inputs` first. If anything
 is wrong, it raises `PlaybookHasIssuesError` before any step runs. Otherwise each step
-runs in turn on the revision the step above it returned, so a finished run is a chain
-of revisions in the input revision's store. `revision` and `result` are `RevisionRef`s.
+runs in turn on the revision the step above it returned. A finished run is therefore a
+chain of revisions in the store of the input revision. `revision` and `result` are `RevisionRef`s.
 
 By default every block runs in the current process, which is what tests and local use
 want. To run blocks anywhere else, pass a `BlockRunner`:
@@ -358,11 +379,11 @@ class BlockRunner(Protocol):
     ) -> RevisionRef: ...
 ```
 
-`execute_playbook` checks and plans the playbook, walks it, and hands the runner one
-block at a time with its settings worked out. `step_path` names the step by its ids,
-such as `("plan", "expansion_myopic")`. Manta's
-runtime implements this protocol to run every block in its own container; this package
-never learns how.
+`execute_playbook` checks and plans the playbook, then walks the plan and passes each
+block to the runner in turn, with its settings evaluated. `step_path` is the step's
+ids from the outermost playbook inwards, such as `("plan", "expansion_myopic")`.
+Manta's runtime implements this protocol to run every block in its own container.
+This package never learns how.
 
 ## Running one block
 
@@ -390,19 +411,21 @@ No single environment can import every block, so each one describes what it can:
 python -m playbook.blocks <your library> > catalogue.json
 ```
 
-Run once per environment, `merge_catalogues` combines the results into one description
-of every block in the system: names, settings as JSON schema and dimensions. That is enough to
-offer a playbook's settings and [check](#checking-a-playbook) a playbook against them
-without importing a single block.
+Run this once per environment. `merge_catalogues` then combines the results into the
+catalogue, the description of every block in the system: names, settings as JSON
+schema, and dimensions. With the catalogue, a process can offer a playbook's settings
+and [check](#checking-a-playbook) a playbook against them without importing a single
+block.
 
 `playbooks/playbook.schema.json` is the JSON schema of a playbook document, for
-editors. Regenerate it after changing the document format:
+editors. After you change the document format, regenerate it:
 
 ```bash
 uv run python -m playbook.playbooks.schema
 ```
 
-A test checks that the committed file matches the format.
+The command overwrites the file and prints nothing. A test checks that the committed
+file matches the format.
 
 ## Testing your contribution
 <!-- --8<-- [start:docs-testing] -->
@@ -435,8 +458,8 @@ instructions.
 ## Current limitations
 
 - Resource requirements (cpu, memory, walltime) are not modelled yet.
-- `if` can only read inputs, not the contents of the data.
-- A playbook cannot pass the revision of one step into the settings of another.
+- `if` can only refer to inputs, not to the contents of the data.
+- The settings of a step cannot refer to the revision of another step.
 - `initial_data.dims` has to be declared on a playbook, because a `RevisionRef` does not
-  describe the data it points at. A dimension it lists that the starting data does not
-  populate is found only when the block runs.
+  describe the data it points at. If `initial_data.dims` lists a dimension that the
+  starting data does not populate, a block finds the problem only when it runs.

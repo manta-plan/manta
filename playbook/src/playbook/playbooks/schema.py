@@ -16,7 +16,7 @@ SCHEMA_PATH = Path(__file__).with_name("playbook.schema.json")
 
 
 def schema_text() -> str:
-    """The JSON schema of a playbook document, as the committed file holds it."""
+    """Return the JSON schema of a playbook document, as text equal to the committed file."""
     return json.dumps(PlaybookDoc.model_json_schema(), indent=2) + "\n"
 
 

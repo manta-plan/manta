@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""What a playbook is once read: its inputs, and its steps with their blocks looked up.
+"""A playbook in memory: its inputs, and its steps with the block of each one resolved.
 
-A step runs a block or a nested playbook. Each step receives the revision of the step
-above it that ran. Expressions are kept as written, and are only evaluated by the
-planner (see `planner`), once the input values are known.
+A step runs a block or a nested playbook, and receives the revision of the last step
+above it that ran. A step keeps each expression as written. `plan` evaluates the
+expressions (see `planner`), once the input values are known.
 
-This module holds only the description. Reading and writing it lives in `yaml_io`,
-checking it in `validation`, planning it in `planner` and running it in `execution`.
+This module contains only the description of a playbook. `yaml_io` reads and writes
+it, `validation` checks it, `planner` plans it, and `execution` runs it.
 """
 
 from pathlib import Path
@@ -47,14 +47,14 @@ class PlaybookStep(_StepBase):
     playbook: "Playbook"
     with_: dict[str, Any] = Field(default_factory=dict, alias="with")
     inherit: bool = False
-    """Whether the inputs this step leaves unset become inputs of the playbook nesting it."""
+    """Whether each input that this step leaves unset becomes an input of the outer playbook."""
 
 
 Step = BlockStep | PlaybookStep
 
 
 class Playbook(Strict):
-    """Steps that run as one piece of work, given values for its inputs."""
+    """Steps that run as one piece of work, with a value for each of its inputs."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

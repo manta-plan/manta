@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The written-down shape of a playbook: inputs and steps.
+"""The models of a playbook document: its inputs and its steps.
 
-Every model refuses keys it does not know. That is also what keeps a step to exactly
-one of `block` or `playbook`: the first key found picks the kind of step, which then
-refuses the other. Read with field names or aliases, and write with `by_alias=True` so
-that `if` and `with` keep their names.
+Each model refuses a key that it does not define. A step therefore has exactly one of
+`block` and `playbook`: the key that is present sets the model of the step, and that
+model refuses the other key. Each model accepts the field names `if_` and `with_` as
+well as the keys `if` and `with`. Dump a model with `by_alias=True` to write the keys.
 """
 
 from typing import Annotated, Any, Literal
@@ -68,7 +68,10 @@ class ChoiceInput(_Input):
     @model_validator(mode="after")
     def _default_is_an_option(self) -> "ChoiceInput":
         if self.default is not None and self.default not in self.options:
-            raise ValueError(f"default {self.default!r} is not one of {self.options}")
+            raise ValueError(
+                f"`default` is {self.default!r}, which is not one of `options` {self.options}. "
+                f"Set `default` to one of them."
+            )
         return self
 
 
@@ -108,7 +111,7 @@ StepDoc = Annotated[
     Discriminator(
         _step_kind,
         custom_error_type="step_kind",
-        custom_error_message="A step needs one of `block` or `playbook`",
+        custom_error_message="A step has neither `block` nor `playbook`. Add one of them.",
     ),
 ]
 
@@ -116,10 +119,10 @@ StepDoc = Annotated[
 class InitialDataDoc(Strict):
     """What the data already looks like before the playbook starts.
 
-    This is what the playbook's author states about the starting record. We aim to drop
-    it once the backend can read the record itself: the dimensions check needs to know
-    whether a dimension is populated in the record, and the record's manifest only shows
-    that the dimension is recorded.
+    The author of the playbook states these dimensions. We aim to drop this key once
+    the backend can read the data record itself. The dimensions check needs to know
+    whether a dimension is populated, and the manifest of the record shows only that
+    the dimension is recorded.
     """
 
     dims: list[str] = Field(default_factory=list)

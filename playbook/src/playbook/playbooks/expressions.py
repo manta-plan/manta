@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""`${{ ... }}` expressions in playbook documents, parsed and evaluated without `eval`.
+"""Parse and evaluate the `${{ ... }}` expressions of a playbook document, without `eval`.
 
-A value either is a whole expression, or contains none: text around an expression is
-refused, so an expression always evaluates to a value of its own type.
+A value is one whole expression or contains none. `parse` refuses text around an
+expression, so an expression always evaluates to a value of its own type.
 """
 
 import operator
@@ -17,7 +17,7 @@ from typing import Any
 from lark import Lark, Token, Transformer, UnexpectedCharacters, UnexpectedToken, v_args
 
 ROOTS = frozenset({"inputs"})
-"""What a reference can start from."""
+"""The names a reference can start with."""
 
 EXPRESSION_START = "${{"
 
@@ -127,24 +127,27 @@ def _parse_body(body: str) -> Node:
     try:
         node: Node = _PARSER.parse(body)
     except UnexpectedCharacters as exc:
+        rest = body[exc.pos_in_stream :].strip()
         raise ExpressionError(
-            f"Cannot read {body[exc.pos_in_stream :].strip()!r} in {body!r}"
+            f"The expression {body!r} cannot be read from {rest!r} onwards"
         ) from exc
     except UnexpectedToken as exc:
         if exc.token.type == "$END":
-            raise ExpressionError(f"Unexpected end of {body!r}") from exc
-        raise ExpressionError(f"Unexpected {exc.token.value!r} in {body!r}") from exc
+            raise ExpressionError(f"The expression {body!r} ends before it is complete") from exc
+        raise ExpressionError(
+            f"The expression {body!r} cannot be read at {exc.token.value!r}"
+        ) from exc
     for ref in refs(node):
         if ref.root not in ROOTS:
             raise ExpressionError(
-                f"{ref.root!r} in {body!r} is not something an expression can read; "
-                f"use one of {sorted(ROOTS)}"
+                f"The expression {body!r} reads {ref.root!r}, which no expression can read. "
+                f"Start each reference with one of {sorted(ROOTS)}."
             )
     return node
 
 
 def is_expression(value: object) -> bool:
-    """Whether `value` is text holding an expression, whole or not."""
+    """Return whether `value` is a string that contains an expression, whole or not."""
     return isinstance(value, str) and EXPRESSION_START in value
 
 
@@ -153,8 +156,8 @@ def parse(text: str) -> Node:
     match = _WHOLE.match(text.strip())
     if match is None:
         raise ExpressionError(
-            f"{text!r} mixes an expression with other text; a value must be one whole "
-            f"`${{{{ ... }}}}` expression or contain none"
+            f"{text!r} mixes an expression with other text. Write one whole "
+            f"`${{{{ ... }}}}` expression, or a value that contains none."
         )
     return _parse_body(match.group("body"))
 
@@ -166,7 +169,7 @@ def check_expression(text: str) -> str:
 
 
 def refs(node: Node) -> set[Ref]:
-    """Every reference `node` reads."""
+    """Return every reference that `node` reads."""
     match node:
         case Const():
             return set()
@@ -195,12 +198,15 @@ def _compare(op: str, left: object, right: object) -> bool:
     numbers = all(isinstance(x, int | float) and not isinstance(x, bool) for x in (left, right))
     texts = all(isinstance(x, str) for x in (left, right))
     if op in _ORDERINGS and not (numbers or texts):
-        raise ExpressionError(f"Cannot order {left!r} {op} {right!r}")
+        raise ExpressionError(
+            f"{left!r} {op} {right!r} cannot be evaluated. "
+            f"`{op}` compares two numbers or two strings."
+        )
     return _COMPARISONS[op](left, right)
 
 
 def evaluate(node: Node, scope: Mapping[str, Any]) -> object:
-    """The value of `node`, reading references from `scope` (root name to value)."""
+    """Return the value of `node`, with each reference read from `scope` by its root name."""
     match node:
         case Const(value):
             return value
@@ -217,7 +223,7 @@ def evaluate(node: Node, scope: Mapping[str, Any]) -> object:
 
 
 def map_expressions(value: object, function: Callable[[Node], object]) -> object:
-    """`value` with every expression in it, at any depth, replaced by `function(node)`."""
+    """Return `value` with each expression in it, at any depth, replaced by `function(node)`."""
     if isinstance(value, dict):
         return {key: map_expressions(item, function) for key, item in value.items()}
     if isinstance(value, list):
@@ -236,5 +242,5 @@ def check_expressions_in(value: object) -> object:
 
 
 def substitute(value: object, scope: Mapping[str, Any]) -> object:
-    """`value` with every expression in it evaluated against `scope`."""
+    """Return `value` with each expression in it evaluated against `scope`."""
     return map_expressions(value, lambda node: evaluate(node, scope))

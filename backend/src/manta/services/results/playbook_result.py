@@ -54,14 +54,14 @@ class PlaybookStepResult(BaseModel):
     """None means the step always runs."""
 
     inputs: dict[str, str]
-    """Always empty: a step is no longer fed by another step's output."""
+    """Always empty. The key stays so that the answer has the shape the web app reads."""
 
 
 class GetPlaybookResult(BaseModel):
     name: str
     default_config: dict
-    """The config a run uses when it is created without one: the default of each of
-    the playbook's inputs under `globals`, and each step's `with` under its name."""
+    """The config a run uses when it is created without one. It has the default of each
+    input of the playbook under `globals`, and the `with` of each step under its name."""
 
     steps: list[PlaybookStepResult]
 
@@ -71,9 +71,9 @@ class PlaybookIssueResult(BaseModel):
     playbook.playbooks.PlaybookIssue)."""
 
     kind: PlaybookIssueKind
-    """What sort of problem it is: `structure`, `reference` (an expression reading an
-    input that does not exist), `inputs` (a value under `globals` that does not fit),
-    `dims` (a dimension a step needs was removed), `config` or `environment`."""
+    """What sort of problem it is: `structure`, `reference` (an expression reads an
+    input that does not exist), `inputs` (a value under `globals` does not fit), `dims`
+    (a dimension a step needs is missing), `config`, or `environment`."""
 
     message: str
 
@@ -89,7 +89,7 @@ class PlaybookIssueResult(BaseModel):
     about one setting, such as a missing dimension."""
 
     input: str | None
-    """Always None: a step is no longer fed by another step's output."""
+    """Always None. The key stays so that the answer has the shape the web app reads."""
 
 
 class ValidatePlaybookConfigResult(BaseModel):

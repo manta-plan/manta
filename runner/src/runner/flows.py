@@ -102,11 +102,11 @@ def run_block(
 ) -> dict:
     """Run one block by name, in this container, and report where its result went.
 
-    There is one deployment of this flow, shared by every block: the block to run
-    arrives as a parameter, and `step_name` — the path of the step using this
-    block within its playbook, its ids joined by `/`, distinct from the block itself
-    since the same block can be used by more than one step — only names the flow run
-    above; it plays no part in running the block.
+    Every block shares the one deployment of this flow, so the block to run arrives as
+    a parameter. `step_name` is the path of the step that uses this block within its
+    playbook, as ids joined by `/`. It differs from the name of the block, because
+    more than one step can use the same block. `step_name` names the flow run above
+    only, and plays no part in running the block.
 
     This is the only code in this runtime that runs inside a block's own
     environment, and it does not import a block until asked for one by name.

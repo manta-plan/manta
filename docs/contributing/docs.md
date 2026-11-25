@@ -50,12 +50,12 @@ This runs `tools/docs/export_openapi.py` in the backend's uv environment.
 It builds the app from the v1 router alone, so no database or other service needs to be running.
 CI exports the schema on every pull request and fails if the result differs from the committed file.
 
-## Regenerate the playbook schema reference
+## Refresh the playbook schema reference
 
 The [playbook schema](../reference/playbook/schema.md) page is generated from `playbook/src/playbook/playbooks/playbook.schema.json`, the JSON schema of a playbook document.
 `pixi run docs-build` and `pixi run docs-serve` regenerate the page first, with `tools/docs/gen_playbook_schema.py`.
 To regenerate it alone, run `pixi run docs-playbook-schema`.
-The page itself is ignored by git, so edit the generator rather than the page.
+Git ignores the page, so edit the generator rather than the page.
 
 ## Writing rules
 

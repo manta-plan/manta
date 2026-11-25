@@ -56,21 +56,20 @@ def _when(playbook_name: str, step: StepDoc) -> PlaybookStepConditionResult | No
     raise HTTPException(
         status_code=501,
         detail=(
-            f"Playbook {playbook_name!r}, step {step.id!r}: the condition {step.if_!r} "
-            "cannot be shown, because the web app can only show a condition of the form "
-            "`${{ inputs.<name> == <value> }}`"
+            f"Playbook {playbook_name!r}, step {step.id!r}: the web app cannot show the "
+            f"condition {step.if_!r}. Write the condition in the form "
+            "`${{ inputs.<name> == <value> }}`."
         ),
     )
 
 
 def run_inputs(config: dict) -> dict:
-    """The inputs a run with `config` (see `PlaybookService.run_document`) is given."""
+    """Return the inputs of a run with `config` (see `PlaybookService.run_document`)."""
     return config.get("globals", {})
 
 
 def config_of_run(doc: dict, inputs: dict) -> dict:
-    """The config a run was started with, from the document and inputs it was dispatched
-    with."""
+    """Return the config a run started with, from the document and the inputs of its dispatch."""
     return {"globals": inputs, **{step["id"]: step.get("with", {}) for step in doc["steps"]}}
 
 
@@ -105,15 +104,16 @@ class PlaybookService:
         )
 
     def default_config(self, playbook_name: str) -> dict:
-        """The config a run uses when it is created without one: the default of each
-        input under `globals`, and each step's `with` under its id."""
+        """Return the config of a run that is created without one: the default of each
+        input under `globals`, and the `with` of each step under its id."""
         doc = self._get_doc(playbook_name)
         inputs = effective_inputs(playbook_from_doc(doc, catalogue=self.catalogue))
         defaults = {name: spec.default for name, spec in inputs.items() if not spec.required}
         return config_of_run(doc.model_dump(by_alias=True), defaults)
 
     def run_document(self, playbook_name: str, config: dict) -> PlaybookDoc:
-        """`playbook_name` with each step's entry in `config` merged over its `with`."""
+        """Return the document of `playbook_name`, with the entry of each step in `config`
+        merged over the `with` of that step."""
         doc = self._get_doc(playbook_name)
         steps = [
             step.model_copy(update={"with_": {**step.with_, **config.get(step.id, {})}})

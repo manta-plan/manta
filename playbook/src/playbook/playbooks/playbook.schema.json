@@ -142,7 +142,7 @@
     },
     "InitialDataDoc": {
       "additionalProperties": false,
-      "description": "What the data already looks like before the playbook starts.\n\nThis is what the playbook's author states about the starting record. We aim to drop\nit once the backend can read the record itself: the dimensions check needs to know\nwhether a dimension is populated in the record, and the record's manifest only shows\nthat the dimension is recorded.",
+      "description": "What the data already looks like before the playbook starts.\n\nThe author of the playbook states these dimensions. We aim to drop this key once\nthe backend can read the data record itself. The dimensions check needs to know\nwhether a dimension is populated, and the manifest of the record shows only that\nthe dimension is recorded.",
       "properties": {
         "dims": {
           "items": {

@@ -22,7 +22,7 @@ SPDX-License-Identifier: CC-BY-4.0
 This page lists every definition in the JSON schema of a playbook document, `playbook/src/playbook/playbooks/playbook.schema.json`.
 It is generated from that file, which `python -m playbook.playbooks.schema` writes from the document models.
 A playbook document is a [{root}](#{anchor}).
-See [Playbook syntax](syntax.md) for what each key does.
+For what each key does, see [Playbook syntax](syntax.md).
 
 """
 

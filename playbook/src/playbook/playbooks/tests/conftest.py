@@ -25,7 +25,7 @@ def recording_runner() -> RecordingRunner:
 
 @pytest.fixture
 def build_playbook() -> BuildPlaybook:
-    """Build a playbook from a document written as a dict, its nested playbooks found by name."""
+    """Build a playbook from a document written as a dict. A nested playbook is found by name."""
 
     def build(doc: dict, catalogue: Catalogue | None = None) -> Playbook:
         return playbook_from_doc(PlaybookDoc.model_validate(doc), SPEC_LOADER, catalogue)
@@ -52,7 +52,7 @@ def _described(name: str, schema: dict) -> BlockDescription:
 
 @pytest.fixture(scope="session")
 def spec_catalogue() -> Catalogue:
-    """The blocks the fixture playbooks name, described as a catalogue would, none existing."""
+    """Describe the blocks that the fixture playbooks name, as a catalogue does. None exists."""
     text = {"type": "string"}
     nullable = {"type": ["string", "null"]}
     aggregation = _settings(dict.fromkeys(("snapshot", "bus"), nullable))

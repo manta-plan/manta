@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The playbooks kept as fixtures, and a loader finding them by name."""
+"""The fixture playbooks, and a loader that finds them by name."""
 
 from pathlib import Path
 
@@ -24,7 +24,7 @@ def spec_doc(name: str) -> PlaybookDoc:
 
 
 class InMemoryPlaybookLoader:
-    """A loader backed by a dict of documents, touching no files at all."""
+    """A loader that reads from a dict of documents, and from no file."""
 
     def __init__(self, docs: dict[str, PlaybookDoc]) -> None:
         self._docs = docs
@@ -36,4 +36,4 @@ class InMemoryPlaybookLoader:
 
 
 SPEC_LOADER = InMemoryPlaybookLoader({name: spec_doc(name) for name in SPEC_PLAYBOOKS})
-"""Finds a fixture playbook by its name, as `expand_and_dispatch` nests `capacity_expansion`."""
+"""A loader that finds a fixture playbook by its name, as `expand_and_dispatch` requires."""

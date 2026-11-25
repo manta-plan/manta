@@ -9,7 +9,8 @@ Manta describes every block as data.
 So a process that cannot import a block can still build, check and dispatch a playbook that uses it.
 This page explains that decision and the rest of the design of the `playbook` package that follows from it.
 [Playbooks and blocks](../user-guide/playbooks.md) introduces the two terms from a modeller's side.
-The [playbook README](https://github.com/manta-plan/manta/blob/main/playbook/README.md) shows how to write a block, and the [playbook syntax](../reference/playbook/syntax.md) lists every key of a playbook.
+To write a block, see the [playbook README](https://github.com/manta-plan/manta/blob/main/playbook/README.md).
+For every key of a playbook, see the [playbook syntax](../reference/playbook/syntax.md).
 
 A block is one unit of work in an energy model workflow, such as aggregating a time series.
 A playbook is blocks chained together into something you can run.
@@ -28,12 +29,12 @@ The block layer never imports the playbook layer, so a block library depends on 
 
 A block is a subclass of [`MantaBlock`](../reference/playbook/api.md), with its work in a `run` method.
 Everything else a block states about itself is a class attribute.
-These attributes set its environment, its settings model and its dimensions.
+These attributes set its environment, its settings model, and its dimensions.
 Tools read these attributes without calling `run`, and the catalogue holds them without importing the class at all.
 
 `MantaBlock` checks a new subclass as soon as Python creates it.
-It has to name its environment and its settings model.
-So a mistake in its definition fails on import rather than in a run.
+The subclass has to set its environment in `ENV` and its settings model in `CONFIG`.
+So a block that leaves out either fails when Python imports it, not partway through a run.
 
 Each step gets a fresh instance of its block.
 So a block carries no state from one run to the next.
@@ -52,13 +53,13 @@ So the revisions of one store are the history of a run.
 ## Dimensions
 
 Each block declares the dimensions it requires, adds and removes, such as `snapshot` or `period`.
-`playbook` folds these declarations along the steps that run with a run's inputs, starting from the dimensions the playbook lists in `initial_data`.
+Starting from the dimensions the playbook lists in `initial_data`, `playbook` folds these declarations along the steps that run with the given input values.
 It works out which dimensions the data has before each step.
-A step that needs a dimension neither `initial_data` lists nor an earlier step adds is a problem found before anything runs, and the message names the step.
+If a step needs a dimension that the data does not have at that point, `playbook` reports the problem, with the step's path, before anything runs.
 
 The fold uses only the declarations, so it works for blocks the checking process cannot import.
-A playbook has to list its starting dimensions because a record does not yet describe the data it points at.
-A dimension the playbook lists but the record does not populate is found only when the block runs.
+A playbook has to list its starting dimensions, because a record does not yet describe the data it points at.
+If the playbook lists a dimension that the record does not populate, the problem shows only when a block that needs the dimension runs.
 
 ## Blocks are found by name
 
@@ -75,7 +76,7 @@ Its `dev` test environment has no PyPSA on purpose, and its tests passing there 
 
 Each environment describes the blocks it can import.
 `python -m playbook.blocks <library>` prints a catalogue for one environment as JSON.
-For each block, the catalogue has its name, environment, one-line summary, dimensions and its settings as JSON schema.
+For each block, the catalogue has its name, environment, one-line summary, dimensions, and settings as JSON schema.
 `merge_catalogues` merges the catalogues of several environments into one description of every block.
 
 A catalogue has a `catalogue_version` integer, raised by hand when the catalogue's shape changes.
@@ -93,7 +94,6 @@ The backend and `run-playbook` both read this committed catalogue, so neither im
 ## How results move between steps
 
 Every step gets the record of the step above it that ran.
-A playbook has no other way to pass a result from one step to another.
 
 ```mermaid
 flowchart LR
@@ -102,59 +102,62 @@ flowchart LR
     expansion --> dispatch["dispatch<br/>(rolling_horizon_dispatch)"]
 ```
 
-The diagram shows part of the `cluster-expand-dispatch` playbook, with each step's id above its block.
+The diagram shows the steps of the `cluster-expand-dispatch` playbook that run when `expansion_mode` is `overnight`, with each step's id above its block.
 `dispatch` gets the record that `expansion_overnight` returned, which contains the optimised capacities to dispatch against.
 
-Most energy model studies run in a line, so a line of records covers them.
-A playbook cannot pass the record of one step into the settings of another.
+A playbook has no other way to pass a result between steps.
+It cannot pass the record of one step into the settings of a later step.
+We leave that out because most energy model studies run in a line, and a line of records covers them.
 
 ## The playbook format
 
 The keys of a playbook loosely follow the [workflow syntax of GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
-We chose this over a syntax of our own, so that we do not design a YAML workflow syntax from nothing.
-`inputs`, `steps`, `id`, `with`, `if` and `${{ }}` expressions work in a playbook much as they do in a workflow.
-Anyone who has written a workflow can therefore read a playbook.
+We chose this over designing a YAML workflow syntax of our own from nothing.
+`inputs`, `steps`, `id`, `with`, `if`, and `${{ }}` expressions work in a playbook much as they do in a workflow.
+So anyone who has written a workflow can read a playbook.
 
 The match is loose, because a playbook chains blocks and a workflow runs commands.
-A step names a `block` or a `playbook`, where a workflow step has `uses` or `run`.
-A playbook has no `on` and no `jobs`, and an expression reads only `inputs`.
+A playbook step has a `block` or a `playbook` key, where a workflow step has `uses` or `run`.
+A playbook has no `on` and no `jobs`, and an expression can refer only to `inputs`.
 A playbook is not a workflow, and GitHub Actions cannot run one.
 
-## Settings live in the playbook
+## Settings and inputs
 
 A playbook states which steps run and, in each step's `with`, how each one runs.
-A playbook also declares its inputs: the values a user sets for one run, each with a type and an optional default.
-A step's `with` and `if` read inputs through `${{ inputs.<name> }}` expressions.
-One playbook therefore runs in several ways, which is the scenario analysis that Manta exists for.
+It also declares its inputs: the values a user sets for one run, each with a type and an optional default.
+A step's `with` and `if` refer to an input through a `${{ inputs.<name> }}` expression.
+So one playbook runs in several ways, which is the scenario analysis that Manta exists for.
 
-A setting that is not read from an input is fixed by the playbook.
-So the author of a playbook chooses which settings a user can change, and the inputs are the whole form a user fills in.
+A setting that does not refer to an input has the value the playbook gives it.
+A separate settings document would open every setting to the user.
+In contrast, the author of a playbook chooses which settings a user can change.
 
 Each step has its own id, so one block can appear twice with different settings.
 `expansion_2030` and `expansion_2040` can be two steps of one block.
 
 ## Conditions look only at inputs
 
-An `if` condition switches a step on or off from the inputs, such as `${{ inputs.expansion_mode == 'myopic' }}`.
-It never looks at the data.
+With an `if` condition, such as `${{ inputs.expansion_mode == 'myopic' }}`, a step runs only when the condition on the inputs is true.
+The condition cannot refer to the data.
 
-That restriction makes a playbook checkable before it runs, because the inputs alone decide which steps run.
+That restriction makes a playbook checkable before it runs, because the input values alone set which steps run.
 The cost is that a playbook cannot branch on the data, such as "run this step only if the network has more than 100 buses".
 [Open questions](open-questions.md#conditions-on-data) records whether that limit should stay.
 
-`plan` in `playbook.playbooks` is the one place that works out which steps run, and with which settings.
-Checking, dispatching and reporting a run's steps all use it, so they cannot disagree.
+`plan`, in `playbook.playbooks`, is the one function that works out which steps run and with which settings.
+Checking, dispatching, and reporting a run's steps all use it, so they cannot disagree.
 A step that is switched off stays in the playbook, and `GET /v1/runs/{uuid}/steps` reports it as `SKIPPED`.
 
 ## Playbooks inside playbooks
 
 A step can be another playbook.
-In YAML, the step names it by locator, `playbook: <locator>`, or writes it out in place, which suits a browser with no file system.
+In YAML, the step's `playbook` key is a locator, `playbook: <locator>`, or the whole playbook written out in place.
+A playbook written out in place suits a browser with no file system.
 
 The step's `with` sets the inner playbook's inputs.
 With `inputs: inherit`, each input of the inner playbook that `with` does not set becomes an input of the outer playbook.
-Checking a playbook includes its nested playbooks, and a problem inside one is reported with the full path of step ids.
-Manta refuses to read a playbook document that nests itself, directly or through another playbook, so it never runs without end.
+When `playbook` checks a playbook, it checks the nested playbooks too, and reports a problem inside one with the full path of step ids.
+`playbook` refuses to read a playbook document that nests itself, directly or through another playbook, so a run cannot loop for ever.
 
 `playbook` reads a locator through a `PlaybookLoader`, an interface rather than a file path.
 The one loader that exists reads files, and Manta has none that reads its own database yet.
@@ -163,13 +166,20 @@ No shipped playbook nests another, and the steps endpoint reports a nested step'
 ## Checking a playbook
 
 `find_playbook_issues` returns every problem with a playbook at once, and raises nothing.
-Each issue names its step and, where one is at fault, the exact input or setting.
+Each issue has the path of its step and, where one is at fault, the path of the exact input or setting.
 So a user interface can mark the right step and the right field.
-The [playbook syntax](../reference/playbook/syntax.md#checking-a-playbook) lists each kind of check.
+For each kind of check, see the [playbook syntax](../reference/playbook/syntax.md#checking-a-playbook).
 
-Without inputs, only the checks that hold for any inputs run.
-They check for unique step ids, expressions that read inputs that exist, and no playbook inside itself.
-Every other check depends on which steps run, and so on the inputs.
+When `find_playbook_issues` gets no input values, it runs only the checks that hold for any values.
+These checks find:
+
+- step ids that clash
+- inherited inputs whose names clash
+- expressions that refer to an input that does not exist
+- a nested playbook given an input it does not declare
+- a playbook inside itself
+
+Every other check depends on which steps run, and so on the input values.
 
 Where a block can be imported, its own settings model checks its settings.
 Where it cannot, its JSON schema from the catalogue does, which catches wrong types and missing or unknown settings.
@@ -183,8 +193,8 @@ The design gives up three things for checking before a run:
 
 - A condition cannot look at the data.
 - A playbook cannot pass one step's result into another step's settings.
-- A playbook lists the dimensions of its starting data in `initial_data`, because a record does not describe its own data yet. A dimension it lists that the record does not populate is found only when the block runs.
+- A playbook lists the dimensions of its starting data in `initial_data`, because a record does not describe its own data yet.
 
 With these limits in view, you can judge whether a new block fits the model as it is or needs a change to `playbook`.
-A block that needs only settings, the record of the step above it and declared dimensions fits.
+A block that needs only settings, the record of the step above it, and declared dimensions fits.
 A block that has to decide from the data which step runs next does not fit yet.

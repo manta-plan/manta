@@ -4,9 +4,9 @@
 
 """Playbooks as documents: reading them, writing them, and sending them about.
 
-A playbook document has the same shape whether it arrives as a YAML file or as JSON
-from a browser (see `syntax`). Reading one looks up each block and fetches each nested
-playbook, so a playbook in memory holds everything it needs to be checked and run.
+A playbook document has the same shape as a YAML file and as JSON from a browser (see
+`syntax`). `playbook_from_doc` resolves each block and fetches each nested playbook, so
+a playbook in memory has everything that checking and running it need.
 """
 
 from dataclasses import dataclass
@@ -138,7 +138,7 @@ def _nested_playbook(
     catalogue: Catalogue | None,
     chain: tuple[str, ...],
 ) -> Playbook:
-    """The playbook a nested step refers to, whether fetched or written out in place."""
+    """Return the playbook of a nested step, fetched or written out in place."""
     if isinstance(doc.playbook, PlaybookDoc):
         return playbook_from_doc(doc.playbook, loader, catalogue, chain)
 
@@ -181,7 +181,7 @@ def load_playbook(
     loader: PlaybookLoader | None = None,
     catalogue: Catalogue | None = None,
 ) -> Playbook:
-    """Read a playbook from a YAML file, or from wherever `loader` finds `path`.
+    """Read a playbook from a YAML file, or from the place where `loader` finds `path`.
 
     `loader` resolves any nested `playbook:` references, and defaults to reading files
     relative to `path`.
