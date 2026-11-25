@@ -27,8 +27,21 @@ services:
       BACKEND_URL: http://backend:8000
       # Container port, not QUACK_SERVER_PORT (that's the host-published one).
       QUACK_URL: http://quack-server:8080
+      # Empty or unset: plain HTTP on :80 (local, or behind a load balancer
+      # that terminates TLS). A domain name: Caddy gets and renews its own
+      # HTTPS certificate, which needs ports 80 and 443 reachable.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
       - "${FRONTEND_PORT:-80}:80"
+      # Only used when SITE_ADDRESS is a domain.
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
+    volumes:
+      # Caddy's certificates and ACME account: without it every recreate
+      # asks Let's Encrypt for a new certificate, and its rate limits bite.
+      - caddy-data:/data
     depends_on:
       backend:
         condition: service_healthy
+
+volumes:
+  caddy-data:

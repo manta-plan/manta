@@ -6,11 +6,6 @@ function openScenarioDisclosure(tourId: string) {
   if (disclosure?.getAttribute("aria-expanded") === "false") disclosure.click();
 }
 
-function openMapLayersDrawer() {
-  const toggle = document.querySelector<HTMLButtonElement>('[data-tour="map-layers-toggle"]');
-  if (toggle?.getAttribute("aria-pressed") === "false") toggle.click();
-}
-
 function startAfterRender(steps: DriveStep[], onDestroyed?: () => void) {
   window.requestAnimationFrame(() => {
     driver({
@@ -98,55 +93,36 @@ export function startHomeTour() {
   ]);
 }
 
-export function startModelWorkspaceTour() {
-  openMapLayersDrawer();
+export function startBuildWorkspaceTour() {
   startAfterRender([
     {
-      element: '[data-tour="model-tree-panel"]',
+      element: '[data-tour="scenarios-panel"]',
+      popover: {
+        title: "Scenarios",
+        description:
+          "The record's scenarios and what each one changes. Click one to show it: the tree and the page follow.",
+        side: "right",
+        align: "start",
+      },
+    },
+    {
+      element: '[data-tour="record-tree-panel"]',
       popover: {
         title: "Record",
         description:
-          "The record on the record server: its entities by ctype and carrier, and its dimensions.",
-        side: "right",
-        align: "start",
-      },
-    },
-    {
-      element: '[data-tour="model-tree-item"]',
-      popover: {
-        title: "Browse entities",
-        description:
-          "Expand a ctype and a carrier to list its entities, and click one to see its properties, connections and attributes. Hover a row for a table of all of them.",
+          "Entities by type and carrier, and locations with their buses. Click a row to open its page.",
         side: "right",
         align: "center",
       },
     },
     {
-      element: '[data-tour="run-main-section"]',
+      element: '[data-tour="inspect-main-section"]',
       popover: {
-        title: "Map",
+        title: "Level page",
         description:
-          "Locations, their regions, and the lines between them. Click a location for what happens inside it, or a line for its entities. Switch to zones from the Resolution menu.",
+          "Stat tiles, the table, the map and graph, and the chart drawer, for the level the tree opened. The investment period and time window above set what they read.",
         side: "left",
         align: "center",
-      },
-    },
-    {
-      element: '[data-tour="map-layers-toggle"]',
-      popover: {
-        title: "Map layers",
-        description: "Toggle each layer’s visibility here.",
-        side: "bottom",
-        align: "center",
-      },
-    },
-    {
-      element: '[data-tour="map-layers-panel"]',
-      popover: {
-        title: "Layer styling",
-        description: "Select a layer to adjust its color and opacity, or jump to its table.",
-        side: "left",
-        align: "start",
       },
     },
   ]);

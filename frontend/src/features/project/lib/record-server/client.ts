@@ -7,10 +7,9 @@ import type { RecordServerConfig } from "../../../home/lib/record-server";
 // record as `r`. Everything else asks for rows through query()/serverQuery().
 //
 // DuckDB 2.0 has no stable DuckDB-Wasm release yet, so this runs the
-// 1.33.1-dev110.0 build (exactly DuckDB v2.0.0) with the extensions the server
-// relabels and serves from /ext (server/README.md). They're unsigned, hence
-// allowUnsignedExtensions. When DuckDB-Wasm and Quack publish their v2.0.0
-// builds, only this file changes.
+// 1.33.1-dev121.0 build, which reports DuckDB v2.0.1 and loads the signed
+// Quack extension from DuckDB's own repository, no relabelled copies. When a
+// stable DuckDB-Wasm 2.x is published, only this file and package.json change.
 
 // The server address and token come from features/home/lib/record-server.ts,
 // which the project catalogue reads too.
@@ -66,10 +65,9 @@ async function connect(config: RecordServerConfig): Promise<duckdb.AsyncDuckDBCo
 
   const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  await db.open({ allowUnsignedExtensions: true });
+  await db.open({});
   const connection = await db.connect();
 
-  await connection.query(`SET custom_extension_repository = '${serverUrl("/ext", config)}'`);
   await connection.query("LOAD quack");
   await attach(connection, config);
   return connection;
