@@ -19,6 +19,7 @@ from manta.config.keycloak_config import get_keycloak_admin, get_keycloak_openid
 from manta.entities import User
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.example_data_service import ExampleDataService
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.login_result import LoginResult
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) ->
     )
 
 
-def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
+def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> AuthenticatedUserResult:
     try:
         claims = kc_client.decode_token(token, validate=True)
     except (KeycloakAuthenticationError, ValueError) as e:
@@ -66,14 +67,14 @@ def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     if user is None:
         raise AuthenticationError(detail="user is not registered")
 
-    return user
+    return AuthenticatedUserResult(id=user.id, uuid=user.uuid, username=user.username)
 
 
 def authenticated_user(
     db: Session = Depends(get_db_session),
     kc_client: KeycloakOpenID = Depends(get_keycloak_openid),
     token: str = Depends(oauth2_scheme),
-) -> User:
+) -> AuthenticatedUserResult:
     try:
         return _authenticate(db, kc_client, token)
     except AuthenticationError as e:
@@ -210,7 +211,7 @@ class AuthService:
     def _create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
         user = self._add_user(username, idp_subject, idp_source)
         if example_project_for_new_users_enabled():
-            self.example_data.create_project(owner=user)
+            self.example_data.create_project(owner_id=user.id)
         return user
 
     def _add_user(self, username: str, idp_subject: str, idp_source: str) -> User:
