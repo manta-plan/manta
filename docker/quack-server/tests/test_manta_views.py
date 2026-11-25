@@ -314,23 +314,17 @@ def test_scenario_on_a_run_result(tmp_path):
     ids=["no kind", "no store.json", "no base"],
 )
 def test_store_without_names(tmp_path, meta, base, named_in, error):
-    # A named layer without a kind, a store without `store.json`, or one
-    # without a `base` reference: listed with its error, and fails to open;
-    # the store beside it opens.
+    # Given a named layer without a kind, a store without `store.json`, or one
+    # without a `base` reference
     add_layer(tmp_path, manifests()["base"]["id"], meta, name="after")
     store = json.loads((tmp_path / STORE / "store.json").read_text())
     store["references"][base] = store["references"].pop("base")
     (tmp_path / STORE / "store.json").write_text(json.dumps(store))
     (tmp_path / STORE / "store.json").rename(tmp_path / STORE / named_in)
-    (tmp_path / "healthy").symlink_to(ROOT / STORE, target_is_directory=True)
-    ws, catalogue = open_catalogue(str(tmp_path))
-    try:
-        assert catalogue.get(STORE).as_json()["revisions"] == [] and error in catalogue.failed[STORE]
-        with pytest.raises(RuntimeError, match=error):
-            catalogue.open(STORE)
-        assert catalogue.open("healthy").default_scenario == "base" and "healthy" not in catalogue.failed
-    finally:
-        ws.close()
+
+    # When / Then listing the root fails
+    with pytest.raises((FileNotFoundError, ValueError), match=error):
+        open_catalogue(str(tmp_path))
 
 
 def test_files_endpoint(opened):

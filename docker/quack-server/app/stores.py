@@ -82,9 +82,7 @@ class StoreSummary:
     uri: str
     label: str
     description: str
-    # Named revisions; None when `store.json`
-    # and the manifests can't give them (the error is in Catalogue.failed).
-    revisions: list[Revision] | None
+    revisions: list[Revision]
     files: list[StoreFile] = field(repr=False)
 
     def as_json(self) -> dict[str, Any]:
@@ -92,7 +90,7 @@ class StoreSummary:
             "id": self.id,
             "label": self.label,
             "description": self.description,
-            "revisions": [r.label for r in self.revisions or []],
+            "revisions": [r.label for r in self.revisions],
             "size": sum(f.size for f in self.files),
             "modified": max((f.modified for f in self.files), default=None),
             "files": len(self.files),
@@ -139,7 +137,7 @@ class Catalogue:
         # When the root was last listed (time.monotonic()).
         self._listed: float | None = None
         self._stores: dict[str, StoreSummary] = {}
-        # Why a store last failed to open, or to be listed, by id.
+        # Why a store last failed to open, by id.
         self.failed: dict[str, str] = {}
         self.stores()
         self._open: dict[str, OpenStore] = {}
@@ -197,17 +195,15 @@ class Catalogue:
             if not any(f.path.startswith("layers/") for f in files):
                 continue
             uri = f"{self.root}/{id}"
-            label, description, revisions = id, "", []
-            try:
-                named = read_json(self.ws, f"{uri}/store.json")
-                label, description = named["label"], named.get("description", "")
-                revisions = named_revisions(self.ws, uri, named["references"])
-            except (OSError, LookupError, ValueError) as e:
-                self.failed[id] = f"{type(e).__name__}: {e}"
-                revisions = None
-            if revisions is not None and id in self._stores and self._stores[id].revisions is None:
-                self.failed.pop(id)
-            stores[id] = StoreSummary(id=id, uri=uri, label=label, description=description, revisions=revisions, files=files)
+            named = read_json(self.ws, f"{uri}/store.json")
+            stores[id] = StoreSummary(
+                id=id,
+                uri=uri,
+                label=named["label"],
+                description=named.get("description", ""),
+                revisions=named_revisions(self.ws, uri, named["references"]),
+                files=files,
+            )
         return stores
 
     def stores(self) -> dict[str, StoreSummary]:
@@ -231,8 +227,6 @@ class Catalogue:
         if id in self._open:
             return self._open[id]
         summary = self.get(id)
-        if summary.revisions is None:
-            raise RuntimeError(self.failed[id])
         with self._opening:
             if id not in self._open:
                 try:

@@ -167,8 +167,6 @@ def record_files(id: str, request: Request) -> dict:
         store = catalogue.get(id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"No record {id!r}") from None
-    if store.revisions is None:
-        raise HTTPException(status_code=503, detail=f"Record {id!r} failed to open: {catalogue.failed[id]}")
     names = {r.name: r.id for r in store.revisions}
     ids = sorted({f.path.split("/")[1] for f in store.files if f.path.startswith("layers/") and f.path.endswith("/manifest.json")})
     layers = {layer: layer_manifest(catalogue.ws, store.uri, layer) for layer in ids}
