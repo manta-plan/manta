@@ -5,7 +5,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Architecture decision records
 
-An architecture decision record (ADR) is a short page that records one decision about how Manta is built, and why.
+An architecture decision record (ADR) is a page that records one decision about how Manta is built: what was decided, why, and the design that came out of it.
 Its reader is someone who joins later and asks why the code is the way it is.
 
 ## When to write one
@@ -15,20 +15,34 @@ Examples are a service boundary, where data lives, a tool the services depend on
 Decisions about how the team works, such as sprint length, need no ADR.
 Neither does a choice inside one module that the code and its review explain.
 
-Most decisions are made in a meeting, an issue, or a PR review.
-The ADR records the outcome afterwards and links to where it was made.
-To propose a decision instead, open a PR that adds an ADR with the status Proposed, and discuss it there.
+## From plan to record
+
+A large decision, such as a new service, starts as a detailed plan and ends as an ADR that summarizes it.
+
+1. **Proposed.**
+   A PR adds the ADR as `NNNN-title.md` with the status Proposed, and the detailed plan in a folder `NNNN-title/` next to it.
+   The ADR states the decision and a summary of the design, and links to the plan.
+   The team reviews both in the PR.
+2. **Accepted.**
+   Once the team agrees, the PR merges with the status Accepted.
+   Implementation PRs link to the plan, and update it where the build departs from it.
+3. **Implemented.**
+   Once the plan is built, a PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, and sets the status to Implemented.
+   The ADR links to the plan at its last commit, so the detail stays reachable in the history.
+
+A small decision needs no plan.
+Its ADR is usually written after the decision was made in a meeting, an issue, or a PR review, and links to where it was made.
+
+An implemented ADR is not edited, except for its status.
+To change a decision, write a new ADR and set the old one's status to "Superseded by ADR N".
+This includes a decision made for the MVP and revisited after it.
 
 ## How to write one
 
 1. Copy the [template](template.md) to `NNNN-title.md`, with the next free number and the decision as the title, such as `0001-one-session-container-per-user-and-project.md`.
 2. Fill it in.
-   Link to design plans, comparisons, and discussions rather than copying them in.
+   Link to discussions and comparisons rather than copying them in.
 3. Add a row to the table below.
-
-An accepted ADR is not edited, except for its status.
-To change a decision, write a new ADR and set the old one's status to "Superseded by ADR N".
-This includes a decision made for the MVP and revisited after it.
 
 ## Decisions
 

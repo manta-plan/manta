@@ -22,6 +22,12 @@ Mark everything you generate, leave a placeholder for the human's own intent ins
 A PR body starts from the [PR template](.github/pull_request_template.md).
 Fill in its sections and keep its headings, checkboxes, and comments, rather than replacing it with a structure of your own.
 
+## Architecture decisions
+
+Follow [Architecture decision records](docs/contributing/decisions/index.md).
+When a change makes a decision of the kind it describes, say so and offer to draft an ADR.
+When a PR completes an accepted ADR's plan, summarize the design into the ADR and delete the plan folder in the same PR.
+
 ## Comments
 
 **No explanatory inline comments** — logic that needs explaining becomes a helper whose docstring carries the sentence:

@@ -66,6 +66,12 @@ must stay human and honest. Three rules:
 In the tree nothing is marked: a `Co-Authored-By:` trailer naming the AI tool
 is the record.
 
+### Architecture decisions
+
+A decision that is costly to reverse or reaches across services is recorded as an architecture decision record (ADR).
+A large one starts as a detailed plan, reviewed in a PR, and ends as an ADR that summarizes the design as built.
+[Architecture decision records](https://github.com/manta-plan/manta/blob/main/docs/contributing/decisions/index.md) sets out when to write one and how.
+
 ### Commits
 
 We squash-merge PRs, so the **PR title** becomes the commit message — that's
