@@ -46,7 +46,7 @@ These must hold on Monday, or the first work package waits.
 | W3 | BE sessions. The two tables with a migration, the Docker launcher, `ensure_datarecord_session`, and the open, suspend and registration routes. | W1 | Two users of one project get two containers. A registration survives `DELETE .../datarecord-session` and the next request. |
 | W4 | Quack auth check. The `quack-auth` route, the `/quack` route in `frontend/Caddyfile`, and a network that Caddy shares with the session containers. | W3 | A query with a valid token reaches the user's own container. A bad token gets 401, a foreign project 403, and a spoofed `X-Session-Upstream` changes nothing. |
 | W5 | Lifetime. A BE task stops a session after 60 minutes without activity and stops labelled containers without an active row. | W3 | A session that is not used stops, and the next query starts it again. |
-| W6 | FE. The record client ported from `baby-manta` to the BE routes: open the session, register, attach, re-attach after `Invalid connection id` (S4). | W2, W4 | The app shows a registered revision from a session behind Caddy. The `SELECT 1` keep-alive is gone. |
+| W6 | FE. `manta/frontend`'s record client, already ported from `baby-manta`, moves to the BE routes: open the session, register, attach, re-attach after `Invalid connection id` (S4). | W2, W4 | The app shows a registered revision from a session behind Caddy. The `SELECT 1` keep-alive is gone. |
 | W7 | Switch. Compose and the deployment start no `docker/quack-server`. | W4, W6 | The pentest deployment has no route to the temporary server. |
 
 ## 4. Pull requests
@@ -63,7 +63,7 @@ The backend work lands as a stack of four pull requests. Each one builds on the 
 
 The stack merges from the bottom. Pull request 1 adds a service that nothing calls, and pull requests 2 to 4 add routes that the FE does not use yet. So each one can merge to `main` when its review is done, and none waits for the FE.
 
-The FE port (W6) and the switch (W7) follow as two more pull requests on top of pull request 4 and the listings. The size of W6 is not known yet.
+The FE move to the BE routes (W6) and the switch (W7) follow as two more pull requests on top of pull request 4 and the listings. The size of W6 is not known yet.
 
 The three browser checks of the [Quack auth check](backend.md#quack-auth-check) belong to W6: the headers of the Quack secret reach Caddy from WASM (I3), a refreshed Keycloak token reaches later requests, and a real DuckDB-WASM client works through Caddy.
 

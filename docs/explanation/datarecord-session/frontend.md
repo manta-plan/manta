@@ -112,7 +112,7 @@ The views change when the pin moves to a DR with these PRs, not before.
 
 The preload list names the attributes that the FE reads at page open, as a filter `attribute IN (...)`. It lives with the convention set and is easy to change. The view pack owns only this list, not the views.
 
-The list is derived from the FE's code (`baby-manta`). It was checked against one input store, `composed_2050.store`, with 83.5k generators. Every listed attribute file is under 1 MB there.
+The list is derived from the FE's code (`manta/frontend`). It was checked against one input store, `composed_2050.store`, with 83.5k generators. Every listed attribute file is under 1 MB there.
 
 | Attribute | Component types | FE feature that needs it up front |
 |---|---|---|
@@ -286,9 +286,17 @@ A change summary is computed at each request. Its cost is not measured. Today's 
 
 ### What the FE needs
 
-Many FE queries need one value per coordinate, not raw rows. Neither frontend settles today (F22). Every query filters `entity = X`, which a row for all entities never matches. `loadDemandByLocation` counts an entity twice when it has a constant and a series.
+Many FE queries need one value per coordinate, not raw rows. The FE does not settle today (F22). Its queries join attribute rows on an entity, which a row for all entities never matches. Where a query adds the constants, crossed with the span, to the series rows by `UNION ALL`, an entity with both counts twice.
 
-FE queries that need settling (F22): `getSeries`, the entity and label pages, `loadEntityFigures`, `loadEntityDispatch`, `loadComponentResults`, `loadCarrierProfile`, `loadDemandByLocation`, `loadCarrierEmissions`, `loadConstraintPrices`. Today they apply partial rules of their own (`coalesce(series, constant, 1)`), or none.
+These FE queries read an attribute that has both constants and series, and need one value per entity and snapshot (F22). All are in `frontend/src/features/level/`:
+
+- `attributeValuesSql` in `chart/chart-sql.ts`, the source of every attribute series in the chart drawer. It adds the constants to the series by `UNION ALL`.
+- `regionSql` in `map-graph/map/map-shading.ts`, the region shadings `load-peak` and `load-demand` over `p_set`, built the same way.
+- `inputsSql` in `tiles/tile-sql.ts`: the load part over `p_set` by `UNION ALL`, and the capacity factor over `p_max_pu`, which keeps `any_value` of the series mean and the constant.
+- `resultsSql` in `tiles/tile-sql.ts`: the generator part, which takes `coalesce(series, constant, 1)` of `p_max_pu`.
+- `peaksCte` in `table/table-queries.ts`, the peak of `p_set` as `max` over constants and series together.
+
+Today they apply these partial rules, and none handles a row for all entities. The constants that other queries read from `attribute_summary` move to the `static_<dtype>` views ([constant values and the owner map](#2-constant-values-and-the-owner-map)) and need settling there too.
 
 ### Where settling happens
 
@@ -332,7 +340,7 @@ The prototype ran against DR's `settle` on 3500 random cases. The cases cover pl
 
 ### Tests
 
-DR ships 20 cases as `datarecord/settle_cases.json` (PR 155, R14). Each case has `columns`, `rows`, `labels`, `filter`, and either `expected` or `error: "crossed"`. The FE runs them with `vitest` and `@duckdb/node-api` (F23). DR's own `settle` and the FE's function thus run the same cases.
+DR ships 20 cases as `datarecord/settle_cases.json` (PR 155, R14). Each case has `columns`, `rows`, `labels`, `filter`, and either `expected` or `error: "crossed"`. The FE runs them in its existing `vitest` suite, with `@duckdb/node-api` added (F23). DR's own `settle` and the FE's function thus run the same cases.
 
 ## 5. Open points
 
