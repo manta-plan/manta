@@ -12,7 +12,7 @@ This page explains the problem Manta answers, the kind of application it is, and
 !!! warning "Manta is still under development"
 
     This page describes what Manta is designed to become.
-    The [user guide](../user-guide/index.md#what-the-web-app-supports-today) lists what the web app supports today.
+    The [user guide](index.md#what-the-web-app-supports-today) lists what the web app supports today.
 
 ## The usability barrier
 
@@ -45,7 +45,7 @@ To use a tool for real decisions, these organisations need more than a GUI:
 - Shared projects, where teams can collaborate.
 - Accounts, with administrators who decide who can view and edit each project.
 
-The [Users and scope](scope.md) page sets out how these needs shape Manta's design.
+The [Users and scope](../explanation/scope.md) page sets out how these needs shape Manta's design.
 
 ## A shared structure for the community to fill
 
@@ -72,7 +72,7 @@ Every block describes its settings and its inputs in the same way, so a block fr
 Without that shared shape, each contribution would be a one-off that only its author could connect.
 Manta ships with a first set of blocks and playbooks.
 Developers and tool creators can add new blocks, and analysts can build new playbooks from them.
-[Concepts](../user-guide/concepts.md) defines each of these terms.
+[Concepts](concepts.md) defines each of these terms.
 
 ## The modelling tools under Manta
 

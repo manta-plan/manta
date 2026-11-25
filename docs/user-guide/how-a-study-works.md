@@ -12,7 +12,7 @@ This page explains each part of that path, and shows the kinds of analysis a pla
 !!! warning "Aims, not the state of Manta today"
 
     This page describes the study path Manta is designed for.
-    The [user guide](../user-guide/index.md#what-the-web-app-supports-today) lists what the web app supports today.
+    The [user guide](index.md#what-the-web-app-supports-today) lists what the web app supports today.
 
 ## Projects contain everything
 
