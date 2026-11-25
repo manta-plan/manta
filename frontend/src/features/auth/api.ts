@@ -1,6 +1,6 @@
 import { postJson } from "../../api/manta";
-import { clearSession, decodeTokenClaims, getRefreshToken, startSession } from "./session";
-import type { LoginResponse, RegisterResponse } from "./types";
+import { clearSession, getRefreshToken, startSession } from "./session";
+import type { LoginResponse } from "./types";
 
 type LoginParams = {
   username: string;
@@ -13,25 +13,10 @@ export async function login({ username, password, remember }: LoginParams) {
     username,
     password,
   });
-  const claims = decodeTokenClaims(tokens.access_token);
-
-  if (claims === null) {
-    throw new Error("Received an invalid access token.");
-  }
-
-  // The backend only authorizes users it has a record of, and login does not
-  // create one. Register is idempotent, so calling it on every login is safe.
-  await postJson<RegisterResponse>("/v1/auth/register", {
-    username: claims.preferred_username ?? username,
-    idp_subject: claims.sub,
-    idp_source: claims.iss,
-  });
-
   startSession(tokens, remember);
 }
 
-// Creates a fresh guest account on the backend (user record included, so no
-// register call is needed) and signs into it.
+// Creates a fresh guest account on the backend and signs into it.
 export async function loginAsGuest() {
   const tokens = await postJson<LoginResponse>("/v1/auth/guest", {});
   startSession(tokens, true);

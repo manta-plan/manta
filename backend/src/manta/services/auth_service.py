@@ -96,6 +96,11 @@ class AuthService:
         # TODO: fix update functionality here
         with _translate_keycloak_errors():
             token = self.kc_client.token(username, password)
+            # Keycloak issued this token to us directly, so its claims need no validation.
+            claims = self.kc_client.decode_token(token["access_token"], validate=False)
+        self._find_or_create_user(
+            claims.get("preferred_username", username), claims["sub"], claims["iss"]
+        )
         return LoginResult(
             access_token=token["access_token"],
             expires_in=token["expires_in"],
@@ -168,14 +173,7 @@ class AuthService:
         )
 
     def register(self, username: str, idp_subject: str, idp_source: str) -> RegisterResult:
-        user = _find_user_by_credentials(self.db, idp_subject, idp_source)
-        if user is None:
-            # manta offloads user management to the IdP entirely - any identity
-            # with a validly-signed token is eligible to register, no separate
-            # approval step.
-            user = self._create_user(username, idp_subject, idp_source)
-        # else: registering an already-registered identity is a no-op, not an error.
-
+        user = self._find_or_create_user(username, idp_subject, idp_source)
         return RegisterResult(
             uuid=user.uuid,
             username=user.username,
@@ -183,6 +181,14 @@ class AuthService:
             idp_source=user.idp_source,
             created_at=user.created_at,
         )
+
+    def _find_or_create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
+        user = _find_user_by_credentials(self.db, idp_subject, idp_source)
+        if user is None:
+            # Access is gated in Keycloak alone: every identity it authenticates
+            # gets a Manta user.
+            user = self._create_user(username, idp_subject, idp_source)
+        return user
 
     def _create_user(self, username: str, idp_subject: str, idp_source: str) -> User:
         user = self._add_user(username, idp_subject, idp_source)

@@ -6,11 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from manta.config.rate_limit_config import guest_logins_per_client_per_hour, guest_logins_per_hour
 from manta.routes.v1.requests.login_request import LoginRequest
 from manta.routes.v1.requests.refresh_token_request import RefreshTokenRequest
-from manta.routes.v1.requests.register_request import RegisterRequest
 from manta.services.auth_service import AuthService
 from manta.services.rate_limiter import RateLimiter
 from manta.services.results.login_result import LoginResult
-from manta.services.results.register_result import RegisterResult
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -71,10 +69,9 @@ def login_as_guest(service: AuthService = Depends()) -> LoginResult:
     return service.login_as_guest()
 
 
-@router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)
-def register(request: RegisterRequest, service: AuthService = Depends()) -> RegisterResult:
-    # No bearer token required here - idp_subject/idp_source are trusted as given,
-    # not verified against a real token. Anyone can currently register any identity
-    # pair. Fine only if something else (network boundary, a later re-add of token
-    # verification, a trusted caller) is guarding this endpoint.
-    return service.register(request.username, request.idp_subject, request.idp_source)
+# Disabled for the MVP: it trusts the identity in the request body (see #273),
+# and login now creates the user. To be reintroduced behind a bearer token.
+#
+# @router.post("/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED)
+# def register(request: RegisterRequest, service: AuthService = Depends()) -> RegisterResult:
+#     return service.register(request.username, request.idp_subject, request.idp_source)

@@ -142,47 +142,6 @@
         }
       }
     },
-    "/v1/auth/register": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Register",
-        "operationId": "register_v1_auth_register_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegisterResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/health": {
       "get": {
         "summary": "Get Health",
@@ -1742,64 +1701,6 @@
           "refresh_token"
         ],
         "title": "RefreshTokenRequest"
-      },
-      "RegisterRequest": {
-        "properties": {
-          "username": {
-            "type": "string",
-            "title": "Username"
-          },
-          "idp_subject": {
-            "type": "string",
-            "title": "Idp Subject"
-          },
-          "idp_source": {
-            "type": "string",
-            "title": "Idp Source"
-          }
-        },
-        "type": "object",
-        "required": [
-          "username",
-          "idp_subject",
-          "idp_source"
-        ],
-        "title": "RegisterRequest"
-      },
-      "RegisterResult": {
-        "properties": {
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Uuid"
-          },
-          "username": {
-            "type": "string",
-            "title": "Username"
-          },
-          "idp_subject": {
-            "type": "string",
-            "title": "Idp Subject"
-          },
-          "idp_source": {
-            "type": "string",
-            "title": "Idp Source"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "uuid",
-          "username",
-          "idp_subject",
-          "idp_source",
-          "created_at"
-        ],
-        "title": "RegisterResult"
       },
       "RunStepResult": {
         "properties": {

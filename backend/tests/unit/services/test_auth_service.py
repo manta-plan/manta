@@ -74,6 +74,57 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
         _authenticate(mock_db, mock_kc_client, "some-token")
 
 
+def _login_service(mock_db, mock_kc_client, example_data=None) -> AuthService:
+    mock_kc_client.token.return_value = {
+        "access_token": "some-access",
+        "expires_in": 300,
+        "refresh_token": "some-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+    mock_kc_client.decode_token.return_value = {
+        "sub": "abc-123",
+        "iss": ISSUER,
+        "preferred_username": "alice",
+    }
+    return AuthService(
+        db=mock_db, kc_client=mock_kc_client, example_data=example_data or MagicMock()
+    )
+
+
+def test_login_creates_user_from_token_claims_on_first_login(mock_db, mock_kc_client) -> None:
+    # Given
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When - the username typed differs from the one the IdP knows
+    result = service.login("Alice", "secret")
+
+    # Then
+    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
+    assert user.username == "alice"
+    assert user.idp_subject == "abc-123"
+    assert user.idp_source == ISSUER
+    example_data.create_project.assert_called_once_with(owner=user)
+    assert result.access_token == "some-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "some-refresh"  # noqa: S105 It's not a password
+
+
+def test_login_does_not_recreate_existing_user(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    mock_db.add.assert_not_called()
+    example_data.create_project.assert_not_called()
+
+
 def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
     # Given - Keycloak's response to a wrong username or password
     mock_kc_client.token.side_effect = KeycloakPostError(
@@ -85,6 +136,7 @@ def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
     # When / Then
     with pytest.raises(AuthenticationError):
         AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "wrong")
+    mock_db.add.assert_not_called()
 
 
 def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:

@@ -13,21 +13,13 @@ BACKEND_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
 
 def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
-    token = kc_oidc_client.token("manta-admin", "manta-admin")
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
-    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
-    # authenticate() requires an already-registered user; register is idempotent,
-    # so it's safe to call on every request rather than tracking first-use.
+    # Logging in through the app, not Keycloak directly, also creates the manta user.
     response = httpx2.post(
-        f"{app_server}/v1/auth/register",
-        json={
-            "username": "manta-admin",
-            "idp_subject": claims["sub"],
-            "idp_source": claims["iss"],
-        },
+        f"{app_server}/v1/auth/login",
+        json={"username": "manta-admin", "password": "manta-admin"},
     )
-    assert response.status_code == 201
-    return headers
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 def _unique_prefix() -> str:
