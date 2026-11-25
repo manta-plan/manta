@@ -8,9 +8,8 @@ SPDX-License-Identifier: MIT
 
 The blocks **and** playbooks that Manta ships, built on [PyPSA](https://pypsa.org).
 
-The framework next door ([`playbook`](../playbook)) defines what a block and a
-playbook *are*, and runs them. This is the content: the ready-made pieces of
-energy-model work a user can actually pick and run.
+The framework next door ([`playbook`](../playbook)) defines what a block and a playbook *are*, and runs them.
+This is the content: the ready-made pieces of energy-model work a user can actually pick and run.
 
 The blocks — single units of work on a model:
 
@@ -22,17 +21,14 @@ The blocks — single units of work on a model:
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
 
-The playbooks — those blocks chained into something worth running, each with default
-settings a user can start from:
+The playbooks — those blocks chained into something worth running, each with default settings a user can start from:
 
 | Playbook | What it does |
 | --- | --- |
 | `cluster-expand-dispatch` | Shorten the time series, decide what to build, then decide how to run it |
 | `expand` | Decide what to build: overnight, myopic or with perfect foresight |
 
-> This directory is developed inside the `manta` monorepo for now, but is written as a
-> standalone package: it is also the reference for anyone writing their own library of
-> blocks and playbooks, so it must not depend on the Manta app — only on `playbook`.
+> This directory is developed inside the `manta` monorepo for now, but is written as a standalone package: it is also the reference for anyone writing their own library of blocks and playbooks, so it must not depend on the Manta app — only on `playbook`.
 
 ## Layout
 
@@ -63,10 +59,8 @@ Then see a real run, start to finish:
 pixi run -e full python -m playbook_library.examples
 ```
 
-That seeds a tiny network — one bus, one generator that can be built, a day of demand
-— as the root revision of a datarecord store, runs the `expand` playbook on it, and
-prints the final revision. Pass a directory or an `s3://` URL to choose where the store
-is created.
+That seeds a tiny network — one bus, one generator that can be built, a day of demand — as the root revision of a datarecord store, runs the `expand` playbook on it, and prints the final revision.
+Pass a directory or an `s3://` URL to choose where the store is created.
 
 To run a single block instead, without a playbook around it:
 
@@ -80,8 +74,8 @@ pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
 ## Environments
 <!-- --8<-- [start:docs-environments] -->
 
-Each block declares the environment it needs (`ENV = "pypsa"`), and that name is what
-picks the environment it later runs in. The environments themselves are pixi's:
+Each block declares the environment it needs (`ENV = "pypsa"`), and that name is what picks the environment it later runs in.
+The environments themselves are pixi's:
 
 | Environment | What it is for |
 | --- | --- |
@@ -90,60 +84,45 @@ picks the environment it later runs in. The environments themselves are pixi's:
 | `dev` | `default` plus pytest and ruff |
 | `full` | everything; the only environment that can run the blocks |
 
-That `dev` has no PyPSA and its tests still pass is the check that a block's
-dependencies stay its own.
+That `dev` has no PyPSA and its tests still pass is the check that a block's dependencies stay its own.
 <!-- --8<-- [end:docs-environments] -->
 
 ## Adding a block
 
-1. Write it in its own module, as a `MantaBlock` subclass — see
-   [the framework's README](../playbook/README.md#writing-a-block) for what a block
-   declares, and `time_cluster.py` for the shortest real example.
-2. Register it in `__init__.py` with `register_lazy("your_block",
-   "playbook_library.your_module:YourBlock")`. Registering the location rather than
-   importing the class is what keeps this package importable without PyPSA.
-3. Read and write data through `pypsa_helpers`: `to_network(base)` in,
-   `write_network(n, base)` out, as a new revision in the store of the `base` revision
-   the block's `run` was given. Blocks never open files themselves, which is
-   what lets the same block run against a local file or object storage unchanged.
-   A helper only one block needs is a method on that block's class; `pypsa_helpers`
-   holds only what blocks share.
+1. Write it in its own module, as a `MantaBlock` subclass — see [the framework's README](../playbook/README.md#writing-a-block) for what a block declares, and `time_cluster.py` for the shortest real example.
+2. Register it in `__init__.py` with `register_lazy("your_block", "playbook_library.your_module:YourBlock")`.
+   Registering the location rather than importing the class is what keeps this package importable without PyPSA.
+3. Read and write data through `pypsa_helpers`: `to_network(base)` in, `write_network(n, base)` out, as a new revision in the store of the `base` revision the block's `run` was given.
+   Blocks never open files themselves, which is what lets the same block run against a local file or object storage unchanged.
+   A helper only one block needs is a method on that block's class; `pypsa_helpers` holds only what blocks share.
 4. Regenerate the catalogue (below) and add tests (below).
 
-Keep PyPSA imports inside the block modules. `__init__.py`, `playbooks/` and the
-catalogue must all keep working in an environment that has never heard of PyPSA.
+Keep PyPSA imports inside the block modules.
+`__init__.py`, `playbooks/` and the catalogue must all keep working in an environment that has never heard of PyPSA.
 
 ## Adding a playbook
 
-1. Write it as a YAML document in `playbooks/` — see
-   [the framework's README](../playbook/README.md#writing-a-playbook) for the format,
-   and `expand.yaml` for a real one.
-2. Give it default settings under `playbooks/configs/`, in a file of the same name,
-   with an entry for every step. A user should start from a complete document rather
-   than a blank page.
-3. Run the tests. `tests/test_playbooks.py` checks every playbook in `playbooks/`
-   against its default settings, so a default that cannot run fails there. Add a case
-   for anything else the playbook has to get right. Most of those tests run without
-   PyPSA and check against the catalogue. That is the point: anything offering
-   playbooks to a user does so from an environment that cannot import the blocks they
-   name.
+1. Write it as a YAML document in `playbooks/` — see [the framework's README](../playbook/README.md#writing-a-playbook) for the format, and `expand.yaml` for a real one.
+2. Give it default settings under `playbooks/configs/`, in a file of the same name, with an entry for every step.
+   A user should start from a complete document rather than a blank page.
+3. Run the tests.
+   `tests/test_playbooks.py` checks every playbook in `playbooks/` against its default settings, so a default that cannot run fails there.
+   Add a case for anything else the playbook has to get right.
+   Most of those tests run without PyPSA and check against the catalogue.
+   That is the point: anything offering playbooks to a user does so from an environment that cannot import the blocks they name.
 
-Playbooks are found by the name written inside the document, not by filename, so
-renaming a file changes nothing and two playbooks claiming one name is an error.
+Playbooks are found by the name written inside the document, not by filename, so renaming a file changes nothing and two playbooks claiming one name is an error.
 
 ## The catalogue
 
-`catalogue.json` describes every block — settings as JSON schema, dimensions,
-environments — so that processes which cannot import PyPSA can still list these blocks
-and check a playbook and its settings against them. It is committed; regenerate it after adding or
-changing a block:
+`catalogue.json` describes every block — settings as JSON schema, dimensions, environments — so that processes which cannot import PyPSA can still list these blocks and check a playbook and its settings against them.
+It is committed; regenerate it after adding or changing a block:
 
 ```bash
 pixi run -e pypsa catalogue
 ```
 
-A stale catalogue fails the `full` test suite, so this is not something you can forget
-silently.
+A stale catalogue fails the `full` test suite, so this is not something you can forget silently.
 
 <!-- TODO: regenerate and verify catalogue.json in CI, rather than relying on the
 committed file being refreshed by hand. -->
@@ -166,15 +145,11 @@ What the suite covers, and where to add to it:
 | `tests/test_playbooks.py` | the shipped playbooks parse, come with settings for every step, and have no issues with those settings, checked against the catalogue and, with PyPSA, against the blocks |
 | `tests/test_pypsa_end_to_end.py` | the whole playbook, one network in and one out |
 
-Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry
-`pytestmark = pytest.mark.pypsa`, so they skip rather than fail in `dev`. A new block
-needs at least a case in `test_library.py` showing it produces a usable network as a
-new revision in the store it read from — keep the networks tiny, so the suite stays quick.
+Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry `pytestmark = pytest.mark.pypsa`, so they skip rather than fail in `dev`.
+A new block needs at least a case in `test_library.py` showing it produces a usable network as a new revision in the store it read from — keep the networks tiny, so the suite stays quick.
 <!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
 
-- Blocks read and write revisions of a datarecord store, and turning them into PyPSA
-  networks and back is confined to `pypsa_helpers.py`.
-- The settings models in `pypsa_configs.py` mirror PyPSA's `optimize` options by hand,
-  and have to be updated when those change.
+- Blocks read and write revisions of a datarecord store, and turning them into PyPSA networks and back is confined to `pypsa_helpers.py`.
+- The settings models in `pypsa_configs.py` mirror PyPSA's `optimize` options by hand, and have to be updated when those change.

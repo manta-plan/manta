@@ -18,7 +18,8 @@ You need a Manta account, the web address of your Manta app, and a project with 
 
 ## Sign in
 
-1. Open Manta in your browser. The sign-in page opens.
+1. Open Manta in your browser.
+   The sign-in page opens.
 2. Enter your username and password, then select **Log In**.
 
 The **Projects** page opens.
@@ -26,17 +27,21 @@ To sign out, select **Log out** in the top right corner of the **Projects** page
 
 ## Open the Run tab
 
-1. On the **Projects** page, select the project. Its **Model** tab opens.
+1. On the **Projects** page, select the project.
+   Its **Model** tab opens.
 2. Select the **Run** tab at the top of the page.
 
 The **Runs** page opens, with the runs of this project.
 
 ## Start a run
 
-1. Select **New run**. The **Create a new run** dialog opens.
+1. Select **New run**.
+   The **Create a new run** dialog opens.
 2. In **Data record**, pick the data record to run on.
-3. In **Playbook**, pick a playbook. The canvas shows its steps from left to right, set to the playbook's default settings.
-4. If the playbook has global settings, such as **Expansion Mode**, pick a value for each under **Playbook**. The canvas shows only the steps that run with these values.
+3. In **Playbook**, pick a playbook.
+   The canvas shows its steps from left to right, set to the playbook's default settings.
+4. If the playbook has global settings, such as **Expansion Mode**, pick a value for each under **Playbook**.
+   The canvas shows only the steps that run with these values.
 5. To change the settings of a step, select the step on the canvas, then edit its settings below the canvas.
 6. Select **Create run**.
 
@@ -56,7 +61,8 @@ The counters above the table show how many runs the project has, and how many ar
 
 ## Read the log of a run
 
-1. In the **Recent runs** table, select the arrow in the **Actions** column of the run. Its details open below it.
+1. In the **Recent runs** table, select the arrow in the **Actions** column of the run.
+   Its details open below it.
 2. Read the run UUID, the project UUID, the status, and the log of the run.
 3. To fetch the latest log, select **Refresh** in the details.
 

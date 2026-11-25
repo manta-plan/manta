@@ -125,7 +125,8 @@ Both deployments record their flow as a module path, `runner.flows:<flow>`, whic
 
 Manta is to talk to three external systems that it does not talk to today:
 
-- An identity provider that a client already runs, over OpenID Connect or SAML, for single sign-on. The local stack runs Keycloak for sign-in today.
+- An identity provider that a client already runs, over OpenID Connect or SAML, for single sign-on.
+  The local stack runs Keycloak for sign-in today.
 - A licence server for commercial solvers, from which a block checks out a licence.
 - A provider of language models for assistance in the web app, either Ollama on the client's own servers or a commercial provider.
 

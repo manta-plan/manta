@@ -1,34 +1,25 @@
 # Manta
 
 <!-- --8<-- [start:docs-preamble] -->
-Manta is an open-source energy modeling tool, designed to make cutting-edge
-energy models accessible to all.
+Manta is an open-source energy modeling tool, designed to make cutting-edge energy models accessible to all.
 
 For more details on the vision and roadmap, see our website: https://manta-plan.org/
 <!-- --8<-- [end:docs-preamble] -->
 
 > [!NOTE]
-> This repository and the instructions below are for **developers**. If you
-> want to use Manta or join as a beta tester, please wait for the MVP, which
-> will be available at a public URL in the near future.
+> This repository and the instructions below are for **developers**.
+> If you want to use Manta or join as a beta tester, please wait for the MVP, which will be available at a public URL in the near future.
 
 <!-- --8<-- [start:docs-install] -->
 ## Running Manta locally
 
-The quickest way to try Manta is to run the whole stack on your own machine:
-the supporting services in Docker, and the backend and frontend from source.
+The quickest way to try Manta is to run the whole stack on your own machine: the supporting services in Docker, and the backend and frontend from source.
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
-  (Docker Desktop includes it; on Linux, add the
-  [Compose plugin](https://docs.docker.com/compose/install/linux/))
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs
-  the right Python for you)
-- [Node.js](https://nodejs.org/en/download) and pnpm (run
-  `corepack enable pnpm` to get the version pinned in
-  [`frontend/package.json`](https://github.com/manta-plan/manta/blob/main/frontend/package.json), or see the
-  [pnpm docs](https://pnpm.io/installation))
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose (Docker Desktop includes it; on Linux, add the [Compose plugin](https://docs.docker.com/compose/install/linux/))
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs the right Python for you)
+- [Node.js](https://nodejs.org/en/download) and pnpm (run `corepack enable pnpm` to get the version pinned in [`frontend/package.json`](https://github.com/manta-plan/manta/blob/main/frontend/package.json), or see the [pnpm docs](https://pnpm.io/installation))
 
 ### 1. Clone the repository
 
@@ -46,12 +37,11 @@ docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
   --profile temporary-quack-setup up
 ```
 
-This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the
-playbook workers, and the record server the frontend's data catalogue reads,
-and builds the images playbook steps run in. The first run
-takes a while. Leave it running and wait until the logs settle. All
-configuration comes from [`backend/.env`](https://github.com/manta-plan/manta/blob/main/backend/.env), which already has
-working local defaults. Nothing needs to be filled in.
+This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the playbook workers, and the record server the frontend's data catalogue reads, and builds the images playbook steps run in.
+The first run takes a while.
+Leave it running and wait until the logs settle.
+All configuration comes from [`backend/.env`](https://github.com/manta-plan/manta/blob/main/backend/.env), which already has working local defaults.
+Nothing needs to be filled in.
 
 ### 3. Start the backend
 
@@ -63,17 +53,13 @@ uv sync
 uv run manta
 ```
 
-On startup the backend applies database migrations, creates the storage
-bucket, and checks that Prefect is reachable, then serves the API on
-`localhost:8000`. The first start also downloads the example data, which takes
-a few minutes, and creates the `manta-admin` user with an example project (see
-[Example data](https://github.com/manta-plan/manta/blob/main/backend/README.md#example-data)).
+On startup the backend applies database migrations, creates the storage bucket, and checks that Prefect is reachable, then serves the API on `localhost:8000`.
+The first start also downloads the example data, which takes a few minutes, and creates the `manta-admin` user with an example project (see [Example data](https://github.com/manta-plan/manta/blob/main/backend/README.md#example-data)).
 The record server finds the example data within a minute of the download.
 
 ### 4. Start the frontend
 
-In a third terminal, move into the `frontend` folder and create a file named
-`.env.local` there that points the app at the record server:
+In a third terminal, move into the `frontend` folder and create a file named `.env.local` there that points the app at the record server:
 
 ```bash
 cd frontend
@@ -91,11 +77,10 @@ The dev server proxies `/v1` requests to the backend on `localhost:8000`.
 
 ### 5. Open Manta
 
-Go to `localhost:5173` and log in as `manta-admin`,
-password `manta-admin`. The "Example project" contains the example data.
+Go to `localhost:5173` and log in as `manta-admin`, password `manta-admin`.
+The "Example project" contains the example data.
 
-The services also have their own UIs, which help when you want to see what is
-happening under the hood:
+The services also have their own UIs, which help when you want to see what is happening under the hood:
 
 | Service   | URL                                       | Notes                          |
 | --------- | ----------------------------------------- | ------------------------------ |
@@ -106,20 +91,17 @@ happening under the hood:
 
 ### Stopping
 
-To stop Docker containers, press
-`Ctrl+C` in their terminal, or run from the repo root:
+To stop Docker containers, press `Ctrl+C` in their terminal, or run from the repo root:
 
 ```bash
 docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
   --profile temporary-quack-setup down
 ```
 
-This will not delete your local data (database, stored files, Keycloak state) so the next
-`up` command picks up where you left off.
+This will not delete your local data (database, stored files, Keycloak state) so the next `up` command picks up where you left off.
 
-To wipe everything and start from scratch next time, add `-v` to also delete
-the data volumes. The backend then downloads the example data again at its
-next start.
+To wipe everything and start from scratch next time, add `-v` to also delete the data volumes.
+The backend then downloads the example data again at its next start.
 
 ```bash
 docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
@@ -128,27 +110,23 @@ docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
 
 ### Run the backend and frontend in Docker instead
 
-To run the whole stack in containers, with no uv, Node.js, or pnpm on your
-machine, replace steps 2 to 4 with this command from the repo root:
+To run the whole stack in containers, with no uv, Node.js, or pnpm on your machine, replace steps 2 to 4 with this command from the repo root:
 
 ```bash
 docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
   --profile temporary-quack-setup up --build
 ```
 
-It builds the backend and frontend images, and serves the web app on
-`localhost:5173` once the backend is healthy, which takes a few minutes on the
-first start. To stop it, run the same command with `down` in place of
-`up --build`. To run the backend or frontend from source again, stop its
-container first, because they share ports.
+It builds the backend and frontend images, and serves the web app on `localhost:5173` once the backend is healthy, which takes a few minutes on the first start.
+To stop it, run the same command with `down` in place of `up --build`.
+To run the backend or frontend from source again, stop its container first, because they share ports.
 
 See [docker/README.md](https://github.com/manta-plan/manta/blob/main/docker/README.md) for details on each service.
 <!-- --8<-- [end:docs-install] -->
 
 ## Repository Structure
 
-This is a monorepo containing the backend, frontend, and local deployment
-tooling:
+This is a monorepo containing the backend, frontend, and local deployment tooling:
 
 ```
 manta/
@@ -159,13 +137,10 @@ manta/
 └── docker/            # local dev services (Postgres, SeaweedFS) — see docker/README.md
 ```
 
-`playbook/` and `playbook-library/` are standalone Python packages that know nothing
-about the Manta app: the first defines what a block and a playbook are, the second is
-the modelling content built on them. They live here for now, but are written to move
-to their own repositories.
+`playbook/` and `playbook-library/` are standalone Python packages that know nothing about the Manta app: the first defines what a block and a playbook are, the second is the modelling content built on them.
+They live here for now, but are written to move to their own repositories.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and architecture, and
-the package-level READMEs for setup instructions:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and architecture, and the package-level READMEs for setup instructions:
 
 - [backend/README.md](backend/README.md) for the FastAPI backend.
 - [frontend/README.md](frontend/README.md) for the React frontend.
@@ -177,16 +152,17 @@ the package-level READMEs for setup instructions:
 ## Internal test deployment
 
 > [!IMPORTANT]
-> This section is for the Manta core team. It documents an ad-hoc prototype
-> instance on our own GCP project and is not a supported way to deploy Manta.
+> This section is for the Manta core team.
+> It documents an ad-hoc prototype instance on our own GCP project and is not a supported way to deploy Manta.
 > To try Manta yourself, see [Running Manta locally](https://github.com/manta-plan/manta/blob/main/README.md#running-manta-locally).
 
-Currently a test instance is deployed for internal purposes, in `europe-north2`
-(Stockholm). Its container name is `manta-adhoc-2` (no points for creativity).
+Currently a test instance is deployed for internal purposes, in `europe-north2` (Stockholm).
+Its container name is `manta-adhoc-2` (no points for creativity).
 
 ### Setup
 
-On a base Debian image, we begin by refreshing the system and installing docker. See [the official docs](https://docs.docker.com/engine/install/debian/).
+On a base Debian image, we begin by refreshing the system and installing docker.
+See [the official docs](https://docs.docker.com/engine/install/debian/).
 
 ```bash
 sudo apt update # update repositories
@@ -242,8 +218,7 @@ uv sync
 uv run uvicorn manta.main:app --host 0.0.0.0 --port 8000
 ```
 
-Build and serve the frontend, which proxies `/v1` requests to the backend on
-port 8000
+Build and serve the frontend, which proxies `/v1` requests to the backend on port 8000
 
 ```bash
 cd ../frontend
@@ -251,12 +226,10 @@ pnpm install && pnpm build
 pnpm preview --host 0.0.0.0
 ```
 
-Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to
-background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on. 
+Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on.
 
 ### Summary
 
-This is a very quick and dirty guide to spinning up an instance of manta. There
-are many many issues with this right now, but a proper deployment with terraform
-etc. is on the way.
+This is a very quick and dirty guide to spinning up an instance of manta.
+There are many many issues with this right now, but a proper deployment with terraform etc. is on the way.
 <!-- --8<-- [end:docs-test-deployment] -->
