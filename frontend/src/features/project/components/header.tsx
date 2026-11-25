@@ -19,6 +19,7 @@ import {
   projectTabHref,
   type ProjectTab,
 } from "../lib/project-route";
+import { InspectResultToolbar } from "../../analyse/components/inspect-result-toolbar";
 import { startBuildWorkspaceTour } from "../lib/workspace-tours";
 import { useWorkspaceView } from "../lib/use-workspace-view";
 import { MantaLogo } from "../../home/components/manta-logo";
@@ -35,6 +36,8 @@ export function Header() {
   const [location, setLocation] = useLocation();
   const { projectId } = useParams<{ projectId: string }>();
   const activeTab = getActiveProjectTab(location);
+  const selectedViewId = useProjectStore((s) => s.selectedViewId);
+  const isDataPage = /\/analyse\/(computed|raw):/.test(location);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const viewState = useProjectStore((s) => s.viewState);
   const setViewState = useProjectStore((s) => s.setViewState);
@@ -203,6 +206,8 @@ export function Header() {
         {/* Right toolbar */}
         <Toolbar.Root className="ml-auto flex shrink-0 items-center gap-1 pr-1">
           {/* The open level's actions (Build) come first, then the project-wide ones. */}
+          {activeTab === "analyse" && (selectedViewId || isDataPage) && <InspectResultToolbar />}
+
           <LevelToolbarActions />
 
           {/* Project-wide actions */}
