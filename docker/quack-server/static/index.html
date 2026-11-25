@@ -222,7 +222,7 @@
       <div class="editor">
         <textarea x-model="sql" spellcheck="false" aria-label="SQL"
                   @keydown.meta.enter.prevent="run()" @keydown.ctrl.enter.prevent="run()"
-                  placeholder="Pick a view, or write SQL against r.<catalog>.<schema>.<view>, one catalog per scenario (e.g. r.bel_pre_aggregated_perfect__patch.attributes.p_nom)"></textarea>
+                  placeholder="Pick a view, or write SQL against r.<catalog>.<schema>.<view>, one catalog per scenario (e.g. r.bel_pre_aggregated__base.attributes.p_nom)"></textarea>
         <div class="bar">
           <button class="btn primary" @click="run()" :disabled="status !== 'connected' || running" x-text="running ? 'Running…' : 'Run'"></button>
           <span><kbd>⌘</kbd> <kbd>↵</kbd></span>
@@ -279,9 +279,9 @@
 // DuckDB v2.0 in the browser: a dev build of duckdb-wasm, which loads the signed
 // Quack extension from DuckDB's own repository. See the README.
 const DUCKDB_WASM = '1.33.1-dev121.0'
-const SCHEMAS = ['dims', 'properties', 'attributes', 'manta']
+const SCHEMAS = ['dimensions', 'properties', 'attributes', 'manta']
 // Folder in a layer → its schema section.
-const SECTIONS = { dims: 'dimensions', attributes: 'attributes' }
+const SECTIONS = { dimensions: 'dimensions', attributes: 'attributes' }
 const PREVIEW_ROWS = 200
 const MAX_ROWS = 1000
 
@@ -324,7 +324,7 @@ function text(value, type) {
 }
 
 // Scenario → schema → view → column: each scenario of the record has its own
-// catalog (`bel_pre_aggregated_perfect__patch`), named in its revisions. A
+// catalog (`bel_pre_aggregated__base`), named in its revisions. A
 // run result's catalog is attached when the app first shows it: until then
 // it's left out.
 function catalogTree(columns, revisions) {
@@ -641,13 +641,13 @@ document.addEventListener('alpine:init', () => {
 
     // What the manifests say about a file or folder, and the views it backs.
     // A store keeps one layer per revision, `layers/<id>/` (manifest.json,
-    // dims/, attributes/); a plain record is one layer at its root.
+    // dimensions/, attributes/); a plain record is one layer at its root.
     describe(node) {
       const { schema, layers, revisions } = this.stored
       const names = revisions ?? {}
       const plain = revisions === null
       // The revision names a layer is, and the views of the first one attached.
-      const namesOf = (id) => (plain ? ['inputs'] : Object.keys(names).filter((name) => names[name] === id))
+      const namesOf = (id) => (plain ? ['base'] : Object.keys(names).filter((name) => names[name] === id))
       const dbOf = (id) => namesOf(id).map((name) => this.revisionCatalogs[name]).find(Boolean)
       const isView = (db, key) => this.views.some((v) => v.db === db && `${v.schema}.${v.name}` === key)
       const parts = node.path ? node.path.split('/') : []
@@ -665,7 +665,7 @@ document.addEventListener('alpine:init', () => {
           views: [],
         }
       }
-      if (!plain && node.path === 'revisions.json') return { title: node.path, subtitle: `${bytes(node.size)} · revision name → layer`, json: names, views: [] }
+      if (!plain && node.path === 'store.json') return { title: node.path, subtitle: `${bytes(node.size)} · revision name → layer`, json: names, views: [] }
       if (!plain && node.path === 'layers') {
         return {
           title: 'layers/',
@@ -685,7 +685,7 @@ document.addEventListener('alpine:init', () => {
         return { title: `${node.path}/`, subtitle: `${about} · parent ${layer.parent ?? 'none'}`, json: layer, views: [] }
       }
       if (dir === 'manifest.json') {
-        return { title: node.path, subtitle: `${bytes(node.size)} · ${about} · schema shown by section in dims/ and attributes/`, json: { ...layer, schema: Object.keys(schema) }, views: [] }
+        return { title: node.path, subtitle: `${bytes(node.size)} · ${about} · schema shown by section in dimensions/ and attributes/`, json: { ...layer, schema: Object.keys(schema) }, views: [] }
       }
       if (!section) return { title: node.kind === 'dir' ? `${node.path}/` : node.path, subtitle: `${node.size === undefined ? '' : `${bytes(node.size)} · `}${about}`, json: null, views: [] }
       if (node.kind === 'dir') {
@@ -694,10 +694,10 @@ document.addEventListener('alpine:init', () => {
       const name = file?.replace(/\.parquet$/, '')
       const entry = schema[section]?.[name]
       // A dimension's table also holds its properties.
-      const json = dir === 'dims' ? { dimension: entry ?? null, properties: schema.properties?.[name] ?? null } : entry ?? null
+      const json = dir === 'dimensions' ? { dimension: entry ?? null, properties: schema.properties?.[name] ?? null } : entry ?? null
       // The views read the whole revision (this layer over its parents), in its catalog if attached.
       const db = dbOf(id)
-      const keys = dir === 'dims' ? [`dims.${name}`, `properties.${name}`] : [`attributes.${name}`]
+      const keys = dir === 'dimensions' ? [`dimensions.${name}`, `properties.${name}`] : [`attributes.${name}`]
       const views = db ? keys.filter((key) => isView(db, key)).map((key) => { const [schemaName, viewName] = key.split(/\.(.*)/); return { db, schema: schemaName, name: viewName } }) : []
       const unopened = named.length && !db ? ' · not attached yet (a run result is, once the app opens it)' : ''
       return {

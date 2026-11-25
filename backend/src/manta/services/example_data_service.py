@@ -39,12 +39,13 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 """The public bucket of example datarecord stores (the same ones playbook-library's
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
-PUBLIC_DATA_VERSION = "2026-11-11"
+PUBLIC_DATA_VERSION = "2026-11-24"
 """The bucket folder holding the stores written with the pinned datarecord version."""
 
 _PUBLIC_PREFIX = f"{PUBLIC_DATA_VERSION}/"
 
-_MARKER = "revisions.json"
+_STORE = "store.json"
+_MARKERS = (_STORE, "manifest.json")
 # boto3's own connection pool size: any more and it discards connections, with a warning.
 _CONCURRENT_COPIES = 10
 _DESCRIPTION = "Example datarecord stores to start runs from."
@@ -56,13 +57,19 @@ def _http_client() -> httpx2.Client:
     return httpx2.Client(timeout=60)
 
 
+def _markers(store: str) -> list[str]:
+    """The files at a store's root that mark it complete: a store's `store.json`, or a plain
+    record's `manifest.json`."""
+    return [f"{store}/{marker}" for marker in _MARKERS]
+
+
 def _copy_store(store: str, names: Collection[str], copy: Callable[[str], object]) -> None:
-    """Copies a store's files concurrently, `revisions.json` only once everything else is in,
-    so a store with a `revisions.json` is complete."""
-    marker = f"{store}/{_MARKER}"
+    """Copies a store's files concurrently, its marker only once everything else is in, so a
+    store with a marker is complete."""
+    markers = set(_markers(store)) & set(names)
     with ThreadPoolExecutor(_CONCURRENT_COPIES) as pool:
-        list(pool.map(copy, [name for name in names if name != marker]))
-    if marker in names:
+        list(pool.map(copy, [name for name in names if name not in markers]))
+    for marker in markers:
         copy(marker)
 
 
@@ -91,7 +98,7 @@ class ExampleDataService:
         try:
             with _http_client() as http:
                 for store in stores or self._public_stores(http):
-                    if self._exists(f"{EXAMPLE_DATA_PREFIX}/{store}/{_MARKER}"):
+                    if self._has_marker(EXAMPLE_DATA_PREFIX, store):
                         logger.info("Example store %r already downloaded, skipping", store)
                         continue
                     logger.info("Downloading example store %r...", store)
@@ -144,10 +151,10 @@ class ExampleDataService:
         """Copies the given stores (all downloaded ones when none are given), skipping those
         already in the project."""
         for store, names in self._downloaded_stores().items():
-            # Without a revisions.json, its download was cut short (see _copy_store()).
-            if (stores and store not in stores) or f"{store}/{_MARKER}" not in names:
+            # Without a marker, its download was cut short (see _copy_store()).
+            if (stores and store not in stores) or not set(_markers(store)) & set(names):
                 continue
-            if self._exists(f"{project_uuid}/{store}/{_MARKER}"):
+            if self._has_marker(str(project_uuid), store):
                 continue
             logger.info("Copying example store %r into project %s...", store, project_uuid)
             _copy_store(
@@ -161,13 +168,14 @@ class ExampleDataService:
             )
 
     def data_record(self, project_uuid: UUID, store: str) -> DataRecordResult:
-        """The record a run on one of the project's copied stores starts from: its
-        `inputs` revision."""
+        """The record a run on one of the project's copied stores starts from: the `base`
+        revision its `store.json` references. A plain record has no `store.json`, so it
+        fails."""
         prefix = f"{project_uuid}/{store}"
-        revisions = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_MARKER}")
+        content = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_STORE}")
         return DataRecordResult(
             store_url=f"s3://{self.bucket}/{prefix}",
-            revision_uuid=json.loads(revisions["Body"].read())["inputs"],
+            revision_uuid=json.loads(content["Body"].read())["references"]["base"]["revision"],
         )
 
     def _fill_project(self, project_uuid: UUID) -> None:
@@ -179,8 +187,11 @@ class ExampleDataService:
                 "Failed to copy example data into project %s", project_uuid, exc_info=True
             )
 
-    def _exists(self, key: str) -> bool:
-        return self.client.list_objects_v2(Bucket=self.bucket, Prefix=key)["KeyCount"] > 0
+    def _has_marker(self, prefix: str, store: str) -> bool:
+        return any(
+            self.client.list_objects_v2(Bucket=self.bucket, Prefix=f"{prefix}/{marker}")["KeyCount"]
+            for marker in _markers(store)
+        )
 
     def _downloaded_stores(self) -> dict[str, list[str]]:
         """Each downloaded store's file names, relative to EXAMPLE_DATA_PREFIX."""

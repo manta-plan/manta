@@ -30,10 +30,10 @@ describe("record server", () => {
   it("returns a record's revision uuids by name", async () => {
     const fetchMock = stubFetch({
       ok: true,
-      json: async () => ({ revisions: { inputs: "1bad4cfd" } }),
+      json: async () => ({ revisions: { base: "1bad4cfd" } }),
     });
 
-    await expect(getRecordRevisions("ac-dc-meshed")).resolves.toEqual({ inputs: "1bad4cfd" });
+    await expect(getRecordRevisions("ac-dc-meshed")).resolves.toEqual({ base: "1bad4cfd" });
     expect(fetchMock.mock.calls[0][0]).toBe(
       "http://34.51.179.198:8001/api/records/ac-dc-meshed/files",
     );

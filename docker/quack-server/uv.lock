@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [[package]]
@@ -90,12 +90,16 @@ wheels = [
 
 [[package]]
 name = "datarecord"
-version = "0.0.0"
-source = { git = "https://github.com/energy-models/datarecord.git?rev=8889d623#8889d623865e3cab80d7a18681e48a6c2536741d" }
+version = "0.1.0a2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "duckdb" },
     { name = "mathspec" },
     { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/9f/58a99327d9c885e06e09f1028c281a76fb250fd9ca0021c8d2f76caf495e/datarecord-0.1.0a2.tar.gz", hash = "sha256:0634a06d16a9d7befcb13b761dcfcfd2a205cf37273dbb69b2add9dbff5c8d9d", size = 196554, upload-time = "2026-11-24T13:02:44.473Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/70/f76b6e6d220bd8fb039d68ba5c217f1a72985eecb3d8e15eb1a0b4b662e1/datarecord-0.1.0a2-py3-none-any.whl", hash = "sha256:e3d0108b9d33655802032a203a895277252bc4d202b80b532a12def38a02e64b", size = 208196, upload-time = "2026-11-24T13:02:43.164Z" },
 ]
 
 [package.optional-dependencies]
@@ -304,7 +308,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "datarecord", extras = ["remote"], git = "https://github.com/energy-models/datarecord.git?rev=8889d623" },
+    { name = "datarecord", extras = ["remote"], specifier = "==0.1.0a2" },
     { name = "duckdb", specifier = ">=2,<3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
@@ -316,12 +320,16 @@ dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "mathspec"
-version = "0.4.1.dev3+g8982c5561"
-source = { git = "https://github.com/energy-models/mathspec.git?rev=8982c556114992d149a83b3c6f3604c72e569829#8982c556114992d149a83b3c6f3604c72e569829" }
+version = "0.5.0a1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyparsing" },
     { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/85/8e/5d5de8262971e50b83c44a29e83c598e97a2096089ebca69ef8fe3eaa935/mathspec-0.5.0a1.tar.gz", hash = "sha256:0f5c4b7c6b1d9d9352cae6ba6b62f97c622113af4bbf1f94fa0ca48b00ef1a36", size = 201123, upload-time = "2026-11-23T15:34:47.122Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/bd/c4c122f6fbbd4d54af97ff06acf44cb58ed4a72676c0b4677cf7e3760c72/mathspec-0.5.0a1-py3-none-any.whl", hash = "sha256:269a9eae9e835353394cf09f181f0c613b535792439348326b7b6e2b8c0d4815", size = 205601, upload-time = "2026-11-23T15:34:45.958Z" },
 ]
 
 [[package]]

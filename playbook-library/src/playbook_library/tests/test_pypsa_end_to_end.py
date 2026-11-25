@@ -103,8 +103,8 @@ def bel_store(tmp_path_factory) -> Path:
 def bel(tmp_path, bel_store, workspace: Workspace) -> Revision:
     store_dir = tmp_path / "BEL"
     shutil.copytree(bel_store, store_dir)
-    revisions = json.loads((store_dir / "revisions.json").read_text())
-    return workspace.store(str(store_dir)).revision(UUID(revisions["inputs"]))
+    references = json.loads((store_dir / "store.json").read_text())["references"]
+    return workspace.store(str(store_dir)).revision(UUID(references["base"]["revision"]))
 
 
 BUILT_CARRIERS = [
@@ -167,6 +167,12 @@ def _built(n: pypsa.Network) -> dict[str, float]:
     return {carrier: totals.pop(carrier, 0.0) for carrier in BUILT_CARRIERS} | totals
 
 
+BUS_DROPPED = pytest.mark.xfail(
+    strict=True,
+    reason="datarecord 0.1.0a2 drops GlobalConstraint.bus (energy-models/datarecord#162)",
+)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     ("block_cls", "mode", "periods", "dispatched"),
@@ -177,6 +183,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
             [None],
             [2030, 2040, 2050],
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-perfect",
+            marks=BUS_DROPPED,
         ),
         pytest.param(
             OvernightCapacityExpansion,
@@ -184,6 +191,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
             [2050],
             [2050],
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-overnight2050",
+            marks=BUS_DROPPED,
         ),
         pytest.param(
             MyopicCapacityExpansion,
@@ -191,6 +199,7 @@ def _built(n: pypsa.Network) -> dict[str, float]:
             [2030, 2040, 2050],
             [2030, 2040, 2050],
             id="pypsa-eur-test-elec-preaggregated-perfect-datarecords-myopic",
+            marks=BUS_DROPPED,
         ),
     ],
 )

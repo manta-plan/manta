@@ -67,7 +67,7 @@ export function getRecordCatalogue(): Promise<RecordCatalogue> {
   return recordServerGet<RecordCatalogue>("/api/records");
 }
 
-// A record's revision UUIDs by revision name, e.g. `{ inputs: "1bad4cfd-…" }`.
+// A record's revision UUIDs by revision name, e.g. `{ base: "1bad4cfd-…" }`.
 export async function getRecordRevisions(id: string): Promise<Record<string, string>> {
   const record = await recordServerGet<{ revisions: Record<string, string> | null }>(
     `/api/records/${encodeURIComponent(id)}/files`,
