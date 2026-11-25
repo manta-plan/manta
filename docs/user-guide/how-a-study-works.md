@@ -32,7 +32,7 @@ The diagram shows three blocks as an example; a real run adds one result layer f
 
 In the first two stages you sign in, then create a project or open one you made before.
 
-A project holds everything about one study in one place.
+A project holds everything about a study in one place.
 That includes the model it starts from, the scenarios it tests, every analysis run on them, and the results.
 A team works on a project together, and every change and update of its data is kept.
 So anyone on the team can see how a result was reached, months after the study ended.
@@ -79,8 +79,8 @@ You can compare scenarios side by side, and see exactly which changes each one m
 ## Playbooks are analysis templates
 
 A playbook is a template for running an end-to-end analysis.
-It links tools that are pre-configured for the standard analysis, only asking for the necessary details of the specific study.
-You just pick a playbook, enter your analysis details, and run.
+It links tools that are pre-configured for a standard analysis, only asking for the necessary details of the specific study.
+You just pick a playbook, configure it to your analysis, and run.
 
 Experienced analysts can also build new playbooks, including iterative or parallel (co-optimisation) workflows.
 

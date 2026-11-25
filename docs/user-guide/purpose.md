@@ -18,7 +18,7 @@ This page explains the problem Manta answers, the kind of application it is, and
 
 Open-source energy system models are fast, capable and free to use, yet few of the organisations that plan the energy transition rely on them.
 The main barrier is usability, not performance.
-To run these models today, you manage spreadsheets, write code in Python or Julia, and need to understand GitHub.
+To run these models today, you manage CSV files, write code in Python or Julia, and need to understand GitHub.
 
 The result is that many organisations do not move to open-source tools, and keep relying on proprietary tools.
 These tools are often closed, so their users cannot see how a result was reached (black-box tools).
@@ -77,7 +77,7 @@ Developers and tool creators can add new blocks, and analysts can build new play
 ## The modelling tools under Manta
 
 Manta's first goal is a consistent, reliable application that grid operators and industry can use, whatever tool runs underneath.
-To reach that goal quickly, the blocks that ship with Manta use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
+To reach that goal quickly, the blocks that ship with Manta currently use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
 Manta describes models in PyPSA's terms, and imports PyPSA models.
 
 Manta is not a wrapper for PyPSA, though.
