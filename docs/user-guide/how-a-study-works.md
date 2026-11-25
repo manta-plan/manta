@@ -5,16 +5,32 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # How a study works in Manta
 
-A study in Manta follows one path: start from a model, define scenarios, run a playbook, then read and share the results.
-This page explains each part of that path, and shows the kinds of analysis a playbook can run.
+A study in Manta is a project, which moves through seven stages from signing in to sharing a report.
+This page explains each stage, and shows the kinds of analysis a playbook can run.
 [Manta's purpose](purpose.md) explains why Manta is built this way.
 
 !!! warning "Aims, not the state of Manta today"
 
-    This page describes the study path Manta is designed for.
+    This page describes the stages Manta is designed for.
     The [user guide](index.md#what-the-web-app-supports-today) lists what the web app supports today.
 
+## The stages of a project
+
+The diagram shows the seven stages, and the layer of data that each one adds.
+
+<div class="manta-figure">
+--8<-- "docs/user-guide/project-flow.svg"
+</div>
+
+The top row shows what you do, from left to right.
+The bottom part shows the project's [data record](concepts.md), which Manta builds up one layer at a time as you go.
+Each layer sits on top of the layers before it, so the layers underneath stay as they were.
+A solid arrow shows a stage adding a layer, and a dashed arrow shows a stage reading the layers beneath it.
+The diagram shows three blocks as an example; a real run adds one result layer for each block in its playbook.
+
 ## Projects contain everything
+
+In the first two stages you sign in, then create a project or open one you made before.
 
 A project holds everything about one study in one place.
 That includes the model it starts from, the scenarios it tests, every analysis run on them, and the results.
@@ -31,6 +47,8 @@ It contains the system's network; for example, its power plants and other techno
 
 A study starts from a model.
 You can bring in an existing model of your own system, a ready-made model, or an example model.
+Manta stores the model as the first layer of the project's data record.
+In the Model stage you look at the model's network on a map and browse its components and their values.
 Manta is also designed so that you can build a model in the app, from datasets that are ready to use.
 
 !!! note "Planned for 2027"
@@ -38,12 +56,24 @@ Manta is also designed so that you can build a model in the app, from datasets t
     Building a model in the app is planned for 2027.
     Until then, a study starts from an existing model.
 
+!!! note "Supported Modelling Frameworks"
+
+    Initially, only [PyPSA](https://pypsa.org) models are supported in Manta.
+    PyPSA is the open-source power system modelling tool that Manta's models are currently built with.
+    We aim to support a range of the most popular open-source capacity expansion, production cost, and (eventually) power flow modelling frameworks.
+    To do so, we will use a generalised model and data schema.
+
 ## Scenarios are alternative models and futures
 
 A scenario is the model plus a set of changes you want to test.
 Examples are a government decision to double the carbon price by 2035, a new interconnector to a neighbouring country, or faster growth in electric heating.
 
+You define scenarios in the Model stage.
+You start a new scenario from an existing one, then change a value for one component or for every component that matches a type, carrier, or location, or add new components.
+
 Manta stores each scenario as a set of changes on top of the model, rather than a full copy, so many scenarios take little extra space.
+The changes are patch layers on top of the model layer.
+The network you see is read from the model layer together with the patch layers of the scenario you pick.
 You can compare scenarios side by side, and see exactly which changes each one makes, as well as the impacts on system outcomes.
 
 ## Playbooks are analysis templates
@@ -124,12 +154,23 @@ So a mistake shows up in seconds, not after hours of computing.
 ## Runs and results
 
 A run is one pass of a playbook over a scenario, with the settings you chose.
+In the Run stage you pick a [playbook](playbooks.md) and a scenario, adjust the playbook's settings, and run it while you follow its status and log.
+
 Manta runs each block in turn, and keeps the result of every block, not only the last one.
+The first block reads the scenario, and each later block reads the result layer added by the previous block.
+Each block adds its own result layer on top, and the last block adds the final result layer.
 So when a result looks surprising, you can look inside the run and find the step where it changed.
 
-You read the final results as charts and tables, compare runs, and arrange the findings into reports to share.
+In the Inspect stage you read the final result layer of a run.
+You see headline figures and results on the map, and you open inspections, which are pages of charts and tables.
+Manta provides a set of inspections, and you can build your own from charts and tables of your choice.
+You can show two runs side by side in the same inspection to compare them.
+
+In the Report stage you arrange charts from your inspections, together with headings, text, and images, into pages.
+Each chart in a report shows the results of the run you choose for it.
+You export the report as a PDF to print or share.
 
 ## Judging a study
 
-With this path in mind, you can judge what a study in Manta shows and how far to trust it.
+With these stages in mind, you can judge what a study in Manta shows and how far to trust it.
 Each result traces back to a model, a scenario, a playbook and its settings, and every step in between.
