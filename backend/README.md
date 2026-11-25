@@ -199,4 +199,4 @@ client, so clients can't call Keycloak directly.
 
 ## Manually testing a run
 
-To run a playbook on real model data through the REST API, follow [Run a playbook through the REST API](../docs/contributing/manual-run.md).
+To run a playbook on real model data through the REST API, follow [Run a playbook through the REST API](../docs/howto/run-a-playbook-through-the-rest-api.md).

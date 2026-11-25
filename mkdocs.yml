@@ -78,6 +78,11 @@ markdown_extensions:
 
 plugins:
   - search
+  - tags:
+      tags_allowed:
+        - App users
+        - Modelling tool developers
+        - Manta developers
   - autorefs
   - mkdocstrings:
       handlers:
@@ -112,6 +117,9 @@ extra:
       link: https://github.com/manta-plan/manta
       name: Manta on GitHub
 
+extra_javascript:
+  - static/filter-table.js
+
 extra_css:
   - static/extras.css
   - static/mkdocs-oad.css
@@ -122,7 +130,12 @@ nav:
       - user-guide/index.md
       - Concepts: user-guide/concepts.md
       - Playbooks and blocks: user-guide/playbooks.md
-      - Start and follow a run: user-guide/run.md
+  - How-to guides:
+      - howto/index.md
+      - Start and follow a run: howto/start-and-follow-a-run.md
+      - Prepare a framework or workflow: howto/prepare-for-manta.md
+      - Prepare a PyPSA model: howto/prepare-pypsa-model.md
+      - Run a playbook through the REST API: howto/run-a-playbook-through-the-rest-api.md
   - Installation:
       - installation/index.md
       - Full stack: installation/full-stack.md
@@ -151,5 +164,4 @@ nav:
       - playbook and playbook-library: contributing/playbook.md
       - runner: contributing/runner.md
       - Documentation: contributing/docs.md
-      - Run a playbook through the REST API: contributing/manual-run.md
       - Test deployment: contributing/test-deployment.md
