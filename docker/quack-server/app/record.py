@@ -7,8 +7,8 @@ from datarecord import Record
 
 from .manta_views import SCHEMA, register_manta_views
 
-# Each kind becomes a schema, so `dims.entity` and `properties.entity` don't clash.
-KINDS = ("dims", "properties", "attributes")
+# Each kind becomes a schema, so `dimensions.entity` and `properties.entity` don't clash.
+KINDS = ("dimensions", "properties", "attributes")
 
 
 def _quote_name(name: str) -> str:
@@ -19,7 +19,7 @@ def create_views(con: duckdb.DuckDBPyConnection, record: Record, catalog: str, d
     """One view per relation, plus the `manta` views, in `catalog`.
 
     The record registers its views as the schema `catalog` of the workspace's
-    database (`database`, as in `datarecord.<catalog>.dims.bus`); the views
+    database (`database`, as in `datarecord.<catalog>.dimensions.bus`); the views
     here read those. So a client names a scenario by one catalog, which also
     holds our `manta` schema, and datarecord keeps what its views read alive.
     """

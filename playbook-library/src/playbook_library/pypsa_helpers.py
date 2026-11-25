@@ -55,9 +55,9 @@ def investment_periods(rev: Revision) -> list[int]:
 
     A network without investment periods has none.
     """
-    if "period" not in rev.record.dims:
+    if "period" not in rev.record.dimensions:
         return []
-    return [period for (period,) in rev.record.dims["period"].fetchall()]
+    return [period for (period,) in rev.record.dimensions["period"].fetchall()]
 
 
 def write_network(n: pypsa.Network, parent: Revision, results_only: bool = False) -> Revision:

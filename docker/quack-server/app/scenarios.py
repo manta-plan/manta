@@ -1,18 +1,18 @@
 """A store's named revisions as scenarios and run results, and what each
 scenario changes: the `manta.revisions` and `manta.scenario_changes` tables.
 
-- **Names** come from the store's `revisions.json` (name → revision id);
-  unnamed revisions aren't shown. `<store>.labels.json`, beside the store,
-  is optional: per revision a `name` and `description` to show, and a `kind`.
-- **Kind:** the label's `kind`, else the layer's `meta` `kind`, else a guess.
-  Nothing in the format says which attributes a solve computes, so the guess
-  is that a revision is a `result` when most of the attributes its layer
-  writes have no rows in its parent: a solve adds `p_nom_opt`,
-  `marginal_price`, …, while a scenario edits values its parent has. (A base
-  layer may write empty files for every result attribute, so it's rows that
-  count, not files.)
-- **A revision's parent** is in its layer's manifest
-  (`layers/<id>/manifest.json`), as are the attributes its layer writes.
+- **Names** come from the `references` of the store's `store.json`: per name
+  the `revision` it points to, a `label` and an optional `description`.
+  A revision without a name isn't shown. A name is also the revision's name
+  here, and its catalog is `<record>__<name>` as a slug. By convention the
+  base scenario is `base`, another scenario is its label as a slug
+  (`wind_and_solar_stress_test`) and a run result is `<scenario>/<playbook>`
+  (`base/myopic`).
+- **Kind:** each named revision has a `manta.kind` in the flat `meta` of its
+  layer's manifest (`layers/<id>/manifest.json`): `scenario` for inputs, the
+  base inputs included, or `result` for the output of a solve.
+- **A revision's parent** is its nearest named ancestor, from the parents in
+  the layers' manifests. The base scenario has none.
 - **A change** is one attribute in a scenario's own layer whose value differs
   from the parent's, per subject (entity, bus, …). Rows a layer restates
   unchanged aren't changes. Built once, when the store opens: an open store
@@ -25,29 +25,39 @@ Files are read through datarecord's `Files`, so a store can be local or on
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import UUID
 
 import duckdb
 from datarecord import Record, Workspace
+from datarecord.store.manifest import Manifest
 
 from .manta_views import SCHEMA, SUBJECTS
 
-BASE_NAME = "inputs"
-BASE_LABEL = "Base case"
+BASE_NAME = "base"
+KIND = "manta.kind"
+
+
+def slug(text: str) -> str:
+    slugged = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return slugged if slugged[:1].isalpha() else f"r_{slugged}"
 
 
 @dataclass
 class Revision:
+    """A named revision, as `store.json` and its manifest describe it;
+    `record`, `catalog`, `open` and `results` are set once the store opens."""
+
     name: str
     id: str
     parent: str | None
     kind: str
     label: str
     description: str
-    # The revision's record, for building the change table.
-    record: Record = field(repr=False)
+    written: list[str] = field(repr=False)
+    record: Record | None = field(default=None, repr=False)
     # Its catalog's name (scenarios and run results alike), and whether it's
     # attached yet: scenarios are, when the record opens; a run result is
     # when first asked for (Catalogue.open_revision).
@@ -55,8 +65,6 @@ class Revision:
     open: bool = False
     # A run result's result attributes: those its layer adds to its parent's.
     results: list[str] = field(default_factory=list)
-    # The attributes its own layer writes.
-    written: list[str] = field(default_factory=list, repr=False)
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -83,48 +91,52 @@ def layer_manifest(ws: Workspace, store: str, revision_id: str) -> dict[str, Any
     return read_json(ws, f"{store}/layers/{revision_id}/manifest.json")
 
 
-def _named_parent(ws: Workspace, store: str, manifest: dict[str, Any], names_by_id: dict[str, str]) -> str | None:
-    """The nearest named ancestor of a revision."""
-    parent = manifest.get("parent")
-    while parent and parent not in names_by_id:
-        parent = layer_manifest(ws, store, parent).get("parent")
-    return names_by_id.get(parent) if parent else None
+def named_revisions(ws: Workspace, store: str, references: dict[str, dict[str, str]]) -> list[Revision]:
+    """The store's named revisions (`references` of its `store.json`): the
+    base scenario, named `base`, first, then the other scenarios, then the
+    run results."""
+    if BASE_NAME not in references:
+        raise ValueError(f"{store}: store.json has no {BASE_NAME!r} reference")
+    manifests: dict[str, Manifest] = {str(r.id): r.manifest for r in ws.store(store).revisions()}
+    names = {reference["revision"]: name for name, reference in references.items()}
+    unknown = sorted(name for id, name in names.items() if KIND not in manifests[id].meta)
+    if unknown:
+        raise ValueError(f"{store}: revisions {unknown} have no {KIND} in their manifest meta")
+    if manifests[references[BASE_NAME]["revision"]].meta[KIND] != "scenario":
+        raise ValueError(f"{store}: the {BASE_NAME!r} reference is no scenario")
 
-
-def open_revisions(ws: Workspace, store: str, names: dict[str, str], labels: dict[str, dict[str, str]]) -> list[Revision]:
-    """The store's named revisions. `names` is `revisions.json` (name → id);
-    `labels` is `<store>.labels.json`, or empty."""
-    names_by_id = {revision_id: name for name, revision_id in names.items()}
-    opened = ws.store(store)
-    records = {name: opened.revision(UUID(revision_id)).record for name, revision_id in names.items()}
+    def parent(m: Manifest) -> str | None:
+        while m.parent is not None and str(m.parent) not in names:
+            m = manifests[str(m.parent)]
+        return None if m.parent is None else names[str(m.parent)]
 
     revisions = []
-    for name, revision_id in names.items():
-        manifest = layer_manifest(ws, store, revision_id)
-        parent = _named_parent(ws, store, manifest, names_by_id)
-        label = labels.get(name, {})
-        written = sorted(manifest["files"].get("attributes", []))
-        before = records[parent].attributes if parent is not None else None
-        new = [a for a in written if before is None or a not in before or not before[a].limit(1).fetchall()]
-        kind = (
-            label.get("kind")
-            or manifest.get("meta", {}).get("kind")
-            or ("result" if parent is not None and len(new) * 2 > len(written) else "scenario")
-        )
+    for name, reference in references.items():
+        m = manifests[reference["revision"]]
         revisions.append(
             Revision(
                 name=name,
-                id=revision_id,
-                parent=parent,
-                kind=kind,
-                label=label.get("name") or (BASE_LABEL if name == BASE_NAME else name),
-                description=label.get("description", ""),
-                record=records[name],
-                results=new if kind == "result" else [],
-                written=written,
+                id=reference["revision"],
+                parent=parent(m),
+                kind=m.meta[KIND],
+                label=reference["label"],
+                description=reference.get("description", ""),
+                written=sorted(m.files.attributes),
             )
         )
-    return revisions
+    return sorted(revisions, key=lambda r: (r.name != BASE_NAME, r.kind == "result", r.parent is not None))
+
+
+def open_revisions(ws: Workspace, store: str, revisions: list[Revision]) -> list[Revision]:
+    """The named revisions as records of the store at `store`."""
+    opened = ws.store(store)
+    records = {r.name: opened.revision(UUID(r.id)).record for r in revisions}
+    result = []
+    for r in revisions:
+        before = records[r.parent].attributes if r.parent is not None else None
+        new = [a for a in r.written if before is None or a not in before or not before[a].limit(1).fetchall()]
+        result.append(replace(r, record=records[r.name], results=new if r.kind == "result" else []))
+    return result
 
 
 def _quote(text: str) -> str:

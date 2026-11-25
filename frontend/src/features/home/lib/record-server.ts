@@ -7,8 +7,9 @@ export type RecordSummary = {
   id: string;
   label: string;
   description: string;
-  // Its named revisions, scenarios and run results alike.
-  revisions: string[];
+  // Its named revisions, scenarios and run results alike, as its store.json
+  // references them: id is the reference's name, revision the layer id.
+  references: { id: string; label: string; revision: string }[];
   size: number;
   modified: string | null;
   files: number;
@@ -67,7 +68,7 @@ export function getRecordCatalogue(): Promise<RecordCatalogue> {
   return recordServerGet<RecordCatalogue>("/api/records");
 }
 
-// A record's revision UUIDs by revision name, e.g. `{ inputs: "1bad4cfd-…" }`.
+// A record's revision UUIDs by revision name, e.g. `{ base: "1bad4cfd-…" }`.
 export async function getRecordRevisions(id: string): Promise<Record<string, string>> {
   const record = await recordServerGet<{ revisions: Record<string, string> | null }>(
     `/api/records/${encodeURIComponent(id)}/files`,

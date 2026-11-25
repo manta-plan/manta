@@ -29,8 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from . import quack
+from .scenarios import BASE_NAME, layer_manifest
 from .stores import Catalogue, configure
-from .scenarios import BASE_NAME, layer_manifest, read_json
 
 log = logging.getLogger("uvicorn.error")
 
@@ -158,26 +158,19 @@ def open_record(id: str, request: Request, revision: str | None = None) -> dict:
 
 @app.get("/api/records/{id}/files", dependencies=[Depends(require_token)])
 def record_files(id: str, request: Request) -> dict:
-    """A record as stored: every file, the revision names (`revisions.json`),
-    and each layer's manifest (`layers/<id>/manifest.json`; a plain record's
-    `manifest.json` under the id ""). The schema, which each manifest repeats
-    whole, is sent once: the default scenario's. Names and sizes only; the
-    data is read through Quack."""
+    """A record as stored: every file, the named revisions (name → layer id,
+    from `store.json`), and each layer's manifest
+    (`layers/<id>/manifest.json`). The schema, which each manifest repeats whole, is sent once: the
+    base scenario's. Names and sizes only; the data is read through Quack."""
     catalogue = catalogue_of(request)
     try:
         store = catalogue.get(id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"No record {id!r}") from None
-    if store.plain:
-        names = None
-        layers = {"": read_json(catalogue.ws, f"{store.uri}/manifest.json")}
-        default = ""
-    else:
-        names = read_json(catalogue.ws, f"{store.uri}/revisions.json")
-        ids = sorted({f.path.split("/")[1] for f in store.files if f.path.startswith("layers/") and f.path.endswith("/manifest.json")})
-        layers = {layer: layer_manifest(catalogue.ws, store.uri, layer) for layer in ids}
-        default = names.get(BASE_NAME) or next(iter(names.values()))
-    schema = layers[default]["schema"]
+    names = {r.name: r.id for r in store.revisions}
+    ids = sorted({f.path.split("/")[1] for f in store.files if f.path.startswith("layers/") and f.path.endswith("/manifest.json")})
+    layers = {layer: layer_manifest(catalogue.ws, store.uri, layer) for layer in ids}
+    schema = layers[names[BASE_NAME]]["schema"]
     return {
         "name": store.id,
         "revisions": names,

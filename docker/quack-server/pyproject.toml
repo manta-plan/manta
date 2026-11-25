@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Proof of concept: serve a datarecord to DuckDB-Wasm over the Quack protocol"
 requires-python = ">=3.12"
 dependencies = [
-  "datarecord[remote]",
+  "datarecord[remote]==0.1.0a2",
   "duckdb>=2,<3",
   "fastapi>=0.115",
   "httpx>=0.28",
@@ -13,12 +13,6 @@ dependencies = [
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-# Pinned by commit: the format changes often, and a record written by one
-# commit may not open with another. 8889d62 is `main` with per-layer manifests
-# and registered views, the layout the 11 November records use.
-datarecord = { git = "https://github.com/energy-models/datarecord.git", rev = "8889d623" }
 
 [dependency-groups]
 dev = [

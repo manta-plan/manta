@@ -33,8 +33,11 @@ function RecordRow({ record }: { record: RecordSummary }) {
           <span className="text-surface-500 ml-6 block font-mono text-[11px]">{record.id}</span>
         )}
       </td>
-      <td className="text-surface-300 px-4 py-2.5" title={record.revisions.join("\n")}>
-        {record.revisions.length}
+      <td
+        className="text-surface-300 px-4 py-2.5"
+        title={record.references.map((reference) => reference.label).join("\n")}
+      >
+        {record.references.length}
       </td>
       <td className="text-surface-300 px-4 py-2.5" title={`${record.files.toLocaleString()} files`}>
         {formatBytes(record.size)}

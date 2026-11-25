@@ -1,16 +1,13 @@
 """The record catalogue: datarecord stores under one root, opened on demand.
 
 - **A record is a store** under the root (local folder, or `s3://bucket/…`):
-  a folder `<id>/` with `layers/` and `revisions.json`, which names its
-  revisions. Or a **plain record**, a folder with `manifest.json` and no
-  revisions: one scenario, `inputs`. Both are served as written: nothing is
-  added to the folder. `<id>.labels.json`, beside it, is optional: per
-  revision a `name`, `description` and `kind`, and under `_store` the
-  record's own `name` and `description`. Without it, revisions show by name.
+  a folder `<id>/` with `layers/` and `store.json`, which has the record's
+  `label` and `description` and names its revisions (`scenarios.py`). It is
+  served as written: nothing is added to the folder. Other folders are ignored.
 - **Listing** reads the root: names, sizes, dates. It's refreshed when a
   minute old, so a store uploaded to the root shows without a restart.
 - **Opening** a store creates one catalog per scenario,
-  `<record>__<revision>` (`bel_pre_aggregated_perfect__patch`), each with the
+  `<record>__<revision>` (`bel_pre_aggregated__base`), each with the
   same schemas: datarecord's three (`record.py`, views over the revision
   registered in datarecord's own database) and `manta`. A run result
   gets its catalog, alike, when first asked for (`open_revision`): its views
@@ -28,15 +25,13 @@
   its run results on Cloud Run, against seconds from disk). Only the files
   the named revisions read are copied, in parallel, into `cache` (a fresh
   temporary folder by default; on Cloud Run, memory). The bucket stays the
-  source: the listing, `revisions.json` and labels are read from it.
+  source: the listing, `store.json` and the manifests are read from it.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import tempfile
 import threading
 import time
@@ -51,7 +46,16 @@ from datarecord import Workspace
 
 from .manta_views import SCHEMA
 from .record import create_views
-from .scenarios import BASE_LABEL, BASE_NAME, Revision, layer_manifest, open_revisions, read_json, register_scenarios
+from .scenarios import (
+    BASE_NAME,
+    Revision,
+    layer_manifest,
+    named_revisions,
+    open_revisions,
+    read_json,
+    register_scenarios,
+    slug,
+)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -63,12 +67,6 @@ def configure(con: duckdb.DuckDBPyConnection) -> None:
     """Settings opening a store relies on; before the configuration is locked."""
     con.execute("SET GLOBAL enable_http_metadata_cache = true")
     con.execute("SET GLOBAL parquet_metadata_cache = true")
-
-
-def _slug(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
-    # An identifier can't start with a digit unquoted.
-    return slug if slug[:1].isalpha() else f"r_{slug}"
 
 
 @dataclass
@@ -84,18 +82,15 @@ class StoreSummary:
     uri: str
     label: str
     description: str
-    # Named revisions, from `revisions.json`; a plain record's one is `inputs`.
-    revisions: list[str]
+    revisions: list[Revision]
     files: list[StoreFile] = field(repr=False)
-    # A record without revisions, rather than a store.
-    plain: bool = False
 
     def as_json(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "label": self.label,
             "description": self.description,
-            "revisions": self.revisions,
+            "references": [{"id": r.name, "label": r.label, "revision": r.id} for r in self.revisions],
             "size": sum(f.size for f in self.files),
             "modified": max((f.modified for f in self.files), default=None),
             "files": len(self.files),
@@ -142,11 +137,11 @@ class Catalogue:
         # When the root was last listed (time.monotonic()).
         self._listed: float | None = None
         self._stores: dict[str, StoreSummary] = {}
+        # Why a store last failed to open, by id.
+        self.failed: dict[str, str] = {}
         self.stores()
         self._open: dict[str, OpenStore] = {}
         self._opening = threading.Lock()
-        # Why a store last failed to open, by id.
-        self.failed: dict[str, str] = {}
 
     # Listing
 
@@ -187,7 +182,6 @@ class Catalogue:
 
     def _list(self) -> dict[str, StoreSummary]:
         objects = self._objects()
-        names = {o.path for o in objects}
         by_store: dict[str, list[StoreFile]] = {}
         for o in objects:
             head, _, rest = o.path.partition("/")
@@ -198,21 +192,16 @@ class Catalogue:
             # Not `.`/`..`: an id names a folder under the root and the cache.
             if id.startswith("."):
                 continue
-            paths = {f.path for f in files}
-            is_store = "revisions.json" in paths and any(f.path.startswith("layers/") for f in files)
-            plain = not is_store and "manifest.json" in paths
-            if not is_store and not plain:
+            if not any(f.path == "store.json" for f in files):
                 continue
-            labels = self._labels(id) if f"{id}.labels.json" in names else {}
-            store = labels.get("_store", {})
-            revisions = [BASE_NAME] if plain else list(self._names(id))
+            uri = f"{self.root}/{id}"
+            named = read_json(self.ws, f"{uri}/store.json")
             stores[id] = StoreSummary(
-                plain=plain,
                 id=id,
-                uri=f"{self.root}/{id}",
-                label=store.get("name") or id,
-                description=store.get("description", ""),
-                revisions=revisions,
+                uri=uri,
+                label=named["label"],
+                description=named.get("description", ""),
+                revisions=named_revisions(self.ws, uri, named["references"]),
                 files=files,
             )
         return stores
@@ -223,16 +212,6 @@ class Catalogue:
                 self._stores = self._list()
                 self._listed = time.monotonic()
             return self._stores
-
-    def _labels(self, id: str) -> dict[str, dict[str, str]]:
-        try:
-            return read_json(self.ws, f"{self.root}/{id}.labels.json")
-        except FileNotFoundError:
-            return {}
-
-    def _names(self, id: str) -> dict[str, str]:
-        """A store's named revisions: name → revision id."""
-        return read_json(self.ws, f"{self.root}/{id}/revisions.json")
 
     def get(self, id: str) -> StoreSummary:
         return self.stores()[id]
@@ -286,7 +265,7 @@ class Catalogue:
                 log.info("Opened %s of record %s in %.1f s", name, id, time.monotonic() - started)
         return store
 
-    def _download(self, summary: StoreSummary, names: dict[str, str]) -> str:
+    def _download(self, summary: StoreSummary, revision_ids: list[str]) -> str:
         """Copy the store to `cache`, and return its local path: everything
         but its layers' data first (the layer manifests among it), then the
         layers the named revisions read (each one's own and its ancestors',
@@ -321,14 +300,14 @@ class Catalogue:
         def is_data(f: StoreFile) -> bool:
             return f.path.startswith("layers/") and f.path.count("/") > 2
 
-        # The small files (revisions.json, manifests) are copied every time:
+        # The small files (store.json, manifests) are copied every time:
         # rewritten in place, they can keep their size. A layer's data is
         # never rewritten (a new revision is a new layer), so what's already
         # copied is kept.
         first = [f for f in summary.files if not is_data(f)]
         fetch(first, reuse=False)
         used: set[str] = set()
-        for revision_id in names.values():
+        for revision_id in revision_ids:
             while revision_id and revision_id not in used:
                 used.add(revision_id)
                 revision_id = layer_manifest(self.ws, local.as_posix(), revision_id).get("parent")
@@ -343,26 +322,9 @@ class Catalogue:
 
     def _open_store(self, summary: StoreSummary) -> OpenStore:
         started = time.monotonic()
-        labels = self._labels(summary.id)
-        names = {} if summary.plain else self._names(summary.id)
-        uri = self._download(summary, names) if self.remote else summary.uri
+        uri = self._download(summary, [r.id for r in summary.revisions]) if self.remote else summary.uri
         con = self.ws.con
-        if summary.plain:
-            record = self.ws.at(uri)
-            label = labels.get(BASE_NAME, {})
-            revisions = [
-                Revision(
-                    name=BASE_NAME,
-                    id=str(record.revision_id or summary.id),
-                    parent=None,
-                    kind="scenario",
-                    label=label.get("name") or BASE_LABEL,
-                    description=label.get("description", ""),
-                    record=record,
-                )
-            ]
-        else:
-            revisions = open_revisions(self.ws, uri, names, labels)
+        revisions = open_revisions(self.ws, uri, summary.revisions)
         scenarios = [r for r in revisions if r.kind == "scenario"]
         if not scenarios:
             raise ValueError(f"{summary.id} has no scenario revisions")
@@ -375,7 +337,7 @@ class Catalogue:
         attached: list[str] = []
         try:
             for r in revisions:
-                catalog = f"{_slug(summary.id)}__{_slug(r.name)}"
+                catalog = f"{slug(summary.id)}__{slug(r.name)}"
                 while catalog in taken:
                     catalog += "_"
                 taken.add(catalog)
@@ -393,7 +355,7 @@ class Catalogue:
             for catalog in attached:
                 con.execute(f"DETACH DATABASE IF EXISTS {catalog}")
             raise
-        default = next((r for r in scenarios if r.parent is None), scenarios[0])
+        default = next(r for r in scenarios if r.name == BASE_NAME)
         served = views[default.name]
         served[SCHEMA] += tables
         return OpenStore(

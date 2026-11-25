@@ -126,8 +126,8 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
     let revisionUuid: string | undefined;
 
     try {
-      // The run starts from the record's `inputs` revision, which the record server names.
-      revisionUuid = (await getRecordRevisions(dataRecordName)).inputs;
+      // The run starts from the record's `base` revision, which the record server names.
+      revisionUuid = (await getRecordRevisions(dataRecordName)).base;
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to read the data record.");
       return;
@@ -136,7 +136,7 @@ function NewRunForm({ onClose }: { onClose: () => void }) {
     }
 
     if (revisionUuid === undefined) {
-      setSubmitError(`The data record "${dataRecordName}" has no inputs revision.`);
+      setSubmitError(`The data record "${dataRecordName}" has no base revision.`);
       return;
     }
 

@@ -39,12 +39,12 @@ PUBLIC_OBJECTS_URL = "https://storage.googleapis.com/storage/v1/b/manta-public-t
 """The public bucket of example datarecord stores (the same ones playbook-library's
 own tests run on), listed through Google Cloud Storage's JSON API."""
 
-PUBLIC_DATA_VERSION = "2026-11-11"
+PUBLIC_DATA_VERSION = "2026-11-24"
 """The bucket folder holding the stores written with the pinned datarecord version."""
 
 _PUBLIC_PREFIX = f"{PUBLIC_DATA_VERSION}/"
 
-_MARKER = "revisions.json"
+_MARKER = "store.json"
 # boto3's own connection pool size: any more and it discards connections, with a warning.
 _CONCURRENT_COPIES = 10
 _DESCRIPTION = "Example datarecord stores to start runs from."
@@ -57,8 +57,8 @@ def _http_client() -> httpx2.Client:
 
 
 def _copy_store(store: str, names: Collection[str], copy: Callable[[str], object]) -> None:
-    """Copies a store's files concurrently, `revisions.json` only once everything else is in,
-    so a store with a `revisions.json` is complete."""
+    """Copies a store's files concurrently, `store.json` only once everything else is in, so a
+    store with a `store.json` is complete."""
     marker = f"{store}/{_MARKER}"
     with ThreadPoolExecutor(_CONCURRENT_COPIES) as pool:
         list(pool.map(copy, [name for name in names if name != marker]))
@@ -144,7 +144,7 @@ class ExampleDataService:
         """Copies the given stores (all downloaded ones when none are given), skipping those
         already in the project."""
         for store, names in self._downloaded_stores().items():
-            # Without a revisions.json, its download was cut short (see _copy_store()).
+            # Without a store.json, its download was cut short (see _copy_store()).
             if (stores and store not in stores) or f"{store}/{_MARKER}" not in names:
                 continue
             if self._exists(f"{project_uuid}/{store}/{_MARKER}"):
@@ -161,13 +161,13 @@ class ExampleDataService:
             )
 
     def data_record(self, project_uuid: UUID, store: str) -> DataRecordResult:
-        """The record a run on one of the project's copied stores starts from: its
-        `inputs` revision."""
+        """The record a run on one of the project's copied stores starts from: the `base`
+        revision its `store.json` references."""
         prefix = f"{project_uuid}/{store}"
-        revisions = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_MARKER}")
+        content = self.client.get_object(Bucket=self.bucket, Key=f"{prefix}/{_MARKER}")
         return DataRecordResult(
             store_url=f"s3://{self.bucket}/{prefix}",
-            revision_uuid=json.loads(revisions["Body"].read())["inputs"],
+            revision_uuid=json.loads(content["Body"].read())["references"]["base"]["revision"],
         )
 
     def _fill_project(self, project_uuid: UUID) -> None:
@@ -193,10 +193,14 @@ class ExampleDataService:
         return stores
 
     def _public_stores(self, http: httpx2.Client) -> list[str]:
-        listing = http.get(PUBLIC_OBJECTS_URL, params={"delimiter": "/", "prefix": _PUBLIC_PREFIX})
+        """The public folders with a `store.json`."""
+        listing = http.get(
+            PUBLIC_OBJECTS_URL,
+            params={"prefix": _PUBLIC_PREFIX, "matchGlob": f"{_PUBLIC_PREFIX}*/{_MARKER}"},
+        )
         return [
-            prefix.removeprefix(_PUBLIC_PREFIX).removesuffix("/")
-            for prefix in listing.raise_for_status().json()["prefixes"]
+            item["name"].removeprefix(_PUBLIC_PREFIX).removesuffix(f"/{_MARKER}")
+            for item in listing.raise_for_status().json()["items"]
         ]
 
     def _download_store(self, http: httpx2.Client, store: str) -> None:

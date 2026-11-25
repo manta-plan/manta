@@ -1,5 +1,6 @@
 import io
 import json
+from fnmatch import fnmatch
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -17,24 +18,29 @@ from manta.services.example_data_service import (
 )
 
 ISSUER = "http://localhost:8080/realms/manta"
-INPUTS = "00000000-0000-0000-0000-000000000000"
+BASE = "00000000-0000-0000-0000-000000000000"
 
 FILES = {
-    "small/revisions.json": json.dumps({"inputs": INPUTS}).encode(),
-    "small/layers/a.parquet": b"data",
+    "small/store.json": json.dumps({"references": {"base": {"revision": BASE}}}).encode(),
+    f"small/layers/{BASE}/manifest.json": b"{}",
+    f"small/layers/{BASE}/dimensions/a.parquet": b"data",
 }
+
+
+PUBLIC = {**FILES, "plain/manifest.json": b"{}"}
 
 
 def _public_bucket(request: httpx2.Request) -> httpx2.Response:
     if str(request.url).startswith(PUBLIC_OBJECTS_URL):
-        if request.url.params.get("delimiter") == "/":
-            return httpx2.Response(200, json={"prefixes": [f"{PUBLIC_DATA_VERSION}/small/"]})
+        params = request.url.params
         items = [
             {"name": f"{PUBLIC_DATA_VERSION}/{name}", "mediaLink": f"https://media/{name}"}
-            for name in FILES
+            for name in PUBLIC
+            if f"{PUBLIC_DATA_VERSION}/{name}".startswith(params["prefix"])
+            and fnmatch(f"{PUBLIC_DATA_VERSION}/{name}", params.get("matchGlob", "*"))
         ]
         return httpx2.Response(200, json={"items": items})
-    return httpx2.Response(200, content=FILES[request.url.path.removeprefix("/")])
+    return httpx2.Response(200, content=PUBLIC[request.url.path.removeprefix("/")])
 
 
 @pytest.fixture
@@ -68,7 +74,7 @@ def test_seed_downloads_every_store_into_the_example_data(mock_db, s3_client, mo
     assert sorted(upload["Key"] for upload in uploads) == sorted(
         f"example-data/{name}" for name in FILES
     )
-    assert uploads[-1]["Key"] == "example-data/small/revisions.json"
+    assert uploads[-1]["Key"] == "example-data/small/store.json"
 
 
 def test_seed_does_not_raise_when_the_public_bucket_is_unreachable(
@@ -111,14 +117,14 @@ def test_ensure_admin_project_creates_the_admin_and_its_project_with_the_example
     )
     assert copies[-1]["CopySource"] == {
         "Bucket": "manta",
-        "Key": "example-data/small/revisions.json",
+        "Key": "example-data/small/store.json",
     }
 
 
 def test_copy_to_project_skips_stores_whose_download_was_cut_short(mock_db, s3_client) -> None:
     # Given
     s3_client.get_paginator.return_value.paginate.return_value = [
-        {"Contents": [{"Key": "example-data/small/layers/a.parquet"}]}
+        {"Contents": [{"Key": f"example-data/small/layers/{BASE}/dimensions/a.parquet"}]}
     ]
 
     # When
@@ -141,9 +147,9 @@ def test_create_project_keeps_the_project_when_copying_the_example_data_fails(
     mock_db.commit.assert_called_once()
 
 
-def test_data_record_is_the_stores_inputs_revision(mock_db, s3_client) -> None:
+def test_data_record_is_the_stores_base_revision(mock_db, s3_client) -> None:
     # Given
-    s3_client.get_object.return_value = {"Body": io.BytesIO(FILES["small/revisions.json"])}
+    s3_client.get_object.return_value = {"Body": io.BytesIO(FILES["small/store.json"])}
     project_uuid = uuid4()
 
     # When
@@ -151,4 +157,4 @@ def test_data_record_is_the_stores_inputs_revision(mock_db, s3_client) -> None:
 
     # Then
     assert record.store_url == f"s3://manta/{project_uuid}/small"
-    assert str(record.revision_uuid) == INPUTS
+    assert str(record.revision_uuid) == BASE
