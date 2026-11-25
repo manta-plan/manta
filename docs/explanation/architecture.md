@@ -64,7 +64,7 @@ flowchart LR
 ```
 
 A modeller uses Manta through the web app.
-[Users and scope](scope.md) describes each kind of user Manta is designed for, and the constraints they place on it.
+[Users and scope](../user-guide/scope.md) describes each kind of user Manta is designed for, and the constraints they place on it.
 
 A block author never deploys code into the backend process.
 Their blocks reach Manta in two forms: a container image that runs them, and an entry in the catalogue that describes them.

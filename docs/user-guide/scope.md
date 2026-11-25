@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 Manta's architecture follows from who uses it and where it runs.
 This page names the users Manta is designed for, the places it is meant to run, and the constraints those place on the design.
-The rest of the explanation pages refer back to these constraints.
+The [architecture and design pages](../explanation/index.md) refer back to these constraints.
 
 !!! warning "Aims, not the state of Manta today"
 
@@ -44,12 +44,12 @@ Manta is designed for six kinds of user, and each one asks something different o
 | Maintainer       | Builds Manta and runs a hosted service of it              | Monitoring, logs, isolated failures, and parts that upgrade on their own  |
 
 The web app serves the analyst first.
-The [user guide](../user-guide/index.md) calls its reader a modeller, because today one person does both jobs.
+The [user guide](index.md) calls its reader a modeller, because today one person does both jobs.
 
 The block author has the largest effect on the architecture.
 Their code comes with dependencies that Manta's own backend could never install side by side, and Manta still has to run it.
 The environment per block, the catalogue and the container per step all follow from that one need.
-[Blocks, playbooks and the catalogue](blocks-and-playbooks.md) and [Deployment topology](deployment.md) explain those parts.
+[Blocks, playbooks and the catalogue](../explanation/blocks-and-playbooks.md) and [Deployment topology](../explanation/deployment.md) explain those parts.
 
 Manta's main users are grid operators and regulators.
 They need security fit for industry, deployment on their own servers, and playbooks they can change without code.
@@ -76,7 +76,7 @@ The [security policy](https://github.com/manta-plan/manta/blob/main/SECURITY.md)
 Manta is designed for the data it handles to move from public data to internal and confidential data.
 A block runs code from a block author, so that code is meant to run next to confidential grid data one day.
 So keeping runs apart from each other is a security control, not only a convenience for operators.
-[Open questions](open-questions.md#the-trust-boundary-for-third-party-blocks) lists what is still to decide about third-party blocks.
+[Open questions](../explanation/open-questions.md#the-trust-boundary-for-third-party-blocks) lists what is still to decide about third-party blocks.
 
 Deployments that Open Energy Transition runs are to be hosted in the EU, for GDPR and data residency.
 Development, staging and production are to be kept apart, with isolated production keys.
@@ -87,7 +87,7 @@ Nothing is to be pushed from a local machine straight to production.
 Manta lives in its own GitHub organisation, so that its governance can be shared later.
 So its parts have boundaries that an outside contributor can work within.
 `playbook` in particular is meant to be usable, and testable, without the rest of Manta.
-[Architecture](architecture.md#the-packages-and-their-dependencies) lists the tests that keep it so.
+[Architecture](../explanation/architecture.md#the-packages-and-their-dependencies) lists the tests that keep it so.
 
 ## Audit
 

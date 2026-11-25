@@ -29,6 +29,7 @@ Each row names a stage, what the web app lets you do in it, and the milestones t
 
 - [Manta's purpose](purpose.md) states the problem Manta answers, and why it is built around a community.
 - [How a study works in Manta](how-a-study-works.md) describes a study from model to results, and the kinds of analysis a playbook runs.
+- [Users and scope](scope.md) describes who Manta is designed for, where it runs, and the constraints that shape its design.
 - [Concepts](concepts.md) defines each term this guide uses.
 - [Playbooks and blocks](playbooks.md) explains what a playbook is made of and how Manta runs one.
 - [Start and follow a run](run.md) shows how to start a run in the web app.

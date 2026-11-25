@@ -198,7 +198,7 @@ What differs from the tested path is confined to the pool type, the manifests an
 ## Security of the execution tier
 
 The execution tier is where block code runs, and its security depends on how the parts are placed.
-These rules matter most once Manta handles confidential data, which the [scope](scope.md#data-and-security) sets for a later release.
+These rules matter most once Manta handles confidential data, which the [scope](../user-guide/scope.md#data-and-security) sets for a later release.
 
 The Prefect server is internal, because it has no sign-in for end users and its UI shows every run.
 A block container gets the Prefect API address, the object store address and credentials, and the block libraries to import.

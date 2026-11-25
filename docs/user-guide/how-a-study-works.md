@@ -34,11 +34,13 @@ In the first two stages you sign in, then create a project or open one you made 
 
 A project holds everything about a study in one place.
 That includes the model it starts from, the scenarios it tests, every analysis run on them, and the results.
-A team works on a project together, and every change and update of its data is kept.
-So anyone on the team can see how a result was reached, months after the study ended.
+Every change and update of its data is kept.
 
-A project can also be shared, and anyone with access to the same tools and data can reproduce it.
-When the tools and data are all open source, anyone can reproduce the complete study.
+!!! note "Shared projects"
+
+    A project currently belongs to the user who created it.
+    We aim for a team to work on a project together, and for a project to be shared with people outside the team.
+    Milestones [M4](https://github.com/manta-plan/manta/milestone/2) and [M5](https://github.com/manta-plan/manta/milestone/3) track this work.
 
 ## Models describe the system
 
@@ -82,12 +84,14 @@ A playbook is a template for running an end-to-end analysis.
 It links tools that are pre-configured for a standard analysis, only asking for the necessary details of the specific study.
 You just pick a playbook, configure it to your analysis, and run.
 
-Experienced analysts can also build new playbooks, including iterative or parallel (co-optimisation) workflows.
+Experienced analysts can also build new playbooks.
 
 !!! note "Playbook customisation"
 
     Playbook customisation will evolve over time. Early releases will ship with a set of built-in playbooks, with the capability for contributors to code new ones.
     A future release (2027+) will include (simple) playbook creation in the UI using plug-and-play blocks.
+    A playbook currently runs its steps one after another.
+    We aim to support playbooks that repeat steps (iterative workflows) and playbooks that run steps in parallel.
 
 ### Kinds of analysis
 
@@ -130,17 +134,20 @@ The diagram shows two playbooks from the examples above, and the blocks they sha
 flowchart LR
     subgraph irp["Integrated resource planning"]
         direction LR
-        i1["Simplify the<br/>time series"] --> i2["Plan what<br/>to build"] --> i3["Simulate hour-<br/>by-hour operation"] --> i4["Measure<br/>reliability"] --> i5["Compare<br/>scenarios"]
+        i1["Aggregate the<br/>time series"] --> i2["Optimise<br/>capacities"] --> i3["Rolling horizon<br/>dispatch"] --> i4["Calculate<br/>adequacy metrics"]
     end
     subgraph ra["Resource adequacy"]
         direction LR
-        r1["Draw weather years<br/>and plant outages"] --> r2["Simulate hour-<br/>by-hour operation"] --> r3["Measure<br/>reliability"]
+        r1["Sample weather years<br/>and outages"] --> r2["Rolling horizon<br/>dispatch"] --> r3["Calculate<br/>adequacy metrics"]
     end
+    classDef planned stroke-dasharray: 5 5
+    class i4,r1,r3 planned
 ```
 
-Integrated resource planning first decides what to build, then checks that the plan keeps the lights on.
+A dashed box is a block that Manta does not ship yet.
+Integrated resource planning first decides what to build (optimise capacities), then checks hour by hour that the plan keeps the lights on (rolling horizon dispatch).
 Resource adequacy starts from a system that is already decided, and tests it in many weather years and outage patterns.
-Both playbooks use the same blocks to simulate operation and to measure reliability.
+Both playbooks use the same blocks for the dispatch and for the adequacy metrics.
 So a better block for one step improves every playbook that uses it.
 
 ### Playbooks and blocks are configurable
@@ -170,7 +177,20 @@ In the Report stage you arrange charts from your inspections, together with head
 Each chart in a report shows the results of the run you choose for it.
 You export the report as a PDF to print or share.
 
-## Judging a study
+## Tracing a result
 
 With these stages in mind, you can judge what a study in Manta shows and how far to trust it.
 Each result traces back to a model, a scenario, a playbook and its settings, and every step in between.
+Two parts of Manta's design make this possible:
+
+- The data record keeps the model, each scenario, and the result of every block as layers. A new layer never changes the layers beneath it.
+- Manta is open source, and so are the modelling tools that its blocks use. Anyone can read how a step computes its result.
+
+So anyone with access to a project can see how a result was reached, months after the study ended.
+
+!!! note "Reproducing a study"
+
+    Manta does not yet record the version of each tool that a run used.
+    We aim for a run to record its playbook, its settings, and those versions.
+    Anyone with access to the same tools and data can then reproduce a study.
+    Milestone [M4](https://github.com/manta-plan/manta/milestone/2) tracks this work.

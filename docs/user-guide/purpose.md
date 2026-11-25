@@ -27,25 +27,25 @@ A result that no one outside the vendor can inspect is hard to trust, however go
 ## A full application, not just an interface
 
 Manta is a complete application that sits on top of existing open-source modelling tools.
-It is not a set of screens that fills in the input files for one tool (a graphical user interface, or GUI).
+It is more than a graphical user interface (GUI), which is a set of screens that fills in the input files of one tool.
 
 A GUI alone would fall short.
 It helps one modeller work a little faster, but it ties every study to the one tool underneath.
 The organisation cannot pick the best tool for each question, or move to better tools as the field advances.
 A simple GUI also has no shared projects, no control over who sees what, and no record of what was run.
 
-Manta serves the companies that run high-voltage grids (transmission system operators, or TSOs), as well as regulators, governments and industry.
+Manta serves grid operators, regulators, governments, and industry.
 To use a tool for real decisions, these organisations need more than a GUI:
 
 - Security fit for confidential grid data, and the option to run Manta on their own servers.
-- Efficient handling of large runs, with each step given the computing power it needs (orchestration).
+- Efficient handling of large runs: each step gets the computing power it needs, and independent steps run in parallel (orchestration).
 - Models, scenarios and results kept together in one place, with every version stored (data management).
 - Transparent execution, so anyone can trace a result back to its model, data, and workflow - and reproduce it.
 - An intuitive interface that any analyst can use without writing code.
 - Shared projects, where teams can collaborate.
 - Accounts, with administrators who decide who can view and edit each project.
 
-The [Users and scope](../explanation/scope.md) page sets out how these needs shape Manta's design.
+The [Users and scope](scope.md) page sets out how these needs shape Manta's design.
 
 ## A shared structure for the community to fill
 
@@ -78,7 +78,7 @@ Developers and tool creators can add new blocks, and analysts can build new play
 
 Manta's first goal is a consistent, reliable application that grid operators and industry can use, whatever tool runs underneath.
 To reach that goal quickly, the blocks that ship with Manta currently use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
-Manta describes models in PyPSA's terms, and imports PyPSA models.
+For the models you can bring in today, see [Models describe the system](how-a-study-works.md#models-describe-the-system).
 
 Manta is not a wrapper for PyPSA, though.
 None of its structure is designed for PyPSA: projects, runs, blocks, playbooks and stored results work the same whichever tool a block uses.
@@ -87,14 +87,9 @@ So other tools can run in other blocks, and contributors can bring the tools the
 
 Parts of the web app use PyPSA's terms and views today.
 This is a shortcut to a working application, not part of Manta's design.
-Manta aims to describe models in one common format that covers many tools.
 
 The first blocks answer two planning questions.
 The first is what to build and when (capacity expansion), and the second is how the system runs hour by hour (dispatch).
 Both are optimisation problems.
 Other kinds of analysis, such as how power moves through the grid (power flow), fit the same structure of blocks and playbooks.
-
-Most of the people building Manta today are PyPSA experts.
-The group also includes people with experience of [Calliope](https://www.callio.pe) and [Tulipa](https://github.com/TulipaEnergy/TulipaEnergyModel.jl), two other optimisation frameworks.
-Manta welcomes contributors who know other optimisation frameworks, and experts in power flow and other techniques that the current group does not cover.
 

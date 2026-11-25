@@ -122,6 +122,7 @@ nav:
       - user-guide/index.md
       - Manta's purpose: user-guide/purpose.md
       - How a study works in Manta: user-guide/how-a-study-works.md
+      - Users and scope: user-guide/scope.md
       - Concepts: user-guide/concepts.md
       - Playbooks and blocks: user-guide/playbooks.md
       - Start and follow a run: user-guide/run.md
@@ -133,7 +134,6 @@ nav:
       - Frontend: installation/frontend.md
   - Architecture and design:
       - explanation/index.md
-      - Users and scope: explanation/scope.md
       - Architecture: explanation/architecture.md
       - Orchestration with Prefect: explanation/orchestration.md
       - Blocks, playbooks and the catalogue: explanation/blocks-and-playbooks.md
