@@ -90,7 +90,7 @@ class StoreSummary:
             "id": self.id,
             "label": self.label,
             "description": self.description,
-            "revisions": [r.label for r in self.revisions],
+            "references": [{"id": r.name, "label": r.label, "revision": r.id} for r in self.revisions],
             "size": sum(f.size for f in self.files),
             "modified": max((f.modified for f in self.files), default=None),
             "files": len(self.files),

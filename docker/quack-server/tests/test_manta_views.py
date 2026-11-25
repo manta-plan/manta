@@ -99,8 +99,11 @@ def test_summary(opened):
     listed = catalogue.get(STORE).as_json()
     references = named()["references"]
     assert (listed["label"], listed["description"]) == (named()["label"], named()["description"])
-    assert listed["revisions"][0] == references["base"]["label"]
-    assert sorted(listed["revisions"]) == sorted(r["label"] for r in references.values())
+    assert listed["references"][0]["id"] == "base"
+    assert sorted(listed["references"], key=lambda r: r["id"]) == sorted(
+        ({"id": name, "label": r["label"], "revision": r["revision"]} for name, r in references.items()),
+        key=lambda r: r["id"],
+    )
     assert listed["files"] > 400 and listed["size"] > 10_000_000
 
 

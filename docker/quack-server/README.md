@@ -90,7 +90,7 @@ The explorer page (`static/index.html`, Alpine.js, the app's theme tokens) picks
 
 | Endpoint | |
 |---|---|
-| `GET /api/records` | the catalogue: per record its `id` (the folder name), its `label` and `description` (from `store.json`), its revisions' labels (`revisions`), `size`, `modified`, `files`, and `open`/`error`; and the `default` record |
+| `GET /api/records` | the catalogue: per record its `id` (the folder name), its `label` and `description` (from `store.json`), its named revisions (`references`, each with its `id`, `label` and `revision` as in `store.json`), `size`, `modified`, `files`, and `open`/`error`; and the `default` record |
 | `POST /api/records/{id}/open` | what a client needs to query a record: `revisions` (with their catalogs), `defaultScenario`, `views`, `manifest`. Opens the record if it isn't yet: seconds for the first ask (about 17 s from the bucket on Cloud Run), at once after. `?revision=<name>` also attaches that run result (a few seconds, the first time); each revision says whether it's `open`, and a run result lists its `results` attributes |
 | `GET /api/records/{id}/files` | the explorer's Files tab |
 

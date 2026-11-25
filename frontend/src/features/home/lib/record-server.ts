@@ -7,8 +7,9 @@ export type RecordSummary = {
   id: string;
   label: string;
   description: string;
-  // Its named revisions, scenarios and run results alike.
-  revisions: string[];
+  // Its named revisions, scenarios and run results alike, as its store.json
+  // references them: id is the reference's name, revision the layer id.
+  references: { id: string; label: string; revision: string }[];
   size: number;
   modified: string | null;
   files: number;
