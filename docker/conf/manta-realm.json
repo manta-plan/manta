@@ -2,6 +2,9 @@
   "realm": "manta",
   "enabled": true,
   "displayName": "Manta",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 604800,
+  "ssoSessionMaxLifespan": 604800,
   "roles": {
     "realm": [
       {
@@ -29,6 +32,20 @@
         "backchannel.logout.session.required": "true",
         "backchannel.logout.revoke.offline.tokens": "false"
       },
+      "protocolMappers": [
+        {
+          "name": "manta-client-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "manta-client",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
       "fullScopeAllowed": true
     }
   ],
