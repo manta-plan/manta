@@ -20,6 +20,8 @@ dependencies = [
     # planned HTTP syncing endpoints or some other manner instead.
     "playbook",
     "playbook-library",
+    # The SQLAlchemy `Vector` column type for the chat's docs search (doc_chunks).
+    "pgvector>=0.4.1",
     "prefect==3.8.3",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.2.2",
@@ -36,6 +38,7 @@ runner = { path = "../runner", editable = true }
 
 [project.scripts]
 manta = "manta.main:main"
+manta-ingest-docs = "manta.ingest_docs:main"
 
 [build-system]
 requires = ["hatchling"]
