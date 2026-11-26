@@ -86,7 +86,7 @@ So any caller that dispatches a playbook gets the same check, whether or not it 
 The check reads only data and imports nothing, so repeating it costs almost nothing.
 
 The block's own settings model is the last check, and the only one that sees rules a JSON schema cannot hold.
-`cluster_time` needs exactly one of `n_hours` and `segments`, which only its settings model knows.
+`time_partition` needs exactly one of `n_hours` and `segments`, which only its settings model knows.
 Everything a JSON schema can state, such as types, required settings and unknown settings, was already checked by the backend.
 
 ## Dispatching the steps
