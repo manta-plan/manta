@@ -12,7 +12,8 @@ This file contains Manta's own docs rules.
 
 - Home (`docs/index.md`) states what Manta is, from the preamble of `README.md`.
 - Installation (`docs/installation/`) has one page per kind of work: the full stack, blocks and playbooks, the backend and the frontend. They pull setup and running from `README.md` and the package READMEs, and the contributing pages keep tests, linting and coding rules.
-- Explanation (`docs/explanation/`) holds the explanation pages, such as the architecture.
+- User guide (`docs/user-guide/`) is the section for someone who uses the web app. It contains pages of more than one kind, which include the explanation pages that every user reads, such as Manta's purpose.
+- Architecture and design (`docs/explanation/`) contains the explanation pages for a developer who wants to understand the system before changing it, such as the architecture.
 - Reference (`docs/reference/`) holds the Python API of `playbook` and `runner`, and the REST API.
 - Contributing (`docs/contributing/`) is the section for someone who changes Manta, last in the nav. Its pages pull their content from `CONTRIBUTING.md` and the package READMEs.
 

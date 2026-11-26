@@ -3,17 +3,17 @@ SPDX-FileCopyrightText: Manta contributors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# Explanation
+# Architecture and design
 
 These pages explain why we have built Manta in the way we have.
 They are aimed at a developer who wants to understand the system before changing it.
 For exact interfaces, see the [reference pages](../reference/index.md).
+For the users Manta is designed for and the constraints that they place on its design, see [Users and scope](../user-guide/scope.md).
 
 ## How Manta works
 
 These pages describe Manta as it is in the code today.
 
-- [Users and scope](scope.md): open it to see who Manta is designed for, where it runs, and the constraints that shape its design.
 - [Architecture](architecture.md): open it to see how the packages and services fit together, and how one playbook run moves through them.
 - [Orchestration with Prefect](orchestration.md): open it to learn the Prefect ideas Manta relies on, and how Manta runs playbooks with them.
 - [Blocks, playbooks and the catalogue](blocks-and-playbooks.md): open it to see why blocks are described as data, and how playbooks chain and check them.
