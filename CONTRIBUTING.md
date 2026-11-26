@@ -65,9 +65,17 @@ sign off an open PR, you can add an empty commit with just the trailer.
 
 Manta follows the [REUSE specification](https://reuse.software/spec-3.3/), and
 CI checks it on every PR. Every new file needs an SPDX header with its
-copyright holder and licence. Code and configuration use Apache-2.0, and documentation
-prose uses CC-BY-4.0. Add the header with
-[`reuse annotate`](https://reuse.readthedocs.io/en/stable/man/reuse-annotate.html):
+copyright holder and licence. The licence depends on the kind of file:
+
+| Kind of file | Licence | Examples |
+| --- | --- | --- |
+| Source code, and the files that build or describe a package | Apache-2.0 | Python and TypeScript modules, shell scripts, Dockerfiles, `pyproject.toml`, `pixi.toml`, `package.json`, playbook YAML, and Markdown inside a package directory such as `backend/README.md` |
+| Documentation and images | CC-BY-4.0 | Pages in `docs/`, the Markdown files in the repository root such as `README.md`, logos, and diagrams |
+| Configuration of tools and services, and lock files | CC0-1.0 | CI workflows, Docker Compose files, `.env` files, `mkdocs.yml`, `.gitignore`, formatter and linter settings, and `uv.lock` |
+
+Add the header with
+[`reuse annotate`](https://reuse.readthedocs.io/en/stable/man/reuse-annotate.html),
+and set `--license` to the licence of the file's kind:
 
 ```sh
 uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --year 2026 --license Apache-2.0 <file>
