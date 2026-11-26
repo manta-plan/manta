@@ -9,7 +9,7 @@ How the FE reads the data of a session: constant values and the owner map in pla
 
 Part of the datarecord-session plan, draft 9. Start with the [overview](index.md). The codes F, S, R, D and I point to the [appendix](appendix.md).
 
-This note covers three FE needs. [Constant values and the owner map](#2-constant-values-and-the-owner-map) is the component table, the drawers and the location graph: which attributes exist and which constant values they hold. [Changes between revisions](#3-changes-between-revisions) is the scenario panel and the change markers: what a scenario changes against the scenario it was made from. [Settling in the FE](#4-settling-in-the-fe) is how the FE turns raw rows into one value per coordinate. [Errors the FE must handle](#5-errors-the-fe-must-handle) lists what the session routes and the Quack path answer when a step fails.
+This note covers three FE needs. [Constant values and the owner map](#2-constant-values-and-the-owner-map) is the component table, the drawers and the location graph: which attributes exist and which constant values they hold. [Changes between revisions](#3-changes-between-revisions) is the scenario panel and the change markers: what a scenario changes against the scenario it was made from. [Settling in the FE](#4-settling-in-the-fe) is how the FE turns raw rows into one value per coordinate. [The session lifecycle in the FE](#5-the-session-lifecycle-in-the-fe) lists the steps the FE takes from opening a session to closing it. [Errors the FE must handle](#6-errors-the-fe-must-handle) lists what the session routes and the Quack path answer when a step fails.
 
 Today quack-server prepares this data at open. It builds the table `attribute_summary` with one full scan over every attribute, and the view `ctype_attributes` over it. It builds the table `scenario_changes` for all scenarios at open. Nothing settles: the FE queries read raw rows and apply partial rules of their own, or none. [Replacing the manta objects](session.md#5-replacing-the-manta-objects) in the session note lists these objects (groups B and C).
 
@@ -342,7 +342,20 @@ The prototype ran against DR's `settle` on 3500 random cases. The cases cover pl
 
 DR ships 20 cases as `datarecord/settle_cases.json` (PR 155, R14). Each case has `columns`, `rows`, `labels`, `filter`, and either `expected` or `error: "crossed"`. The FE runs them in its existing `vitest` suite, with `@duckdb/node-api` added (F23). DR's own `settle` and the FE's function thus run the same cases.
 
-## 5. Errors the FE must handle
+## 5. The session lifecycle in the FE
+
+These are the steps the FE takes over the life of a session, as built for the [read path first](read-path-first.md). The [errors the FE must handle](#6-errors-the-fe-must-handle) give the status and text of each failure. The commit path, presence and the capacity limit come later.
+
+1. Open. The FE calls `POST /v1/projects/{id}/datarecord-session` when a page needs data. The call starts, restarts or reuses the session, so the FE can repeat it at any time. It answers 200 with `{status, generation, quack: {uri, token}, skipped_registrations}`, where `uri` is `/quack` and `skipped_registrations` is empty. It answers 207 with the same body when the replay skipped registrations, and lists their names.
+2. Attach. The FE creates the Quack secret of the [Quack auth check](backend.md#quack-auth-check). The secret holds the Quack token as `TOKEN` and two headers: `Authorization: Bearer <keycloak token>` and `X-Manta-Project: <project id>`. The FE then attaches DuckDB-WASM to `/quack` on the app's own origin, where Caddy checks each request with the BE. The headers from WASM are not tested yet (I3).
+3. Register. The FE calls `PUT .../datarecord-session/registrations/{name}` for each store revision it wants to query. The answer carries the SQL prefix, for example `manta.r1`. A registration takes about 3 s on the largest store. `GET` checks a registration, and `DELETE` drops one. Only the FE removes registrations.
+4. Query. The FE runs every session query as `quack_query_by_name('<alias>', $$...$$)`, with the prefix in front of each view name. This form sees a registration made after the ATTACH, and the attached catalog does not (S1). So a new registration needs no new ATTACH.
+5. Refresh the token. The Keycloak token lives 5 minutes. The FE replaces the Quack secret with a fresh token before the old one expires. Today an expired token gives 500 ([#414](https://github.com/manta-plan/manta/issues/414)), and after the fix 401. Whether a replaced secret reaches later requests without a new ATTACH is not tested (I3).
+6. Stay in use. Each Quack request through Caddy counts as use, and so does each `POST` of the session and each `PUT` or `GET` of a registration. A BE task stops the session after 10 minutes without use. This single timer is this week's; the [two stages](backend.md#two-stages) come later. The native DuckDB client sends heartbeat requests about 3 times a minute (live run), so an idle attached native client keeps its session alive. DuckDB-Wasm cannot run Quack's heartbeat thread (F7), and its behaviour through Caddy is not tested. Whether an idle page keeps its session alive is for the FE work package W6 to decide.
+7. Recover. After an idle stop the next Quack request gets 409. When the container is gone and its row is still active, Caddy answers 502. After a restart every query fails with `Invalid connection id` until DETACH and ATTACH (S4). In each case the FE calls `POST` session, runs DETACH and ATTACH, and repeats the query. The BE replays the stored registrations, so the FE does not register again. Only a name in `skipped_registrations` needs a `GET`, then a `PUT` or a `DELETE`.
+8. Close. The FE can call `DELETE /v1/projects/{id}/datarecord-session` when the user leaves the project. It stops the session at once and keeps the registrations. Without that call the idle stop cleans up.
+
+## 6. Errors the FE must handle
 
 The BE's session routes and the Quack auth check answer an error with the body `{"detail": "<text>"}`. A validation error has a list of problems in `detail` instead of a text. A 500 has the plain text `Internal Server Error`, and a 502 comes from Caddy, not from the BE. In the column Source, `test` means that a test of the session stack asserts the status, and the quoted text comes from the code where the test does not check it. `code` means read from the code only. `live run` means seen against a running session, in spikes S1 and S4 ([spikes](appendix.md#8-spikes-and-measurements)) or in an end-to-end run of the native DuckDB client through Caddy, the BE and a session container.
 
@@ -357,7 +370,7 @@ The BE's session routes and the Quack auth check answer an error with the body `
 | all routes, Quack auth | project id not a UUID, or `X-Manta-Project` missing | 422, list | client bug | test |
 | POST session, PUT and GET registration | a new session not healthy within 30 s | 503 `The datarecord session did not become healthy` | retry later | test |
 | POST session, PUT and GET registration | the session answers another error than 404 or 422, at the replay or to the request | 500 `Internal Server Error` | retry, then report | test for the replay, code for the rest |
-| POST session | the replay skips a registration | 207, same body as 200, `skipped_registrations` lists the names | show which registrations are missing; the session is usable; a query on one gives the catalog error of the last row | decided, not yet in code |
+| POST session | the replay skips a registration | 207, same body as 200, `skipped_registrations` lists the names | show which registrations are missing; the session is usable; a query on one gives the catalog error of the last row | test |
 | PUT and GET registration | the replay skips another registration | 200, no mark of the skip | see the last row | test |
 | PUT registration | name outside `[a-z0-9][a-z0-9_-]{0,62}` | 422, list | fix the input | test |
 | PUT registration | unknown store or revision | 404 `<store> has no revision <rev>`, no row kept | tell the user | test |
@@ -380,7 +393,7 @@ The expired token gives 500 because main's auth code does not map the error of a
 
 Only POST session reports a replay skip. A skip during PUT or GET of a registration shows only later, as the catalog error of the last row.
 
-## 6. Open points
+## 7. Open points
 
 | Question | Proposal |
 |---|---|
