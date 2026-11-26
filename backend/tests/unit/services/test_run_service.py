@@ -9,7 +9,8 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
-from runner.flows import OUTPUT_ARTIFACT_KEY, catalogue_parameter
+from prefect.states import Failed
+from runner.flows import OUTPUT_ARTIFACT_KEY, TIMED_OUT_STATE_NAME, catalogue_parameter
 
 from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
@@ -56,6 +57,15 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
             "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
         },
     )
+
+
+def _timed_out(flow_run):
+    """The fake flow run, in the state Prefect ends one in that exceeded its timeout:
+    `FAILED`, like any other failure, with only the state's name saying why."""
+    flow_run.state = Failed(
+        name=TIMED_OUT_STATE_NAME, message="Flow run exceeded timeout of 3600 second(s)"
+    )
+    return flow_run
 
 
 def _library_playbook_service() -> PlaybookService:
@@ -412,6 +422,28 @@ def test_get_run_returns_dto_with_non_completed_status(
     assert result.status == "CRASHED"
 
 
+def test_get_run_tells_a_timed_out_run_from_one_that_failed_otherwise(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given two runs Prefect holds as FAILED, only one of them for exceeding its timeout
+    project = _existing_project()
+    user = _existing_user()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    timed_out = _timed_out(_fake_flow_run("FAILED"))
+    failed = _fake_flow_run("FAILED")
+    failed.state = Failed(message="Flow run encountered an exception: SolveError")
+    fake_client = MagicMock(read_flow_run=MagicMock(side_effect=[timed_out, failed]))
+    _patch_get_client(monkeypatch, fake_client)
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    statuses = [service.get_run(run_uuid=run.uuid, user=user).status for _ in range(2)]
+
+    # Then
+    assert statuses == ["TIMED_OUT", "FAILED"]
+
+
 def test_get_run_with_unknown_run_raises_404(mock_db_class) -> None:
     # Given
     db = mock_db_class(query_results={Run: None})
@@ -507,6 +539,44 @@ def test_list_runs_filters_project_runs_by_status(
     assert result.summary.statuses == {"COMPLETED": 1, "RUNNING": 1}
     assert [run.uuid for run in result.items] == [running_run.uuid]
     assert [run.status for run in result.items] == ["RUNNING"]
+
+
+def test_list_runs_counts_and_filters_timed_out_runs_apart_from_failed_ones(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project()
+    failed_run = _existing_run(project)
+    timed_out_run = _existing_run(project)
+    timed_out_run.id = 2
+    timed_out_run.uuid = uuid4()
+    timed_out_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: project, Run: [failed_run, timed_out_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        MagicMock(
+            return_value={
+                failed_run.prefect_flow_run_id: _fake_flow_run("FAILED"),
+                timed_out_run.prefect_flow_run_id: _timed_out(_fake_flow_run("FAILED")),
+            }
+        ),
+    )
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    result = service.list_runs(
+        project_uuid=project.uuid,
+        limit=10,
+        offset=0,
+        status_filters=["timed_out"],
+        user=_existing_user(),
+    )
+
+    # Then
+    assert result.summary.statuses == {"FAILED": 1, "TIMED_OUT": 1}
+    assert [run.uuid for run in result.items] == [timed_out_run.uuid]
+    assert [run.status for run in result.items] == ["TIMED_OUT"]
 
 
 def test_get_run_summary_returns_project_status_counts(
@@ -821,6 +891,40 @@ def test_get_run_steps_reports_why_a_step_failed(
 
     # Then the failed step carries the block's own error, the others nothing
     assert [step.message for step in result.steps] == [message, None, None]
+
+
+def test_get_run_steps_reports_a_step_that_timed_out(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given a run whose overnight expansion exceeded the block timeout
+    project = _existing_project()
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    _patch_flow_runs(
+        monkeypatch,
+        _timed_out(
+            _fake_playbook_flow_run("FAILED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config)
+        ),
+        [
+            _timed_out(
+                _fake_block_run(
+                    "expansion_overnight",
+                    "overnight_capacity_expansion",
+                    "FAILED",
+                    datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+                )
+            ),
+        ],
+    )
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    result = service.get_run_steps(run_uuid=run.uuid, user=_existing_user())
+
+    # Then the step says so itself, with Prefect's own account of it
+    [timed_out_step] = [step for step in result.steps if step.name == "expansion_overnight"]
+    assert timed_out_step.status == "TIMED_OUT"
+    assert timed_out_step.message == "Flow run exceeded timeout of 3600 second(s)"
 
 
 def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(

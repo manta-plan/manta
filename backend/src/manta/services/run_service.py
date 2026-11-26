@@ -23,12 +23,13 @@ from prefect.client.schemas.filters import (
     LogFilter,
     LogFilterFlowRunId,
 )
-from prefect.client.schemas.objects import FlowRun
+from prefect.client.schemas.objects import FlowRun, StateType
 from prefect.deployments import run_deployment
 from prefect.exceptions import ObjectNotFound
 from runner.flows import (
     OUTPUT_ARTIFACT_KEY,
     PLAYBOOK_DEPLOYMENT,
+    TIMED_OUT_STATE_NAME,
     catalogue_parameter,
     parse_catalogue_parameter,
 )
@@ -54,6 +55,10 @@ from manta.services.s3_file_storage_service import S3FileStorageService
 from manta.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+
+
+TIMED_OUT_STATUS = "TIMED_OUT"
+"""The status of a run, or of one of its steps, that exceeded its timeout."""
 
 
 class PrefectUnavailableError(Exception):
@@ -121,7 +126,18 @@ def _read_flow_run_with_block_runs(flow_run_id: UUID) -> tuple[FlowRun, list[Flo
 
 
 def _flow_run_status(flow_run: FlowRun) -> str:
-    return flow_run.state.type.value if flow_run.state is not None else "UNKNOWN"
+    """A flow run's status: the type of its Prefect state, except for a timeout.
+
+    Prefect has no state type for a flow run that exceeded its timeout. Such a run
+    is `FAILED`, and only the name of its state says why. A caller has to tell it
+    from a run that failed for another reason, so it gets a status of its own.
+    """
+    state = flow_run.state
+    if state is None:
+        return "UNKNOWN"
+    if state.type == StateType.FAILED and state.name == TIMED_OUT_STATE_NAME:
+        return TIMED_OUT_STATUS
+    return state.type.value
 
 
 def _flow_run_config(flow_run: FlowRun) -> dict:

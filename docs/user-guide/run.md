@@ -54,6 +54,9 @@ Manta runs a limited number of playbooks at once.
 A run started beyond that number has the status **Queued**, and starts once another run finishes.
 While a run in the table is not finished, the statuses update on their own.
 
+Manta also limits how long a run may take.
+A run that takes longer is stopped and has the status **Timed Out**, which tells it from a run that **Failed** for another reason.
+
 - To see the latest status of every run right away, select **Refresh**.
 - To list only runs with certain statuses, pick them from the **All statuses** list above the table.
 - To find one run, enter its run UUID, a long identifier shown in its details, in the search box.

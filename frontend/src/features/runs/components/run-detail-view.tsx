@@ -45,6 +45,7 @@ function toNodeStatus(status: string): RunFlowNodeStatus {
     case "COMPLETED":
       return "done";
     case "FAILED":
+    case "TIMED_OUT":
     case "CRASHED":
       return "failed";
     case "RUNNING":

@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { formatRunStatus, getRunStatusHint, hasUnfinishedRun, statusOptions } from "../status";
+import {
+  formatRunStatus,
+  getRunStatusHint,
+  hasUnfinishedRun,
+  isRunFinished,
+  statusOptions,
+} from "../status";
 
 describe("formatRunStatus", () => {
   it("shows a run that waits for a slot as queued, not scheduled", () => {
     expect(formatRunStatus("SCHEDULED")).toBe("Queued");
     expect(formatRunStatus("scheduled")).toBe("Queued");
+  });
+
+  it("shows a run that exceeded its timeout as timed out", () => {
+    expect(formatRunStatus("TIMED_OUT")).toBe("Timed Out");
+    expect(statusOptions).toContainEqual({ label: "Timed Out", value: "TIMED_OUT" });
   });
 
   it("shows the other Prefect states by their name", () => {
@@ -23,10 +34,21 @@ describe("getRunStatusHint", () => {
     expect(getRunStatusHint("SCHEDULED")).toMatch(/free slot/);
   });
 
+  it("says a timed-out run was stopped for taking too long", () => {
+    expect(getRunStatusHint("TIMED_OUT")).toMatch(/longer than allowed/);
+  });
+
   it("has nothing to add to the other statuses", () => {
     for (const status of ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CRASHED", "CANCELLED"]) {
       expect(getRunStatusHint(status)).toBeNull();
     }
+  });
+});
+
+describe("isRunFinished", () => {
+  it("counts a timed-out run as finished, so nothing keeps asking for it", () => {
+    expect(isRunFinished("TIMED_OUT")).toBe(true);
+    expect(hasUnfinishedRun([{ status: "TIMED_OUT" }])).toBe(false);
   });
 });
 

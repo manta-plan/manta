@@ -21,6 +21,8 @@ def _stack_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "S3_SECRET_KEY": "secret",
         "MANTA_BLOCK_LOGGERS": "playbook_library",
         "MANTA_BLOCK_SOURCES": "playbook_library",
+        "MANTA_BLOCK_TIMEOUT_SECONDS": "600",
+        "MANTA_PLAYBOOK_TIMEOUT_SECONDS": "1800",
     }.items():
         monkeypatch.setenv(name, value)
 
@@ -91,6 +93,8 @@ def test_a_block_container_is_told_how_to_report_back_and_where_records_live() -
     assert env["PREFECT_LOGGING_EXTRA_LOGGERS"] == "playbook_library"
     # ...knows which block library to import before looking anything up...
     assert env["MANTA_BLOCK_SOURCES"] == "playbook_library"
+    # ...knows how long the block may run, as its own flow reads the timeout there...
+    assert env["MANTA_BLOCK_TIMEOUT_SECONDS"] == "600"
     # ...and reaches the object store by service name, not the published host port.
     assert env["AWS_ENDPOINT_URL"] == "http://seaweedfs:8333"
     assert env["AWS_ACCESS_KEY_ID"] == "key"
@@ -104,6 +108,7 @@ def test_a_block_container_is_told_nothing_else() -> None:
         "PREFECT_API_URL",
         "PREFECT_LOGGING_EXTRA_LOGGERS",
         "MANTA_BLOCK_SOURCES",
+        "MANTA_BLOCK_TIMEOUT_SECONDS",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_ENDPOINT_URL",
@@ -190,3 +195,42 @@ def test_an_existing_blocks_pool_stays_unlimited(monkeypatch: pytest.MonkeyPatch
 
     # Then
     assert "concurrency_limit" not in client.updated["manta-blocks"]
+
+
+def test_the_timeouts_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given
+    monkeypatch.setenv("MANTA_BLOCK_TIMEOUT_SECONDS", "7")
+    monkeypatch.setenv("MANTA_PLAYBOOK_TIMEOUT_SECONDS", "11")
+
+    # When / Then
+    assert config.block_timeout_seconds() == 7
+    assert config.playbook_timeout_seconds() == 11
+
+
+def test_the_timeouts_have_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given
+    monkeypatch.delenv("MANTA_BLOCK_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("MANTA_PLAYBOOK_TIMEOUT_SECONDS", raising=False)
+
+    # When / Then: an hour for a block, three for the playbook around it
+    assert config.block_timeout_seconds() == 3600
+    assert config.playbook_timeout_seconds() == 10800
+
+
+@pytest.mark.parametrize("playbook_timeout", ["600", "599"], ids=["equal", "smaller"])
+def test_a_playbook_timeout_that_is_not_larger_than_the_block_timeout_stops_the_deploy(
+    monkeypatch: pytest.MonkeyPatch, playbook_timeout: str
+) -> None:
+    # Given: a block could never reach its own timeout, as the playbook's passes first
+    monkeypatch.setenv("MANTA_BLOCK_TIMEOUT_SECONDS", "600")
+    monkeypatch.setenv("MANTA_PLAYBOOK_TIMEOUT_SECONDS", playbook_timeout)
+    client = _prefect_client(monkeypatch)
+    monkeypatch.setattr(deploy, "deploy", lambda flow, name, pool: "deployment-id")
+
+    # When / Then: the provisioner fails, naming both settings, before touching a pool
+    with pytest.raises(config.InvalidTimeoutsError) as exc_info:
+        deploy.main()
+    assert "MANTA_PLAYBOOK_TIMEOUT_SECONDS" in str(exc_info.value)
+    assert "MANTA_BLOCK_TIMEOUT_SECONDS" in str(exc_info.value)
+    assert client.created == {}
+    assert client.updated == {}

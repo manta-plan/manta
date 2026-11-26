@@ -112,6 +112,9 @@ services:
       # The concurrency limit of the playbooks pool, applied on every run of
       # this service.
       MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS: ${MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS}
+      # Checked against the block timeout below: a playbook timeout that is not
+      # the larger of the two fails this service, and the workers never start.
+      MANTA_PLAYBOOK_TIMEOUT_SECONDS: ${MANTA_PLAYBOOK_TIMEOUT_SECONDS}
       # Everything below ends up in the blocks pool's job template, i.e. in
       # every block container: what to run, which network to join, and how to
       # reach the object store. Compose-internal names throughout.
@@ -120,6 +123,7 @@ services:
       MANTA_JOB_S3_ENDPOINT: ${MANTA_JOB_S3_ENDPOINT}
       MANTA_BLOCK_SOURCES: ${MANTA_BLOCK_SOURCES}
       MANTA_BLOCK_LOGGERS: ${MANTA_BLOCK_LOGGERS}
+      MANTA_BLOCK_TIMEOUT_SECONDS: ${MANTA_BLOCK_TIMEOUT_SECONDS}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
     depends_on:
@@ -168,6 +172,9 @@ services:
       PREFECT_LOGGING_TO_API_BATCH_INTERVAL: ${PREFECT_LOGGING_TO_API_BATCH_INTERVAL:-2}
       # Each step is dispatched to the image its own block environment names.
       MANTA_ENV_IMAGES: ${MANTA_ENV_IMAGES}
+      # The timeout of the run-playbook flow, which this worker executes. (The
+      # block timeout reaches each block container through the pool instead.)
+      MANTA_PLAYBOOK_TIMEOUT_SECONDS: ${MANTA_PLAYBOOK_TIMEOUT_SECONDS}
     depends_on:
       playbooks-provision:
         condition: service_completed_successfully

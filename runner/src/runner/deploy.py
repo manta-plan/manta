@@ -129,6 +129,10 @@ def deploy(flow, name: str, pool: str) -> str:
 
 
 def main() -> None:
+    # Before anything is touched: a deploy with timeouts that cannot work stops
+    # here, and the workers, which wait for this to succeed, never start.
+    config.check_timeouts()
+
     blocks_pool = config.blocks_pool()
     ensure_docker_pool(blocks_pool, docker_job_template())
     deploy(run_block, BLOCK_FLOW_NAME, blocks_pool)
