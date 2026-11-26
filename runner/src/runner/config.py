@@ -89,6 +89,17 @@ def playbooks_pool() -> str:
     return os.environ.get("MANTA_PLAYBOOKS_POOL", "manta-playbooks")
 
 
+def max_concurrent_playbook_runs() -> int:
+    """How many playbook runs execute at once, from `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS`.
+
+    Becomes the concurrency limit of the playbooks pool. A run submitted beyond it
+    is still accepted: it waits in Prefect as `SCHEDULED` until a slot frees up.
+    The blocks pool gets no limit of its own.
+    """
+    load_dotenv()
+    return int(os.environ.get("MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS", "20"))
+
+
 def docker_network() -> str:
     """The compose network block containers join, so they can reach object storage."""
     load_dotenv()

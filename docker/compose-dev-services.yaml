@@ -109,6 +109,9 @@ services:
       PREFECT_API_URL: http://prefect-server:4200/api
       MANTA_BLOCKS_POOL: ${MANTA_BLOCKS_POOL}
       MANTA_PLAYBOOKS_POOL: ${MANTA_PLAYBOOKS_POOL}
+      # The concurrency limit of the playbooks pool, applied on every run of
+      # this service.
+      MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS: ${MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS}
       # Everything below ends up in the blocks pool's job template, i.e. in
       # every block container: what to run, which network to join, and how to
       # reach the object store. Compose-internal names throughout.

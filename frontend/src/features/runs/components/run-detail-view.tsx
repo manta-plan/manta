@@ -8,7 +8,7 @@ import { isStepActive } from "../../playbook-config/conditions";
 import { projectRunHref } from "../../project/lib/project-route";
 import { useProjectStore } from "../../project/store/project-store";
 import { describeStepErrors, getActiveSteps, getStepErrors } from "../run-draft";
-import { normalizeRunStatus } from "../status";
+import { getRunStatusHint, normalizeRunStatus } from "../status";
 import { useRunsStore } from "../store/runs-store";
 import type { RunDraft } from "../types";
 import { useSelectedRun } from "../use-selected-run";
@@ -198,6 +198,7 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
           expanded?.logs?.run_status || selected.detail?.status || selected.run.status,
         )
       : null;
+  const statusHint = runStatus === null ? null : getRunStatusHint(runStatus);
   const nodeStatus: RunFlowNodeStatus = runStatus === null ? "planned" : toNodeStatus(runStatus);
 
   const stepErrors =
@@ -246,6 +247,9 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
               <dt className={cardLabelClassName}>Status</dt>
               <dd className="mt-1">
                 {runStatus === null ? null : <RunStatusBadge status={runStatus} />}
+                {statusHint === null ? null : (
+                  <p className="text-surface-400 mt-1.5 text-[11px] leading-4">{statusHint}</p>
+                )}
               </dd>
             </div>
             <div>

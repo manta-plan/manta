@@ -95,7 +95,8 @@ Manta reads logs from there and captures none itself.
 
 Prefect also provides retry policies, timeouts, concurrency limits per work pool, cancellation, a scheduler for repeated runs, and a UI to inspect all of it.
 Manta's code contains none of these, and should not reimplement them.
-Manta does not configure retries, timeouts or concurrency limits yet.
+Manta configures one of them, a concurrency limit on the playbooks pool.
+It does not configure retries or timeouts yet.
 
 ## How Manta uses Prefect
 
@@ -130,6 +131,15 @@ In a container per run, that container would idle for hours.
 A restart or eviction of it would then fail the run while its steps carry on.
 A long-lived process worker costs little, because it mostly waits, and it is already running when a run arrives.
 Blocks still get a fresh container each, for isolation between steps.
+
+### How many playbooks run at once
+
+The playbooks pool has a concurrency limit, read from the `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS` variable.
+`python -m runner.deploy` sets the limit each time it runs, also on a pool that already exists.
+Prefect counts the pool's `PENDING` and `RUNNING` flow runs against the limit.
+A run started beyond the limit is still accepted, and stays `SCHEDULED` until another run reaches a final state.
+The web app shows such a run as **Queued**.
+The blocks pool has no limit of its own, because a block runs only as a step of a playbook run.
 
 ### What the backend does
 

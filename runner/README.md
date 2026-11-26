@@ -38,6 +38,11 @@ container per run would idle for hours and take the run down with it if it were
 evicted. It is also why a playbook run survives a restart of whatever dispatched
 it.
 
+That pool has a concurrency limit, `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS`, which
+`deploy.py` applies on every deploy, also to a pool that already exists. A run
+submitted beyond it is accepted and waits in Prefect as `SCHEDULED` until a slot
+frees up. The blocks pool has no limit of its own.
+
 Before its first step, `run-playbook` checks the playbook against its config
 (`execute_playbook` does this), using the catalogue it was handed. A run that Manta's
 backend would refuse therefore also fails here, before any block container starts.

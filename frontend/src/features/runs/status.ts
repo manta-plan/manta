@@ -2,6 +2,11 @@ import type { IconType } from "react-icons";
 import { FiActivity, FiCheckCircle, FiClock, FiRefreshCw, FiXCircle } from "react-icons/fi";
 import type { RunStatus } from "./types";
 
+// Manta starts every run at once, never at a set time. A run Prefect holds as SCHEDULED is
+// therefore waiting: at most so many playbook runs execute at once, and it starts when a slot
+// frees up. "Scheduled" would say the wrong thing, so it is shown as queued.
+const queuedStatus = "SCHEDULED";
+
 export const prefectStateOptions = [
   "SCHEDULED",
   "PENDING",
@@ -28,11 +33,29 @@ export function isRunFinished(status: string) {
   return ["COMPLETED", "FAILED", "CRASHED", "CANCELLED"].includes(normalizeRunStatus(status));
 }
 
+/** Whether any of the runs can still change status, so the list is worth asking for again. */
+export function hasUnfinishedRun(runs: { status: string }[]) {
+  return runs.some((run) => !isRunFinished(run.status));
+}
+
 export function formatRunStatus(status: string) {
-  return normalizeRunStatus(status)
+  const normalized = normalizeRunStatus(status);
+
+  if (normalized === queuedStatus) {
+    return "Queued";
+  }
+
+  return normalized
     .toLowerCase()
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/** What a status means, for the one that is not clear from its name; null for the others. */
+export function getRunStatusHint(status: string): string | null {
+  return normalizeRunStatus(status) === queuedStatus
+    ? "Waiting for a free slot. The run starts once another run finishes."
+    : null;
 }
 
 export function getStatusBadgeMeta(status: RunStatus): {
