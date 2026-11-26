@@ -74,7 +74,7 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
   - Quack sends no CORS headers.
   - Writes (edits, scenarios as child revisions, solves) will become `/api/*` endpoints instead of raw SQL.
 - **Read-only access is enforced by an authorization macro** (`app/quack.py`).
-  See "Lockdown" below.
+  See "Two guards" under Findings.
 - **The app's own views live in a `manta` schema** (`app/manta_views.py`): plain SQL over the record views, holding what the app assumes about a record.
   - `bus_location`, `locations`: buses grouped into locations (a bus with an empty `location`, as in PyPSA-Earth, is its own); `EU`, PyPSA-Eur's copper plate, is virtual.
   - `location_zones`: zones from the `busmap_*` attributes, if the record has any.
@@ -175,10 +175,17 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
      `enable_external_access = false` (with `allowed_directories`) was stricter, but datarecord's SQL reads Python objects by name, which DuckDB only resolves with external access on, and it can't be switched back on: records couldn't open after the lockdown.
      Bucket reads go through a key that can only read `manta-records`.
      The local file system stays on, as DuckDB needs it for temp files, so local files are guarded by the macro alone.
-  2. An authorization macro, which checks `json_serialize_sql` of each query:
+  2. An authorization macro, which checks `json_serialize_sql` of each query (the parse, not the text, so case, quoting and `system.main.` qualifiers don't matter):
      - Only SELECT statements, plus the bare `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK` that a DuckDB 2 client wraps around every query.
-     - Table functions are limited to the catalog ones the client needs (`duckdb_schemas`, `duckdb_tables`, `duckdb_views`, …).
+       So no COPY, ATTACH, INSTALL, LOAD, SET, PRAGMA, EXPLAIN or DDL.
+     - Table functions are limited to the catalog ones the client needs (`duckdb_schemas`, `duckdb_tables`, `duckdb_views`, …) and `range`, `generate_series`, `unnest`.
+       That shuts out every file reader (`read_text`, `read_blob`, `read_csv`, `read_parquet`, `glob`, …), `duckdb_settings()`, `duckdb_secrets()`, `which_secret`, `query()`.
+     - No call anywhere in the query to `current_setting`, `getenv`, `quack_*` or the macro itself.
      - Table names can't be paths or URLs.
+     - `tests/test_quack_guard.py` checks the macro alone and through a running Quack, with queries as the app sends them (`quack_query_by_name`).
+
+     Still open, by design: any SELECT over the served views and functions can run, so a heavy query (a cross join, `range(1e12)`) can hog the server; and the catalog functions show the view definitions and catalog names.
+     Disabling the local file system or external access would be stricter, but the views read their parquet files at query time and records open after the lockdown (checked 2026-11-25: with `LocalFileSystem` disabled, a view query fails; with `enable_external_access = false`, the record doesn't open).
 - **Remote tables in a non-`main` schema lose their schema name** in client queries (seen on 1.5.5).
   Views work, which is why the server exposes views rather than copying tables.
 - **`r.information_schema` isn't available remotely.** List views with `FROM quack_query_by_name('r', 'FROM duckdb_views()')` or `POST /api/records/{id}/open`.

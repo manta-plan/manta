@@ -15,7 +15,7 @@ The blocks — single units of work on a model:
 
 | Block | What it does |
 | --- | --- |
-| `cluster_time` | Shorten a model's time series, so later blocks have less to solve |
+| `time_partition` | Group a model's time series into stretches, so later blocks can solve less |
 | `overnight_capacity_expansion` | Decide what to build, treating the whole model as one moment in time |
 | `myopic_capacity_expansion` | Decide what to build one investment period at a time, in order |
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
@@ -37,10 +37,10 @@ pixi.toml                       The environments blocks run in (names are the co
 src/playbook_library/
   __init__.py                   Registers the blocks by name, without importing them
   catalogue.json                Generated description of every block (see below)
-  time_cluster.py               ... one module per block ...
+  time_partition.py             ... one module per block ...
   pypsa_helpers.py              Where blocks meet their data, and PyPSA work they share
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
-  examples.py                   A tiny network, and the example playbook run on it
+  examples.py                   The example run: the `expand` playbook on the Belgian test model
   public_data.py                Downloads of the stores in the public test data bucket
   playbooks/                    The playbooks this library ships, with default settings
 ```
@@ -53,20 +53,22 @@ pixi run -e dev test     # packaging, registration, and the catalogue, without P
 pixi run -e full test    # everything, including the blocks and the end-to-end run
 ```
 
-Then see a real run, start to finish:
+To see a whole playbook run, run the `expand` playbook on the Belgian test model from the public `manta-public-test-data` bucket:
 
 ```bash
-pixi run -e full python -m playbook_library.examples
+pixi run -e full python -m playbook_library.examples [directory]
 ```
 
-That seeds a tiny network — one bus, one generator that can be built, a day of demand — as the root revision of a datarecord store, runs the `expand` playbook on it, and prints the final revision.
-Pass a directory or an `s3://` URL to choose where the store is created.
+Each block writes its result as a new revision into the store it reads, and the bucket is read-only.
+So the script first copies the datarecord store into `<directory>/BEL-pre-aggregated/`, or into a new temporary directory if you give none.
+The `expand` playbook then solves an overnight capacity expansion with its default settings, and the script prints the final revision.
+The run takes about a minute on a laptop.
 
 To run a single block instead, without a playbook around it:
 
 ```bash
-pixi run -e pypsa python -m playbook.blocks.run_one cluster_time \
-    --source playbook_library --config '{"n_hours": 6}' \
+pixi run -e pypsa python -m playbook.blocks.run_one time_partition \
+    --source playbook_library --config '{"name": "agg_6h", "n_hours": 6}' \
     --revision '{"store": "<store>", "id": "<revision>"}'
 ```
 <!-- --8<-- [end:docs-setup] -->
@@ -89,7 +91,7 @@ That `dev` has no PyPSA and its tests still pass is the check that a block's dep
 
 ## Adding a block
 
-1. Write it in its own module, as a `MantaBlock` subclass — see [the framework's README](../playbook/README.md#writing-a-block) for what a block declares, and `time_cluster.py` for the shortest real example.
+1. Write it in its own module, as a `MantaBlock` subclass — see [the framework's README](../playbook/README.md#writing-a-block) for what a block declares, and `time_partition.py` for the shortest real example.
 2. Register it in `__init__.py` with `register_lazy("your_block", "playbook_library.your_module:YourBlock")`.
    Registering the location rather than importing the class is what keeps this package importable without PyPSA.
 3. Read and write data through `pypsa_helpers`: `to_network(base)` in, `write_network(n, base)` out, as a new revision in the store of the `base` revision the block's `run` was given.
