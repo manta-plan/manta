@@ -3,9 +3,9 @@ SPDX-FileCopyrightText: Manta contributors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# How a study works in Manta
+# How a project works in Manta
 
-A study in Manta is a project, which moves through seven stages from signing in to sharing a report.
+A project in Manta moves through seven stages from signing in to sharing a report.
 This page explains each stage, and the kinds of analysis that Manta is designed for.
 For why Manta is built this way, see [Manta's purpose](purpose.md).
 
@@ -17,7 +17,7 @@ For why Manta is built this way, see [Manta's purpose](purpose.md).
 
 ## The stages of a project
 
-The diagram shows the seven stages, and the layers of data that they add to a project.
+The diagram below shows the seven stages, and the layers of data that they add to a project.
 
 <div class="manta-figure">
 --8<-- "docs/user-guide/project-flow.svg"
@@ -28,7 +28,7 @@ The bottom part shows the store in which Manta keeps the project's model, scenar
 A solid arrow marks a stage in which Manta adds a layer.
 A dashed arrow marks a stage in which Manta reads the layers beneath it.
 
-In the Run stage, Manta adds one result layer for each unit of work (a [block](#blocks)) in the analysis that you run (a [playbook](#playbooks)).
+In the Run stage, Manta adds one result layer to the data record for each unit of work (a [block](#blocks)) in the analysis workflow (a [playbook](#playbooks)) that you run.
 The diagram shows three blocks as an example.
 Manta adds each layer on top of the layers before it, so the layers underneath stay as they were.
 
@@ -50,17 +50,17 @@ Manta keeps every change to the data of a project.
 A model is a description of an energy system that a solver can optimise.
 It contains the network of the system, its technologies and their costs, and its time series, such as demand and weather data.
 
-Every study starts from a model.
-You can bring in an existing model of your own system, a ready-made model, or an example model.
+Every project starts from a model.
+You can bring in an existing model of your own system or a ready-made model.
 Manta stores the model as the first layer of the project's data record.
 In the Model stage, you view the model's network on a map, and you browse its components and their values.
 
 !!! note "Your own models"
 
-    Currently, when you create a project, you pick a model that an administrator has added to Manta.
+    Currently, when you create a project, you pick a ready-made model that an administrator has added to Manta.
     We plan to let you bring in a model of your own.
     We also plan to add a way to build a model in the web app in 2027, from datasets that are ready to use.
-    For the milestones that track the Bring in a model stage, see the [table of stages](index.md#what-the-web-app-supports-today).
+    To track our milestones for this, see the [table of stages](index.md#what-the-web-app-supports-today).
 
 !!! note "Supported modelling frameworks"
 
@@ -80,7 +80,6 @@ To define a scenario, you start from an existing one, and then you change values
 You can change a value for one component, or for every component that matches a type, a carrier, or a location.
 
 Manta stores each scenario as layers of changes on top of the model layer (patch layers), and not as a full copy of the model.
-So many scenarios take little extra space.
 To show you the network of a scenario, Manta reads the model layer together with the patch layers of that scenario.
 You can compare scenarios side by side, to see which changes each one makes and how those changes affect the results.
 
@@ -97,11 +96,12 @@ It has default settings for each of its blocks, so you change only the settings 
 !!! note "Order of blocks"
 
     Currently, Manta runs the blocks of a playbook one after another.
-    We plan to support playbooks that repeat blocks, and playbooks that run blocks in parallel.
+    We plan to support playbooks that run blocks in parallel and in loops.
 
 ### Kinds of analysis
 
 Energy system studies fall into a few broad groups.
+Below are the kinds of studies we are working to support or already support in Manta.
 The table lists analyses from each group, and the question that you answer with each one.
 
 | Group              | Analysis                     | Question                                                                                                                       |
@@ -135,21 +135,21 @@ flowchart LR
     class i4,r1,r3 planned
 ```
 
-A solid box is a block that Manta currently includes; a dashed box is a block that Manta doesn't include yet.
+A solid box is a block that Manta currently includes; a dashed box is a block that isn't included yet.
 The example playbook for integrated resource planning first aggregates the time series and optimises capacities.
 It then runs a rolling horizon dispatch, to verify that supply meets demand with those capacities.
 The example playbook for resource adequacy starts from capacities that are already fixed, and tests them in many weather years and outage patterns.
 Both playbooks use the same blocks for the rolling horizon dispatch and for the adequacy metrics.
-So an improvement to one block improves every playbook that uses it.
+So a community-manged library of blocks could be used to create any number of playbooks.
 
 ### Configuration
 
 Each block has a configuration, which contains the settings of the block, each with its type and its default.
-A playbook also has settings of its own, such as the investment periods to optimise or the number of weather years to sample.
-With different settings, you can run a different kind of analysis with the same playbook, or the same analysis under different assumptions.
+A playbook also has a configuration of its own, such as the investment periods to optimise or the number of weather years to sample.
+With different configurations, you can run a different kind of analysis with the same playbook, or the same analysis under different assumptions.
 
 Before a run starts, Manta checks every setting and lists every problem that it finds.
-So you can fix a mistake in the settings before any block runs.
+So you can fix a mistake in the configuration before any block runs.
 
 !!! info "See also"
 
@@ -157,28 +157,30 @@ So you can fix a mistake in the settings before any block runs.
 
 ## Runs and results
 
-A run is one pass of a playbook over a scenario, with the settings you chose.
-In the Run stage, you pick a playbook and a scenario, adjust the playbook's settings, and start the run.
+A run is one pass of a playbook over a scenario, with the configuration settings you chose.
+In the Run stage, you pick a playbook and a scenario, adjust the playbook's configuration, and start the run.
 While the run is in progress, you follow its status and its log.
 
 Manta runs each block in turn.
-Each block reads the layers beneath it and adds its own result layer on top, and the last block adds the final result layer.
+Each block reads the layers from preceding blocks (or the initial input) and adds its own result layer on top;
+the last block adds the final result layer.
 Manta keeps the result layer of every block, so you can inspect the intermediate results of a run.
 When a final result is unexpected, you can find the block that caused it.
 
 In the Inspect stage, you read the final result layer of a run.
-You see headline figures and results on the map, and you open pages of charts and tables (inspections).
-Manta provides a set of inspections, and you can build your own from charts and tables of your choice.
-To compare two runs, you show them side by side in the same inspection.
+It is structured just like the Build stage, but now with access to result data.
+You can see overviews of your system or drill down to specific points of interest to ensure your results look sensible and to prepare for analysis.
 
-In the Report stage, you arrange charts from your inspections into pages, together with headings, text, and images.
+In the Analyse stage, you can communicate model insights in reports.
+Your reports contain data as charts and tables, together with headings, text, and images.
 Each chart in a report shows the results of the run that you choose for it.
-You export the report as a PDF to print or share.
+You can also split your report to compare two runs side-by-side.
+Once you're ready, you can export the report as a PDF to print or share.
 
-!!! note "Run, Inspect, and Report today"
+!!! note "Run, Inspect, and Analyse today"
 
     Currently, a run starts from the input model of the data record, so it leaves out the changes of a scenario.
-    We plan for a run to start from the scenario that you pick, and to add the Inspect and Report stages to the web app.
+    We plan for a run to start from the scenario that you pick, and to add the Analyse stages to the web app.
     For the milestones that track this work, see the [table of stages](index.md#what-the-web-app-supports-today).
 
 !!! info "See also"
@@ -187,7 +189,7 @@ You export the report as a PDF to print or share.
 
 ## Tracing a result
 
-With these stages in mind, you can judge what a study in Manta shows and how far to trust it.
+With these stages in mind, you can judge what a study in Manta shows and how to verify that your model and analysis is well formulated.
 You can trace each result back to a model, a scenario, a playbook and its settings, and the result of every block in between.
 Two parts of Manta's design make this possible:
 
