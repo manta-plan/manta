@@ -250,6 +250,34 @@ services:
             "-c",
             "/opt/keycloak/bin/kcadm.sh add-roles --uusername ${KEYCLOAK_ADMIN_USERNAME} --rolename admin || true",
           ]
+      # Token lifetimes and the client audience mapper, also set in manta-realm.json.
+      # The realm file is only imported into a fresh database, so this brings an
+      # existing realm up to date too (idempotently).
+      - command:
+          - /opt/keycloak/bin/kcadm.sh
+          - update
+          - realms/${KEYCLOAK_REALM}
+          - -s
+          - accessTokenLifespan=3600
+          - -s
+          - ssoSessionIdleTimeout=604800
+          - -s
+          - ssoSessionMaxLifespan=604800
+      # The backend asks Keycloak whether a token's session is still active, which
+      # Keycloak only answers for tokens that name the client in their audience.
+      # Creating it again fails because the mapper exists, hence `|| true`.
+      - command:
+          - bash
+          - -c
+          - >-
+            CID=$$(/opt/keycloak/bin/kcadm.sh get clients -r ${KEYCLOAK_REALM}
+            -q clientId=${IDP_CLIENT_ID} --fields id --format csv --noquotes) &&
+            /opt/keycloak/bin/kcadm.sh create clients/$$CID/protocol-mappers/models
+            -r ${KEYCLOAK_REALM} -s name=${IDP_CLIENT_ID}-audience
+            -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper
+            -s 'config."included.client.audience"=${IDP_CLIENT_ID}'
+            -s 'config."id.token.claim"=false' -s 'config."access.token.claim"=true'
+            -s 'config."introspection.token.claim"=true' || true
 
   # TEMPORARY: serves a datarecord over the Quack protocol so the
   # Build / Inspect / Analyse tabs can be ported to the frontend before datarecord is

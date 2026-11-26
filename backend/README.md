@@ -177,8 +177,8 @@ client, so clients can't call Keycloak directly.
 ### Refresh tokens
 
 - `POST /v1/auth/login` returns `access_token`, `expires_in`, `refresh_token`
-  and `refresh_expires_in`. Lifetimes are in seconds; in the dev realm, 300
-  and 1800.
+  and `refresh_expires_in`. Lifetimes are in seconds; in the dev realm, 3600
+  (1 hour) and 604800 (7 days).
 - `POST /v1/auth/refresh` with `{"refresh_token": ...}` returns the same
   fields. No `Authorization` header.
 - Every refresh issues a new refresh token. Replace the stored one, as per the
@@ -191,10 +191,43 @@ client, so clients can't call Keycloak directly.
 
 - `POST /v1/auth/logout` with `{"refresh_token": ...}` ends the Keycloak
   session and returns `204`. No `Authorization` header.
-- The session's refresh tokens stop working. Access tokens already issued
-  stay valid until they expire, since they're verified by signature alone.
+- The session's refresh tokens stop working, and so do its access tokens: the
+  backend asks Keycloak whether a token's session is still active. A token
+  the backend accepted in the last 30 seconds can keep working for up to 30
+  seconds after logout.
 - Logging out an already-ended session returns `204`. An invalid refresh
   token returns `401`.
+
+### Updating an existing Keycloak
+
+Keycloak only imports `docker/conf/manta-realm.json` into a fresh database,
+so a Keycloak that already has the realm keeps its old settings. The backend
+needs two of them:
+
+- Token lifetimes: access token 1 hour, session idle and max 7 days.
+- An audience mapper on the client, so Keycloak reports whether a token's
+  session is still active. Without it, every authenticated request returns
+  `401`.
+
+**Local dev:** `docker compose up` applies both on every start (see the
+`keycloak` service in `docker/compose-dev-services.yaml`). Nothing to do.
+
+**Deployed servers:** apply both once, before deploying a backend that needs
+them, inside the Keycloak container:
+
+```bash
+KC=/opt/keycloak/bin/kcadm.sh
+$KC config credentials --server http://localhost:8080/ --realm master --user <admin> --password <password>
+$KC update realms/manta -s accessTokenLifespan=3600 -s ssoSessionIdleTimeout=604800 -s ssoSessionMaxLifespan=604800
+CID=$($KC get clients -r manta -q clientId=manta-client --fields id --format csv --noquotes)
+$KC create clients/$CID/protocol-mappers/models -r manta \
+  -s name=manta-client-audience -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper \
+  -s 'config."included.client.audience"=manta-client' -s 'config."id.token.claim"=false' \
+  -s 'config."access.token.claim"=true' -s 'config."introspection.token.claim"=true'
+```
+
+Users who are already signed in keep their old session limits until they
+sign in again.
 <!-- --8<-- [end:docs-dev] -->
 
 ## Manually testing a run
