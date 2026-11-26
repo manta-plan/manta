@@ -27,6 +27,12 @@ They know Python and energy modelling, and have read no other page.
 Use the Oxford comma in every list of three or more items: "format, lint, and type-check".
 This rule overrides SKILL.md and its examples.
 
+## Line breaks
+
+In a Markdown file in the repository, write one sentence per line, with no line breaks at a fixed width, as [CONTRIBUTING.md](../../../CONTRIBUTING.md) states under Markdown files.
+Markup that needs its own line keeps it: a definition list has the term on one line and its `:` definition on the next.
+A PR or issue body is exempt, because GitHub renders each line break.
+
 ## Words to avoid
 
 None listed yet.
