@@ -189,8 +189,8 @@ The seven views are plain SELECT statements over `properties.*` and `attributes.
 | `bus_location` | bus, carrier, location, x, y, `virtual` | bus property `location`, or the bus itself when that property is empty; locations `EU` and `''` are virtual |
 | `locations` | one map point per real location, with bus count and carriers | as above |
 | `location_zones` | level, location, zone; one branch per `busmap_*` attribute, and one per `busmap_*` bus property that no attribute of the same name covers | prefix `busmap_` on attributes and bus properties, where an attribute wins; location name equals AC bus name |
-| `branches` | entity, ctype, carrier, both buses and locations, `scope` (`within`, `between`, `virtual`) | the join over `connection` and `role` is generic PyPSA; `scope` is PyPSA-Eur |
-| `attached` | generators, loads, stores at their bus and location | role `attached`; location columns |
+| `branches` | one row per port 0 and other port of an entity: entity, ctype, carrier, `bus0`, `bus1`, `location0`, `location1`, `scope` (`within`, `between`, `virtual`) | port 0 paired with each other port, at the bus in `properties.connection`, is generic PyPSA; `scope` is PyPSA-Eur |
+| `attached` | each entity with one port: entity, ctype, carrier, bus, location, `virtual` | an entity with exactly one port is attached at it; location columns |
 | `regions` | region polygons as WKT | ctype `Shape`, attributes `geometry`, `component`, `idx`; bus properties `shape_onshore`, `shape_offshore` |
 | `entity_geometry` | entity, ctype, carrier, `kind` (`point`, `route`, `area`), wkt, lon, lat | entity property `geometry` (WKT); the view is empty when that column is missing |
 

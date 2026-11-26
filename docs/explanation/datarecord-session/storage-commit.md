@@ -286,7 +286,7 @@ Each operation becomes one call. `wr` is the WR on the parent:
 
 The session writes a table part to a local temporary file and reads it as a DuckDB relation on the workspace's connection `con`. DR stages its rows in its own tables during the call, so the file can go after the call.
 
-A `set` names an attribute by its plain name, or a property as `subject.name`, such as `entity.carrier`. This is DR's rule: a plain name is always an attribute (`docs/reference/data-model.md`, "Properties"). A property takes `value` or `values`, never `table`. A property of a multi-dimension, such as `connection.role`, takes `value` only (`mutable.py:1116-1121`). A field such as `connection.bus` cannot be set, because a field is part of the label (`mutable.py:1040-1046`).
+A `set` names an attribute by its plain name, or a property as `subject.name`, such as `entity.carrier`. This is DR's rule: a plain name is always an attribute (`docs/reference/data-model.md`, "Properties"). A property takes `value` or `values`, never `table`. A property of a multi-dimension, such as `connection.bus`, takes `value` only (`mutable.py:1116-1121`). A field such as `connection.port` cannot be set, because a field is part of the label (`mutable.py:1040-1046`).
 
 Each DR call is one transaction. A refused call leaves the staged rows as they were (`docs/reference/editing.md`, "Transactions and staging").
 
@@ -307,7 +307,7 @@ The order of the operations matters, and DR defines the result of each order:
 | Several labels | `{"entity": ["DE0 1 solar", "DE0 2 solar"]}` | The same value at each label. |
 | Several lists | `{"entity": ["a", "b"], "snapshot": ["2013-01-01T00:00:00", "2013-01-01T01:00:00"]}` | The value at every combination (probe). |
 | Every label | the key is missing | One row with NULL in that dimension: every label, also labels that are added later. |
-| One tuple of a multi-dimension | `{"entity": "DE0 1 H2 Electrolysis", "bus": "DE0 1 H2"}` | Every field of the multi-dimension is given. |
+| One tuple of a multi-dimension | `{"entity": "DE0 1 H2 Electrolysis", "port": 1}` | Every field of the multi-dimension is given. |
 | Every tuple | no key of any field | One row with a NULL struct: every tuple. |
 
 The rules:
@@ -393,16 +393,16 @@ The FE uses `value` for one value at one or many labels. It uses `values` for a 
 - A field of a new tuple must be a label of its axis, else `KeyError`. The entity comes first, then its `connection` tuples.
 - A new label goes after the last label of the axis. A label that this changeset removed returns to its base place (`mutable.py:1696-1703`).
 - `add` sets no attribute value. A new label takes the values of rows that leave its dimension NULL, from any layer, and else the default (`docs/reference/data-model.md`, "The broadcast rule"). The FE sets each value that the label needs with `set` after the `add`.
-- DR refuses `add` and `remove` on a dimension with `one_of`, such as `ctype` and `role` (`mutable.py:1832-1852`).
+- DR refuses `add` and `remove` on a dimension with `one_of`, such as `ctype` (`mutable.py:1832-1852`).
 
-In a PyPSA store a component attaches to a bus through a `connection` tuple, with the property `role`: `input`, `output` or `attached` (`docs/reference/tools.md`, "Ports"). The entity's properties are `ctype`, `carrier`, `sign` and `type`.
+In a PyPSA store each port of a component is a `connection` tuple `(entity, port)`. The property `connection.bus` names the bus the port attaches to. The port is PyPSA's number in `bus0`, `bus1`, ..., and a one-port component has its `bus` at port 0 (`docs/reference/tools.md`, "Ports"). The entity's properties are `ctype`, `carrier`, `sign` and `type`.
 
 `remove` stages the axis without the labels (`docs/reference/editing.md`, "`add` and `remove`"):
 
 - Every value at a removed label goes.
-- Every tuple of any multi-dimension that holds the label goes, with its values. `remove("bus", ["north"])` removes every connection at `north`.
+- Every tuple of any multi-dimension that holds the label goes, with its values. `remove("entity", ["DE0 1 oil"])` removes every connection of that entity.
 - A row that leaves the dimension NULL stays and applies to the labels that remain (`docs/reference/layers.md`, "Removing labels").
-- DR refuses the call with `ValueError` while a property that refers to the dimension still names the label (`mutable.py:1972-2006`).
+- DR refuses the call with `ValueError` while a property that refers to the dimension still names the label (`mutable.py:1972-2006`). `remove("bus", ["north"])` is refused while a `connection.bus` names `north`.
 - DR ignores a label that the axis does not hold, without an error (probe). The session refuses it, so that a stale FE does not commit a silent no-op.
 
 ### Examples
@@ -462,25 +462,25 @@ A snapshot that the table leaves out keeps its current value. The WR restates it
 (e) A value on a connection:
 
 ```json
-[{"op": "set", "name": "efficiency", "at": {"entity": "DE0 1 H2 Electrolysis", "bus": "DE0 1 H2"}, "value": 0.7}]
+[{"op": "set", "name": "efficiency", "at": {"entity": "DE0 1 H2 Electrolysis", "port": 1}, "value": 0.7}]
 ```
 
 ```python
-wr.set("efficiency", 0.7, entity="DE0 1 H2 Electrolysis", bus="DE0 1 H2")
+wr.set("efficiency", 0.7, entity="DE0 1 H2 Electrolysis", port=1)
 ```
 
 (f) A new generator with its properties, its bus and two attributes:
 
 ```json
 [{"op": "add", "dim": "entity", "labels": ["DE0 1 solar new"], "properties": {"ctype": "Generator", "carrier": "solar"}},
- {"op": "add", "dim": "connection", "labels": [{"entity": "DE0 1 solar new", "bus": "DE0 1"}], "properties": {"role": "attached"}},
+ {"op": "add", "dim": "connection", "labels": [{"entity": "DE0 1 solar new", "port": 0}], "properties": {"bus": "DE0 1"}},
  {"op": "set", "name": "p_nom", "at": {"entity": "DE0 1 solar new"}, "value": 500},
  {"op": "set", "name": "capital_cost", "at": {"entity": "DE0 1 solar new"}, "value": 30000}]
 ```
 
 ```python
 wr.add("entity", ["DE0 1 solar new"], ctype="Generator", carrier="solar")
-wr.add("connection", [{"entity": "DE0 1 solar new", "bus": "DE0 1"}], role="attached")
+wr.add("connection", [{"entity": "DE0 1 solar new", "port": 0}], bus="DE0 1")
 wr.set("p_nom", 500.0, entity="DE0 1 solar new")
 wr.set("capital_cost", 30000.0, entity="DE0 1 solar new")
 ```
