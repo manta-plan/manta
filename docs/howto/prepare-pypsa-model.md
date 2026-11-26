@@ -87,7 +87,7 @@ print(base.manifest.meta)
 
 `store.commit` writes the revision to `ac-dc-meshed/layers/` and returns it, with `manta.kind` in its metadata.
 Manta reads `manta.kind` to find out what a revision contains: `scenario` for inputs, or `result` for the results of a run.
-It does not open a data record unless the first revision is a `scenario`.
+Manta only opens a data record whose first revision is a `scenario`.
 
 ## Name the base revision
 
@@ -125,7 +125,7 @@ You can leave out either `description`, but Manta needs all the other keys.
 ## Check the result
 
 A block in Manta builds a PyPSA network from the revision and solves it with HiGHS.
-To check your data record, do the same, and solve your original network for comparison:
+To check your data record, build a network from its base revision, solve it, and solve your original network for comparison:
 
 ```python
 from uuid import UUID
@@ -144,15 +144,20 @@ print(round(n.objective), round(back.objective))
 
 Both networks give the same objective value, so the data record contains everything the optimisation needs.
 When the two values match, your model is ready.
-Send the folder to your Manta administrator.
+Send the folder to your Manta administrator, or add it to your own deployment of Manta.
 
 If you do not get two matching values:
 
-- If both networks are infeasible, a run in Manta also fails. A block stops the run when the solver does not find an optimal solution. If the cause is demand that the network cannot meet, add load-shedding generators with `n.optimize.add_load_shedding()`, then write the data record again.
-- If the two values differ, check whether any global constraint in your network has a `bus`. `datarecord` currently does not save it ([datarecord#162](https://github.com/energy-models/datarecord/issues/162)), so the constraint applies to the whole network once you build it from the data record. Manta's blocks build the network in the same way, so results in Manta differ from your own results too.
-- If your network is too large to solve on your computer, compare the two networks at a lower time resolution. For example, solve `n.cluster.temporal.downsample(6)` and `back.cluster.temporal.downsample(6)`.
+- If both networks are infeasible, a run in Manta also fails.
+  A block stops the run when the solver does not find an optimal solution.
+  If the cause is demand that the network cannot meet, add load-shedding generators with `n.optimize.add_load_shedding()`, then write the data record again.
+- If the two values differ, check whether any global constraint in your network has a `bus`.
+  `datarecord` currently does not save it ([datarecord#162](https://github.com/energy-models/datarecord/issues/162)), so the constraint applies to the whole network once you build it from the data record.
+  Manta's blocks build the network in the same way, so results in Manta differ from your own results too.
+- If your network is too large to solve on your computer, compare the two networks at a lower time resolution.
+  For example, solve `n.cluster.temporal.downsample(6)` and `back.cluster.temporal.downsample(6)`.
 
 !!! info "See also"
 
     - For the blocks that can run on your model, see [Playbooks and blocks](../user-guide/playbooks.md).
-    - To do the same for another modelling framework, see [Convert your model to tables and back](prepare-for-manta.md#convert-your-model-to-tables-and-back).
+    - To do the same for another modelling framework, see [Convert your model to data records and back](prepare-for-manta.md#convert-your-model-to-data-records-and-back).
