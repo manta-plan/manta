@@ -21,9 +21,8 @@ You do not need to install Manta.
 
 !!! warning "Adding your data record to Manta"
 
-    You currently cannot upload a model in the web app, so an administrator has to add your data record.
-    See the [table of stages](../user-guide/index.md#what-the-web-app-supports-today) for what the web app supports today.
-    At the end of this guide you have a folder to send to your Manta administrator.
+    You currently cannot upload a model in the web app, so an administrator has to add your data record or you have to deploy Manta yourself.
+    See the [table of stages](../user-guide/index.md#what-the-web-app-supports-today) to see when we plan to support adding your own data record in our web app.
 
 ## Make every component name unique
 
