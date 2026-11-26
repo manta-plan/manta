@@ -148,7 +148,7 @@ You may need to change some of your steps before they fit:
 - If your workflow decides from the data whether a step should run, add that decision as a setting in the block's configuration.
   Manta works out which blocks run [from the block configuration alone](../explanation/blocks-and-playbooks.md#conditions-look-only-at-settings), before the run starts.
 - If your workflow repeats a step until a result converges, keep the loop inside one block.
-  A playbook runs each of its blocks at most once, in order.
+  A playbook runs each of its steps at most once, in order; specific blocks can be referenced in more than one step.
 
 !!! note "More options are on their way"
 
@@ -170,6 +170,7 @@ To check a block, [run it on its own](https://github.com/manta-plan/manta/blob/m
 
 Each block has configuration, in which every setting is defined alongside its type and default value.
 Before any block runs, Manta checks a playbook's configuration against these and lists every problem it finds.
+This covers common pitfalls in specifying the playbook, but will not catch validators written in Python; those will only be caught when you run the playbook.
 
 To prepare, write one configuration for each block as [pydantic](https://docs.pydantic.dev) models:
 
