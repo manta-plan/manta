@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@annotorious/annotorious':
+        specifier: ^3.10.0
+        version: 3.10.0
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -20,9 +23,6 @@ importers:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@markerjs/markerjs3':
-        specifier: ^3.10.0
-        version: 3.10.0
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0))
@@ -77,9 +77,6 @@ importers:
       react-map-gl:
         specifier: ^8.1.3
         version: 8.1.3(maplibre-gl@5.24.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react-zoom-pan-pinch:
-        specifier: ^4.4.0
-        version: 4.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       swr:
         specifier: ^2.5.1
         version: 2.5.1(react@19.2.8)
@@ -137,6 +134,12 @@ importers:
         version: 5.1.0(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0))
 
 packages:
+
+  '@annotorious/annotorious@3.10.0':
+    resolution: {integrity: sha512-EZcyKu/aCD3Lk2ztG3QkyvC65Sbq7mmJvM+xsXi2VI6QzZVNXNewn4VfUoW8DgM/5ay8FkC56dCOvuhxy1VANQ==}
+
+  '@annotorious/core@3.10.0':
+    resolution: {integrity: sha512-AAqsAiHZEJsgQYeXb8VPk8C2GpI0HTFXYEgXP3AWKsyS4Jw2+NMqLL1V4//CqVwNab69nk2MuYDaKkZz3yewpA==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -318,9 +321,6 @@ packages:
 
   '@maplibre/vt-pbf@4.3.3':
     resolution: {integrity: sha512-dEe5XUd64RQbxNxy2OzIkJnwNDWjVmSXjCd0A7zLirm7QJ/WWbmtDFIkfsiM4yt1cplqzG6oSivRYeWx1SM1yg==}
-
-  '@markerjs/markerjs3@3.10.0':
-    resolution: {integrity: sha512-SvrnRjK5mvOZ+PowsGKf8D4qRjbXkR9NSI+QPt2qRu8YczQt/sWWxSKI40WW7X4lKMAzRXddsuGh9PdF0XTnzA==}
 
   '@oxc-project/types@0.143.0':
     resolution: {integrity: sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA==}
@@ -1436,10 +1436,23 @@ packages:
   murmurhash-js@1.0.0:
     resolution: {integrity: sha512-TvmkNhkv8yct0SVBSy+o8wYzXjE4Zz3PCesbfs8HiCXXdcTuocApFv11UWlNFWKYsP2okqrhb7JNlSm9InBhIw==}
 
+  nanoevents@10.0.0:
+    resolution: {integrity: sha512-PmIJ3BNxOzgVgnS1r/Pvyj6eZx/xUV2JCPogh0brD6smDIwjRlr1KBl9yoRX323PlfaNrBDDnfCgC9SL00OjSg==}
+    engines: {node: ^22.0.0 || ^24.0.0 || >=26.0.0}
+
   nanoid@3.3.18:
     resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
+
+  nanoid@6.0.2:
+    resolution: {integrity: sha512-hIvVOb9Qr1p/9CNNLOe0OlWvgx/ziTsVwKN/GDSsuArN2K0wDiafP3s0SWmsm7o2BdnyS8Z9Z64NFBUbn6ziBg==}
+    engines: {node: ^22 || ^24 || >=26}
+    hasBin: true
+
+  nanostores@1.5.5:
+    resolution: {integrity: sha512-FixtE239Gl6Gz0ZGCK0WzvNwObNCIwVT+L7zQcf1QgcA6AzBxblzqe9OT88qiucNkhsjSOqiogSaF5jVbJiqSA==}
+    engines: {node: ^20.0.0 || >=22.0.0}
 
   node-releases@2.0.53:
     resolution: {integrity: sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ==}
@@ -1507,6 +1520,9 @@ packages:
   quickselect@3.0.0:
     resolution: {integrity: sha512-XdjUArbK4Bm5fLLvlm5KpTFOiOThgfWWI4axAZDWg4E/0mKdZyI9tNEfds27qCi1ze/vwTR16kvmmGhRra3c2g==}
 
+  rbush@4.0.1:
+    resolution: {integrity: sha512-IP0UpfeWQujYC8Jg162rMNc01Rf0gWMMAb2Uxus/Q0qOFw4lCcq6ZnQEZwUoJqWyUGJ9th7JjwI4yIWo+uvoAQ==}
+
   react-arborist@3.16.0:
     resolution: {integrity: sha512-Pp1TQXETKMeg/0yAMGBFIwze7IfZaghDScX4vekJ4Ge8/t7uYifbDBhEGUSOYaDuahE1f8fyBIrlN2pLD4ysTA==}
     peerDependencies:
@@ -1564,13 +1580,6 @@ packages:
       react: ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  react-zoom-pan-pinch@4.4.0:
-    resolution: {integrity: sha512-7lMrVmFopsR3KeUNesScTUcc9pNxfEPaqsJfwEH2rkuzLEMqEvwJlPaqEY8gCZ9q2AEpxplZMAZTwr/m7nY05g==}
-    engines: {node: '>=8', npm: '>=5'}
-    peerDependencies:
-      react: '*'
-      react-dom: '*'
-
   react@19.2.8:
     resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
     engines: {node: '>=0.10.0'}
@@ -1613,6 +1622,9 @@ packages:
   set-value@2.0.1:
     resolution: {integrity: sha512-JxHc1weCN68wRY0fhCoXpyK55m/XPHafOmK4UWD7m2CI14GMcFypt4w/0+NV5f/ZMby2F6S2wwA7fgynh9gWSw==}
     engines: {node: '>=0.10.0'}
+
+  simplify-js@1.2.4:
+    resolution: {integrity: sha512-vITfSlwt7h/oyrU42R83mtzFpwYk3+mkH9bOHqq/Qw6n8rtR7aE3NZQ5fbcyCUVVmuMJR6ynsAhOfK2qoah8Jg==}
 
   sort-asc@0.2.0:
     resolution: {integrity: sha512-umMGhjPeHAI6YjABoSTrFp2zaBtXBej1a0yKkuMUyjjqu6FJsTF+JYwCswWDg+zJfk/5npWUUbd33HH/WLzpaA==}
@@ -1721,6 +1733,10 @@ packages:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  uuid@14.0.3:
+    resolution: {integrity: sha512-Sc5u1VVln93y1Xnz4R+CunOZc7R9LUcTmhj7Rc7Eg3HVcf7rVn2FOoa812fe0W8p3jD7xeoGSYbfqCGGH2B6xw==}
+    hasBin: true
 
   vite@8.2.1:
     resolution: {integrity: sha512-EU/eS7BH3XROHh2YnBefjM6DBKA6ZeMZEYQbj7NLWg5wHYlhB8B/Mayd5XsgWq+NFYccDOTemRpdETWR6Ka/lw==}
@@ -1860,6 +1876,22 @@ packages:
         optional: true
 
 snapshots:
+
+  '@annotorious/annotorious@3.10.0':
+    dependencies:
+      '@annotorious/core': 3.10.0
+      dequal: 2.0.3
+      rbush: 4.0.1
+      simplify-js: 1.2.4
+      uuid: 14.0.3
+
+  '@annotorious/core@3.10.0':
+    dependencies:
+      dequal: 2.0.3
+      nanoevents: 10.0.0
+      nanoid: 6.0.2
+      nanostores: 1.5.5
+      uuid: 14.0.3
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2082,8 +2114,6 @@ snapshots:
       '@mapbox/point-geometry': 1.1.0
       '@types/geojson': 7946.0.16
       pbf: 5.1.2
-
-  '@markerjs/markerjs3@3.10.0': {}
 
   '@oxc-project/types@0.143.0': {}
 
@@ -2915,7 +2945,13 @@ snapshots:
 
   murmurhash-js@1.0.0: {}
 
+  nanoevents@10.0.0: {}
+
   nanoid@3.3.18: {}
+
+  nanoid@6.0.2: {}
+
+  nanostores@1.5.5: {}
 
   node-releases@2.0.53: {}
 
@@ -2993,6 +3029,10 @@ snapshots:
 
   quickselect@3.0.0: {}
 
+  rbush@4.0.1:
+    dependencies:
+      quickselect: 3.0.0
+
   react-arborist@3.16.0(@types/node@24.13.3)(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       react: 19.2.8
@@ -3050,11 +3090,6 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  react-zoom-pan-pinch@4.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-
   react@19.2.8: {}
 
   redux@4.2.1:
@@ -3105,6 +3140,8 @@ snapshots:
       is-extendable: 0.1.1
       is-plain-object: 2.0.4
       split-string: 3.1.0
+
+  simplify-js@1.2.4: {}
 
   sort-asc@0.2.0: {}
 
@@ -3195,6 +3232,8 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
       react: 19.2.8
+
+  uuid@14.0.3: {}
 
   vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0):
     dependencies:
