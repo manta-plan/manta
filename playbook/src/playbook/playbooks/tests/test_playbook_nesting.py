@@ -12,13 +12,13 @@ inputs.
 import pytest
 
 from playbook.blocks.tests.fakes import (
-    STORE,
     FakeAddsClustered,
     FakeNeedsUpstream,
     FakePassthrough,
     FakeRemovesInvestmentPeriod,
     FakeRequiresInvestmentPeriod,
     FakeStrictConfig,
+    steps,
 )
 from playbook.playbooks.playbook import Playbook, When
 from playbook.playbooks.validation import PlaybookHasIssuesError
@@ -135,7 +135,7 @@ def test_a_playbook_that_contains_itself_is_reported_not_hung():
         assert "never finish" in issues[0].message
 
 
-def test_a_nested_playbook_executes_within_the_outer_run(initial_record):
+def test_a_nested_playbook_executes_within_the_outer_run(initial_revision):
     child = Playbook(name="child")
     child.add("inner", FakePassthrough)
 
@@ -149,11 +149,10 @@ def test_a_nested_playbook_executes_within_the_outer_run(initial_record):
         "nested": {"inner": {"label": "inner"}},
         "after": {"label": "after"},
     }
-    result = outer.run(initial_record, config)
-    assert result.url == f"{STORE}+before+inner+after"
+    assert steps(outer.run(initial_revision, config)) == ["before", "inner", "after"]
 
 
-def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
+def test_a_nested_playbook_inherits_the_outer_globals(initial_revision):
     # Shared settings do not have to be repeated at every level, so a condition
     # inside a nested playbook can read a global the outer playbook set.
     child = Playbook(name="child")
@@ -163,13 +162,13 @@ def test_a_nested_playbook_inherits_the_outer_globals(initial_record):
     outer.add_playbook("nested", child)
 
     on = {"globals": {"mode": "on"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, on).url == f"{STORE}+inner"
+    assert steps(outer.run(initial_revision, on)) == ["inner"]
 
     off = {"globals": {"mode": "off"}, "nested": {"inner": {"label": "inner"}}}
-    assert outer.run(initial_record, off).url == STORE
+    assert outer.run(initial_revision, off) == initial_revision
 
 
-def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
+def test_a_nested_playbook_can_have_globals_of_its_own(initial_revision):
     child = Playbook(name="child")
     child.add("inner", FakePassthrough, when=When(config="globals.mode", equals="on"))
 
@@ -180,4 +179,4 @@ def test_a_nested_playbook_can_have_globals_of_its_own(initial_record):
         "globals": {"mode": "off"},
         "nested": {"globals": {"mode": "on"}, "inner": {"label": "inner"}},
     }
-    assert outer.run(initial_record, config).url == f"{STORE}+inner"
+    assert steps(outer.run(initial_revision, config)) == ["inner"]

@@ -6,12 +6,7 @@ function openScenarioDisclosure(tourId: string) {
   if (disclosure?.getAttribute("aria-expanded") === "false") disclosure.click();
 }
 
-function openMapLayersDrawer() {
-  const toggle = document.querySelector<HTMLButtonElement>('[data-tour="map-layers-toggle"]');
-  if (toggle?.getAttribute("aria-pressed") === "false") toggle.click();
-}
-
-function startAfterRender(steps: DriveStep[], onDestroyed?: () => void) {
+export function startAfterRender(steps: DriveStep[], onDestroyed?: () => void) {
   window.requestAnimationFrame(() => {
     driver({
       animate: true,
@@ -98,55 +93,36 @@ export function startHomeTour() {
   ]);
 }
 
-export function startModelWorkspaceTour() {
-  openMapLayersDrawer();
+export function startBuildWorkspaceTour() {
   startAfterRender([
     {
-      element: '[data-tour="model-tree-panel"]',
+      element: '[data-tour="scenarios-panel"]',
+      popover: {
+        title: "Scenarios",
+        description:
+          "The record's scenarios and what each one changes. Click one to show it: the tree and the page follow.",
+        side: "right",
+        align: "start",
+      },
+    },
+    {
+      element: '[data-tour="record-tree-panel"]',
       popover: {
         title: "Record",
         description:
-          "The record on the record server: its entities by ctype and carrier, and its dimensions.",
-        side: "right",
-        align: "start",
-      },
-    },
-    {
-      element: '[data-tour="model-tree-item"]',
-      popover: {
-        title: "Browse entities",
-        description:
-          "Expand a ctype and a carrier to list its entities, and click one to see its properties, connections and attributes. Hover a row for a table of all of them.",
+          "Entities by type and carrier, and locations with their buses. Click a row to open its page.",
         side: "right",
         align: "center",
       },
     },
     {
-      element: '[data-tour="run-main-section"]',
+      element: '[data-tour="inspect-main-section"]',
       popover: {
-        title: "Map",
+        title: "Level page",
         description:
-          "Locations, their regions, and the lines between them. Click a location for what happens inside it, or a line for its entities. Switch to zones from the Resolution menu.",
+          "Stat tiles, the table, the map and graph, and the chart drawer, for the level the tree opened. The investment period and time window above set what they read.",
         side: "left",
         align: "center",
-      },
-    },
-    {
-      element: '[data-tour="map-layers-toggle"]',
-      popover: {
-        title: "Map layers",
-        description: "Toggle each layer’s visibility here.",
-        side: "bottom",
-        align: "center",
-      },
-    },
-    {
-      element: '[data-tour="map-layers-panel"]',
-      popover: {
-        title: "Layer styling",
-        description: "Select a layer to adjust its color and opacity, or jump to its table.",
-        side: "left",
-        align: "start",
       },
     },
   ]);
@@ -224,74 +200,6 @@ export function startRunWorkspaceTour() {
     hasRealRunItem
       ? undefined
       : () => useProjectStore.getState().setRunTourPlaceholderVisible(false),
-  );
-}
-
-export function startReportWorkspaceTour() {
-  // Same stand-in approach as the Run tour when there's no report yet.
-  const hasRealReportItem = Boolean(document.querySelector('[data-tour="report-item"]'));
-  if (!hasRealReportItem) useProjectStore.getState().setReportTourPlaceholderVisible(true);
-  startAfterRender(
-    [
-      {
-        element: '[data-tour="reports-panel"]',
-        popover: {
-          title: "Reports",
-          description: "This panel lists every report in the project.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="new-report-action"]',
-        popover: {
-          title: "Create a report",
-          description: "Use this action to open the new-report form.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="report-item"]',
-        popover: {
-          title: "Select a report",
-          description: "Select a row to open its dashboard. Select it again to return here.",
-          side: "right",
-          align: "center",
-        },
-      },
-      {
-        element: '[data-tour="run-main-section"]',
-        popover: {
-          title: "Report workspace",
-          description:
-            "This area shows the selected report dashboard. When no report is selected, it provides this overview and tour.",
-          side: "left",
-          align: "center",
-        },
-      },
-      {
-        element: '[data-tour="scenario-runs-panel"]',
-        popover: {
-          title: "Run results",
-          description: "These are the run results a report can be built from.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="report-result-item"]',
-        popover: {
-          title: "Create from a result",
-          description: "Select a run result to prefill the new-report form with it.",
-          side: "right",
-          align: "center",
-        },
-      },
-    ],
-    hasRealReportItem
-      ? undefined
-      : () => useProjectStore.getState().setReportTourPlaceholderVisible(false),
   );
 }
 

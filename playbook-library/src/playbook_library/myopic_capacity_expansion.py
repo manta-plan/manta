@@ -3,23 +3,23 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
-from pydantic import Field
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, MantaBlock
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
     BUILT_COMPONENTS,
     investment_periods,
     nominal_attr,
     optimize_network,
     remove_unbuilt_cohorts,
+    solve_and_write,
     to_network,
-    write_network,
 )
 
 
-class MyopicCapacityExpansionConfig(ConfigSchema):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class MyopicCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
+    pass
 
 
 class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):
@@ -31,8 +31,8 @@ class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):
     so the first period starts from what exists alone.
 
     Each solved period is written as a revision of its own, a child of the previous
-    period's, adding that period's results to those before it. The record returned points
-    at the last period's revision, which holds the results of every period.
+    period's, adding that period's results to those before it. The revision returned is
+    the last period's, which holds the results of every period.
     """
 
     ENV = "pypsa"
@@ -61,14 +61,15 @@ class MyopicCapacityExpansion(MantaBlock[MyopicCapacityExpansionConfig]):
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
         return optimize_network(n, self.config.optimize_config, multi_investment_periods=True)
 
-    def run(self, record: DataRecord) -> DataRecord:
-        written = record
+    def run(self, base: Revision) -> Revision:
+        written = base
         previous = None
-        for period in investment_periods(record):
-            n_period = to_network(record, select={"period": [period]})
+        for period in investment_periods(base):
+            n_period = to_network(base, select={"period": [period]})
             if previous is not None:
                 self.add_brownfield(n_period, previous)
             remove_unbuilt_cohorts(n_period)
-            previous = self.optimize(n_period)
-            written = write_network(previous, written, results_only=True)
+            previous, written = solve_and_write(
+                n_period, written, self.optimize, self.config.time_aggregation, True
+            )
         return written

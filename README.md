@@ -1,15 +1,18 @@
 # Manta
 
+<!-- --8<-- [start:docs-preamble] -->
 Manta is an open-source energy modeling tool, designed to make cutting-edge
 energy models accessible to all.
 
 For more details on the vision and roadmap, see our website: https://manta-plan.org/
+<!-- --8<-- [end:docs-preamble] -->
 
 > [!NOTE]
 > This repository and the instructions below are for **developers**. If you
 > want to use Manta or join as a beta tester, please wait for the MVP, which
 > will be available at a public URL in the near future.
 
+<!-- --8<-- [start:docs-install] -->
 ## Running Manta locally
 
 The quickest way to try Manta is to run the whole stack (frontend, backend and
@@ -191,12 +194,13 @@ the package-level READMEs for setup instructions:
 - [playbook-library/README.md](playbook-library/README.md) for the blocks and playbooks Manta ships.
 - [docker/README.md](docker/README.md) for local services and Docker notes.
 
+<!-- --8<-- [start:docs-test-deployment] -->
 ## Internal test deployment
 
 > [!IMPORTANT]
 > This section is for the Manta core team. It documents an ad-hoc prototype
 > instance on our own GCP project and is not a supported way to deploy Manta.
-> To try Manta yourself, see [Running Manta locally](#running-manta-locally).
+> To try Manta yourself, see [Running Manta locally](https://github.com/manta-plan/manta/blob/main/README.md#running-manta-locally).
 
 Currently a test instance is deployed for internal purposes, in `europe-north2`
 (Stockholm). Its container name is `manta-adhoc-2` (no points for creativity).
@@ -276,3 +280,4 @@ background the task, or use `nohup` / `disown` to detach them from your ssh proc
 This is a very quick and dirty guide to spinning up an instance of manta. There
 are many many issues with this right now, but a proper deployment with terraform
 etc. is on the way.
+<!-- --8<-- [end:docs-test-deployment] -->

@@ -1,44 +1,42 @@
-import type { InspectionCanvas } from "../data/inspections";
-import type { InspectionContent } from "../data/inspections";
-import type { MapLayerStyle } from "../data/map-layers";
+import type { InspectionCanvas, InspectionContent } from "../../analyse/data/inspections";
+import type { PageSetup, Report, ReportBlock, ReportPage } from "../../analyse/data/reports";
+import type { ReportTheme } from "../../analyse/data/report-themes";
+import type { EditOptions, ReportHistories } from "../../analyse/lib/report-history";
 import type { ConnectionStatus } from "../lib/record-server/client";
 import type {
-  Branch,
   Carrier,
   EntityCount,
   Location,
   LocationZone,
   RecordInfo,
-  Region,
   ScenarioChangeSummary,
   ScenarioChangeValue,
 } from "../lib/record-server/types";
-import type { Report, ReportCanvasPreset } from "../data/reports";
-import type { ReportWidget } from "../data/report-widgets";
-import type { Run, RunStatus } from "../data/runs";
+import type { Run } from "../data/runs";
 import type {
   Scenario,
   ScenarioDirectChange,
   ScenarioMutation,
   ScenarioRule,
 } from "../data/scenarios";
+import type {
+  ChangeDialogSeed,
+  DraftChangeInput,
+  DraftScenario,
+  EntityDialogSeed,
+} from "../lib/draft-scenarios";
 
-export type { InspectionCanvas } from "../data/inspections";
-export type { Report } from "../data/reports";
-export type { ReportCanvasPreset } from "../data/reports";
-export type { ReportWidget } from "../data/report-widgets";
 export type { Run } from "../data/runs";
 export type { Scenario } from "../data/scenarios";
+
+export type { InspectionCanvas } from "../../analyse/data/inspections";
+export type { Report } from "../../analyse/data/reports";
 
 export type ToolId = "select" | "identify" | "measure-distance" | "measure-area";
 
 // The two vector basemaps follow the UI theme; satellite imagery has no
 // light/dark variant, so it stays put when the theme toggles.
 export type BasemapId = "vector-dark" | "vector-light" | "satellite";
-
-// 'nodal' (the record as is), or a zone level: a busmap_* attribute name.
-export type Resolution = string;
-export const NODAL: Resolution = "nodal";
 
 // What a session loads once from the record server; the tree's entities and
 // an item's attributes are fetched on demand instead.
@@ -48,9 +46,6 @@ export interface LoadedRecord {
   entityCounts: EntityCount[];
   locations: Location[];
   zones: LocationZone[];
-  // Branches between two real locations: what the map draws.
-  branches: Branch[];
-  regions: Region[];
   // Per scenario, the attributes it changes.
   scenarioChanges: ScenarioChangeSummary[];
   // The scenario shown (a revision name; null for a plain record), and the
@@ -59,22 +54,6 @@ export interface LoadedRecord {
   scenario: string | null;
   changes: Map<string, ScenarioChangeValue>;
 }
-
-// Something the tree, map or drawers point at.
-export type RecordItem =
-  | { kind: "entity"; entity: string; ctype: string; carrier: string | null; locations: string[] }
-  // `name` is how the label reads, where its text isn't readable (a struct).
-  | { kind: "label"; dim: string; label: string; name?: string };
-
-export type TableDrawerContent =
-  // A Data Catalogue file's placeholder table.
-  | { kind: "catalog"; title: string }
-  | { kind: "entities"; ctype: string; carrier: string | null }
-  | { kind: "series"; entity: string; attribute: string; bus: string | null }
-  // One location, or a zone's locations.
-  | { kind: "location"; title: string; locations: string[] }
-  // One attribute a scenario changes, per entity or bus.
-  | { kind: "scenario-change"; scenario: string; attribute: string };
 
 export type UtilityDrawerFlow = "ai-chat" | "share";
 
@@ -94,9 +73,10 @@ export interface CreateRunInput {
 
 export interface CreateReportInput {
   name: string;
-  scenarioName: string;
-  runId?: string;
-  canvasPreset: ReportCanvasPreset;
+  page: PageSetup;
+  theme: ReportTheme;
+  /** What the report starts with; one empty page when left out. */
+  pages?: ReportPage[];
 }
 
 export interface CreateInspectionInput {
@@ -153,29 +133,12 @@ export interface ProjectState {
   basemap: BasemapId;
   setBasemap: (basemap: BasemapId) => void;
 
-  // Overrides only: a layer without an entry shows its default (see mapLayers.ts).
-  mapLayerVisibility: Record<string, boolean>;
-  setMapLayerVisible: (id: string, visible: boolean) => void;
-
-  mapLayerStyle: Record<string, Partial<MapLayerStyle>>;
-  setMapLayerColor: (id: string, color: string) => void;
-  setMapLayerOpacity: (id: string, opacity: number) => void;
-  resetMapLayerStyle: (id: string) => void;
-
   utilityDrawerFlow: UtilityDrawerFlow | null;
   toggleUtilityDrawer: (flow: UtilityDrawerFlow) => void;
   closeUtilityDrawer: () => void;
 
-  isMapLayersDrawerOpen: boolean;
-  toggleMapLayersDrawer: () => void;
-  /** Closes the tab-specific drawers (bottom table, inner right stack) on project tab changes. */
+  /** Closes the tab-specific drawers (the scenario change table, the inner right stack) on project tab changes. */
   closePageDrawers: () => void;
-
-  isNewWidgetDrawerOpen: boolean;
-  editingWidgetId: string | null;
-  toggleNewWidgetDrawer: () => void;
-  openWidgetConfigDrawer: (widgetId: string) => void;
-  closeNewWidgetDrawer: () => void;
 
   configuringRunNodeId: string | null;
   openRunNodeConfigDrawer: (nodeId: string) => void;
@@ -183,35 +146,13 @@ export interface ProjectState {
   updateRunNodeParams: (runId: string, nodeId: string, params: Record<string, string>) => void;
 
   isRunFilterDrawerOpen: boolean;
-  runStatusFilters: RunStatus[];
   openRunFilterDrawer: () => void;
   closeRunFilterDrawer: () => void;
-  toggleRunStatusFilter: (status: RunStatus) => void;
-  clearRunFilters: () => void;
 
-  isInspectionFilterDrawerOpen: boolean;
-  inspectionFilters: string[];
-  openInspectionFilterDrawer: () => void;
-  closeInspectionFilterDrawer: () => void;
-  toggleInspectionFilter: (filter: string) => void;
-  clearInspectionFilters: () => void;
-
-  isReportFilterDrawerOpen: boolean;
-  reportFilters: string[];
-  openReportFilterDrawer: () => void;
-  closeReportFilterDrawer: () => void;
-  toggleReportFilter: (filter: string) => void;
-  clearReportFilters: () => void;
-
-  tableDrawer: TableDrawerContent | null;
-  openTableDrawer: (title: string) => void;
-  openEntityTable: (ctype: string, carrier: string | null) => void;
-  openSeriesChart: (entity: string, attribute: string, bus: string | null) => void;
+  // The attribute whose changes the bottom drawer shows (a Scenarios panel change row).
+  scenarioChange: { scenario: string; attribute: string } | null;
   openScenarioChange: (scenario: string, attribute: string) => void;
-  openLocationView: (title: string, locations: string[]) => void;
-  closeTableDrawer: () => void;
-  selectedMapLayerId: string | null;
-  selectMapLayer: (id: string) => void;
+  closeScenarioChange: () => void;
 
   isNewScenarioDrawerOpen: boolean;
   editingScenarioId: string | null;
@@ -239,17 +180,6 @@ export interface ProjectState {
   // tree, drawers and map follow. The one being loaded, until it's shown.
   switchingScenario: string | null;
   showScenario: (name: string) => void;
-
-  resolution: Resolution;
-  setResolution: (resolution: Resolution) => void;
-
-  // Highlighted in the tree and on the map.
-  selectedItem: RecordItem | null;
-  selectItem: (item: RecordItem | null) => void;
-  // Shown in the item drawer beside the sidebar.
-  itemDrawer: RecordItem | null;
-  openItemDrawer: (item: RecordItem) => void;
-  closeItemDrawer: () => void;
 
   scenarios: Scenario[];
   scenarioSelection: ScenarioSelection;
@@ -293,28 +223,40 @@ export interface ProjectState {
   selectedPlaybookScenarioId: string | null;
   selectPlaybook: (playbookId: string, scenarioId: string) => void;
 
+  // The Analyse tab: views (inspections) and reports, saved per project.
+  // The view or report open on the Analyse tab; selectedInspectionId is only a type or entity page on Inspect.
+  selectedViewId: string | null;
+  selectView: (id: string | null) => void;
   reports: Report[];
   /** Project whose reports are in `reports`; null until the first load. */
   reportsProjectId: string | null;
-  renameReport: (id: string, name: string) => void;
+  updateReport: (id: string, patch: { name: string; page: PageSetup }) => void;
+  updateReportBlocks: (
+    reportId: string,
+    pageId: string,
+    update: (blocks: ReportBlock[]) => ReportBlock[],
+    options?: EditOptions,
+  ) => void;
+  /** Undo and redo steps per open report, in memory. */
+  reportHistory: ReportHistories;
+  undoReport: (reportId: string) => void;
+  redoReport: (reportId: string) => void;
+  setReportTheme: (reportId: string, theme: ReportTheme) => void;
+  addReportPage: (reportId: string) => void;
+  removeReportPage: (reportId: string, pageId: string) => void;
   deleteReport: (id: string) => void;
+  /** Takes the views and reports another tab saved. */
+  refreshFromStorage: () => void;
   loadProjectReports: (projectId: string) => void;
-  isReportTourPlaceholderVisible: boolean;
-  setReportTourPlaceholderVisible: (visible: boolean) => void;
   selectedReportId: string | null;
   selectReport: (id: string | null) => void;
   isNewReportDrawerOpen: boolean;
-  /** Pass a dummy run result's id to prefill the form with it. */
-  openNewReportDrawer: (resultId?: string) => void;
-  newReportResultId: string | null;
+  openNewReportDrawer: () => void;
   /** Report being edited in the New Report drawer; null when creating. */
   editingReportId: string | null;
   openEditReportDrawer: (reportId: string) => void;
   closeNewReportDrawer: () => void;
   createReport: (input: CreateReportInput) => Report;
-  addWidgetToReport: (widget: ReportWidget) => void;
-  updateWidgetInReport: (widget: ReportWidget) => void;
-  removeWidgetFromReport: (widgetId: string) => void;
 
   inspections: InspectionCanvas[];
   /** Project whose inspections are in `inspections`; null until the first load. */
@@ -341,6 +283,33 @@ export interface ProjectState {
 
   cursorPosition: CursorPosition | null;
   setCursorPosition: (c: CursorPosition | null) => void;
+
+  // Draft scenarios, made on the Build tab and kept in the browser (see
+  // lib/draft-scenarios and slices/draft-slice).
+  draftScenarios: DraftScenario[];
+  loadProjectDrafts: (projectId: string) => void;
+  createDraft: (input: {
+    recordId: string;
+    parent: string;
+    name: string;
+    description: string;
+  }) => DraftScenario;
+  updateDraft: (id: string, patch: { name?: string; description?: string }) => void;
+  deleteDraft: (id: string) => void;
+  saveDraftChange: (draftId: string, change: DraftChangeInput) => void;
+  removeDraftChange: (draftId: string, changeId: string) => void;
+  // The draft the Build tab shows (over its parent, which the record shows).
+  shownDraftId: string | null;
+  showDraft: (id: string) => void;
+  scenarioDialog: { mode: "new" } | { mode: "edit"; draftId: string } | null;
+  openScenarioDialog: (dialog: { mode: "new" } | { mode: "edit"; draftId: string }) => void;
+  closeScenarioDialog: () => void;
+  changeDialog: ChangeDialogSeed | null;
+  openChangeDialog: (seed: ChangeDialogSeed) => void;
+  closeChangeDialog: () => void;
+  entityDialog: EntityDialogSeed | null;
+  openEntityDialog: (seed: EntityDialogSeed) => void;
+  closeEntityDialog: () => void;
 }
 
 export type ProjectStoreSet = (

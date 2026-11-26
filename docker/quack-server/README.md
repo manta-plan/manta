@@ -1,6 +1,6 @@
 # Record server (temporary)
 
-> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Model / Inspect / Report tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, 8010; token `QUACK_TOKEN`, `devtoken`; both set in `backend/.env`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
+> **Temporary.** Copied from baby-manta's `server/` (manta-plan/manta#223) so the Build / Inspect / Analyse tabs can be ported to the frontend before datarecord is integrated into the backend. It runs as the `quack-server` service of `docker/compose-dev-services.yaml` (host port `QUACK_SERVER_PORT`, 8010; token `QUACK_TOKEN`, `devtoken`; both set in `backend/.env`; records mounted read-only from `./data/records`). Remove it once the backend serves Quack itself. The Cloud Run deployment files were not copied. Below is the original README.
 
 ## Running in the dev stack
 
@@ -13,9 +13,7 @@
    cp -R <baby-manta>/server/data/records/. docker/quack-server/data/records/
    ```
 
-2. **Browser extensions (only for browser access).** `static/ext` is git-ignored too. Build it (see "The browser (DuckDB-Wasm)" below) or copy `<baby-manta>/server/static/ext` into `docker/quack-server/static/`. Without it, only `/api/*` works.
-
-3. **Start it** from `docker/`:
+2. **Start it** from `docker/`:
 
    ```sh
    docker compose --env-file ../backend/.env -f compose-dev-services.yaml --profile temporary-quack-setup up --build quack-server
@@ -23,9 +21,9 @@
 
    The service is in the opt-in compose profile `temporary-quack-setup`, so a plain `up` (and the integration tests) don't build or start it. To run the whole stack with it, drop the service name: `… --profile temporary-quack-setup up --build`.
 
-   Rebuild with `--build` after changing `static/ext` or the app.
+   Rebuild with `--build` after changing the app.
 
-4. **Check it.** The explorer is at <http://localhost:8010/?token=devtoken>, and:
+3. **Check it.** The explorer is at <http://localhost:8010/?token=devtoken>, and:
 
    ```sh
    curl -H 'Authorization: Bearer devtoken' localhost:8010/api/records
@@ -35,7 +33,6 @@
 |---|---|
 | `QUACK_SERVER_PORT` | `8010` (host port; not 8000, which the backend uses) |
 | `QUACK_TOKEN` | `devtoken` |
-| `QUACK_CORS_ORIGINS` | `http://localhost:5173` (compose default, not in `backend/.env`) |
 | `QUACK_RECORDS_ROOT` | `s3://${S3_BUCKET}/example-data` (compose default): the backend's example stores in SeaweedFS. `/srv/data/records` serves the local folder |
 | `QUACK_DEFAULT_RECORD` | `BEL-pre-aggregated-incl-patches-incl-results` (compose default): what a project that names no record opens. Not the first store (`BEL-full-res`, the biggest) |
 
@@ -59,7 +56,7 @@ browser (DuckDB-Wasm) ──ATTACH 'quack:host:port'──▶ FastAPI :8010 ─�
   - Cloud Run exposes only one port.
   - Quack sends no CORS headers.
   - Writes (edits, scenarios as child revisions, solves) will become `/api/*` endpoints instead of raw SQL.
-- **Read-only access is enforced by an authorization macro** (`app/quack.py`). See "Lockdown" below.
+- **Read-only access is enforced by an authorization macro** (`app/quack.py`). See "Two guards" under Findings.
 - **The app's own views live in a `manta` schema** (`app/manta_views.py`): plain SQL over the record views, holding what the app assumes about a record.
   - `bus_location`, `locations`: buses grouped into locations (a bus with an empty `location`, as in PyPSA-Earth, is its own); `EU`, PyPSA-Eur's copper plate, is virtual.
   - `location_zones`: zones from the `busmap_*` attributes, if the record has any.
@@ -144,10 +141,14 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 - `quack_serve` runs fine inside the Python process. The views and the served catalog are the same database.
 - **Two guards make access read-only.** Without them, any client can `read_csv('/etc/passwd')` and `COPY` to any path. That was confirmed on 1.5.5.
   1. DuckDB's own settings: the HTTP file systems switched off (no reads of arbitrary URLs), no extension installs, and the configuration locked. `enable_external_access = false` (with `allowed_directories`) was stricter, but datarecord's SQL reads Python objects by name, which DuckDB only resolves with external access on, and it can't be switched back on: records couldn't open after the lockdown. Bucket reads go through a key that can only read `manta-records`. The local file system stays on, as DuckDB needs it for temp files, so local files are guarded by the macro alone.
-  2. An authorization macro, which checks `json_serialize_sql` of each query:
-     - Only SELECT statements, plus the bare `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK` that a DuckDB 2 client wraps around every query.
-     - Table functions are limited to the catalog ones the client needs (`duckdb_schemas`, `duckdb_tables`, `duckdb_views`, …).
+  2. An authorization macro, which checks `json_serialize_sql` of each query (the parse, not the text, so case, quoting and `system.main.` qualifiers don't matter):
+     - Only SELECT statements, plus the bare `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK` that a DuckDB 2 client wraps around every query. So no COPY, ATTACH, INSTALL, LOAD, SET, PRAGMA, EXPLAIN or DDL.
+     - Table functions are limited to the catalog ones the client needs (`duckdb_schemas`, `duckdb_tables`, `duckdb_views`, …) and `range`, `generate_series`, `unnest`. That shuts out every file reader (`read_text`, `read_blob`, `read_csv`, `read_parquet`, `glob`, …), `duckdb_settings()`, `duckdb_secrets()`, `which_secret`, `query()`.
+     - No call anywhere in the query to `current_setting`, `getenv`, `quack_*` or the macro itself.
      - Table names can't be paths or URLs.
+     - `tests/test_quack_guard.py` checks the macro alone and through a running Quack, with queries as the app sends them (`quack_query_by_name`).
+
+     Still open, by design: any SELECT over the served views and functions can run, so a heavy query (a cross join, `range(1e12)`) can hog the server; and the catalog functions show the view definitions and catalog names. Disabling the local file system or external access would be stricter, but the views read their parquet files at query time and records open after the lockdown (checked 2026-11-25: with `LocalFileSystem` disabled, a view query fails; with `enable_external_access = false`, the record doesn't open).
 - **Remote tables in a non-`main` schema lose their schema name** in client queries (seen on 1.5.5). Views work, which is why the server exposes views rather than copying tables.
 - **`r.information_schema` isn't available remotely.** List views with `FROM quack_query_by_name('r', 'FROM duckdb_views()')` or `POST /api/records/{id}/open`.
 - **Joins:** a client query that joins two remote views works on 2.0; on 1.5.5 it failed. For anything heavier, `quack_query_by_name('r', $$…$$)` runs the whole query on the server, next to the data.
@@ -155,25 +156,8 @@ con.sql("SELECT ctype, count(*) FROM r.properties.entity GROUP BY ALL").show()
 
 ## The browser (DuckDB-Wasm)
 
-There is no stable duckdb-wasm release for DuckDB 2 yet. The newest dev build is `1.33.1-dev110.0` (2026-10-22), and its engine is exactly DuckDB v2.0.0: commit `d54cbbe3df`, the `v2.0.0` tag. It reports itself as `v2.0.0-dev88614` because it was built without the release tag. That breaks extension loading in two ways:
-- It looks for Quack under `extensions.duckdb.org/d54cbbe3df/…`, where nothing is published.
-- It refuses the `v2.0.0` build by its version field, even with `allow_extensions_metadata_mismatch`.
-
-Workaround for the proof of concept only:
-
-```sh
-scripts/build_quack_wasm.sh                        # prints the path of the build
-uv run python scripts/prepare_wasm.py --quack <it>  # -> static/ext/…, static/duckdb-wasm/…
-```
-
-The explorer uses that dev build. Confirmed 2026-10-25: Quack loads, ATTACH works, remote reads and joins work, and writes and file reads are refused.
-
-1. **Relabelled extensions.** `prepare_wasm.py` copies the v2.0.0 Wasm builds of `quack`, `httpfs` and `json` with their version field set to the commit. `json` is needed since datarecord's own tables have `JSON` columns: the client autoloads it while it reads the server's catalog, and without it ATTACH fails with `c is not a function`. Without `--quack`, a Quack already in `static/ext/` is kept. That voids the signature, so the explorer opens DuckDB with `allowUnsignedExtensions` and sets `custom_extension_repository` to this server's `/ext`.
-2. **Quack built from main.** The published Quack (2026-10-19) predates [duckdb-quack 438dfe3](https://github.com/duckdb/duckdb-quack/commit/438dfe3004) ("Do not start the heartbeat thread on single-threaded wasm"). With it, ATTACH fails with `thread constructor failed`. `build_quack_wasm.sh` builds `wasm_eh` from main the way Quack's CI does: Emscripten 3.1.71, plus vcpkg for OpenSSL. It also links with `-sWASM_BIGINT`. Without that, every 64-bit parameter is split into two `i32`s and loading fails with `LinkError: … imported function does not match the expected type`. The published builds pass them whole.
-3. **The threaded build doesn't help.** The published `wasm_threads` Quack fails to load into `1.33.1-dev110.0`'s threaded module, with an empty error. It also needs cross-origin isolation, so it was dropped.
-
-Drop all of this once duckdb-wasm publishes a v2.0.0 release and Quack republishes its Wasm builds with the fix.
+There is no stable duckdb-wasm release for DuckDB 2 yet, so the explorer and the app use a dev build, `1.33.1-dev121.0` (2026-11-20). It reports DuckDB `v2.0.1` and loads the signed Quack extension from DuckDB's own extension repository, with no relabelled or self-built extensions. Confirmed 2026-11-24 against a 2.0.0 server: `LOAD quack`, ATTACH and `quack_query_by_name` work. Move to a stable release once duckdb-wasm publishes one for DuckDB 2.
 
 Older clients can't connect to a 2.0 server:
-- DuckDB 1.4.3 (duckdb-wasm 1.32.0, the app's current version) has no Quack ATTACH.
+- DuckDB 1.4.3 (duckdb-wasm 1.32.0, the app's version before the dev builds) has no Quack ATTACH.
 - DuckDB 1.5.5 fails to deserialize the 2.0 wire format.

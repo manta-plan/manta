@@ -4,10 +4,10 @@ import { Menu } from "@base-ui/react/menu";
 import { Link } from "wouter";
 import { ApiError } from "../../../api/manta";
 import { deleteProject, listProjects } from "../api";
-import { isLocalProjectId, useAppStore } from "../store";
+import { useAppStore } from "../store";
 import { HomeSectionFrame } from "../components/home-primitives";
 import { SectionHeader } from "../components/section-header";
-import { ConfirmDialog } from "../components/confirm-dialog";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 
 export function ProjectsSection() {
   const projects = useAppStore((s) => s.projects);
@@ -44,14 +44,11 @@ export function ProjectsSection() {
     const { id: projectId, name: projectName } = projectToRemove;
     setRemovingProjectId(projectId);
     try {
-      // Projects made before the backend stored them only exist in this browser.
-      if (!isLocalProjectId(projectId)) {
-        try {
-          await deleteProject(projectId);
-        } catch (error) {
-          // A 404 means the backend no longer has it, so only the local copy is left to clear.
-          if (!(error instanceof ApiError && error.status === 404)) throw error;
-        }
+      try {
+        await deleteProject(projectId);
+      } catch (error) {
+        // A 404 means the backend no longer has it, so only the local copy is left to clear.
+        if (!(error instanceof ApiError && error.status === 404)) throw error;
       }
       await removeProject(projectId);
       setStatusMessage(`${projectName} was removed.`);

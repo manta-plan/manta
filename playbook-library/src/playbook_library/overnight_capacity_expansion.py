@@ -3,21 +3,20 @@
 # SPDX-License-Identifier: MIT
 
 import pypsa
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
-from pydantic import Field
+from datarecord import Revision
+from playbook.blocks.core import BlockDims, MantaBlock
 
-from playbook_library.pypsa_configs import PyPSAOptimizeSchema
+from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
     investment_periods,
     optimize_network,
     remove_unbuilt_cohorts,
+    solve_and_write,
     to_network,
-    write_network,
 )
 
 
-class OvernightCapacityExpansionConfig(ConfigSchema):
-    optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
+class OvernightCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
     period: int | None = None
     """The investment period to build for, in a model with investment periods.
 
@@ -36,19 +35,20 @@ class OvernightCapacityExpansion(MantaBlock[OvernightCapacityExpansionConfig]):
     DIMS = BlockDims(requires=frozenset({"snapshot"}))
 
     def optimize(self, n: pypsa.Network) -> pypsa.Network:
-        multi_investment_periods = not n.investment_periods.empty
         return optimize_network(
-            n, self.config.optimize_config, multi_investment_periods=multi_investment_periods
+            n, self.config.optimize_config, multi_investment_periods=n.has_periods
         )
 
-    def run(self, record: DataRecord) -> DataRecord:
-        periods = investment_periods(record)
+    def run(self, base: Revision) -> Revision:
+        periods = investment_periods(base)
         if periods:
             period = periods[-1] if self.config.period is None else self.config.period
             if period not in periods:
                 raise ValueError(f"The model has no investment period {period}: {periods}.")
-            n = to_network(record, select={"period": [period]})
+            n = to_network(base, select={"period": [period]})
             remove_unbuilt_cohorts(n)
         else:
-            n = to_network(record)
-        return write_network(self.optimize(n), record, results_only=True)
+            n = to_network(base)
+        return solve_and_write(n, base, self.optimize, self.config.time_aggregation, n.has_periods)[
+            1
+        ]

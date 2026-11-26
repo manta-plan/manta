@@ -1,14 +1,13 @@
 import { create } from "zustand";
-import { removeProjectInspections } from "../project/lib/project-inspections";
-import { removeProjectReports } from "../project/lib/project-reports";
+import { removeProjectInspections } from "../analyse/lib/project-inspections";
+import { removeProjectReports } from "../analyse/lib/project-reports";
 import { removeProjectRuns } from "../project/lib/project-runs";
 import { removeProjectScenarios } from "../project/lib/project-scenarios";
 
 export type Theme = "dark" | "light";
 
 export type Project = {
-  // The backend project's uuid, or a local id for projects made before the
-  // backend stored them.
+  // The backend project's uuid.
   id: string;
   name: string;
   description?: string;
@@ -27,12 +26,32 @@ export type BackendProject = {
   updated_at: string;
 };
 
+// Projects made before the backend stored them have this id prefix. They only
+// exist in the browser and are dropped.
 const localProjectIdPrefix = "project-";
 
-// Projects made before the backend stored them have a local id, not a uuid, so
-// the backend has nothing to rename or delete for them.
-export function isLocalProjectId(id: string) {
-  return id.startsWith(localProjectIdPrefix);
+export function withoutLocalProjects(projects: Project[]): Project[] {
+  return projects.filter((project) => !project.id.startsWith(localProjectIdPrefix));
+}
+
+// The backend's projects, keeping the browser-only fields (record, welcome flag) of the
+// ones it already knew. Anything not in the backend list is dropped.
+export function mergeBackendProjects(
+  current: Project[],
+  backendProjects: BackendProject[],
+): Project[] {
+  const localById = new Map(current.map((project) => [project.id, project]));
+  return backendProjects.map((backendProject) => {
+    const local = localById.get(backendProject.uuid);
+    return {
+      id: backendProject.uuid,
+      name: backendProject.name,
+      ...(backendProject.description ? { description: backendProject.description } : {}),
+      ...(local?.recordId ? { recordId: local.recordId } : {}),
+      lastModified: new Date(backendProject.updated_at).toLocaleString(),
+      ...(local?.showWelcome ? { showWelcome: true } : {}),
+    };
+  });
 }
 
 type HomeState = {
@@ -41,9 +60,9 @@ type HomeState = {
 
   projects: Project[];
   addProject: (
-    name?: string,
-    recordId?: string,
-    backend?: { uuid: string; description?: string | null },
+    name: string,
+    recordId: string | undefined,
+    backend: { uuid: string; description?: string | null },
   ) => Project;
   syncProjects: (backendProjects: BackendProject[]) => void;
   renameProject: (id: string, name: string, description?: string) => void;
@@ -77,7 +96,7 @@ function readInitialProjects(): Project[] {
     const stored = JSON.parse(window.localStorage.getItem(projectsStorageKey) ?? "{}") as {
       projects?: Project[];
     };
-    return stored.projects ?? [];
+    return withoutLocalProjects(stored.projects ?? []);
   } catch {
     return [];
   }
@@ -91,8 +110,8 @@ function persistProjects(projects: Project[]) {
   }
 }
 
-// Projects are local to the browser for now: the backend has no project
-// listing endpoint yet, so this list is not shared with the runs page.
+// The projects come from the backend (`syncProjects`); the browser keeps a copy to show
+// before it answers, plus the record and welcome flag the backend does not store.
 export const useAppStore = create<HomeState>((set, get) => ({
   theme: readInitialTheme(),
   toggleTheme: () =>
@@ -109,9 +128,9 @@ export const useAppStore = create<HomeState>((set, get) => ({
   projects: readInitialProjects(),
   addProject: (name, recordId, backend) => {
     const project: Project = {
-      id: backend?.uuid ?? `${localProjectIdPrefix}${Date.now()}`,
-      name: name?.trim() || `Untitled Project ${get().projects.length + 1}`,
-      ...(backend?.description ? { description: backend.description } : {}),
+      id: backend.uuid,
+      name: name.trim() || `Untitled Project ${get().projects.length + 1}`,
+      ...(backend.description ? { description: backend.description } : {}),
       ...(recordId ? { recordId } : {}),
       lastModified: "Just now",
       showWelcome: true,
@@ -122,25 +141,7 @@ export const useAppStore = create<HomeState>((set, get) => ({
     return project;
   },
   syncProjects: (backendProjects) => {
-    const localById = new Map(get().projects.map((project) => [project.id, project]));
-    const fromBackend: Project[] = backendProjects.map((backendProject) => {
-      // The backend doesn't store the record or the welcome flag, so they stay
-      // with the browser's copy of the project.
-      const local = localById.get(backendProject.uuid);
-      return {
-        id: backendProject.uuid,
-        name: backendProject.name,
-        ...(backendProject.description ? { description: backendProject.description } : {}),
-        ...(local?.recordId ? { recordId: local.recordId } : {}),
-        lastModified: new Date(backendProject.updated_at).toLocaleString(),
-        ...(local?.showWelcome ? { showWelcome: true } : {}),
-      };
-    });
-    // Projects made before the backend stored them only exist in this browser.
-    const localOnly = get().projects.filter((project) =>
-      project.id.startsWith(localProjectIdPrefix),
-    );
-    const projects = [...fromBackend, ...localOnly];
+    const projects = mergeBackendProjects(get().projects, backendProjects);
     persistProjects(projects);
     set({ projects });
   },

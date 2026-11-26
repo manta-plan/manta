@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
-from playbook.blocks import DataRecord
+from playbook.blocks import RevisionRef
 from playbook.playbooks import BlockStep, NestedPlaybookStep, Playbook, parse_doc, playbook_from_doc
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
@@ -36,9 +36,10 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.entities import Project, Run, User
+from manta.entities import Project, Run
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.run_result import (
     CreateRunResult,
     DataRecordResult,
@@ -133,15 +134,15 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
 
 
 def _flow_run_data_record(flow_run: FlowRun) -> DataRecordResult:
-    # TODO(post-MVP): the same shortcut as _flow_run_config. Store the record a run
+    # TODO(post-MVP): the same shortcut as _flow_run_config. Store the revision a run
     # started from on Run itself once data records are tracked in Manta's database.
-    return _data_record_result(flow_run.parameters["record"])
+    return _data_record_result(flow_run.parameters["revision"])
 
 
 def _data_record_result(data: dict) -> DataRecordResult:
-    """A record as runner.flows passes it around (DataRecord.to_dict()), for the API."""
-    record = DataRecord.from_dict(data)
-    return DataRecordResult(store_url=record.url, revision_uuid=record.uuid)
+    """A revision as runner.flows passes it around (RevisionRef.to_dict()), for the API."""
+    ref = RevisionRef.from_dict(data)
+    return DataRecordResult(store_url=ref.store, revision_uuid=ref.id)
 
 
 def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
@@ -158,7 +159,7 @@ def _flow_run_playbook(flow_run: FlowRun) -> Playbook:
 
 
 def _read_block_run_outputs(block_runs: list[FlowRun]) -> dict[UUID, DataRecordResult]:
-    """The output record each block run published, by block run id. A block run that
+    """The output revision each block run published, by block run id. A block run that
     hasn't finished has none yet."""
     # TODO(post-MVP): a run's outputs are only found through the artifacts its block
     # runs publish to Prefect (see runner.flows.run_block). Once data records are
@@ -253,7 +254,7 @@ class RunService:
         config: dict | None,
         store_url: str,
         revision_uuid: UUID,
-        user: User,
+        user: AuthenticatedUserResult,
     ) -> CreateRunResult:
         project = self.user_service.get_owned_project(project_uuid, user)
 
@@ -275,7 +276,7 @@ class RunService:
             parameters={
                 "playbook": library_playbook.doc.model_dump(mode="json"),
                 "config": run_config,
-                "record": {"url": store_url, "uuid": str(revision_uuid)},
+                "revision": RevisionRef(store=store_url, id=revision_uuid).to_dict(),
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
             timeout=0,
@@ -336,7 +337,7 @@ class RunService:
         limit: int,
         offset: int,
         status_filters: list[str] | None,
-        user: User,
+        user: AuthenticatedUserResult,
     ) -> ListRunsResult:
         project = self.user_service.get_owned_project(project_uuid, user)
 
@@ -360,14 +361,16 @@ class RunService:
             summary=_build_run_summary(run_results),
         )
 
-    def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
+    def get_run_summary(
+        self, project_uuid: UUID, user: AuthenticatedUserResult
+    ) -> GetRunSummaryResult:
         project = self.user_service.get_owned_project(project_uuid, user)
 
         runs = self._list_project_runs(project.id)
         flow_runs = self._read_project_flow_runs(runs)
         return _build_run_summary(self._build_run_results(project.uuid, runs, flow_runs))
 
-    def ensure_no_active_runs(self, project: Project, user: User) -> None:
+    def ensure_no_active_runs(self, project: Project, user: AuthenticatedUserResult) -> None:
         """Raises a 409 if any run of the project has not reached a final Prefect state.
         A run in flight would write to S3 again after the project's cleanup. A run whose
         state is unknown counts as active. A flow run Prefect no longer has is skipped, so a
@@ -385,7 +388,7 @@ class RunService:
                 detail="Only projects without active runs can be deleted",
             )
 
-    def delete_flow_runs(self, project: Project, user: User) -> None:
+    def delete_flow_runs(self, project: Project, user: AuthenticatedUserResult) -> None:
         """Deletes the Prefect flow run of each of the project's runs, together with the
         block flow runs dispatched under it. A flow run that is already gone is skipped,
         so a retry after a partial failure picks up where it stopped."""
@@ -430,7 +433,9 @@ class RunService:
             for run in runs
         ]
 
-    def _get_run_with_project(self, run_uuid: UUID, user: User) -> tuple[Run, Project]:
+    def _get_run_with_project(
+        self, run_uuid: UUID, user: AuthenticatedUserResult
+    ) -> tuple[Run, Project]:
         run = self.db.query(Run).filter(Run.uuid == run_uuid).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Run {run_uuid} not found")
@@ -442,7 +447,7 @@ class RunService:
 
         return run, project
 
-    def get_run(self, run_uuid: UUID, user: User) -> GetRunResult:
+    def get_run(self, run_uuid: UUID, user: AuthenticatedUserResult) -> GetRunResult:
         run, project = self._get_run_with_project(run_uuid, user)
         flow_run = _read_flow_run(run.prefect_flow_run_id)
 
@@ -456,7 +461,7 @@ class RunService:
             created_at=run.created_at,
         )
 
-    def get_run_steps(self, run_uuid: UUID, user: User) -> GetRunStepsResult:
+    def get_run_steps(self, run_uuid: UUID, user: AuthenticatedUserResult) -> GetRunStepsResult:
         run, _ = self._get_run_with_project(run_uuid, user)
         flow_run, block_runs = _read_flow_run_with_block_runs(run.prefect_flow_run_id)
         playbook = _flow_run_playbook(flow_run)
@@ -480,7 +485,7 @@ class RunService:
             run_status=_flow_run_status(flow_run),
         )
 
-    def get_run_logs(self, run_uuid: UUID, user: User) -> GetRunLogsResult:
+    def get_run_logs(self, run_uuid: UUID, user: AuthenticatedUserResult) -> GetRunLogsResult:
         run, _ = self._get_run_with_project(run_uuid, user)
         flow_run, logs = _read_flow_run_logs(run.prefect_flow_run_id)
 

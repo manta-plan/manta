@@ -4,23 +4,30 @@
 
 """Shared PyPSA work for the blocks in this library.
 
-This is also where the blocks meet their data. A record points at a revision in a
-datarecord store, locally or in S3: `store_network` starts a store with a network,
-`to_network` builds a network from a revision, and `write_network` adds the network
-a block produced as a child revision of it.
-Both are confined to this module, so richer record storage only ever changes it.
+This is also where the blocks meet their data, revisions of a datarecord store, locally
+or in S3: `to_network` builds a network from a revision, and `write_network` adds the
+network a block produced as a child revision of it, through the same store and so the
+same workspace. Both are confined to this module, so a change in how networks are stored
+only ever changes it.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pypsa
-from datarecord import Revision, Workspace
+from datarecord import Revision
 from datarecord.tools.base import UnsupportedRecordError
 from datarecord.tools.pypsa import PyPSA
-from playbook.blocks.core import DataRecord, DataRecordError, SolveError
+from playbook.blocks.core import DataRecordError, SolveError
 
 from playbook_library.pypsa_configs import PyPSAOptimizeSchema
+from playbook_library.pypsa_time_aggregation import (
+    PYPSA_LABELS,
+    cluster_network,
+    write_expanded_results,
+)
+from playbook_library.time_aggregation import carry_time_properties
 
 BUILT_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store", "Line", "Transformer"]
 """The components whose capacity is built in one investment period and lasts into later ones."""
@@ -31,57 +38,40 @@ def nominal_attr(component_name: str) -> str:
     return {"Store": "e_nom", "Line": "s_nom", "Transformer": "s_nom"}.get(component_name, "p_nom")
 
 
-def _revision(record: DataRecord) -> tuple[Workspace, Revision]:
-    ws = Workspace()
-    try:
-        return ws, ws.store(record.url).revision(record.uuid)
-    except KeyError as exc:
-        raise DataRecordError(exc.args[0]) from exc
-
-
-def store_network(n: pypsa.Network, url: str) -> DataRecord:
-    """Store `n` as the root revision of a new store at `url`, and point a record at it."""
-    ws = Workspace()
-    rev = ws.store(url).commit(PyPSA.to_datarecord(n, ws.con), parent=None)
-    return DataRecord(url=url, uuid=rev.id)
-
-
-def to_network(record: DataRecord, select: dict[str, Any] | None = None) -> pypsa.Network:
-    """Build the network stored in the revision a record points at.
+def to_network(rev: Revision, select: dict[str, Any] | None = None) -> pypsa.Network:
+    """Build the network stored in `rev`.
 
     Every call builds the network from the store again, so a block gets a network of
     its own and never has to copy one. `select` narrows what is built, such as a
     single investment period.
     """
-    _, rev = _revision(record)
     try:
         return PyPSA.build(rev.record.select(**select) if select else rev.record)
     except UnsupportedRecordError as exc:
         raise DataRecordError(str(exc)) from exc
 
 
-def investment_periods(record: DataRecord) -> list[int]:
-    """The investment periods of the network a record points at, read without building it.
+def investment_periods(rev: Revision) -> list[int]:
+    """The investment periods of the network in `rev`, read without building it.
 
     A network without investment periods has none.
     """
-    _, rev = _revision(record)
     if "period" not in rev.record.dims:
         return []
     return [period for (period,) in rev.record.dims["period"].fetchall()]
 
 
-def write_network(
-    n: pypsa.Network, parent_record: DataRecord, results_only: bool = False
-) -> DataRecord:
-    """Store `n` as a child revision of `parent_record`, and point a new record at it.
+def write_network(n: pypsa.Network, parent: Revision, results_only: bool = False) -> Revision:
+    """Store `n` as a child revision of `parent`.
 
-    Over a multi-period network, `n` may hold one investment period of it, its results
-    written to that period alone.
+    Over a network with investment periods, `n` may have one period of it, and its
+    results are written to that period alone. The child keeps the snapshot properties of
+    `parent` that `n` does not declare, such as time aggregations.
     """
-    ws, rev = _revision(parent_record)
-    source = PyPSA.to_datarecord(n, ws.con, results_only=results_only, base=rev.record)
-    return DataRecord(url=parent_record.url, uuid=rev.store.commit(source, parent=rev).id)
+    con = parent.store.workspace.con
+    source = PyPSA.to_datarecord(n, con, results_only=results_only, base=parent.record)
+    source = carry_time_properties(source, parent.record, con, PYPSA_LABELS)
+    return parent.store.commit(source, parent=parent)
 
 
 def remove_unbuilt_cohorts(n: pypsa.Network) -> None:
@@ -114,3 +104,28 @@ def optimize_network(
     if condition != "optimal":
         raise SolveError(f"PyPSA could not solve the network: {status} ({condition})")
     return n
+
+
+def solve_and_write(
+    n: pypsa.Network,
+    rev: Revision,
+    optimize: Callable[[pypsa.Network], pypsa.Network],
+    time_aggregation: str | None,
+    multi_investment_periods: bool,
+) -> tuple[pypsa.Network, Revision]:
+    """Solve `n`, built from `rev`, with `optimize`, and store its results under `rev`.
+
+    The results form a child revision of `rev`. Only the results are written, so the
+    inputs of `rev` stay as they are. With a
+    `time_aggregation`, `optimize` solves `n` clustered by `snapshot.<time_aggregation>`
+    of `rev`, and the results are expanded to every snapshot.
+    `multi_investment_periods` sets whether the expansion treats the solve as one over
+    investment periods. Without a time aggregation, `optimize` solves `n` as it is.
+    Returns the solved network and the new revision.
+    """
+    if time_aggregation is None:
+        solved = optimize(n)
+        return solved, write_network(solved, rev, results_only=True)
+    solved = optimize(cluster_network(n, rev, time_aggregation))
+    written = write_expanded_results(solved, n, rev, time_aggregation, multi_investment_periods)
+    return solved, written

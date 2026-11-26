@@ -11,10 +11,11 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 from runner.flows import OUTPUT_ARTIFACT_KEY, catalogue_parameter
 
-from manta.entities import Project, Run, User
+from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.run_result import DataRecordResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -22,7 +23,7 @@ from manta.services.user_service import UserService
 
 _LIBRARY_PLAYBOOK = "expand"
 _BUCKET = "manta"
-_RECORD_URL = f"s3://{_BUCKET}/{uuid4()}/store"
+_STORE_URL = f"s3://{_BUCKET}/{uuid4()}/store"
 _REVISION_UUID = UUID("3de02051-8918-45ab-a61b-980b3da170c4")
 
 
@@ -52,7 +53,7 @@ def _fake_flow_run(state_type: str, config: dict | None = None):
         state=SimpleNamespace(type=SimpleNamespace(value=state_type)),
         parameters={
             "config": config if config is not None else {},
-            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
+            "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
         },
     )
 
@@ -61,16 +62,8 @@ def _library_playbook_service() -> PlaybookService:
     return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
 
 
-def _existing_user(user_id: int = 1, username: str = "alice") -> User:
-    user = User(
-        username=username,
-        idp_subject=f"abc-{user_id}",
-        idp_source="https://idp.example/realms/manta",
-    )
-    user.id = user_id
-    user.uuid = uuid4()
-    user.created_at = datetime.now(UTC)
-    return user
+def _existing_user(user_id: int = 1, username: str = "alice") -> AuthenticatedUserResult:
+    return AuthenticatedUserResult(id=user_id, uuid=uuid4(), username=username)
 
 
 def _existing_project(owner_id: int = 1) -> Project:
@@ -151,7 +144,7 @@ def test_create_run_persists_a_run_and_returns_its_dto(
     parameters = dispatch.call_args.kwargs["parameters"]
     assert parameters["playbook"] == library_playbook.doc.model_dump(mode="json")
     assert parameters["config"] == library_playbook.default_config
-    assert parameters["record"] == {"url": _store_url(project), "uuid": str(_REVISION_UUID)}
+    assert parameters["revision"] == {"store": _store_url(project), "id": str(_REVISION_UUID)}
     assert isinstance(parameters["catalogue"], str)
     assert "blocks" in json.loads(parameters["catalogue"])
 
@@ -229,7 +222,7 @@ def test_create_run_with_unknown_project_raises_404(
             project_uuid=uuid4(),
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -252,7 +245,7 @@ def test_create_run_with_unknown_playbook_raises_404(
             project_uuid=project.uuid,
             playbook="does-not-exist",
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -284,7 +277,7 @@ def test_create_run_refuses_a_config_with_issues_before_minting_or_dispatching_a
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=myopic_config,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=_existing_user(),
         )
@@ -394,7 +387,7 @@ def test_get_run_returns_dto_for_a_known_run(
     # The config is whatever the run was dispatched with, read back from Prefect.
     assert result.config == started_with_config
     assert result.data_record == DataRecordResult(
-        store_url=_RECORD_URL, revision_uuid=_REVISION_UUID
+        store_url=_STORE_URL, revision_uuid=_REVISION_UUID
     )
     assert result.status == "COMPLETED"
     assert result.created_at == run.created_at
@@ -607,7 +600,7 @@ def _fake_playbook_flow_run(state_type: str, config: dict, playbook_doc: dict | 
         parameters={
             "playbook": playbook_doc,
             "config": config,
-            "record": {"url": _RECORD_URL, "uuid": str(_REVISION_UUID)},
+            "revision": {"store": _STORE_URL, "id": str(_REVISION_UUID)},
             "catalogue": catalogue_parameter(library_catalogue()),
         },
     )
@@ -759,7 +752,7 @@ def test_get_run_steps_reports_the_output_record_each_block_run_published(
         monkeypatch,
         _fake_playbook_flow_run("COMPLETED", library_playbooks()[_LIBRARY_PLAYBOOK].default_config),
         [block_run],
-        [_fake_output_artifact(block_run, {"url": _store_url(project), "uuid": str(output_uuid)})],
+        [_fake_output_artifact(block_run, {"store": _store_url(project), "id": str(output_uuid)})],
     )
     service = RunService(db=db, user_service=UserService(db))
 
@@ -840,7 +833,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
     playbook_doc = {
         "name": "outer",
         "steps": [
-            {"name": "cluster", "block": "cluster_time"},
+            {"name": "cluster", "block": "time_partition"},
             {
                 "name": "inner",
                 "playbook": {
@@ -859,7 +852,7 @@ def test_get_run_steps_reports_a_nested_playbook_step_as_unknown(
     # Then the nested step is listed without a block, and without a status it
     # can't actually know
     assert [(step.name, step.block, step.status) for step in result.steps] == [
-        ("cluster", "cluster_time", "NOT_STARTED"),
+        ("cluster", "time_partition", "NOT_STARTED"),
         ("inner", None, "UNKNOWN"),
     ]
 
@@ -940,7 +933,7 @@ def test_create_run_rejects_non_owner(monkeypatch: pytest.MonkeyPatch, mock_db_c
             project_uuid=project.uuid,
             playbook=_LIBRARY_PLAYBOOK,
             config=None,
-            store_url=_RECORD_URL,
+            store_url=_STORE_URL,
             revision_uuid=_REVISION_UUID,
             user=other_user,
         )

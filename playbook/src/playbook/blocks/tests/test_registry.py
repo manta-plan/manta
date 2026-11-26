@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
+from datarecord import Revision
 
-from playbook.blocks.core import BlockDims, ConfigSchema, DataRecord, MantaBlock
+from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
 from playbook.blocks.registry import (
     BlockDescription,
     BlockNotRegisteredError,
@@ -140,48 +141,48 @@ def test_resolve_block_raises_when_neither_registered_nor_in_the_catalogue():
         resolve_block("fake_never_registered_here", Catalogue())
 
 
-class NotADataRecordConfig(ConfigSchema):
+class NotARevisionRefConfig(ConfigSchema):
     source: int = 0
 
 
 def test_a_block_cannot_wire_an_input_to_a_setting_that_has_no_such_name():
     with pytest.raises(Exception, match="INPUTS"):
 
-        class Broken(MantaBlock[NotADataRecordConfig]):
+        class Broken(MantaBlock[NotARevisionRefConfig]):
             ENV = "default"
-            CONFIG = NotADataRecordConfig
+            CONFIG = NotARevisionRefConfig
             DIMS = BlockDims()
             INPUTS = frozenset({"missing"})
 
-            def run(self, record: DataRecord) -> DataRecord:
-                return record
+            def run(self, base: Revision) -> Revision:
+                return base
 
 
-def test_a_block_cannot_wire_an_input_to_a_setting_that_cannot_hold_a_record():
-    with pytest.raises(Exception, match="DataRecord"):
+def test_a_block_cannot_wire_an_input_to_a_setting_that_cannot_hold_a_revision():
+    with pytest.raises(Exception, match="RevisionRef"):
 
-        class Broken(MantaBlock[NotADataRecordConfig]):
+        class Broken(MantaBlock[NotARevisionRefConfig]):
             ENV = "default"
-            CONFIG = NotADataRecordConfig
+            CONFIG = NotARevisionRefConfig
             DIMS = BlockDims()
             INPUTS = frozenset({"source"})
 
-            def run(self, record: DataRecord) -> DataRecord:
-                return record
+            def run(self, base: Revision) -> Revision:
+                return base
 
 
-class RequiredRecordConfig(ConfigSchema):
-    source: DataRecord
+class RequiredRevisionConfig(ConfigSchema):
+    source: RevisionRef
 
 
 def test_a_wired_setting_has_to_have_a_default():
     with pytest.raises(Exception, match="default"):
 
-        class Broken(MantaBlock[RequiredRecordConfig]):
+        class Broken(MantaBlock[RequiredRevisionConfig]):
             ENV = "default"
-            CONFIG = RequiredRecordConfig
+            CONFIG = RequiredRevisionConfig
             DIMS = BlockDims()
             INPUTS = frozenset({"source"})
 
-            def run(self, record: DataRecord) -> DataRecord:
-                return record
+            def run(self, base: Revision) -> Revision:
+                return base

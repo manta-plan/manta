@@ -1,129 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { Menubar } from "@base-ui/react/menubar";
 import { Tabs } from "@base-ui/react/tabs";
 import { Toolbar } from "@base-ui/react/toolbar";
-import {
-  LuRuler,
-  LuSquare,
-  LuBan,
-  LuMap,
-  LuEarth,
-  LuSatellite,
-  LuZoomIn,
-  LuZoomOut,
-  LuCompass,
-  LuSearch,
-  LuChevronRight,
-  LuLayers,
-  LuShare2,
-  LuSun,
-  LuMoon,
-  LuMessageSquareText,
-  LuNetwork,
-  LuGitCommitVertical,
-  LuShapes,
-} from "react-icons/lu";
+import { LuChevronRight, LuShare2, LuSun, LuMoon, LuMessageSquareText } from "react-icons/lu";
 import { FaFly } from "react-icons/fa";
 import { MenuDropdown, type MenuAction } from "./menu-dropdown";
 import { ToolbarIconButton } from "./toolbar-icon-button";
-import { ToolbarModeMenu, type ToolbarModeOption } from "./toolbar-mode-menu";
-import { ToolbarActionMenu, type ToolbarActionOption } from "./toolbar-action-menu";
+import { LevelToolbarActions } from "../../level/scenarios/change-button";
 import { FeedbackDialog } from "../../home/components/feedback-dialog";
 import { AboutDialog } from "./about-dialog";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
 import { useAppStore } from "../../home/store";
-import { useProjectStore, type BasemapId, type ToolId } from "../store/project-store";
+import { useProjectStore } from "../store/project-store";
 import {
   getActiveProjectTab,
   projectRunHref,
   projectTabHref,
   type ProjectTab,
 } from "../lib/project-route";
-import { startModelWorkspaceTour } from "../lib/workspace-tours";
-import { zoneLevels } from "../lib/record-geo";
-import { selectableScenarios } from "../lib/record-scenarios";
-import { NODAL } from "../store/types";
+import { InspectResultToolbar } from "../../analyse/components/inspect-result-toolbar";
+import { startAnalyseWorkspaceTour } from "../../analyse/lib/analyse-tours";
+import { lastAnalyseLocation, rememberAnalyseLocation } from "../lib/last-analyse-location";
+import { startBuildWorkspaceTour } from "../lib/workspace-tours";
+import { useWorkspaceView } from "../lib/use-workspace-view";
 import { MantaLogo } from "../../home/components/manta-logo";
 import { RaiIcon } from "./rai-mascot";
 
-// Inspect and Report join once their tabs are built.
 const TABS: { id: ProjectTab; label: string }[] = [
-  { id: "model", label: "Model" },
+  { id: "build", label: "Build" },
   { id: "run", label: "Run" },
-];
-
-const MEASURE_OPTIONS: ToolbarModeOption<ToolId>[] = [
-  { value: "select", label: "Off", icon: LuBan },
-  { value: "measure-distance", label: "Distance", icon: LuRuler },
-  { value: "measure-area", label: "Area", icon: LuSquare },
-];
-
-const BASEMAP_OPTIONS: ToolbarModeOption<BasemapId>[] = [
-  { value: "vector-dark", label: "Dark", icon: LuMoon },
-  { value: "vector-light", label: "Light", icon: LuSun },
-  { value: "satellite", label: "Satellite", icon: LuSatellite },
+  { id: "inspect", label: "Inspect" },
+  { id: "analyse", label: "Analyse" },
 ];
 
 export function Header() {
   const [location, setLocation] = useLocation();
   const { projectId } = useParams<{ projectId: string }>();
   const activeTab = getActiveProjectTab(location);
+  const selectedViewId = useProjectStore((s) => s.selectedViewId);
+  const isDataPage = /\/analyse\/(computed|raw):/.test(location);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
-  const activeTool = useProjectStore((s) => s.activeTool);
-  const setActiveTool = useProjectStore((s) => s.setActiveTool);
-  const isMeasuring = activeTool === "measure-distance" || activeTool === "measure-area";
-  const basemap = useProjectStore((s) => s.basemap);
-  const setBasemap = useProjectStore((s) => s.setBasemap);
   const viewState = useProjectStore((s) => s.viewState);
   const setViewState = useProjectStore((s) => s.setViewState);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const utilityDrawerFlow = useProjectStore((s) => s.utilityDrawerFlow);
   const toggleUtilityDrawer = useProjectStore((s) => s.toggleUtilityDrawer);
-  const isMapLayersDrawerOpen = useProjectStore((s) => s.isMapLayersDrawerOpen);
-  const toggleMapLayersDrawer = useProjectStore((s) => s.toggleMapLayersDrawer);
-
-  const record = useProjectStore((s) => s.record);
-  const resolution = useProjectStore((s) => s.resolution);
-  const setResolution = useProjectStore((s) => s.setResolution);
-  // Nodal, plus each busmap zone level in the record that groups locations.
-  const resolutionOptions = useMemo<ToolbarModeOption<string>[]>(
-    () => [
-      { value: NODAL, label: "Nodal", icon: LuNetwork },
-      ...(record ? zoneLevels(record) : []).map(({ level, zones }) => ({
-        value: level,
-        label: `Zones (${zones})`,
-        icon: LuShapes,
-      })),
-    ],
-    [record],
-  );
-
-  // The record's scenarios the page can show; the shown one stays visible here
-  // with the sidebar's Scenarios panel collapsed.
-  const showScenario = useProjectStore((s) => s.showScenario);
-  const switchingScenario = useProjectStore((s) => s.switchingScenario);
-  const scenarioOptions = useMemo<ToolbarModeOption<string>[]>(
-    () =>
-      (record ? selectableScenarios(record.info) : []).map((revision) => ({
-        value: revision.name,
-        label: revision.label,
-        icon: LuGitCommitVertical,
-      })),
-    [record],
-  );
 
   const zoomBy = (delta: number) =>
     setViewState({ ...viewState, zoom: Math.max(0, viewState.zoom + delta) });
   const resetBearing = () => setViewState({ ...viewState, bearing: 0, pitch: 0 });
-
-  const mapActions: ToolbarActionOption[] = [
-    { label: "Zoom In", icon: LuZoomIn, onSelect: () => zoomBy(1) },
-    { label: "Zoom Out", icon: LuZoomOut, onSelect: () => zoomBy(-1) },
-    { label: "Rotate North", icon: LuCompass, onSelect: resetBearing },
-    { label: "Search Location…", icon: LuSearch },
-  ];
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isShortcutsDialogOpen, setIsShortcutsDialogOpen] = useState(false);
@@ -142,11 +69,11 @@ export function Header() {
     else document.documentElement.requestFullscreen();
   };
 
-  // Map entries only on the Model tab, the one page with a map.
+  // Map entries only while the map is shown (Build or Inspect, Map & graph open on its map).
+  const { isMapShown } = useWorkspaceView();
   const viewMenuItems: MenuAction[] = [
-    ...(activeTab === "model"
+    ...(isMapShown
       ? [
-          { label: "Map Layers", onSelect: toggleMapLayersDrawer },
           { label: "Zoom In", onSelect: () => zoomBy(1) },
           { label: "Zoom Out", onSelect: () => zoomBy(-1) },
           { label: "Rotate North", onSelect: resetBearing, separatorAfter: true },
@@ -160,8 +87,19 @@ export function Header() {
     },
   ];
 
+  // Remember the open view, report or data page so the Analyse tab comes back to it.
+  useEffect(() => {
+    if (activeTab === "analyse") rememberAnalyseLocation(projectId, location);
+  }, [activeTab, location, projectId]);
+
   const goToTab = (tab: ProjectTab) =>
-    setLocation(tab === "run" ? projectRunHref(projectId) : projectTabHref(projectId, tab));
+    setLocation(
+      tab === "run"
+        ? projectRunHref(projectId)
+        : tab === "analyse" && activeTab !== "analyse"
+          ? (lastAnalyseLocation(projectId) ?? projectTabHref(projectId, tab))
+          : projectTabHref(projectId, tab),
+    );
 
   // Plain-key shortcuts, listed in KeyboardShortcutsDialog. They stay out of
   // the way of typing, browser chords and any open dialog.
@@ -174,9 +112,8 @@ export function Header() {
     const tab = TABS[Number(event.key) - 1];
     if (tab) goToTab(tab.id);
     else if (event.key === "?") setIsShortcutsDialogOpen(true);
-    else if (activeTab === "model" && event.key.toLowerCase() === "l") toggleMapLayersDrawer();
-    else if (activeTab === "model" && (event.key === "+" || event.key === "=")) zoomBy(1);
-    else if (activeTab === "model" && (event.key === "-" || event.key === "_")) zoomBy(-1);
+    else if (isMapShown && (event.key === "+" || event.key === "=")) zoomBy(1);
+    else if (isMapShown && (event.key === "-" || event.key === "_")) zoomBy(-1);
     else return;
     event.preventDefault();
   };
@@ -281,63 +218,22 @@ export function Header() {
 
         {/* Right toolbar */}
         <Toolbar.Root className="ml-auto flex shrink-0 items-center gap-1 pr-1">
-          {activeTab === "model" && (
-            <>
-              <Toolbar.Group className="flex items-center gap-0.5">
-                <ToolbarActionMenu label="Map Actions" icon={LuMap} options={mapActions} />
-                <ToolbarModeMenu
-                  label="Measure Tool"
-                  options={MEASURE_OPTIONS}
-                  value={activeTool}
-                  onChange={setActiveTool}
-                  active={isMeasuring}
-                  triggerIcon={isMeasuring ? undefined : LuRuler}
-                />
-                <ToolbarModeMenu
-                  label="Basemap"
-                  options={BASEMAP_OPTIONS}
-                  value={basemap}
-                  onChange={setBasemap}
-                  triggerIcon={LuEarth}
-                />
-                {scenarioOptions.length > 0 && (
-                  <ToolbarModeMenu
-                    label="Scenario"
-                    options={scenarioOptions}
-                    value={switchingScenario ?? record?.scenario ?? scenarioOptions[0].value}
-                    onChange={showScenario}
-                    disabled={scenarioOptions.length < 2}
-                    disabledHint="the only one in this record"
-                  />
-                )}
-                <ToolbarModeMenu
-                  label="Resolution"
-                  options={resolutionOptions}
-                  value={resolution}
-                  onChange={setResolution}
-                  disabled={resolutionOptions.length < 2}
-                  disabledHint="the only one in this record"
-                />
-                <ToolbarIconButton
-                  icon={LuLayers}
-                  label="Map Layers"
-                  active={isMapLayersDrawerOpen}
-                  onClick={toggleMapLayersDrawer}
-                  tourId="map-layers-toggle"
-                />
-              </Toolbar.Group>
-
-              <Toolbar.Separator className="bg-surface-600 mx-1 h-5 w-px" />
-            </>
+          {/* The open level's actions (Build) come first, then the project-wide ones. */}
+          {activeTab === "analyse" && (selectedViewId || isDataPage) && (
+            <InspectResultToolbar withComparison={!isDataPage} />
           )}
+
+          <LevelToolbarActions />
 
           {/* Project-wide actions */}
           <Toolbar.Group className="flex items-center gap-0.5">
             <ToolbarIconButton
               icon={FaFly}
               label="Start tour"
-              disabled={activeTab !== "model"}
-              onClick={startModelWorkspaceTour}
+              disabled={activeTab !== "build" && activeTab !== "analyse"}
+              onClick={
+                activeTab === "analyse" ? startAnalyseWorkspaceTour : startBuildWorkspaceTour
+              }
             />
             <ToolbarIconButton
               icon={theme === "dark" ? LuMoon : LuSun}
