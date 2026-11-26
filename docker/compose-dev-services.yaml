@@ -2,7 +2,9 @@ name: manta
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # Postgres 17 with the pgvector extension, which the chat's docs search needs
+    # (see the doc_chunks migration in backend/src/manta/migrations).
+    image: pgvector/pgvector:pg17
     env_file: ../backend/.env
     ports:
       - "${POSTGRES_PORT}:5432"

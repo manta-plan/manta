@@ -1,0 +1,49 @@
+# Opt-in model server for the AI chat (local development only). Kept out of
+# compose-dev-services.yaml on purpose: the backend's integration test stack
+# includes that file wholesale, and no test should pull or start a model server.
+#
+#   docker compose -f compose-dev-chat.yaml up -d
+#
+# Shares the "manta" project name, so the service joins the same network as the
+# rest of the dev stack and a containerised backend reaches it at http://ollama:11434.
+name: manta
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      # Localhost only: Ollama has no authentication of its own.
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Pulls the two models and creates `manta-chat` once, then exits. Re-running it
+  # is cheap: Ollama skips layers it already has.
+  #
+  # The Modelfile is written here rather than kept as a file. Ollama's
+  # OpenAI-compatible route cannot set the context size per request, and a prompt
+  # that does not fit is cut off without an error. So `manta-chat` fixes it at 8192.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ollama pull bge-m3
+        ollama pull llama3.2:3b
+        printf 'FROM llama3.2:3b\nPARAMETER num_ctx 8192\n' > /tmp/Modelfile
+        ollama create manta-chat -f /tmp/Modelfile
+    restart: "no"
+
+volumes:
+  ollama-models:
