@@ -21,12 +21,6 @@ TAG=manta
 ADDRESS="${VM_NAME}-ip"
 REGION=${GCP_ZONE%-*}
 
-# Where a global external Application Load Balancer's requests to a backend
-# outside its own project come from (the VM is reached over its external IP,
-# through an internet NEG). These are not the usual health-check ranges.
-# Source: `dig +short TXT _cloud-eoips.googleusercontent.com`.
-LB_SOURCE_RANGES=34.96.0.0/20,34.127.192.0/18
-
 g() { gcloud --project "$GCP_PROJECT" --quiet "$@"; }
 
 # Enabling an API needs roles/serviceusage.serviceUsageAdmin, so it is only
@@ -58,12 +52,16 @@ ensure_firewall_rule() {
 ensure_firewall_rule manta-allow-ssh \
   --allow tcp:22 --source-ranges 0.0.0.0/0 \
   --description "SSH to Manta instances, used by the deploy workflow"
-# Only the frontend is reachable, and only through the load balancer. The
-# stack publishes other ports on the VM (Postgres, Keycloak, Prefect, S3, the
-# backend), all with default credentials: never open those.
-ensure_firewall_rule manta-allow-lb \
-  --allow tcp:80 --source-ranges "$LB_SOURCE_RANGES" \
-  --description "The load balancer to the frontend of Manta instances"
+# Only the frontend's Caddy is reachable: 443 for the site, 80 for Let's
+# Encrypt's HTTP challenge and the redirect to HTTPS. The stack publishes
+# other ports on the VM (Postgres, Keycloak, Prefect, S3, the backend), all
+# with default credentials: never open those.
+#
+# A project set up before Caddy served HTTPS also has manta-allow-lb (port 80
+# from the old load balancer only). It is harmless and can be deleted.
+ensure_firewall_rule manta-allow-web \
+  --allow tcp:80,tcp:443 --source-ranges 0.0.0.0/0 \
+  --description "HTTP and HTTPS to the frontend (Caddy) of Manta instances"
 
 if g compute instances describe "$VM_NAME" --zone "$GCP_ZONE" >/dev/null 2>&1; then
   created=false
@@ -110,7 +108,7 @@ fi
 ip=$(g compute instances describe "$VM_NAME" --zone "$GCP_ZONE" \
   --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
 if [ -z "$ip" ]; then
-  echo "::error::VM $VM_NAME has no external IP, so the load balancer cannot reach it."
+  echo "::error::VM $VM_NAME has no external IP, so its DNS record has nothing to point at."
   exit 1
 fi
 echo "==> VM $VM_NAME is at $ip"

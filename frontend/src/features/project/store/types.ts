@@ -1,5 +1,7 @@
-import type { InspectionCanvas } from "../data/inspections";
-import type { InspectionContent } from "../data/inspections";
+import type { InspectionCanvas, InspectionContent } from "../../analyse/data/inspections";
+import type { PageSetup, Report, ReportBlock, ReportPage } from "../../analyse/data/reports";
+import type { ReportTheme } from "../../analyse/data/report-themes";
+import type { EditOptions, ReportHistories } from "../../analyse/lib/report-history";
 import type { ConnectionStatus } from "../lib/record-server/client";
 import type {
   Carrier,
@@ -10,8 +12,6 @@ import type {
   ScenarioChangeSummary,
   ScenarioChangeValue,
 } from "../lib/record-server/types";
-import type { Report, ReportCanvasPreset } from "../data/reports";
-import type { ReportWidget } from "../data/report-widgets";
 import type { Run } from "../data/runs";
 import type {
   Scenario,
@@ -26,12 +26,11 @@ import type {
   EntityDialogSeed,
 } from "../lib/draft-scenarios";
 
-export type { InspectionCanvas } from "../data/inspections";
-export type { Report } from "../data/reports";
-export type { ReportCanvasPreset } from "../data/reports";
-export type { ReportWidget } from "../data/report-widgets";
 export type { Run } from "../data/runs";
 export type { Scenario } from "../data/scenarios";
+
+export type { InspectionCanvas } from "../../analyse/data/inspections";
+export type { Report } from "../../analyse/data/reports";
 
 export type ToolId = "select" | "identify" | "measure-distance" | "measure-area";
 
@@ -74,9 +73,10 @@ export interface CreateRunInput {
 
 export interface CreateReportInput {
   name: string;
-  scenarioName: string;
-  runId?: string;
-  canvasPreset: ReportCanvasPreset;
+  page: PageSetup;
+  theme: ReportTheme;
+  /** What the report starts with; one empty page when left out. */
+  pages?: ReportPage[];
 }
 
 export interface CreateInspectionInput {
@@ -140,12 +140,6 @@ export interface ProjectState {
   /** Closes the tab-specific drawers (the scenario change table, the inner right stack) on project tab changes. */
   closePageDrawers: () => void;
 
-  isNewWidgetDrawerOpen: boolean;
-  editingWidgetId: string | null;
-  toggleNewWidgetDrawer: () => void;
-  openWidgetConfigDrawer: (widgetId: string) => void;
-  closeNewWidgetDrawer: () => void;
-
   configuringRunNodeId: string | null;
   openRunNodeConfigDrawer: (nodeId: string) => void;
   closeRunNodeConfigDrawer: () => void;
@@ -154,20 +148,6 @@ export interface ProjectState {
   isRunFilterDrawerOpen: boolean;
   openRunFilterDrawer: () => void;
   closeRunFilterDrawer: () => void;
-
-  isInspectionFilterDrawerOpen: boolean;
-  inspectionFilters: string[];
-  openInspectionFilterDrawer: () => void;
-  closeInspectionFilterDrawer: () => void;
-  toggleInspectionFilter: (filter: string) => void;
-  clearInspectionFilters: () => void;
-
-  isReportFilterDrawerOpen: boolean;
-  reportFilters: string[];
-  openReportFilterDrawer: () => void;
-  closeReportFilterDrawer: () => void;
-  toggleReportFilter: (filter: string) => void;
-  clearReportFilters: () => void;
 
   // The attribute whose changes the bottom drawer shows (a Scenarios panel change row).
   scenarioChange: { scenario: string; attribute: string } | null;
@@ -243,28 +223,40 @@ export interface ProjectState {
   selectedPlaybookScenarioId: string | null;
   selectPlaybook: (playbookId: string, scenarioId: string) => void;
 
+  // The Analyse tab: views (inspections) and reports, saved per project.
+  // The view or report open on the Analyse tab; selectedInspectionId is only a type or entity page on Inspect.
+  selectedViewId: string | null;
+  selectView: (id: string | null) => void;
   reports: Report[];
   /** Project whose reports are in `reports`; null until the first load. */
   reportsProjectId: string | null;
-  renameReport: (id: string, name: string) => void;
+  updateReport: (id: string, patch: { name: string; page: PageSetup }) => void;
+  updateReportBlocks: (
+    reportId: string,
+    pageId: string,
+    update: (blocks: ReportBlock[]) => ReportBlock[],
+    options?: EditOptions,
+  ) => void;
+  /** Undo and redo steps per open report, in memory. */
+  reportHistory: ReportHistories;
+  undoReport: (reportId: string) => void;
+  redoReport: (reportId: string) => void;
+  setReportTheme: (reportId: string, theme: ReportTheme) => void;
+  addReportPage: (reportId: string) => void;
+  removeReportPage: (reportId: string, pageId: string) => void;
   deleteReport: (id: string) => void;
+  /** Takes the views and reports another tab saved. */
+  refreshFromStorage: () => void;
   loadProjectReports: (projectId: string) => void;
-  isReportTourPlaceholderVisible: boolean;
-  setReportTourPlaceholderVisible: (visible: boolean) => void;
   selectedReportId: string | null;
   selectReport: (id: string | null) => void;
   isNewReportDrawerOpen: boolean;
-  /** Pass a dummy run result's id to prefill the form with it. */
-  openNewReportDrawer: (resultId?: string) => void;
-  newReportResultId: string | null;
+  openNewReportDrawer: () => void;
   /** Report being edited in the New Report drawer; null when creating. */
   editingReportId: string | null;
   openEditReportDrawer: (reportId: string) => void;
   closeNewReportDrawer: () => void;
   createReport: (input: CreateReportInput) => Report;
-  addWidgetToReport: (widget: ReportWidget) => void;
-  updateWidgetInReport: (widget: ReportWidget) => void;
-  removeWidgetFromReport: (widgetId: string) => void;
 
   inspections: InspectionCanvas[];
   /** Project whose inspections are in `inspections`; null until the first load. */
