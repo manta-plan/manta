@@ -148,7 +148,7 @@ above: they are standalone libraries that must keep working outside Manta entire
 
 - `playbook/` defines what a block and a playbook are, and runs playbooks.
 - `playbook-library/` is the modelling content — the blocks and playbooks Manta
-  ships, built on PyPSA.
+  ships.
 
 Two boundaries matter more than anything else here, and both are enforced by tests:
 
