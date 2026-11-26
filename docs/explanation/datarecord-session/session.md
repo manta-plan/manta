@@ -77,7 +77,7 @@ Only the BE calls this API.
 | Call | Body | Effect |
 |---|---|---|
 | `GET /health` | | Ready when Quack serves. |
-| `PUT /registrations/{name}` | `{kind: "view", store, revision, packs}` | Register the revision as the DuckDB schema `manta.<name>`. Add the `static_<dtype>` views to it and the requested view packs below it. Prewarm. Idempotent. Answers the SQL prefix of the registration, `manta.<name>`. |
+| `PUT /registrations/{name}` | `{kind: "view", store, revision, packs}` | Register the revision as the DuckDB schema `manta.<name>`. Add the `static_<dtype>` views to it and the requested view packs below it. Idempotent. Answers the SQL prefix of the registration, `manta.<name>`. |
 | `PUT /registrations/{name}` | `{kind: "diff", store, after, before}` | Expose the diff of two revisions as the DuckDB schema `manta.<name>` ([changes between revisions](frontend.md#3-changes-between-revisions)). By default `after` is a reference's current revision and `before` the fork point with its base reference. `after` and `before` are revision ids, both required. The BE resolves the reference and its fork point to them before the call ([routes and Quack auth check](backend.md#5-routes-and-quack-auth-check)). Later `after` can name a registration of the kind `edit`, with its base revision as `before` ([working records](#6-working-records)). |
 | `POST /summaries` | `{store, after, before}` | Compute the change summary of two revision ids and answer it as JSON. By default `after` is a reference's current revision and `before` the fork point with its base reference; the BE resolves both ([changes between revisions](frontend.md#3-changes-between-revisions)). Registers nothing. |
 | `GET /registrations` | | The registered names. |

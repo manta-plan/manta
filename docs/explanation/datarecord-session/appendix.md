@@ -328,7 +328,7 @@ Consequences:
 | Kind `scenario` or `result` (heuristic) | `scenarios.py:91-96` | commit `meta`, read by the BE | A fact about the revision. The writer records it. Heuristic dropped. |
 | Today one catalog per scenario (`ATTACH ':memory:' AS <record>__<scenario>`), each with the DuckDB schemas `dims`, `properties`, `attributes` and `manta` | `stores.py:290-299`, `record.py:24-45` | DR `Record.register(name)`: one DuckDB schema per registration in the session's one catalog ([names in DuckDB](session.md#4-names-in-duckdb)) | Any revision can be registered, results too. |
 | `manta` views and tables (today's DuckDB schema `manta` in each scenario catalog) | `manta_views.py`, `scenarios.py` | see [replacing the manta objects](session.md#5-replacing-the-manta-objects) | Decision D4. |
-| Parquet metadata prewarm | `stores.py:238-257` | S | At registration. |
+| Parquet metadata prewarm | `stores.py:238-257` | drop | Not taken over. The owner map build at registration reads most of these files. |
 | Default record, background open, files endpoint | `main.py` | drop | |
 | Explorer page | `static/index.html` | drop | |
 | WASM extension files and build scripts | `static/ext/`, `scripts/` | FE static assets | |
