@@ -368,7 +368,7 @@ function ComputedPage({ query }: { query: BuiltInQuery }) {
               </pre>
               <p className="text-surface-500 mt-1.5 text-[11px] leading-4">
                 Plain record names (<code className="font-mono">attributes.p</code>,{" "}
-                <code className="font-mono">dims.snapshot</code>) read the result shown in the
+                <code className="font-mono">dimensions.snapshot</code>) read the result shown in the
                 toolbar.
               </p>
             </Section>

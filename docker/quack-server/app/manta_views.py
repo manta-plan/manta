@@ -17,8 +17,11 @@ calls datarecord, so they work over any database that has the record views
   without them has no zones.
 - An entity's **geometry** is its `geometry` property (WKT): a point where a
   plant sits, a line's route, or an area (a renewable potential's polygon).
-- A **branch** is one input → output pair of a line, link or transformer, from
-  the `connection` dim, whose labels are `{entity, bus}` pairs with a `role`.
+- A **connection** is one `{entity, port}` label of the `connection` dim, at
+  its `bus`, as PyPSA's `bus0`, `bus1`, …. A generator, load, store or
+  storage unit has port 0 only; a line, link or transformer goes from port 0
+  to each of ports 1, 2, ….
+- A **branch** is one port 0 → port n pair of a line, link or transformer.
   A link with several outputs gives several branches.
 - `attribute_summary` is the one table: per attribute and subject (an entity,
   or a bus, carrier, …), its constant value and how many series rows it has.
@@ -50,18 +53,19 @@ def _quote(text: str) -> str:
 
 def _summary_select(name: str, dims: set[str], prefix: str) -> str:
     subject = next(dim for dim in SUBJECTS if dim in dims)
+    table = f'{prefix}attributes."' + name.replace('"', '""') + '" a'
     if subject == "connection":
         # Per link output: the entity, and the bus that output goes to.
-        dim, label, bus = "entity", "connection.entity", "connection.bus"
+        dim, label, bus = "entity", "a.connection.entity", "c.bus"
+        table += f" JOIN {prefix}properties.connection c ON c.connection = a.connection"
     else:
-        dim, label, bus = subject, subject, "NULL"
+        dim, label, bus = subject, f"a.{subject}", "NULL"
     series = "snapshot" in dims and subject != "snapshot"
-    constant = "any_value(value::VARCHAR) FILTER (WHERE snapshot IS NULL)" if series else "any_value(value::VARCHAR)"
-    rows = "count(*) FILTER (WHERE snapshot IS NOT NULL)" if series else "0"
-    table = '"' + name.replace('"', '""') + '"'
+    constant = "any_value(a.value::VARCHAR) FILTER (WHERE a.snapshot IS NULL)" if series else "any_value(a.value::VARCHAR)"
+    rows = "count(*) FILTER (WHERE a.snapshot IS NOT NULL)" if series else "0"
     return (
         f"SELECT {_quote(name)} AS attribute, '{dim}' AS dim, {label}::VARCHAR AS label, {bus}::VARCHAR AS bus, "
-        f"{constant} AS constant, {rows} AS series_rows FROM {prefix}attributes.{table} GROUP BY ALL"
+        f"{constant} AS constant, {rows} AS series_rows FROM {table} GROUP BY ALL"
     )
 
 
@@ -188,8 +192,7 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
         "location_zones": _zones_sql(levels, _columns(con, prefix, "bus")),
         "branches": """
             WITH ends AS (
-                SELECT connection.entity AS entity, connection.bus AS bus, role
-                FROM properties.connection WHERE role IN ('input', 'output')
+                SELECT connection.entity AS entity, connection.port AS port, bus FROM properties.connection
             )
             SELECT e.entity, e.ctype, e.carrier,
                    i.bus AS bus0, o.bus AS bus1,
@@ -198,18 +201,18 @@ def register_manta_views(con: duckdb.DuckDBPyConnection, dims: dict[str, set[str
                         WHEN b0.location = b1.location THEN 'within'
                         ELSE 'between' END AS scope
             FROM ends i
-            JOIN ends o ON o.entity = i.entity AND i.role = 'input' AND o.role = 'output'
+            JOIN ends o ON o.entity = i.entity AND i.port = 0 AND o.port > 0
             JOIN properties.entity e ON e.entity = i.entity
             JOIN manta.bus_location b0 ON b0.bus = i.bus
             JOIN manta.bus_location b1 ON b1.bus = o.bus
         """,
         # Generators, loads, stores and storage units, at their bus.
         "attached": """
-            SELECT e.entity, e.ctype, e.carrier, c.connection.bus AS bus, b.location, b.virtual
+            SELECT e.entity, e.ctype, e.carrier, c.bus, b.location, b.virtual
             FROM properties.connection c
             JOIN properties.entity e ON e.entity = c.connection.entity
-            JOIN manta.bus_location b ON b.bus = c.connection.bus
-            WHERE c.role = 'attached'
+            JOIN manta.bus_location b ON b.bus = c.bus
+            QUALIFY max(c.connection.port) OVER (PARTITION BY e.entity) = 0
         """,
         "regions": _regions_sql(con, prefix, attributes),
         # Entity sites, line routes and areas, from the `geometry` property.

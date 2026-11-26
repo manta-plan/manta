@@ -91,11 +91,10 @@ export function regionSql(
       return {
         sql: `
           SELECT e.location, sum(abs(a.value) * coalesce(wt.value, 1)) / nullif(sum(coalesce(e.capacity_opt, e.capacity) * coalesce(wt.value, 1)), 0) AS value
-          FROM ${serverName("properties.connection")} c
-          JOIN entities e ON e.entity = c.connection.entity AND e.in_period AND e.ctype = 'Link'
-          JOIN ${serverName("attributes.p")} a ON a.connection = c.connection
+          FROM ${serverName("attributes.p")} a
+          JOIN entities e ON e.entity = a.connection.entity AND e.in_period AND e.ctype = 'Link'
           LEFT JOIN ${w()} wt ON wt.snapshot = a.snapshot
-          WHERE c.role = 'input' AND ${inSpan("a.snapshot")} AND e.location IS NOT NULL
+          WHERE a.connection.port = 0 AND ${inSpan("a.snapshot")} AND e.location IS NOT NULL
           GROUP BY 1`,
         unit: "mean |p0| ÷ p_nom_opt",
         percent: true,
@@ -149,8 +148,7 @@ export function lineSql(
     sql: `
       SELECT e.entity AS key, avg(abs(a.value)) / nullif(coalesce(e.capacity_opt, e.capacity), 0) AS value
       FROM entities e
-      JOIN ${serverName("properties.connection")} c ON c.connection.entity = e.entity AND c.role = 'input'
-      JOIN ${serverName("attributes.p")} a ON a.connection = c.connection AND ${inSpan("a.snapshot")}
+      JOIN ${serverName("attributes.p")} a ON a.connection.entity = e.entity AND a.connection.port = 0 AND ${inSpan("a.snapshot")}
       WHERE e.ctype = 'Line' AND e.in_period
       GROUP BY e.entity, e.capacity, e.capacity_opt`,
     unit: "mean |p0| ÷ s_nom_opt",

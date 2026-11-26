@@ -143,13 +143,14 @@ def _quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def _change_select(scenario: str, attribute: str, dims: list[str], before: str, after: str) -> str:
+def _change_select(scenario: str, catalog: str, attribute: str, dims: list[str], before: str, after: str) -> str:
     """One attribute's changed values in a scenario, one row per subject."""
     subject = next(dim for dim in SUBJECTS if dim in dims)
     if subject == "connection":
-        dim, label, bus = "entity", "k.connection.entity", "k.connection.bus"
+        dim, label, bus = "entity", "k.connection.entity", "c.bus"
+        buses = f"LEFT JOIN {catalog}.properties.connection c ON c.connection = k.connection"
     else:
-        dim, label, bus = subject, f"k.{subject}", "NULL"
+        dim, label, bus, buses = subject, f"k.{subject}", "NULL", ""
     series = "snapshot" in dims and subject != "snapshot"
     on = " AND ".join(f"b.{d} IS NOT DISTINCT FROM s.{d}" for d in dims)
     keys = ", ".join(f"coalesce(s.{d}, b.{d}) AS {d}" for d in dims)
@@ -165,7 +166,7 @@ def _change_select(scenario: str, attribute: str, dims: list[str], before: str, 
             SELECT {keys}, b.value::VARCHAR AS before, s.value::VARCHAR AS after
             FROM ({before}) b FULL JOIN ({after}) s ON {on}
             WHERE b.value IS DISTINCT FROM s.value
-        ) k
+        ) k {buses}
         GROUP BY ALL"""
 
 
@@ -198,7 +199,7 @@ def register_scenarios(con: duckdb.DuckDBPyConnection, ws: Workspace, store: str
             after = f"FROM {r.catalog}.{view}"
             # An attribute the parent doesn't declare: every row is added.
             before = f"FROM {parent.catalog}.{view}" if attribute in parent.record.attributes else f"{after} WHERE false"
-            selects.append(_change_select(r.name, attribute, dims, before, after))
+            selects.append(_change_select(r.name, r.catalog, attribute, dims, before, after))
     empty = (
         "SELECT NULL::VARCHAR AS scenario, NULL::VARCHAR AS attribute, NULL::VARCHAR AS dim, NULL::VARCHAR AS label, "
         "NULL::VARCHAR AS bus, NULL::VARCHAR AS before, NULL::VARCHAR AS after, 0::BIGINT AS series_rows, "

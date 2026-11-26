@@ -22,8 +22,8 @@ from app.stores import Catalogue, configure
 ROOT = Path(__file__).resolve().parents[1] / "data/records"
 STORE = "BEL-pre-aggregated-incl-patches-incl-results"
 # The base case's catalog, and a run result's.
-C = "bel_pre_aggregated_incl_patches_incl_results__inputs"
-RESULT = "bel_pre_aggregated_incl_patches_incl_results__perfect"
+C = "bel_pre_aggregated_incl_patches_incl_results__base"
+RESULT = "bel_pre_aggregated_incl_patches_incl_results__base_perfect"
 
 # What the app and modellers send: plain SELECT/WITH over the record views.
 ALLOWED = [
@@ -33,7 +33,7 @@ ALLOWED = [
     "ROLLBACK",
     f"SELECT count(*) FROM {C}.attributes.p_nom",
     f"FROM {C}.properties.entity SELECT ctype, count(*) GROUP BY ALL",
-    f"""WITH span AS (SELECT snapshot FROM {C}.dims.snapshot)
+    f"""WITH span AS (SELECT snapshot FROM {C}.dimensions.snapshot)
         SELECT epoch_ms(t.snapshot.timestep)::DOUBLE AS t, strftime(t.snapshot.timestep, '%Y') AS y
         FROM span t LEFT JOIN {C}.attributes.snapshot_weighting_generators w ON w.snapshot = t.snapshot""",
     f"SELECT quantile_cont(value, 0.5), list(entity ORDER BY entity) FROM {C}.attributes.p_nom WHERE starts_with(entity, 'BE')",
@@ -180,7 +180,7 @@ def client():
     token = "guardtest"
     uri = quack.serve(ws.con, port, token)
     catalogue.open(STORE)
-    catalogue.open_revision(STORE, "perfect")
+    catalogue.open_revision(STORE, "base/perfect")
     con = duckdb.connect()
     con.execute("LOAD quack")
     con.execute(f"ATTACH 'quack:localhost:{port}' AS r (TOKEN '{token}')")

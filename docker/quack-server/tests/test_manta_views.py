@@ -161,6 +161,7 @@ def test_branches(con):
     assert links == [("H2 Electrolysis", 15), ("H2 Fuel Cell", 15)]
 
 
+@pytest.mark.xfail(strict=True, reason="datarecord 0.1.0a2 drops GlobalConstraint.bus (energy-models/datarecord#164)")
 def test_attached(con):
     counts = dict(rows(con, f"SELECT ctype, count(*) FROM {BASE}.manta.attached GROUP BY ALL"))
     # The land-use limits are global constraints at their bus.

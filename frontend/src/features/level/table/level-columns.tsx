@@ -472,7 +472,7 @@ export function memberColumns(
         render: (entry) => formatCell(entry.capacity_opt),
       });
     }
-    if (kind.output && kind.outputRole)
+    if (kind.output)
       columns.push({
         key: "energy",
         header: `${kind.output} ${ctx.period} [TWh]`,

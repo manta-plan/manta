@@ -54,7 +54,7 @@ describe("level SQL", () => {
     expect(sql).toContain("rec__base.properties.entity");
     expect(sql).toContain("rec__base.manta.attribute_summary");
     expect(sql).toContain("rec__base.manta.branches");
-    expect(spanSql("2030", null)).toContain("rec__base.dims.snapshot");
+    expect(spanSql("2030", null)).toContain("rec__base.dimensions.snapshot");
   });
 
   it("keys a scope by level, period, window and locations", () => {

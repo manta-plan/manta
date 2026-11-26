@@ -88,7 +88,7 @@ export async function loadAttributeTypes(result: InspectResult): Promise<Map<str
 async function loadPeriods(result: InspectResult): Promise<string[]> {
   const rows = await runResultSql<{ period: string }>(
     result,
-    "SELECT DISTINCT CAST(snapshot.period AS VARCHAR) AS period FROM dims.snapshot ORDER BY 1",
+    "SELECT DISTINCT CAST(snapshot.period AS VARCHAR) AS period FROM dimensions.snapshot ORDER BY 1",
   );
   return rows.map((row) => row.period);
 }
@@ -212,7 +212,7 @@ function widgetSql(source: ResultQuery, request: QueryRequest): string {
     !groups.includes("snapshot") &&
     periods !== 1
       ? periods === null
-        ? " / (SELECT count(DISTINCT snapshot.period) FROM dims.snapshot)"
+        ? " / (SELECT count(DISTINCT snapshot.period) FROM dimensions.snapshot)"
         : ` / ${periods}`
       : "";
   const order =

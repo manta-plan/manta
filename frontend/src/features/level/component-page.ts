@@ -40,8 +40,6 @@ export interface ComponentKind {
   /** The optimised capacity a result adds. */
   optimised: string | null;
   output: string | null;
-  /** The connection whose power is the output: a generator's own, a link's or line's input end. */
-  outputRole: "attached" | "input" | null;
   /** How power counts: as stored, only its positive part (a storage unit discharging), or its size (a line's flow either way). */
   outputValue: "signed" | "positive" | "absolute";
 }
@@ -51,49 +49,42 @@ const KINDS: Record<string, ComponentKind> = {
     capacity: "p_nom",
     optimised: "p_nom_opt",
     output: "Generation",
-    outputRole: "attached",
     outputValue: "signed",
   },
   StorageUnit: {
     capacity: "p_nom",
     optimised: "p_nom_opt",
     output: "Discharge",
-    outputRole: "attached",
     outputValue: "positive",
   },
   Link: {
     capacity: "p_nom",
     optimised: "p_nom_opt",
     output: "Throughput",
-    outputRole: "input",
     outputValue: "signed",
   },
   Line: {
     capacity: "s_nom",
     optimised: "s_nom_opt",
     output: "Flow",
-    outputRole: "input",
     outputValue: "absolute",
   },
   Transformer: {
     capacity: "s_nom",
     optimised: "s_nom_opt",
     output: "Flow",
-    outputRole: "input",
     outputValue: "absolute",
   },
   Store: {
     capacity: "e_nom",
     optimised: "e_nom_opt",
     output: null,
-    outputRole: null,
     outputValue: "signed",
   },
   Load: {
     capacity: null,
     optimised: null,
     output: "Demand",
-    outputRole: "attached",
     outputValue: "signed",
   },
 };
@@ -104,7 +95,6 @@ export function componentKind(ctype: string): ComponentKind {
       capacity: null,
       optimised: null,
       output: null,
-      outputRole: null,
       outputValue: "signed",
     }
   );

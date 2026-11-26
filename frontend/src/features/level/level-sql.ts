@@ -109,7 +109,7 @@ export function spanCondition(
 
 /** The `span` CTE body: the period's snapshots in the window. */
 export function spanSql(period: string, timeWindow: TimeWindow | null): string {
-  return `SELECT snapshot FROM ${serverName("dims.snapshot")} WHERE ${spanCondition("snapshot", period, timeWindow)}`;
+  return `SELECT snapshot FROM ${serverName("dimensions.snapshot")} WHERE ${spanCondition("snapshot", period, timeWindow)}`;
 }
 
 /** `entities AS (…), members AS (…), span AS (…)`: put after WITH, then the query. */

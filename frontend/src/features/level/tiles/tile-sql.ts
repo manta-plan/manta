@@ -84,7 +84,7 @@ function hoursCtes(scope: LevelQueryScope): string {
     ),
     hours AS (
       SELECT (SELECT coalesce(sum(w), 0) FROM weights) AS span_hours,
-             (SELECT sum(coalesce(w.value, 1)) FROM ${serverName("dims.snapshot")} d
+             (SELECT sum(coalesce(w.value, 1)) FROM ${serverName("dimensions.snapshot")} d
                 LEFT JOIN ${weighting} w ON w.snapshot = d.snapshot
               WHERE ${spanCondition("d.snapshot", scope.period, null)}) AS period_hours
     )`;
@@ -304,7 +304,8 @@ export function resultsSql(scope: LevelQueryScope, parts: ResultParts): string {
     `flows AS (
       SELECT m.ctype, a.value AS v, w.w
       FROM ${p} a
-      JOIN members m ON m.entity = a.connection.entity AND m.bus = a.connection.bus
+      JOIN ${serverName("properties.connection")} c ON c.connection = a.connection
+      JOIN members m ON m.entity = c.connection.entity AND m.bus = c.bus
       JOIN weights w ON w.snapshot = a.snapshot
       WHERE m.ctype <> 'Load' AND ${span("a.snapshot")}
     )`,

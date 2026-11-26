@@ -1,7 +1,7 @@
 // The Analyse page's computed tables: our SQL that prepares a solved
 // result's raw tables (attributes.p, marginal_price, p_nom_opt, …) into tables
 // widgets can chart. Each is plain SQL over the record's views, written
-// without a catalog (`attributes.p`, `dims.snapshot`); it runs against
+// without a catalog (`attributes.p`, `dimensions.snapshot`); it runs against
 // whichever result the page shows. They're listed, with their SQL and
 // assumptions, under Computed in the Data panel.
 //
@@ -69,7 +69,7 @@ export interface BuiltInQuery extends ResultQuery {
 
 /** Each snapshot, its period (as text) and the hours it stands for. */
 const SNAPSHOTS = `SELECT s.snapshot, CAST(s.snapshot.period AS VARCHAR) AS period, coalesce(w.value, 1) AS w
-    FROM dims.snapshot s
+    FROM dimensions.snapshot s
     LEFT JOIN attributes.snapshot_weighting_generators w ON w.snapshot = s.snapshot`;
 
 /** Power (MW) at an entity's own bus, or at a link's (or line's) input, with its type, carrier and location. */
@@ -79,22 +79,22 @@ const flows = (
     FROM attributes.p p
     JOIN properties.connection pc ON pc.connection = p.connection
     JOIN properties.entity e ON e.entity = p.connection.entity
-    JOIN manta.bus_location bl ON bl.bus = p.connection.bus
+    JOIN manta.bus_location bl ON bl.bus = pc.bus
     WHERE e.ctype IN (${ctypes.map((ctype) => `'${ctype}'`).join(", ")})
-      AND pc.role = CASE e.ctype WHEN 'Link' THEN 'input' WHEN 'Line' THEN 'input' ELSE 'attached' END
+      AND p.connection.port = 0
       AND NOT bl.virtual`;
 
 /** An entity's location: where it's attached, or a link's input. */
 const LOCATIONS = `SELECT pc.connection.entity AS entity, any_value(bl.location) AS bus
     FROM properties.connection pc
-    JOIN manta.bus_location bl ON bl.bus = pc.connection.bus
-    WHERE pc.role IN ('attached', 'input') AND NOT bl.virtual
+    JOIN manta.bus_location bl ON bl.bus = pc.bus
+    WHERE pc.connection.port = 0 AND NOT bl.virtual
     GROUP BY 1`;
 
 /** The periods each entity is active in: build_year ≤ period < build_year + lifetime, and `active`. */
 const ACTIVE = `SELECT e.entity, CAST(y.period AS VARCHAR) AS period
     FROM properties.entity e
-    CROSS JOIN (SELECT DISTINCT snapshot.period AS period FROM dims.snapshot) y
+    CROSS JOIN (SELECT DISTINCT snapshot.period AS period FROM dimensions.snapshot) y
     LEFT JOIN attributes.build_year b ON b.entity = e.entity
     LEFT JOIN attributes.lifetime l ON l.entity = e.entity
     LEFT JOIN attributes.active a ON a.entity = e.entity
@@ -413,7 +413,7 @@ export function builtInQuery(name: string): BuiltInQuery | undefined {
 // ------------------------------------------------------------ Running a query's SQL
 
 /** The record's schemas a query reads; each name is qualified with the result's catalog. */
-const SCHEMAS = ["attributes", "dims", "properties", "manta"];
+const SCHEMAS = ["attributes", "dimensions", "properties", "manta"];
 const SCHEMA_REFERENCE = new RegExp(`(?<![\\w."'])(${SCHEMAS.join("|")})\\.`, "g");
 
 /** The SQL with every record view in `catalog`: `attributes.p` → `<catalog>.attributes.p`. Strings and comments are left alone. */
@@ -535,7 +535,7 @@ export function checkOutput(output: OutputColumn[], kind: ValueKind): OutputChec
   const snapshot = byName.get("snapshot");
   if (snapshot && !/^STRUCT\(.*period.*timestep/i.test(snapshot.replaceAll('"', "")))
     problems.push(
-      "`snapshot` must be the record's snapshot (dims.snapshot), a STRUCT(period, timestep).",
+      "`snapshot` must be the record's snapshot (dimensions.snapshot), a STRUCT(period, timestep).",
     );
   if (kind === "static" && snapshot)
     problems.push(

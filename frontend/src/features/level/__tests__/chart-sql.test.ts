@@ -42,7 +42,7 @@ describe("chart SQL", () => {
   it("reads the axis from the period's snapshots in the shown catalog", async () => {
     setRecordCatalog("rec");
     await loadAxis(scope);
-    expect(queries[0]).toContain("rec.dims.snapshot");
+    expect(queries[0]).toContain("rec.dimensions.snapshot");
     expect(queries[0]).toContain("rec.attributes.snapshot_weighting_generators");
     expect(queries[0]).toContain("snapshot.period::VARCHAR = '2030'");
   });
@@ -104,7 +104,7 @@ describe("chart SQL", () => {
 
   it("makes a connection attribute's join pick the entity's own end", async () => {
     await loadPicked(scope, [{ attribute: "p", dim: "connection", subject: "G 1", bus: null }]);
-    expect(queries[0]).toContain("role IN ('attached', 'input')");
+    expect(queries[0]).toContain("c.connection.port = 0");
     expect(queries[0]).toContain("'G 1'");
   });
 

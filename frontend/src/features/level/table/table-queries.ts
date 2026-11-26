@@ -170,14 +170,14 @@ export function loadMemberValues(scope: LevelQueryScope): Promise<MemberValue[]>
     WHERE s.dim = 'entity'`);
 }
 
-/** What counts as output, per type: its connection role and how power counts (as componentPage's kinds). */
-export const OUTPUT: Record<string, { role: string; value: string }> = {
-  Generator: { role: "attached", value: "p.value" },
-  StorageUnit: { role: "attached", value: "greatest(p.value, 0)" },
-  Link: { role: "input", value: "p.value" },
-  Line: { role: "input", value: "abs(p.value)" },
-  Transformer: { role: "input", value: "abs(p.value)" },
-  Load: { role: "attached", value: "p.value" },
+/** What counts as output, per type: how power at port 0 (bus0) counts (as componentPage's kinds). */
+export const OUTPUT: Record<string, string> = {
+  Generator: "p.value",
+  StorageUnit: "greatest(p.value, 0)",
+  Link: "p.value",
+  Line: "abs(p.value)",
+  Transformer: "abs(p.value)",
+  Load: "p.value",
 };
 
 /** Each member's output in the period (MWh), weighted by snapshot_weighting_generators. Inspect only. */
@@ -189,12 +189,11 @@ export async function loadMemberEnergy(
   if (!output) return new Map();
   const rows = await serverQuery<{ entity: string; energy: number }>(`
     WITH ${levelCtes(scope)}
-    SELECT p.connection.entity AS entity, sum(${output.value} * w.value)::DOUBLE AS energy
+    SELECT p.connection.entity AS entity, sum(${output} * w.value)::DOUBLE AS energy
     FROM ${serverName("attributes.p")} p
     JOIN members m ON m.entity = p.connection.entity
-    JOIN ${serverName("properties.connection")} c ON c.connection = p.connection
     JOIN ${serverName("attributes.snapshot_weighting_generators")} w ON w.snapshot = p.snapshot
-    WHERE c.role = ${sqlString(output.role)} AND p.snapshot.period::VARCHAR = ${sqlString(scope.period)}
+    WHERE p.connection.port = 0 AND p.snapshot.period::VARCHAR = ${sqlString(scope.period)}
     GROUP BY 1`);
   return new Map(rows.map((row) => [row.entity, Number(row.energy)]));
 }

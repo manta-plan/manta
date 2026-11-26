@@ -5,7 +5,7 @@ import type { Level } from "./level";
 import type { LevelQueryScope } from "./level-sql";
 import { useLevelStore } from "./level-store";
 
-// The record's investment periods (dims.snapshot's periods), each with its
+// The record's investment periods (dimensions.snapshot's periods), each with its
 // span of timesteps, and the one shown: global, first by default.
 
 export interface PeriodSpan {
@@ -23,7 +23,7 @@ function loadPeriods(): Promise<PeriodSpan[]> {
            strftime(min(snapshot.timestep), '%Y-%m-%dT%H:%M:00Z') AS start,
            strftime(max(snapshot.timestep), '%Y-%m-%dT%H:%M:00Z') AS "end",
            count(*)::INTEGER AS snapshots
-    FROM ${serverName("dims.snapshot")}
+    FROM ${serverName("dimensions.snapshot")}
     GROUP BY ALL ORDER BY min(snapshot.period)`);
 }
 

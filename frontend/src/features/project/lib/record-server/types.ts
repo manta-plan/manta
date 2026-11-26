@@ -133,7 +133,7 @@ export interface EntityPlace extends EntityListItem {
 
 export interface EntityConnection {
   bus: string;
-  role: string;
+  port: number;
   location: string;
   busCarrier: string;
 }

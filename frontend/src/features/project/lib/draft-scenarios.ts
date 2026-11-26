@@ -274,18 +274,20 @@ export async function loadCtypeConnections(
   ctype: string,
   carrier: string | null,
 ): Promise<{ role: string; busCarriers: string[] }[]> {
-  const rows = await serverQuery<{ role: string; busCarrier: string | null; n: number }>(`
-    SELECT c.role, b.carrier AS "busCarrier", count(*)::INT AS n
+  const rows = await serverQuery<{ output: boolean; busCarrier: string | null; n: number }>(`
+    SELECT c.connection.port > 0 AS output, b.carrier AS "busCarrier", count(*)::INT AS n
     FROM ${serverName("properties.connection")} c
     JOIN ${serverName("properties.entity")} e ON e.entity = c.connection.entity
-    JOIN ${serverName("manta.bus_location")} b ON b.bus = c.connection.bus
+    JOIN ${serverName("manta.bus_location")} b ON b.bus = c.bus
     WHERE e.ctype = ${sqlString(ctype)}${carrier ? ` AND e.carrier = ${sqlString(carrier)}` : ""}
-    GROUP BY ALL ORDER BY c.role, n DESC`);
+    GROUP BY ALL ORDER BY output, n DESC`);
+  const portZero = rows.some((row) => row.output) ? "input" : "attached";
   const roles = new Map<string, string[]>();
   for (const row of rows) {
-    const carriers = roles.get(row.role) ?? [];
+    const role = row.output ? "output" : portZero;
+    const carriers = roles.get(role) ?? [];
     if (row.busCarrier) carriers.push(row.busCarrier);
-    roles.set(row.role, carriers);
+    roles.set(role, carriers);
   }
   return [...roles].map(([role, busCarriers]) => ({ role, busCarriers }));
 }

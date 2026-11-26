@@ -31,7 +31,7 @@ const toNumbers = (values: unknown): (number | null)[] =>
 
 export async function loadAxis(scope: LevelQueryScope): Promise<Axis> {
   const rows = await serverQuery<{ t: number; w: number }>(`
-    WITH span AS (SELECT snapshot FROM ${N("dims.snapshot")} WHERE ${spanCondition("snapshot", scope.period, scope.timeWindow)})
+    WITH span AS (SELECT snapshot FROM ${N("dimensions.snapshot")} WHERE ${spanCondition("snapshot", scope.period, scope.timeWindow)})
     SELECT epoch_ms(t.snapshot.timestep)::DOUBLE AS t, coalesce(w.value, 1)::DOUBLE AS w
     FROM span t LEFT JOIN ${N("attributes.snapshot_weighting_generators")} w ON w.snapshot = t.snapshot
     ORDER BY t.snapshot`);
@@ -74,12 +74,14 @@ export function attributeDim(dims: readonly string[] | undefined): AttributeDim 
 }
 
 /**
- * A connection attribute's end: power (p) at the entity's own bus or a
- * branch's input (p0); anything else (efficiency) at its own bus or the
- * branch's output.
+ * A connection attribute's end: power (p) at port 0, the entity's own bus or
+ * a branch's input (p0); anything else (efficiency) at a branch's outputs
+ * (ports 1, 2, …), or port 0 of a one-port entity.
  */
-function connectionRoles(attribute: string): string {
-  return attribute === "p" ? "('attached', 'input')" : "('attached', 'output')";
+function connectionEnd(attribute: string): string {
+  return attribute === "p"
+    ? "c.connection.port = 0"
+    : `(c.connection.port > 0 OR c.connection.entity NOT IN (SELECT connection.entity FROM ${N("properties.connection")} WHERE connection.port > 0))`;
 }
 
 /**
@@ -100,8 +102,8 @@ function attributeValuesSql(
   if (dim === "entity") from = `${view} a JOIN (${subjects}) x ON x.subject = a.entity`;
   else if (dim === "bus") from = `${view} a JOIN (${subjects}) x ON x.subject = a.bus`;
   else
-    from = `${view} a JOIN (${subjects}) x ON x.subject = a.connection.entity AND (x.bus = a.connection.bus OR (x.bus IS NULL AND a.connection IN (
-      SELECT connection FROM ${N("properties.connection")} WHERE role IN ${connectionRoles(attribute)})))`;
+    from = `${view} a JOIN ${N("properties.connection")} c ON c.connection = a.connection
+      JOIN (${subjects}) x ON x.subject = c.connection.entity AND (x.bus = c.bus OR (x.bus IS NULL AND ${connectionEnd(attribute)}))`;
   return `
     SELECT x.key, a.snapshot, a.value FROM ${from} WHERE ${span}
     UNION ALL
@@ -332,22 +334,15 @@ export function loadAvailable(
 
 /** Rows of (entity, carrier, ctype, bus, snapshot, p) for the level's members of `ctypes` in the window (a run result's p). */
 function powerSql(scope: LevelQueryScope, ctypes: string[], extra = ""): string {
-  const roles = ctypes
-    .map(
-      (ctype) =>
-        `(m.ctype = ${sqlString(ctype)} AND c.role = ${sqlString(OUTPUT[ctype]?.role ?? "attached")})`,
-    )
-    .join(" OR ");
   // The table's rule for what counts as output (a storage unit's discharge, a line's flow in absolute value...), so both agree.
   const value = `CASE ${ctypes
-    .map((ctype) => `WHEN m.ctype = ${sqlString(ctype)} THEN ${OUTPUT[ctype]?.value ?? "p.value"}`)
+    .map((ctype) => `WHEN m.ctype = ${sqlString(ctype)} THEN ${OUTPUT[ctype] ?? "p.value"}`)
     .join(" ")} END`;
   return `
     SELECT m.entity, m.carrier, m.ctype, m.bus, p.snapshot, ${value} AS p
     FROM ${N("attributes.p")} p
-    JOIN ${N("properties.connection")} c ON c.connection = p.connection
     JOIN members m ON m.entity = p.connection.entity
-    WHERE (${roles}) AND ${spanCondition("p.snapshot", scope.period, scope.timeWindow)}${extra}`;
+    WHERE m.ctype IN (${ctypes.map(sqlString).join(", ")}) AND p.connection.port = 0 AND ${spanCondition("p.snapshot", scope.period, scope.timeWindow)}${extra}`;
 }
 
 /** Power per snapshot (MW), per carrier or in all: a run result's p of the level's `ctypes`. */
@@ -451,8 +446,8 @@ export async function loadLines(
 ): Promise<LineRow[]> {
   const cap = options.optimised ? "coalesce(e.capacity_opt, e.capacity)" : "e.capacity";
   const loading = options.optimised
-    ? `(SELECT avg(abs(p.value)) FROM ${N("attributes.p")} p JOIN ${N("properties.connection")} c ON c.connection = p.connection AND c.role = 'input'
-        WHERE p.connection.entity = e.entity AND ${spanCondition("p.snapshot", scope.period, scope.timeWindow)}) / nullif(${cap}, 0)`
+    ? `(SELECT avg(abs(p.value)) FROM ${N("attributes.p")} p
+        WHERE p.connection.entity = e.entity AND p.connection.port = 0 AND ${spanCondition("p.snapshot", scope.period, scope.timeWindow)}) / nullif(${cap}, 0)`
     : "NULL::DOUBLE";
   const rows = await loadRows<LineRow>(
     scope,
@@ -494,14 +489,13 @@ export async function loadOptimisedMix(
         WHERE m.ctype NOT IN ('Load', 'GlobalConstraint') AND m.capacity IS NOT NULL ${by === "ctype" ? "" : "AND m.ctype NOT IN ('Line', 'Transformer')"}${busFilter}
         GROUP BY ALL HAVING sum(coalesce(m.capacity_opt, m.capacity)) > 0`
       : `
-        SELECT ${category} AS category, m.carrier, sum(greatest(CASE WHEN c.role = 'output' THEN -p.value ELSE p.value END, 0) * coalesce(w.value, 1))::DOUBLE AS value
+        SELECT ${category} AS category, m.carrier, sum(greatest(CASE WHEN p.connection.port > 0 THEN -p.value ELSE p.value END, 0) * coalesce(w.value, 1))::DOUBLE AS value
         FROM ${N("attributes.p")} p
-        JOIN ${N("properties.connection")} c ON c.connection = p.connection
         JOIN members m ON m.entity = p.connection.entity
         LEFT JOIN ${N("attributes.snapshot_weighting_generators")} w ON w.snapshot = p.snapshot
-        WHERE ((m.ctype IN ('Generator', 'StorageUnit') AND c.role = 'attached') OR (m.ctype = 'Link' AND c.role = 'output'))
+        WHERE ((m.ctype IN ('Generator', 'StorageUnit') AND p.connection.port = 0) OR (m.ctype = 'Link' AND p.connection.port > 0))
           AND ${spanCondition("p.snapshot", scope.period, scope.timeWindow)}${busFilter}
-        GROUP BY ALL HAVING sum(greatest(CASE WHEN c.role = 'output' THEN -p.value ELSE p.value END, 0) * coalesce(w.value, 1)) > 0`;
+        GROUP BY ALL HAVING sum(greatest(CASE WHEN p.connection.port > 0 THEN -p.value ELSE p.value END, 0) * coalesce(w.value, 1)) > 0`;
   const rows = await loadRows<CategoryValue>(scope, body);
   return rows.map((row) => ({ ...row, value: Number(row.value) }));
 }

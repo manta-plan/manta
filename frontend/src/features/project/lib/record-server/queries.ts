@@ -95,10 +95,10 @@ export async function getEntity(entity: string, manifest: Manifest): Promise<Ent
       `FROM ${serverName("properties.entity")} WHERE entity = ${id}`,
     ),
     serverQuery<EntityConnection>(`
-      SELECT c.connection.bus AS bus, c.role, b.location, b.carrier AS "busCarrier"
-      FROM ${serverName("properties.connection")} c JOIN ${serverName("manta.bus_location")} b ON b.bus = c.connection.bus
+      SELECT c.bus, c.connection.port AS port, b.location, b.carrier AS "busCarrier"
+      FROM ${serverName("properties.connection")} c JOIN ${serverName("manta.bus_location")} b ON b.bus = c.bus
       WHERE c.connection.entity = ${id}
-      ORDER BY c.role, c.connection.bus`),
+      ORDER BY port`),
     serverQuery<{
       attribute: string;
       bus: string | null;

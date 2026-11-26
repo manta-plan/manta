@@ -56,9 +56,9 @@ def make_record(con: duckdb.DuckDBPyConnection, catalog: str | None, *, busmap_p
         values = row if geometry else row[:-1]
         con.execute(f"INSERT INTO {prefix}properties.entity VALUES ({', '.join('?' * len(values))})", list(values))
     con.execute(f"""CREATE TABLE {prefix}properties.connection AS
-        SELECT {{'entity': 'line 1', 'bus': 'A'}} AS connection, 'input' AS role
-        UNION ALL SELECT {{'entity': 'line 1', 'bus': 'B'}}, 'output'
-        UNION ALL SELECT {{'entity': 'solar 1', 'bus': 'A'}}, 'attached'""")
+        SELECT {{'entity': 'line 1', 'port': 0}} AS connection, 'A' AS bus
+        UNION ALL SELECT {{'entity': 'line 1', 'port': 1}}, 'B'
+        UNION ALL SELECT {{'entity': 'solar 1', 'port': 0}}, 'A'""")
     con.execute(f"CREATE TABLE {prefix}attributes.p_nom AS SELECT 'solar 1' AS entity, 10.0 AS value")
     dims = {"p_nom": {"entity"}}
     if busmap_attribute:
