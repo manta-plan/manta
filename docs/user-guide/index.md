@@ -75,4 +75,4 @@ Each row names a stage, what the web app lets you do in it, and the milestones t
 
 - [Concepts](concepts.md) defines each term this guide uses.
 - [Playbooks and blocks](playbooks.md) explains what a playbook is made of and how Manta runs one.
-- [Start and follow a run](run.md) shows how to start a run in the web app.
+- [Start and follow a run](../howto/start-and-follow-a-run.md) shows how to start a run in the web app.

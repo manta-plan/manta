@@ -45,7 +45,7 @@ It answers with HTTP 200 even when it finds issues, because an editor calls it w
 Each issue names its step path and, where one is at fault, its settings path.
 So an editor can mark the right step and the right field.
 
-The web app does not use these endpoints yet: it starts the `expand` playbook with its default settings, as [Start and follow a run](../user-guide/run.md) states.
+The web app does not use these endpoints yet: it starts the `expand` playbook with its default settings, as [Start and follow a run](../howto/start-and-follow-a-run.md) states.
 
 ## When a run starts
 
@@ -181,7 +181,7 @@ The user sees the run at four moments:
 - When a step fails, its state names it as the failed step.
 - When the run ends, they see its final state, and the result is the last revision in the datarecord store.
 
-The web app today shows the run's state and log only, as [Start and follow a run](../user-guide/run.md) describes.
+The web app today shows the run's state and log only, as [Start and follow a run](../howto/start-and-follow-a-run.md) describes.
 [Planned changes](planned-changes.md) lists the parts still to come: the log of each step, and the run's result served as a record.
 
 From these stages you can judge where a new kind of failure is caught.

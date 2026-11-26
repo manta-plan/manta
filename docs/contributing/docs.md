@@ -5,7 +5,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Documentation
 
-This page shows how to build the documentation site, refresh the REST API reference, and find the rules a page follows.
+This page shows how to build the documentation site, refresh the REST API reference, add a how-to guide, and find the rules a page follows.
 You need [pixi](https://pixi.prefix.dev/) for the site and [uv](https://docs.astral.sh/uv/) for the API schema.
 
 ## Build and serve the site
@@ -49,6 +49,25 @@ pixi run docs-openapi
 This runs `tools/docs/export_openapi.py` in the backend's uv environment.
 It builds the app from the v1 router alone, so no database or other service needs to be running.
 CI exports the schema on every pull request and fails if the result differs from the committed file.
+
+## Add a how-to guide
+
+Every how-to guide is a page in `docs/howto/`, and the table on the [how-to landing page](../howto/index.md) is generated from the guides.
+To add a guide, start the page with a YAML block (front matter), above the licence header:
+
+```yaml
+---
+tags:
+  - App users
+description: Run a playbook on a model in the web app, and follow its status and log.
+---
+```
+
+`tags` lists who the guide is for.
+Use the names under `tags_allowed` in `mkdocs.yml`, because the build fails on any other tag.
+`description` is the text shown for the guide in the table, in the column "Use it to".
+`pixi run docs-build` and `pixi run docs-serve` update the table before they build the site, with `tools/docs/gen_howto_index.py`.
+Add the page to the `nav` in `mkdocs.yml`, then commit the changed table with the guide.
 
 ## Writing rules
 

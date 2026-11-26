@@ -1,3 +1,9 @@
+---
+tags:
+  - App users
+description: Run a playbook on a model in the web app, and follow its status and log.
+---
+
 <!--
 SPDX-FileCopyrightText: Manta contributors
 SPDX-License-Identifier: CC-BY-4.0
@@ -5,7 +11,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Start and follow a run
 
-This guide shows how to start a run of a [playbook](playbooks.md) in the web app, and follow its status and log.
+This guide shows how to start a run of a [playbook](../user-guide/playbooks.md) in the web app, and follow its status and log.
 You need a Manta account, the web address of your Manta app, and a project with a copy of the data record you want to run on.
 
 !!! note "What the web app supports today"

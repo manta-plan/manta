@@ -25,3 +25,14 @@ div.doc-contents:not(.first) {
   min-width: 640px;
   height: auto;
 }
+
+/* Filter buttons above a table, added by filter-table.js. */
+.filter-table__buttons .md-button {
+  margin: 0 0.4em 0.4em 0;
+  padding: 0.3em 1em;
+  font-size: 0.7rem;
+}
+
+.filter-table tr[hidden] {
+  display: none;
+}

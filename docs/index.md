@@ -35,5 +35,6 @@ flowchart LR
 ## Where to start
 
 - To use the web app as a modeller, read the [user guide](user-guide/index.md).
+- To get a modelling framework, a workflow, or a PyPSA model ready for Manta, follow the [how-to guides](howto/index.md).
 - To write or run blocks and playbooks, follow [Blocks and playbooks](installation/blocks-and-playbooks.md), then read the [playbook and playbook-library contributing guide](contributing/playbook.md) and the [`playbook` reference](reference/playbook/api.md).
 - To work on Manta itself, follow [Full stack](installation/full-stack.md), [Backend](installation/backend.md), or [Frontend](installation/frontend.md). The [technical overview](explanation/architecture.md) shows how the parts fit together, and the [contributing guide](contributing/index.md) sets out how to change them. The [reference](reference/index.md) lists the Python and REST interfaces.
