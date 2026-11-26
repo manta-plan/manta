@@ -9,11 +9,3 @@ export type TokenResponse = {
 export type LoginResponse = TokenResponse;
 
 export type RefreshResponse = TokenResponse;
-
-export type RegisterResponse = {
-  uuid: string;
-  username: string;
-  idp_subject: string;
-  idp_source: string;
-  created_at: string;
-};

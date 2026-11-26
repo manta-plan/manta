@@ -2,7 +2,7 @@
 
 TODO: temporary, until projects can get real data in some other way. It is deliberately
 self-contained, so removing it means deleting this module, its config and its callers
-(create_app() and AuthService.register()). That is also why it talks to S3 directly
+(create_app() and AuthService). That is also why it talks to S3 directly
 rather than through S3FileStorageService: the originals live outside every project,
 which that service rightly refuses to address, and growing it for this alone isn't
 worth it. The resulting duplication of key building and error handling is accepted.
