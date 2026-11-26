@@ -1,10 +1,14 @@
+import hashlib
 import logging
 import secrets
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
+from jwcrypto.common import JWException
 from keycloak import KeycloakAdmin, KeycloakConnectionError, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 from keycloak.keycloak_openid import KeycloakAuthenticationError
@@ -38,12 +42,67 @@ def _find_user_by_credentials(db: Session, idp_subject: str, idp_source: str) ->
     )
 
 
+# How long a "still active" answer from Keycloak is trusted for one access token.
+# A token whose session was logged out keeps working for at most this long, in
+# exchange for asking Keycloak once per token per window instead of per request.
+ACTIVE_SESSION_CACHE_SECONDS = 30.0
+_MAX_CACHED_TOKENS = 10_000
+
+_active_tokens: dict[str, float] = {}
+_active_tokens_lock = threading.Lock()
+
+
+def _token_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _is_known_active(token: str) -> bool:
+    now = time.monotonic()
+    with _active_tokens_lock:
+        expires_at = _active_tokens.get(_token_key(token))
+        return expires_at is not None and expires_at > now
+
+
+def _remember_active(token: str) -> None:
+    now = time.monotonic()
+    with _active_tokens_lock:
+        if len(_active_tokens) >= _MAX_CACHED_TOKENS:
+            for key in [k for k, expires_at in _active_tokens.items() if expires_at <= now]:
+                del _active_tokens[key]
+            if len(_active_tokens) >= _MAX_CACHED_TOKENS:
+                _active_tokens.clear()
+        _active_tokens[_token_key(token)] = now + ACTIVE_SESSION_CACHE_SECONDS
+
+
+def _forget_active_tokens() -> None:
+    with _active_tokens_lock:
+        _active_tokens.clear()
+
+
+def _check_session_active(kc_client: KeycloakOpenID, token: str) -> None:
+    # The signature and expiry alone can't show a logout: Keycloak ends the
+    # session, but the access token stays validly signed until it expires. Token
+    # introspection asks Keycloak whether the token's session is still active.
+    if _is_known_active(token):
+        return
+    try:
+        introspection = kc_client.introspect(token)
+    except KeycloakError as e:
+        raise BackendError from e
+    if introspection.get("active") is not True:
+        raise AuthenticationError(detail="session is no longer active")
+    _remember_active(token)
+
+
 def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
     try:
         claims = kc_client.decode_token(token, validate=True)
-    except (KeycloakAuthenticationError, ValueError) as e:
+    except (KeycloakAuthenticationError, ValueError, JWException) as e:
         # ValueError: jwcrypto raises this (not a KeycloakError) for input
         # that isn't even well-formed JWT/JWS, e.g. a garbage bearer token.
+        # JWException: jwcrypto's base error for a well-formed token it rejects,
+        # e.g. JWTExpired or a bad signature. Without it these became a 500, and
+        # the frontend only refreshes its token on a 401.
         raise AuthenticationError from e
     except KeycloakError as e:  # catch-all for non-user errors
         raise BackendError from e
@@ -58,6 +117,8 @@ def _authenticate(db: Session, kc_client: KeycloakOpenID, token: str) -> User:
         raise AuthenticationError(
             detail=f"unexpected issuer: got {claims.get('iss')!r}, expected {expected_issuer!r}"
         )
+    _check_session_active(kc_client, token)
+
     user = _find_user_by_credentials(db, claims["sub"], claims["iss"])
     if user is None:
         raise AuthenticationError(detail="user is not registered")
@@ -119,8 +180,9 @@ class AuthService:
     def logout(self, refresh_token: str) -> None:
         # Ends the Keycloak session the refresh token belongs to, so neither it
         # nor any other refresh token from that session can be used again.
-        # Access tokens already issued stay valid until they expire: they are
-        # verified by signature alone, without asking Keycloak.
+        # Access tokens from that session are refused too, once introspection
+        # sees the session has ended: at most ACTIVE_SESSION_CACHE_SECONDS later
+        # on a process that recently accepted them, immediately on any other.
         # Keycloak accepts a token whose session has already ended, so logging
         # out twice is not an error.
         with _translate_keycloak_errors():
