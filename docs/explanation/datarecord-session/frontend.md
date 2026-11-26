@@ -99,14 +99,14 @@ No query runs without an attribute filter.
 
 On a WR, the `static_<dtype>` views read the WR's views and so follow its edits. An edit never changes the views' shape.
 
-The views follow the shape of the pinned DR, which is the stack tip (D18, D19). Two open DR PRs outside the stack will change that shape (F31):
+The views follow the shape of the pinned DR, which is the stack tip (D18, D19). Two DR PRs change that shape (F31). PR 142 is released in datarecord 0.1.0a2, which the stack pins since [#377](https://github.com/manta-plan/manta/pull/377). PR 146 is still open and outside the stack:
 
 | DR PR | Change | Effect on the views |
 |---|---|---|
 | 142 | A connection is keyed by its port: `connection STRUCT(entity, port)`, and `bus` becomes a property of the connection. | The `bus` of a connection row comes from `properties.connection`, or the column becomes `port`. |
 | 146 | Global constraints become a dimension `global_constraint`. | The attributes of global constraints need a column `global_constraint` or views of their own. |
 
-The views change when the pin moves to a DR with these PRs, not before.
+The views follow PR 142 with the pin on 0.1.0a2. They change for PR 146 when the pin moves to a DR with it, not before.
 
 ### The preload list
 

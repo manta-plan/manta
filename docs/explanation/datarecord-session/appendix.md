@@ -49,7 +49,7 @@ Taken:
 | SQL guard | The SQL macro stays for now. `quack-oauth` is not adopted ([results of S7](#82-results-of-s7-quack-oauth)). |
 | Idle times | `T1` = 10 minutes, `T2` = 60 minutes, as start values. Capacity pressure is a cap on the number of running sessions at first. |
 | Stored fold | Dropped (D17): no rule to materialise before an upload. Required instead: every store is written with the pinned DR, so each layer has `owner_map_rows.parquet` (F18). Materialising stays optional, for anyone. Commits through the session are not materialised. |
-| `static` views and DR shape changes | The views follow the shape of the pinned DR. Today that is the stack tip, without PRs 142 and 146 (D18, F31). |
+| `static` views and DR shape changes | The views follow the shape of the pinned DR. Today that is datarecord 0.1.0a2, with PR 142 and without PR 146 (D18, F31). |
 | DR version | A commit hash, the same for session, BE and blocks, moved together. Now: the stack tip, `468f69b0` (`perf/frozen-table-load`). Later: specific commits on DR `main`. Later: a released version (D19). |
 | User deletion | `manta.created_by` of a session commit is an opaque user id, never the username. After the user's deletion it points to nothing; the manifest cannot change. In the MVP a project has one owner and goes with it ([what `meta` cannot hold](backend-mvp.md#what-meta-cannot-hold)). Later the `datarecord_*` tables of the [revision index](backend.md#1-revision-index) cascade from the project, as `runs` does (`projects.owner_id` cascades from the user), and `user_id` is `ON DELETE SET NULL`. |
 | Commit time | Every writer adds `manta.committed_at` to the `meta` at commit (a flat string, no DR change). An import falls back to the claim time of `claim.json`. |
@@ -75,7 +75,7 @@ State on 2026-11-17: no request to DR blocks a phase any more. What blocks is th
 
 In this order:
 
-1. DR: review and merge PR 144 and the stack. Pin the stack tip in Manta (D19). PRs 142 and 146 are rebased on the stack in DR; the `static` views follow when the pin moves (D18).
+1. DR: review and merge PR 144 and the stack. Pin the stack tip in Manta (D19). PR 142 is released in datarecord 0.1.0a2. PR 146 is rebased on the stack in DR; the `static` views follow when the pin moves (D18).
 2. Export the test stores again with the stack's DR into a new bucket folder, with `store.json` and `meta` as in `2026-11-13/`. Add the missing `manta.created_by` on scenario revisions on the way ([results of S2 and S3](#81-results-of-s2-and-s3-on-dr-main)).
 3. Run S2 and S3 again on these stores: `register`, `materialise()`, a commit, the `static` read, through Quack and on SeaweedFS. This checks the numbers behind D17.
 4. Run the left-over of S6: an STS token as `S3Credentials`, for the workspace and for a commit, on SeaweedFS 4.53.
@@ -150,7 +150,7 @@ The FE sources of F4 to F7, F22 and F23 are `manta/frontend` on `main`, read on 
 | F18 | A remote store open took about 17 s from Cloud Run. A layer written with the stack carries `owner_map_rows.parquet`, the pre-aggregated rows of its owner map (PR 147). With that file the cold fold of `europe-full-resolution` (1.24 billion rows) takes 0.7 s; for a layer written before PR 147 about 6 s; on DR main about 310 s (numbers of the PR). `Revision.materialise()` writes the fold under `layers/<id>/resolved/` and can run later, by any party. | quack-server README, DR PR 147, `store/materialise.py` |
 | F29 | The DR stack: PRs 147 to 159, each on the one before, on top of PR 144. PRs 148 to 155 answer R8, R7, R3, R1, R2, R4, R13 and R14 ([requests to datarecord](#7-requests-to-datarecord)). PRs 147 and 156 to 159 are performance work on the fold and on `register` ([what the DR stack changes](#83-what-the-dr-stack-changes)). All are open and mergeable; none is reviewed. `pytest` fails on Windows from PR 151 upward, cause not read. Nothing is released. The head is the branch `perf/frozen-table-load`. | DR PRs 144, 147 to 159 |
 | F30 | Breaking with the stack: a store written before PR 144 does not open. A fold materialised before PR 147 cannot be read and must be materialised again. A workspace database file from before must be deleted. `meta` values that differ only in type (`1`, `1.0`) no longer merge. | DR PRs 144, 147, 154 |
-| F31 | Two open DR PRs outside the stack change shapes that this plan uses. PR 142 keys a connection by its port: `connection STRUCT(entity, port)`, and `bus` becomes a property of the connection. PR 146 makes global constraints a dimension `global_constraint`: `investment_period`, `sense`, `constant` and `mu` become attributes over it, not over `entity`. Both are based on main with the old names and are not rebased on PR 144. | DR PRs 142, 146 |
+| F31 | Two DR PRs change shapes that this plan uses. PR 142 keys a connection by its port: `connection STRUCT(entity, port)`, and `bus` becomes a property of the connection. It is merged and released in datarecord 0.1.0a2, which the stack pins since [#377](https://github.com/manta-plan/manta/pull/377). PR 146 makes global constraints a dimension `global_constraint`: `investment_period`, `sense`, `constant` and `mu` become attributes over it, not over `entity`. It is still open, based on main with the old names, and not rebased on PR 144. | DR PRs 142, 146 |
 
 ## 7. Requests to datarecord
 

@@ -627,4 +627,4 @@ For a replay to give the same WR, the format guarantees four things:
 - What does a staged row with a NULL `value` mean on read? Not verified; DR's docs say nothing. Proposal: the session refuses `null` for an attribute until DR documents it.
 - Which `where` keys does DR accept on an attribute over a multi-dimension? Not verified; a probe refused `ctype` without `bus`. Proposal: test it on `efficiency` before the FE relies on it.
 - Can a log replay after a move of the DR pin? A new DR version may apply a list differently. Proposal: each log entry records the DR commit hash, and the BE commits or drops open logs before the pin moves (D19).
-- DR PR 142 keys `connection` by `entity` and `port`, with `bus` as a property (F31). Proposal: the format takes field names from the parent's schema and needs no change; the FE's code for connection coordinates moves with the pin.
+- DR PR 142, released in datarecord 0.1.0a2, keys `connection` by `entity` and `port`, with `bus` as a property (F31). Proposal: the format takes field names from the parent's schema and needs no change; the FE's code for connection coordinates moves with the pin.

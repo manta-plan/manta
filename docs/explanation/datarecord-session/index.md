@@ -319,7 +319,7 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 
 | Issue | Relation | How the plan addresses it | Where | Phase |
 |---|---|---|---|---|
-| [#95](https://github.com/energy-models/datarecord/issues/95) Key a connection by (component, port), with the bus as its value | affected | DR PR 142 implements this outside the stack. When the pin moves to it, the `static` views and the `pypsa-eur` pack must take the bus of a connection from its properties (D18, F31). | [constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map), [facts](appendix.md#6-facts) | 0, 3 |
+| [#95](https://github.com/energy-models/datarecord/issues/95) Key a connection by (component, port), with the bus as its value | affected | Closed by DR PR 142, released in datarecord 0.1.0a2, which the stack pins since [#377](https://github.com/manta-plan/manta/pull/377). The `static` views and the `pypsa-eur` pack must take the bus of a connection from its properties (D18, F31). | [constant values and the owner map](frontend.md#2-constant-values-and-the-owner-map), [facts](appendix.md#6-facts) | 0, 3 |
 
 `manta-plan/baby-manta` was reachable and has no open issues and no open PRs.
 
