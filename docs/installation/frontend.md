@@ -13,7 +13,7 @@ So before you start, run the backend as [Backend](backend.md) shows.
 
 ## Open the web app
 
-Go to `http://localhost:5173` and log in with the account that [Full stack](full-stack.md#5-open-manta) names.
+Go to `http://localhost:5173` and log in with the account that [Full stack](full-stack.md#3-open-manta) names.
 The page reloads when you save a change to a file in `frontend/src`.
 If the page loads but login fails, check that the backend answers on port 8000, as [Check the API](backend.md#check-the-api) shows.
 
