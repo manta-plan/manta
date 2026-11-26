@@ -85,6 +85,7 @@
             "properties": {
               "dual_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Dual Feasibility Tolerance",
                 "type": "number"
               },
@@ -99,11 +100,14 @@
               },
               "primal_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Primal Feasibility Tolerance",
                 "type": "number"
               },
               "random_seed": {
                 "default": 123,
+                "maximum": 2147483647,
+                "minimum": 0,
                 "title": "Random Seed",
                 "type": "integer"
               },
@@ -239,6 +243,7 @@
               "committable_big_m": {
                 "anyOf": [
                   {
+                    "exclusiveMinimum": 0.0,
                     "type": "number"
                   },
                   {
@@ -309,11 +314,13 @@
             "properties": {
               "atol": {
                 "default": 1.0,
+                "exclusiveMinimum": 0.0,
                 "title": "Atol",
                 "type": "number"
               },
               "max_segments": {
                 "default": 20,
+                "minimum": 1,
                 "title": "Max Segments",
                 "type": "integer"
               },
@@ -328,12 +335,14 @@
               },
               "rtol": {
                 "default": 0.1,
+                "minimum": 0.0,
                 "title": "Rtol",
                 "type": "number"
               },
               "segments": {
                 "anyOf": [
                   {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
@@ -463,6 +472,7 @@
             "properties": {
               "dual_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Dual Feasibility Tolerance",
                 "type": "number"
               },
@@ -477,11 +487,14 @@
               },
               "primal_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Primal Feasibility Tolerance",
                 "type": "number"
               },
               "random_seed": {
                 "default": 123,
+                "maximum": 2147483647,
+                "minimum": 0,
                 "title": "Random Seed",
                 "type": "integer"
               },
@@ -617,6 +630,7 @@
               "committable_big_m": {
                 "anyOf": [
                   {
+                    "exclusiveMinimum": 0.0,
                     "type": "number"
                   },
                   {
@@ -687,11 +701,13 @@
             "properties": {
               "atol": {
                 "default": 1.0,
+                "exclusiveMinimum": 0.0,
                 "title": "Atol",
                 "type": "number"
               },
               "max_segments": {
                 "default": 20,
+                "minimum": 1,
                 "title": "Max Segments",
                 "type": "integer"
               },
@@ -706,12 +722,14 @@
               },
               "rtol": {
                 "default": 0.1,
+                "minimum": 0.0,
                 "title": "Rtol",
                 "type": "number"
               },
               "segments": {
                 "anyOf": [
                   {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
@@ -856,6 +874,7 @@
             "properties": {
               "dual_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Dual Feasibility Tolerance",
                 "type": "number"
               },
@@ -870,11 +889,14 @@
               },
               "primal_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Primal Feasibility Tolerance",
                 "type": "number"
               },
               "random_seed": {
                 "default": 123,
+                "maximum": 2147483647,
+                "minimum": 0,
                 "title": "Random Seed",
                 "type": "integer"
               },
@@ -1010,6 +1032,7 @@
               "committable_big_m": {
                 "anyOf": [
                   {
+                    "exclusiveMinimum": 0.0,
                     "type": "number"
                   },
                   {
@@ -1080,11 +1103,13 @@
             "properties": {
               "atol": {
                 "default": 1.0,
+                "exclusiveMinimum": 0.0,
                 "title": "Atol",
                 "type": "number"
               },
               "max_segments": {
                 "default": 20,
+                "minimum": 1,
                 "title": "Max Segments",
                 "type": "integer"
               },
@@ -1099,12 +1124,14 @@
               },
               "rtol": {
                 "default": 0.1,
+                "minimum": 0.0,
                 "title": "Rtol",
                 "type": "number"
               },
               "segments": {
                 "anyOf": [
                   {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
@@ -1234,6 +1261,7 @@
             "properties": {
               "dual_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Dual Feasibility Tolerance",
                 "type": "number"
               },
@@ -1248,11 +1276,14 @@
               },
               "primal_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Primal Feasibility Tolerance",
                 "type": "number"
               },
               "random_seed": {
                 "default": 123,
+                "maximum": 2147483647,
+                "minimum": 0,
                 "title": "Random Seed",
                 "type": "integer"
               },
@@ -1335,16 +1366,19 @@
             "properties": {
               "marginal_cost": {
                 "default": 100.0,
+                "minimum": 0.0,
                 "title": "Marginal Cost",
                 "type": "number"
               },
               "p_nom": {
                 "default": 1000000000.0,
+                "minimum": 0.0,
                 "title": "P Nom",
                 "type": "number"
               },
               "sign": {
                 "default": 0.001,
+                "exclusiveMinimum": 0.0,
                 "title": "Sign",
                 "type": "number"
               }
@@ -1410,6 +1444,7 @@
               "committable_big_m": {
                 "anyOf": [
                   {
+                    "exclusiveMinimum": 0.0,
                     "type": "number"
                   },
                   {
@@ -1421,6 +1456,7 @@
               },
               "horizon": {
                 "default": 100,
+                "minimum": 1,
                 "title": "Horizon",
                 "type": "integer"
               },
@@ -1451,6 +1487,7 @@
               },
               "overlap": {
                 "default": 0,
+                "minimum": 0,
                 "title": "Overlap",
                 "type": "integer"
               },
@@ -1490,11 +1527,13 @@
             "properties": {
               "atol": {
                 "default": 1.0,
+                "exclusiveMinimum": 0.0,
                 "title": "Atol",
                 "type": "number"
               },
               "max_segments": {
                 "default": 20,
+                "minimum": 1,
                 "title": "Max Segments",
                 "type": "integer"
               },
@@ -1509,12 +1548,14 @@
               },
               "rtol": {
                 "default": 0.1,
+                "minimum": 0.0,
                 "title": "Rtol",
                 "type": "number"
               },
               "segments": {
                 "anyOf": [
                   {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
@@ -1736,6 +1777,7 @@
             "properties": {
               "dual_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Dual Feasibility Tolerance",
                 "type": "number"
               },
@@ -1750,11 +1792,14 @@
               },
               "primal_feasibility_tolerance": {
                 "default": 1e-05,
+                "minimum": 1e-10,
                 "title": "Primal Feasibility Tolerance",
                 "type": "number"
               },
               "random_seed": {
                 "default": 123,
+                "maximum": 2147483647,
+                "minimum": 0,
                 "title": "Random Seed",
                 "type": "integer"
               },
@@ -1837,16 +1882,19 @@
             "properties": {
               "marginal_cost": {
                 "default": 100.0,
+                "minimum": 0.0,
                 "title": "Marginal Cost",
                 "type": "number"
               },
               "p_nom": {
                 "default": 1000000000.0,
+                "minimum": 0.0,
                 "title": "P Nom",
                 "type": "number"
               },
               "sign": {
                 "default": 0.001,
+                "exclusiveMinimum": 0.0,
                 "title": "Sign",
                 "type": "number"
               }
@@ -1912,6 +1960,7 @@
               "committable_big_m": {
                 "anyOf": [
                   {
+                    "exclusiveMinimum": 0.0,
                     "type": "number"
                   },
                   {
@@ -1982,11 +2031,13 @@
             "properties": {
               "atol": {
                 "default": 1.0,
+                "exclusiveMinimum": 0.0,
                 "title": "Atol",
                 "type": "number"
               },
               "max_segments": {
                 "default": 20,
+                "minimum": 1,
                 "title": "Max Segments",
                 "type": "integer"
               },
@@ -2001,12 +2052,14 @@
               },
               "rtol": {
                 "default": 0.1,
+                "minimum": 0.0,
                 "title": "Rtol",
                 "type": "number"
               },
               "segments": {
                 "anyOf": [
                   {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   {
@@ -2105,5 +2158,5 @@
       "name": "pypsa"
     }
   },
-  "generated_in_env": "full"
+  "generated_in_env": "pypsa"
 }
