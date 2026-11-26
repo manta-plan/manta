@@ -12,11 +12,16 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Prepare a PyPSA model for Manta
 
-This guide shows how to store a PyPSA network as a [data record](../user-guide/concepts.md), so that you can run Manta's playbooks on it.
-It is for modellers who have a PyPSA network, as a file or from a workflow such as PyPSA-Eur.
+This guide shows you how to store a PyPSA network as a [data record](../user-guide/concepts.md), so that you can load it into Manta and run playbooks on it.
+It is for modellers who have a PyPSA network, from their own workflow or a community one such as PyPSA-Eur.
 You need a Python environment with PyPSA, [HiGHS](https://highs.dev), and the [`datarecord`](https://energy-models.github.io/datarecord/) package with its `pypsa` extra.
-Use the same version of `datarecord` as Manta, which is set in [`playbook-library/pixi.toml`](https://github.com/manta-plan/manta/blob/main/playbook-library/pixi.toml).
-A data record written with another version may not open in Manta.
+Use the same version of `datarecord` as Manta, which is set in [`playbook-library/pixi.toml`](https://github.com/manta-plan/manta/blob/main/playbook-library/pixi.toml):
+
+```toml
+--8<-- "playbook-library/pixi.toml:docs-deps"
+```
+
+A data record written with different versions may not open in Manta.
 You do not need to install Manta.
 
 !!! warning "Adding your data record to Manta"
@@ -30,7 +35,7 @@ In a data record, two components of different types cannot have the same name.
 For example, a load and a generator cannot both be called `Manchester Wind`, and a load and a line cannot both be called `10`.
 Buses and carriers are the exception, so a bus can have the same name as a load.
 
-To find clashing names, convert the network:
+To find clashing names, try to convert the network:
 
 ```python
 import pypsa
@@ -46,8 +51,6 @@ PyPSA.to_datarecord(n, ws.con)
 ```text
 datarecord.tools.base.UnsupportedRecordError: record cannot build a pypsa model; missing: labels claimed by more than one category ['Manchester Wind'] (https://energy-models.github.io/datarecord/reference/format/#labels)
 ```
-
-The example network already has a generator called `Manchester Wind`, so `PyPSA.to_datarecord` raises an error that lists every clashing name.
 
 To fix a clash, rename the components of one type, both in the component table and in each of its time series:
 
@@ -65,7 +68,7 @@ If your workflow gives loads and lines the same numbers, as PyPSA-Earth does, ad
 ## Write the network to a data record
 
 A data record is a folder with one layer for each saved version of the model (a revision).
-To start a data record, save the network as its first revision, which has no parent.
+To start a data record, save the network as its first revision.
 Save the network before you solve it, so that the first revision contains only inputs.
 
 ```python
@@ -122,6 +125,10 @@ The folder `ac-dc-meshed` now contains the revision under `layers/` and its name
 The first `label` and `description` describe the data record, and the ones under `base` describe the base scenario.
 You can leave out either `description`, but Manta needs all the other keys.
 
+!!! note
+
+    The `store.json` will be created natively by Manta in a future release; creating it yourself is a temporary measure.
+
 ## Check the result
 
 A block in Manta builds a PyPSA network from the revision and solves it with HiGHS.
@@ -150,9 +157,11 @@ If you do not get two matching values:
 
 - If both networks are infeasible, a run in Manta also fails.
   A block stops the run when the solver does not find an optimal solution.
-  If the cause is demand that the network cannot meet, add load-shedding generators with `n.optimize.add_load_shedding()`, then write the data record again.
+  If you suspect that the cause is unmet demand in your model, add load-shedding generators with `n.optimize.add_load_shedding()`,
+  then write the data record again.
 - If the two values differ, check whether any global constraint in your network has a `bus`.
-  `datarecord` currently does not save it ([datarecord#162](https://github.com/energy-models/datarecord/issues/162)), so the constraint applies to the whole network once you build it from the data record.
+  `datarecord` currently does not save it ([datarecord#162](https://github.com/energy-models/datarecord/issues/162)),
+  so the constraint applies to the whole network once you build it from the data record.
   Manta's blocks build the network in the same way, so results in Manta differ from your own results too.
 - If your network is too large to solve on your computer, compare the two networks at a lower time resolution.
   For example, solve `n.cluster.temporal.downsample(6)` and `back.cluster.temporal.downsample(6)`.

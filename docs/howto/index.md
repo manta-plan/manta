@@ -5,8 +5,9 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # How-to guides
 
-Each guide takes you through one task, and states what you need before you start.
-Each guide is written for one or more of these readers:
+In this section you will find guides to support you in using or developing Manta.
+We expect different audiences to arrive at this page, so you will find only some of these guides useful to you.
+The current guides are written for the following audiences:
 
 - App users work on a study in the web app.
 - Modelling tool developers maintain a modelling framework, a workflow, or a tool that a workflow uses, and want to use it in Manta. They also write blocks and playbooks.
