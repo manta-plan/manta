@@ -1,5 +1,7 @@
 import { Button } from "@base-ui/react/button";
+import { useEffect, useRef } from "react";
 import { FiRefreshCw } from "react-icons/fi";
+import { isRunFinished } from "../status";
 import type { ExpandedRunState } from "../types";
 
 type RunLogsSectionProps = {
@@ -7,11 +9,41 @@ type RunLogsSectionProps = {
   onRefresh: () => void;
   /** Where the lines are shown; the table row caps their height. */
   logClassName: string;
+  /** With `status`, refreshes every this many ms until the run is finished. */
+  autoRefreshMs?: number;
+  /** The run's current status; decides when auto-refresh stops. */
+  status?: string;
 };
 
 // The log of a run with its Refresh button, shared by the table row and the run workspace.
-export function RunLogsSection({ state, onRefresh, logClassName }: RunLogsSectionProps) {
+export function RunLogsSection({
+  state,
+  onRefresh,
+  logClassName,
+  autoRefreshMs,
+  status,
+}: RunLogsSectionProps) {
   const lines = state.logs?.logs ?? [];
+
+  // Read through a ref so a new callback each render doesn't restart the timer.
+  const refreshRef = useRef(onRefresh);
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  });
+  const isLoadingRef = useRef(state.isLoading);
+  useEffect(() => {
+    isLoadingRef.current = state.isLoading;
+  });
+
+  const shouldPoll = autoRefreshMs !== undefined && status !== undefined && !isRunFinished(status);
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const timer = setInterval(() => {
+      // Skip a tick while the previous refresh is still in flight.
+      if (!isLoadingRef.current) refreshRef.current();
+    }, autoRefreshMs);
+    return () => clearInterval(timer);
+  }, [shouldPoll, autoRefreshMs]);
 
   return (
     <section>
