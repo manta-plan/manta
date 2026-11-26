@@ -50,5 +50,5 @@ SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
 path = ".github/pull_request_template.md"
-SPDX-FileCopyrightText = "Manta contributors"
+SPDX-FileCopyrightText = "2026 Manta contributors"
 SPDX-License-Identifier = "CC-BY-4.0"

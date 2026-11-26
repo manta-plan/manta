@@ -1,5 +1,5 @@
 ---
-# SPDX-FileCopyrightText: Manta contributors
+# SPDX-FileCopyrightText: 2026 Manta contributors
 # SPDX-License-Identifier: CC-BY-4.0
 name: prose-writing
 description: House rules for any prose written in this project. Who reads it, which published style guides gate it, and the project's own words. Use when writing or editing a Markdown page, a README, CONTRIBUTING.md, a docstring, a PR title or body, an issue, a review comment, a commit message, or an exception, warning or log message in the code.

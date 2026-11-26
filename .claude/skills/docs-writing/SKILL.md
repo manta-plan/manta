@@ -1,5 +1,5 @@
 ---
-# SPDX-FileCopyrightText: Manta contributors
+# SPDX-FileCopyrightText: 2026 Manta contributors
 # SPDX-License-Identifier: CC-BY-4.0
 name: docs-writing
 description: House rules for documentation pages in this project, built on Diátaxis. What kind of page to write, where it lives, how each kind is written, and how its examples, figures and headings work. Use when writing, restructuring or reviewing a documentation page or section, or when adding prose to an existing one, together with the prose-writing skill.
