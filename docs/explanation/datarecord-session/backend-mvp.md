@@ -11,7 +11,7 @@ Part of the datarecord-session plan, draft 9. Start with the [overview](index.md
 
 In the MVP the BE keeps no copy of stores, revisions or references. It lists stores with one S3 listing per project. It lists revisions with DR's `Store.revisions()` and `Store.claims()`. A DR workspace in its memory caches the manifests to make listings fast; claims and commits need none of it. Revision facts live in the commit `meta` under `manta.` keys. References live in `store.json`, which only the BE writes. The BE moves a reference by a conditional PUT of `store.json` with `If-Match`, which detects a concurrent commit. The fork point comes from `Revision.ancestry()` of both sides. Runs keep finding their revisions through Prefect, as today. The public routes, the response shapes, the `store.json` form and the `meta` keys are those of the later index. So `sync_store` can fill the index from what the MVP wrote, and the FE does not change. The MVP step is good for one owner per project, few revisions per store and one BE host. Move to the index on one of three triggers: several writers per project, a cold listing above its time budget, or queries across stores and projects.
 
-Conventions of this note: "read" means verified in code, with file and line. DR lines are at the pinned commit `468f69b0` (D19), paths under `src/datarecord/`. "Inferred" means not verified. "Unverified" marks a fact that needs a test.
+Conventions of this note: "read" means verified in code, with file and line. DR lines are at commit `468f69b0`, the pin before [#377](https://github.com/manta-plan/manta/pull/377) (D19), paths under `src/datarecord/`. "Inferred" means not verified. "Unverified" marks a fact that needs a test.
 
 ## 1. What issue #283 decided
 

@@ -185,7 +185,7 @@ The format follows from three reasons:
 
 The changeset is a pre-stage of LayerData, not LayerData itself. It is the session's own format. Nothing is requested from DR (R5).
 
-All statements about DR below refer to the pin `468f69b0` (D19). "Probe" marks a behaviour that a script showed against that commit, where the docs say nothing.
+All statements about DR below refer to commit `468f69b0`, the pin before [#377](https://github.com/manta-plan/manta/pull/377) (D19). "Probe" marks a behaviour that a script showed against that commit, where the docs say nothing.
 
 ### The request
 

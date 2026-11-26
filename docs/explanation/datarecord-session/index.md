@@ -304,7 +304,7 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 | [#281](https://github.com/manta-plan/manta/pull/281) feat: use `store.json` and per-revision `meta` keys | prerequisite | The plan builds on `store.json` and the `manta.` keys of the commit `meta`. The first step of phase 2 makes the example data import read `store.json`. The PR's slug scheme (`<scenario>/<playbook>`) differs from the plan's references, which carry a `base` and take their kind from the revision they point to. | [the `store.json` form](backend-mvp.md#the-storejson-form) | 2 |
 | [#287](https://github.com/manta-plan/manta/pull/287) feat: wire data records metadata with projects, data catalogue, and playbook | affected | The PR reads the catalogue and the `inputs` revision from the temporary record server. In the plan both come from the BE's store and revision routes, and `record-server.ts` goes in phase 2. | [phases](appendix.md#4-phases), [revision index](backend.md#1-revision-index) | 2 |
 | [#301](https://github.com/manta-plan/manta/pull/301) feat: update docker setup for quack server | affected | The PR configures the temporary server. Phase 3 adds the session image, which a one-shot compose service builds. Phase 4 starts sessions from it, and phase 7 removes the server. | [phases](appendix.md#4-phases) | 3, 7 |
-| [#209](https://github.com/manta-plan/manta/pull/209) docs: datarecord integration, vendored fork and step 1 requirements | affected | The plan continues this work on DR's own stack. Its pin (D19) is the stack tip, not the vendored fork at `521fef2`. | [decisions](appendix.md#2-decisions) | 0 |
+| [#209](https://github.com/manta-plan/manta/pull/209) docs: datarecord integration, vendored fork and step 1 requirements | affected | The plan continues this work on DR's own stack. Its pin (D19) is datarecord 0.1.0a2 since [#377](https://github.com/manta-plan/manta/pull/377), not the vendored fork at `521fef2`. | [decisions](appendix.md#2-decisions) | 0 |
 
 ### manta-plan/manta: recently closed issues
 
@@ -313,9 +313,9 @@ Relations: **solved** (the plan's design removes the problem), **partly** (the p
 | [#223](https://github.com/manta-plan/manta/issues/223) Add a temporary quack server to enable porting FE features | affected | The plan replaces the server that this issue built. Follow-up #245 tracks its removal. | [goal](index.md#1-goal) | 7 |
 | [#224](https://github.com/manta-plan/manta/issues/224) Design datarecord API for writing new revisions | prerequisite | Done in DR: one folder per layer with its own manifest and `claim.json`. The commit flow and the claim for blocks build on it. | [commit flow](storage-commit.md#1-commit-flow) | 6 |
 | [#247](https://github.com/manta-plan/manta/issues/247) Optimize temporary quack server | affected | The copy to local disk goes away. The session reads S3 directly with its read token; the stack's fold makes a cold register take seconds. | [spikes and measurements](appendix.md#8-spikes-and-measurements) | 3 |
-| [#248](https://github.com/manta-plan/manta/issues/248) Upgrade the datarecord version used in manta | prerequisite | Closed, but the plan pins the stack tip, which is still unmerged (I11). The bump repeats in phase 0, together with a new export of all stores (I9). | [open next](appendix.md#3-open-next), [known issues](appendix.md#5-known-issues) | 0 |
+| [#248](https://github.com/manta-plan/manta/issues/248) Upgrade the datarecord version used in manta | prerequisite | Closed. The plan pins datarecord 0.1.0a2, which holds the stack, since [#377](https://github.com/manta-plan/manta/pull/377). The bump repeats in phase 0, together with a new export of all stores (I9). | [open next](appendix.md#3-open-next), [known issues](appendix.md#5-known-issues) | 0 |
 
-### energy-models/datarecord: open issues
+### energy-models/datarecord: issues
 
 | Issue | Relation | How the plan addresses it | Where | Phase |
 |---|---|---|---|---|

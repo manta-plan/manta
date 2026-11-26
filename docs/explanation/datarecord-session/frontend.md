@@ -99,7 +99,7 @@ No query runs without an attribute filter.
 
 On a WR, the `static_<dtype>` views read the WR's views and so follow its edits. An edit never changes the views' shape.
 
-The views follow the shape of the pinned DR, which is the stack tip (D18, D19). Two DR PRs change that shape (F31). PR 142 is released in datarecord 0.1.0a2, which the stack pins since [#377](https://github.com/manta-plan/manta/pull/377). PR 146 is still open and outside the stack:
+The views follow the shape of the pinned DR (D18, D19). That is datarecord 0.1.0a2, pinned since [#377](https://github.com/manta-plan/manta/pull/377). Two DR PRs change that shape (F31). PR 142 is released in 0.1.0a2. PR 146 is still open:
 
 | DR PR | Change | Effect on the views |
 |---|---|---|

@@ -33,7 +33,7 @@ Three things make this cut cheap:
 
 These must hold on Monday, or the first work package waits.
 
-1. Manta pins the tip of the DR stack (D19). The stack is not merged (I11), so the pin is a commit hash on a branch.
+1. Manta pins datarecord 0.1.0a2 from PyPI ([#377](https://github.com/manta-plan/manta/pull/377), D19). This release holds PR 144 and the stack.
 2. The test stores are exported again with the stack's DR, with `store.json` and `meta` as in `2026-11-13/` (I9, F30). No existing store opens with the stack.
 3. The BE container can reach the Docker daemon in the deployment ([#276](https://github.com/manta-plan/manta/issues/276)), and the image runs Caddy 2.11 or later (S8).
 
@@ -73,7 +73,7 @@ The three browser checks of the [Quack auth check](backend.md#quack-auth-check) 
 - Each session holds the global S3 credential this week (I1). A token that reads only the project's folder needs STS on SeaweedFS 4.53, and `main` runs 4.05 without code that mints tokens. So only the SQL guard stands between a user's query and other projects (I2), and the pentest must know this. One BE function returns the credential for a project, so the scoped token replaces it later without a change to the session.
 - `POST /v1/auth/register` is unauthenticated (I5, [#273](https://github.com/manta-plan/manta/issues/273)). With W3 any registered identity can start containers. The fix must land before the pentest deployment, or W3 needs a low cap on running sessions.
 - [#334](https://github.com/manta-plan/manta/pull/334) added `POST /v1/auth/guest`, which creates a guest account without credentials. It allows 5 guest accounts per client per hour and 100 per hour in total (`GUEST_LOGINS_PER_CLIENT_PER_HOUR`, `GUEST_LOGINS_PER_HOUR`). A session container belongs to one project, and the UI shows a guest a single project, so a guest normally runs one container. The API does not limit the projects of a user and sets no CPU or memory limit on a container, and the idle sweep stops unused sessions after 10 minutes by default. The risk is limited. A cap on running sessions per user and container resource limits are a follow-up, not part of this week.
-- The DR stack can still change under the pin (I11). The pin moves only when a work package needs a fix.
+- The pin moves only when a work package needs a fix (D19).
 
 ## 6. What follows
 
