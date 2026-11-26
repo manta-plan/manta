@@ -33,9 +33,12 @@ Later, that infrastructure also holds confidential client data.
 The design answers none of these questions yet:
 
 - Who may publish a block: only Open Energy Transition, or also a client on its own deployment?
-- What may a step reach? The planned network policy allows the Prefect API and the object store only, with no internet and no application database.
-- Which records may a step read? Credentials scoped to one run would limit what a careless or hostile block can reach.
-- How does Manta know an image is safe? Signing, provenance and scanning are candidates, and someone has to answer for a vulnerable dependency.
+- What may a step reach?
+  The planned network policy allows the Prefect API and the object store only, with no internet and no application database.
+- Which records may a step read?
+  Credentials scoped to one run would limit what a careless or hostile block can reach.
+- How does Manta know an image is safe?
+  Signing, provenance and scanning are candidates, and someone has to answer for a vulnerable dependency.
 - Does the web app show the user that a block comes from a third party?
 
 These questions feed the threat model before the MVP.

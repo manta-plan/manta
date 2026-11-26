@@ -6,27 +6,21 @@ SPDX-License-Identifier: MIT
 
 # playbook
 
-A **block** is one unit of work in an energy model workflow. A **playbook** chains blocks
-together into something you can run.
+A **block** is one unit of work in an energy model workflow.
+A **playbook** chains blocks together into something you can run.
 
-Blocks are written in Python. Playbooks are written in YAML (playbooks can be written in
-python for testing purposes only). Each block declares which environment it needs,
-so one playbook can span environments that could never be installed side by side:
-each step runs where it belongs, and the results are passed along.
+Blocks are written in Python.
+Playbooks are written in YAML (playbooks can be written in python for testing purposes only).
+Each block declares which environment it needs, so one playbook can span environments that could never be installed side by side: each step runs where it belongs, and the results are passed along.
 
-This package is the *framework*: what a block is, what a playbook is, and how to run
-one. It ships no blocks and no playbooks of its own — the ones Manta ships live next
-door in [`playbook-library`](../playbook-library), which imports this package exactly
-the way your own library would.
+This package is the *framework*: what a block is, what a playbook is, and how to run one.
+It ships no blocks and no playbooks of its own — the ones Manta ships live next door in [`playbook-library`](../playbook-library), which imports this package exactly the way your own library would.
 
 ## What is deliberately not here
 
-**Nothing about orchestration.** Running a block is a plain method call. Everything
-about *where* and *how* those calls happen in production — containers, schedulers,
-Prefect — lives in Manta's backend, behind the `BlockRunner` seam described below.
-Nothing in this package imports Prefect, Docker, or Manta, and nothing ever should:
-that is what lets a modeller write and test a block without knowing anything about
-Manta's infrastructure, and what lets this package move to its own repository later.
+**Nothing about orchestration.** Running a block is a plain method call.
+Everything about *where* and *how* those calls happen in production — containers, schedulers, Prefect — lives in Manta's backend, behind the `BlockRunner` seam described below.
+Nothing in this package imports Prefect, Docker, or Manta, and nothing ever should: that is what lets a modeller write and test a block without knowing anything about Manta's infrastructure, and what lets this package move to its own repository later.
 
 ## Layout
 
@@ -45,8 +39,8 @@ src/playbook/
     execution.py   Running a playbook, in-process or through a pluggable BlockRunner
 ```
 
-`blocks` never imports `playbooks`. A block library only depends on the half it
-needs.
+`blocks` never imports `playbooks`.
+A block library only depends on the half it needs.
 
 ## Getting started
 <!-- --8<-- [start:docs-setup] -->
@@ -56,14 +50,11 @@ uv sync
 uv run pytest
 ```
 
-The tests need nothing installed beyond this package and its `run` extra. That they
-pass without PyPSA — or any other modelling framework — is the proof that a block's
-own dependencies stay its own.
+The tests need nothing installed beyond this package and its `run` extra.
+That they pass without PyPSA — or any other modelling framework — is the proof that a block's own dependencies stay its own.
 
-Running a block opens datarecord stores, so a process that runs blocks installs
-`playbook[run]`. One that only passes revisions along, such as an orchestrator or a
-web backend, installs plain `playbook`: everything outside `playbook.blocks.run`
-imports without datarecord.
+Running a block opens datarecord stores, so a process that runs blocks installs `playbook[run]`.
+One that only passes revisions along, such as an orchestrator or a web backend, installs plain `playbook`: everything outside `playbook.blocks.run` imports without datarecord.
 <!-- --8<-- [end:docs-setup] -->
 
 ## Writing a block
@@ -99,30 +90,21 @@ What a block declares:
 | `INPUTS` | settings that another block fills in, rather than the user |
 | `OUTPUTS` | the results it offers to later blocks |
 
-`run` receives the datarecord `Revision` to work on, commits its result as a new
-revision through `base.store`, and returns that revision. Every revision a block run
-touches shares one `Workspace`, opened by whatever runs the block (`LocalBlockRunner`,
-`run_one`) before the block runs and closed after it, so a block never opens a store of
-its own.
+`run` receives the datarecord `Revision` to work on, commits its result as a new revision through `base.store`, and returns that revision.
+Every revision a block run touches shares one `Workspace`, opened by whatever runs the block (`LocalBlockRunner`, `run_one`) before the block runs and closed after it, so a block never opens a store of its own.
 
-Between processes a revision travels as a `RevisionRef`: a `store` (a local directory
-or an `s3://` URL) and the `id` of one revision in it. Settings wired in through
-`INPUTS` arrive as `RevisionRef`s; open one on the block's workspace with
-`open_revision(base.store.workspace, ref)` from `playbook.blocks.run`.
+Between processes a revision travels as a `RevisionRef`: a `store` (a local directory or an `s3://` URL) and the `id` of one revision in it.
+Settings wired in through `INPUTS` arrive as `RevisionRef`s; open one on the block's workspace with `open_revision(base.store.workspace, ref)` from `playbook.blocks.run`.
 
-A block class is checked as soon as it is written: every name in `INPUTS` has to be a
-setting that can hold a `RevisionRef` and has a default, so a block is always usable
-with nothing wired to it.
+A block class is checked as soon as it is written: every name in `INPUTS` has to be a setting that can hold a `RevisionRef` and has a default, so a block is always usable with nothing wired to it.
 
-A block refuses a setting it does not have, so a misspelt name is an error rather than
-a silent fall back to the default. The block's JSON schema says the same
-(`additionalProperties: false`), so a process that cannot import the block refuses the
-setting too.
+A block refuses a setting it does not have, so a misspelt name is an error rather than a silent fall back to the default.
+The block's JSON schema says the same (`additionalProperties: false`), so a process that cannot import the block refuses the setting too.
 
 ### Making a block findable
 
-A playbook names a block by name, in processes that often cannot import it. So a
-block library announces its blocks without importing them:
+A playbook names a block by name, in processes that often cannot import it.
+So a block library announces its blocks without importing them:
 
 ```python
 # playbook_library/__init__.py
@@ -131,13 +113,10 @@ from playbook.blocks import register_lazy
 register_lazy("shrink", "playbook_library.shrink:Shrink")
 ```
 
-The name becomes known everywhere; the import happens only where the block actually
-runs. A process learns which libraries to load from the `MANTA_BLOCK_SOURCES`
-environment variable (comma-separated module names), or is told explicitly via
-`load_block_sources([...])`.
+The name becomes known everywhere; the import happens only where the block actually runs.
+A process learns which libraries to load from the `MANTA_BLOCK_SOURCES` environment variable (comma-separated module names), or is told explicitly via `load_block_sources([...])`.
 
-Blocks that live in the same environment as the code using them can skip the
-indirection and use the `@register("name")` decorator on the class instead.
+Blocks that live in the same environment as the code using them can skip the indirection and use the `@register("name")` decorator on the class instead.
 
 ## Writing a playbook
 
@@ -183,14 +162,14 @@ for mode, block in [
     )
 ```
 
-Settings live in a separate document, filed by step name plus a `globals` section
-everything can see. Keeping them apart is what lets one playbook be run several ways.
+Settings live in a separate document, filed by step name plus a `globals` section everything can see.
+Keeping them apart is what lets one playbook be run several ways.
 
 ### How work flows between steps
 
-Every step is handed the revision the previous step produced. On top of that, a step can
-reach back for a *particular* earlier step's result and put it into one of its settings
-(`${steps.<step>.<output>}`). Those are separate things: a `dispatch` step written as
+Every step is handed the revision the previous step produced.
+On top of that, a step can reach back for a *particular* earlier step's result and put it into one of its settings (`${steps.<step>.<output>}`).
+Those are separate things: a `dispatch` step written as
 
 ```yaml
   - name: dispatch
@@ -199,39 +178,32 @@ reach back for a *particular* earlier step's result and put it into one of its s
       capacity_source: ${steps.expansion_overnight.output}
 ```
 
-receives the revision from the step before it *and* the capacities that the expansion
-step specifically decided.
+receives the revision from the step before it *and* the capacities that the expansion step specifically decided.
 
 ### Using a block more than once
 
-Each step has its own name, so `overnight_capacity_expansion` can appear as both
-`expansion_2030` and `expansion_2040`, each with its own settings.
+Each step has its own name, so `overnight_capacity_expansion` can appear as both `expansion_2030` and `expansion_2040`, each with its own settings.
 
 ### Conditions
 
-`when: {config: <dotted path>, equals: <value>}` switches a step on or off based on the
-settings alone, never on the data. So which steps will run is known before anything
-runs, which is what lets a playbook be [checked](#checking-a-playbook) up front.
+`when: {config: <dotted path>, equals: <value>}` switches a step on or off based on the settings alone, never on the data.
+So which steps will run is known before anything runs, which is what lets a playbook be [checked](#checking-a-playbook) up front.
 
-Which steps run is decided in exactly one place (`Playbook.active`), so what gets run
-can never disagree with what a reader of the playbook expects.
+Which steps run is decided in exactly one place (`Playbook.active`), so what gets run can never disagree with what a reader of the playbook expects.
 
 ### Playbooks inside playbooks
 
-A step can be another playbook: `playbook: <path>` in YAML, or
-`Playbook.add_playbook(name, other)` in Python. A browser with no filesystem can also
-send the inner playbook written out in place.
+A step can be another playbook: `playbook: <path>` in YAML, or `Playbook.add_playbook(name, other)` in Python.
+A browser with no filesystem can also send the inner playbook written out in place.
 
-Anything the inner playbook does not wire up itself is offered to the outer one as
-`<step>.<setting>`, to be fed exactly like a block's own inputs. Its settings live
-under its step's name, and it inherits the outer `globals` unless it has its own. A
-playbook that ends up containing itself is reported rather than followed until the
-process runs out of stack.
+Anything the inner playbook does not wire up itself is offered to the outer one as `<step>.<setting>`, to be fed exactly like a block's own inputs.
+Its settings live under its step's name, and it inherits the outer `globals` unless it has its own.
+A playbook that ends up containing itself is reported rather than followed until the process runs out of stack.
 
 ## Checking a playbook
 
-Check a playbook against the settings it will run with before you run it. Every
-mistake is reported at once, with the step and the setting it is about:
+Check a playbook against the settings it will run with before you run it.
+Every mistake is reported at once, with the step and the setting it is about:
 
 ```python
 from playbook.playbooks import find_playbook_issues
@@ -240,9 +212,7 @@ for issue in find_playbook_issues(playbook, config):
     print(issue)
 ```
 
-Run against the shipped `expand` playbook with
-`{"globals": {"expansion_mode": "myopic"}, "expansion_myopic": {"optimize_confg": {}}}`,
-that prints:
+Run against the shipped `expand` playbook with `{"globals": {"expansion_mode": "myopic"}, "expansion_myopic": {"optimize_confg": {}}}`, that prints:
 
 ```text
 [dims] step 'expansion_myopic': needs the 'period' dimension, which the data does not have at this point (it has: ['snapshot'])
@@ -250,8 +220,8 @@ that prints:
 ```
 
 `find_playbook_issues` returns a `list[PlaybookIssue]`, empty when nothing is wrong.
-`raise_for_playbook_issues` raises `PlaybookHasIssuesError` instead, carrying the same
-list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as methods.
+`raise_for_playbook_issues` raises `PlaybookHasIssuesError` instead, carrying the same list.
+`Playbook.find_issues` and `Playbook.raise_for_issues` do the same as methods.
 
 | Field | What it holds | Example |
 | --- | --- | --- |
@@ -261,9 +231,8 @@ list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as meth
 | `config_path` | where in the settings, counted from the top of the settings document; `None` when no one setting is at fault | `("expansion_myopic", "optimize_confg")` |
 | `input` | the wired-in setting, for a problem with how a step is fed | `"capacity_source"` |
 
-A step inside a nested playbook has a longer `step_path`, such as
-`("regional", "dispatch")`. Its settings sit under the nesting step, so its
-`config_path` starts with `"regional"` too.
+A step inside a nested playbook has a longer `step_path`, such as `("regional", "dispatch")`.
+Its settings sit under the nesting step, so its `config_path` starts with `"regional"` too.
 
 The checks, by `kind`:
 
@@ -276,17 +245,15 @@ The checks, by `kind`:
 | `when` | a condition looks at a setting nobody set |
 | `environment` | two blocks describe the same environment differently |
 
-Without settings, `find_playbook_issues(playbook)` runs only the `structure` and
-`wiring` checks that hold whatever the settings are. With settings, it checks the steps
-that will actually run. Settings for a step that does not run are not checked, so one
-settings document can carry every branch of a condition.
+Without settings, `find_playbook_issues(playbook)` runs only the `structure` and `wiring` checks that hold whatever the settings are.
+With settings, it checks the steps that will actually run.
+Settings for a step that does not run are not checked, so one settings document can carry every branch of a condition.
 
-Where a block can be imported, its own settings model checks its settings. Where it
-cannot, its JSON schema from a [catalogue](#describing-every-block-at-once) does. The
-schema catches wrong types, missing settings and unknown ones. It cannot carry a rule a
-block writes in code, such as `time_partition` needing exactly one of `n_hours` and
-`segments`. Where the block cannot be imported, that rule is only enforced when the
-block runs.
+Where a block can be imported, its own settings model checks its settings.
+Where it cannot, its JSON schema from a [catalogue](#describing-every-block-at-once) does.
+The schema catches wrong types, missing settings and unknown ones.
+It cannot carry a rule a block writes in code, such as `time_partition` needing exactly one of `n_hours` and `segments`.
+Where the block cannot be imported, that rule is only enforced when the block runs.
 
 ## Running a playbook
 
@@ -294,23 +261,21 @@ block runs.
 result = playbook.run(revision, config)
 ```
 
-`run` [checks](#checking-a-playbook) the playbook against `config` first. If anything
-is wrong, it raises `PlaybookHasIssuesError` before any step runs. Otherwise each step
-runs in turn on the revision the previous step returned, so a finished run is a chain
-of revisions in the input revision's store. `revision` and `result` are `RevisionRef`s.
+`run` [checks](#checking-a-playbook) the playbook against `config` first.
+If anything is wrong, it raises `PlaybookHasIssuesError` before any step runs.
+Otherwise each step runs in turn on the revision the previous step returned, so a finished run is a chain of revisions in the input revision's store.
+`revision` and `result` are `RevisionRef`s.
 
-By default every block runs in the current process, which is what tests and local use
-want. To run blocks anywhere else, pass a `BlockRunner`:
+By default every block runs in the current process, which is what tests and local use want.
+To run blocks anywhere else, pass a `BlockRunner`:
 
 ```python
 class BlockRunner(Protocol):
     def run_block(self, block, *, step_name, config, revision, inputs): ...
 ```
 
-`execute_playbook` checks the playbook, walks it, decides which steps run, wires
-inputs, and hands the runner one fully spelled-out block invocation at a time. Manta's
-runtime implements this protocol to run every block in its own container; this package
-never learns how.
+`execute_playbook` checks the playbook, walks it, decides which steps run, wires inputs, and hands the runner one fully spelled-out block invocation at a time.
+Manta's runtime implements this protocol to run every block in its own container; this package never learns how.
 
 ## Running one block
 
@@ -320,15 +285,11 @@ python -m playbook.blocks.run_one <block> --source <your library> \
     [--config '<json>'] [--inputs '<json>']
 ```
 
-Plain arguments in, ordinary log output, and one final `MANTA_BLOCK_RESULT` line on
-stdout saying where the output revision landed; the exit code says whether the block
-succeeded. This is the whole contract between a block and whatever drives it, and the
-quickest way to try a block you are writing.
+Plain arguments in, ordinary log output, and one final `MANTA_BLOCK_RESULT` line on stdout saying where the output revision landed; the exit code says whether the block succeeded.
+This is the whole contract between a block and whatever drives it, and the quickest way to try a block you are writing.
 
-`--source` names the library holding the block, since this package ships none itself;
-`MANTA_BLOCK_SOURCES` says the same thing for a process that takes no arguments. Run
-it inside the environment the block needs — for the blocks Manta ships, that is
-`pixi run -e pypsa` in [`playbook-library`](../playbook-library).
+`--source` names the library holding the block, since this package ships none itself; `MANTA_BLOCK_SOURCES` says the same thing for a process that takes no arguments.
+Run it inside the environment the block needs — for the blocks Manta ships, that is `pixi run -e pypsa` in [`playbook-library`](../playbook-library).
 
 ## Describing every block at once
 
@@ -338,11 +299,8 @@ No single environment can import every block, so each one describes what it can:
 python -m playbook.blocks <your library> > catalogue.json
 ```
 
-Run once per environment, `merge_catalogues` combines the results into one description
-of every block in the system: names, settings as JSON schema, dimensions, and which
-settings are wired rather than typed in (marked `x-manta-input`). That is enough to
-offer a playbook's settings and [check](#checking-a-playbook) a playbook against them
-without importing a single block.
+Run once per environment, `merge_catalogues` combines the results into one description of every block in the system: names, settings as JSON schema, dimensions, and which settings are wired rather than typed in (marked `x-manta-input`).
+That is enough to offer a playbook's settings and [check](#checking-a-playbook) a playbook against them without importing a single block.
 
 ## Testing your contribution
 <!-- --8<-- [start:docs-testing] -->
@@ -353,23 +311,14 @@ uv run ruff check src         # lint
 uv run ruff format --check src
 ```
 
-Tests live beside the code they cover, in `tests/` inside each layer, plus
-`playbook/tests/` for the boundaries the package as a whole has to keep: that nothing
-here imports an orchestration tool, that `blocks` never imports `playbooks`, and that
-passing revisions along never imports datarecord. Breaking any of them is a one-line
-accident that nothing else would notice, which is why they are tested rather than only
-written down.
+Tests live beside the code they cover, in `tests/` inside each layer, plus `playbook/tests/` for the boundaries the package as a whole has to keep: that nothing here imports an orchestration tool, that `blocks` never imports `playbooks`, and that passing revisions along never imports datarecord.
+Breaking any of them is a one-line accident that nothing else would notice, which is why they are tested rather than only written down.
 
-The fake blocks the tests share are in `blocks/tests/fakes.py` — each fake just
-commits an empty revision labelled with its name, so `steps(result)` reads the lineage
-of a finished run as a record of which blocks ran and in what order. Add fakes there
-rather than registering new ones in a test module: a block name can only be claimed
-once per process.
+The fake blocks the tests share are in `blocks/tests/fakes.py` — each fake just commits an empty revision labelled with its name, so `steps(result)` reads the lineage of a finished run as a record of which blocks ran and in what order.
+Add fakes there rather than registering new ones in a test module: a block name can only be claimed once per process.
 
-A pull request is expected to keep this suite green and to add tests for what it
-changes. If you are adding a real block rather than a framework feature, it belongs in
-[`playbook-library`](https://github.com/manta-plan/manta/tree/main/playbook-library), which has its own suite and its own
-instructions.
+A pull request is expected to keep this suite green and to add tests for what it changes.
+If you are adding a real block rather than a framework feature, it belongs in [`playbook-library`](https://github.com/manta-plan/manta/tree/main/playbook-library), which has its own suite and its own instructions.
 <!-- --8<-- [end:docs-testing] -->
 
 ## Current limitations
@@ -377,6 +326,5 @@ instructions.
 - Resource requirements (cpu, memory, walltime) are not modelled yet.
 - Conditions can only look at settings, not at the contents of the data.
 - A block declares `OUTPUTS`, but every block so far produces exactly one result.
-- `initial_data.dims` has to be declared on a playbook, because a `RevisionRef` does not
-  describe the data it points at. Once it does, the dimensions can be read from the
-  incoming revision instead.
+- `initial_data.dims` has to be declared on a playbook, because a `RevisionRef` does not describe the data it points at.
+  Once it does, the dimensions can be read from the incoming revision instead.

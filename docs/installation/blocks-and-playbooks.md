@@ -6,8 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Blocks and playbooks
 
 This page shows how to run the blocks and playbooks Manta ships on your own machine, without Docker or the backend.
-You need [pixi](https://pixi.sh) and a [clone of the repository](full-stack.md#1-clone-the-repository).
-pixi installs Python, PyPSA, and the HiGHS solver into environments of its own, for macOS on Apple silicon and for Linux.
+You need [pixi](https://pixi.sh) and a [clone of the repository](full-stack.md#1-clone-the-repository). pixi installs Python, PyPSA, and the HiGHS solver into environments of its own, for macOS on Apple silicon and for Linux.
 
 ## Run the example playbook
 

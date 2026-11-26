@@ -1,71 +1,53 @@
 # Contributing to Manta
 
-Manta is a monorepo containing a Python backend (`backend/`), a Javascript
-frontend (`frontend/`), and the modelling packages `playbook/` and
-`playbook-library/`. This document is the canonical reference for coding
-standards on the project. It applies to everyone pushing code — core team,
-energy modelers, and outside contributors alike.
+Manta is a monorepo containing a Python backend (`backend/`), a Javascript frontend (`frontend/`), and the modelling packages `playbook/` and `playbook-library/`.
+This document is the canonical reference for coding standards on the project.
+It applies to everyone pushing code — core team, energy modelers, and outside contributors alike.
 
-If a file or module doesn't clearly fit the conventions below, raise it in your
-PR rather than guessing — conventions get updated by discussion, not by silent
-drift.
+If a file or module doesn't clearly fit the conventions below, raise it in your PR rather than guessing — conventions get updated by discussion, not by silent drift.
 
 <!-- --8<-- [start:docs-general] -->
 ## General
 
 ### Commits
 
-We squash-merge PRs, so the **PR title** becomes the commit message — that's
-what needs to follow a convention, not individual commits. We use a reduced
-version of [Conventional Commits](https://www.conventionalcommits.org/), since
-the full spec assumes one type per commit, which doesn't hold once a PR's
-commits get squashed together:
+We squash-merge PRs, so the **PR title** becomes the commit message — that's what needs to follow a convention, not individual commits.
+We use a reduced version of [Conventional Commits](https://www.conventionalcommits.org/), since the full spec assumes one type per commit, which doesn't hold once a PR's commits get squashed together:
 
 ```
 <type>[!]: <imperative description>
 ```
 
-- `type` is usually `feat`, `fix`, or `docs` — use `docs` only when the PR is
-  docs-only; a feature PR that happens to touch docs too is still `feat`.
-  The rest of [commitlint's default
-  types](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional)
-  are also allowed but less common here: `build`, `chore`, `ci`, `perf`,
-  `refactor`, `revert`, `style`, `test`.
+- `type` is usually `feat`, `fix`, or `docs` — use `docs` only when the PR is docs-only; a feature PR that happens to touch docs too is still `feat`.
+  The rest of [commitlint's default types](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional) are also allowed but less common here: `build`, `chore`, `ci`, `perf`, `refactor`, `revert`, `style`, `test`.
 - No scope (e.g. no `(backend)`) — it's not worth the overhead.
-- Append `!` for breaking changes (e.g. `feat!:`), enough on its own to drive
-  a changelog.
-- The description should be imperative and descriptive — read it as
-  completing "If applied, this commit will...".
-- Header (the whole `<type>[!]: <description>` line) must be 100 characters
-  or fewer, and the description must not end with a full stop.
-- CI enforces this on the PR title via
-  [commitlint](https://commitlint.js.org/), configured in
-  `commitlint.config.cjs`.
+- Append `!` for breaking changes (e.g. `feat!:`), enough on its own to drive a changelog.
+- The description should be imperative and descriptive — read it as completing "If applied, this commit will...".
+- Header (the whole `<type>[!]: <description>` line) must be 100 characters or fewer, and the description must not end with a full stop.
+- CI enforces this on the PR title via [commitlint](https://commitlint.js.org/), configured in `commitlint.config.cjs`.
 - Open a PR against `main` for review before merging.
-- Style/formatting disputes are considered solved problems — defer to the
-  linter/formatter for the language you're working in rather than debating it
-  in review.
+- Style/formatting disputes are considered solved problems — defer to the linter/formatter for the language you're working in rather than debating it in review.
 
 ### Commit sign-off
 
-Every PR must contain a commit with a `Signed-off-by` trailer, which certifies
-that you wrote it or otherwise have the right to submit it under this project's
-licence, as the [Developer Certificate of Origin (DCO)](https://developercertificate.org/)
-states. Add the trailer when you commit with `git commit -s`, or add it to an
-existing commit with `git commit --amend -s`. A
-[GitHub check](https://github.com/dcoapp/app) enforces this on every PR. To
-sign off an open PR, you can add an empty commit with just the trailer.
+Every PR must contain a commit with a `Signed-off-by` trailer, which certifies that you wrote it or otherwise have the right to submit it under this project's licence, as the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) states.
+Add the trailer when you commit with `git commit -s`, or add it to an existing commit with `git commit --amend -s`.
+A [GitHub check](https://github.com/dcoapp/app) enforces this on every PR.
+To sign off an open PR, you can add an empty commit with just the trailer.
+
+### Markdown files
+
+Write one sentence per line, with no line breaks at a fixed width.
+A diff of an edited sentence then shows that sentence alone, rather than the rest of a reflowed paragraph.
+A sentence too long to read on one line may break after a comma or colon, so each line holds one clause.
+This applies to Markdown files in the repository, not to PR or issue bodies, where GitHub renders each line break.
 <!-- --8<-- [end:docs-general] -->
 
 ## Backend (Python)
 <!-- --8<-- [start:docs-backend] -->
 
-The backend follows a **Model-Service-Controller (MSC)** pattern — essentially
-MVCS adapted for a JSON API, where the "view" is folded into the controller
-since we return data, not rendered pages. Background on the classic pattern:
-[MVCS introduction](https://pvha.hashnode.dev/mvcs-architecture);
-for how this maps onto FastAPI specifically, see
-[FastAPI's bigger-applications guide](https://fastapi.tiangolo.com/tutorial/bigger-applications/).
+The backend follows a **Model-Service-Controller (MSC)** pattern — essentially MVCS adapted for a JSON API, where the "view" is folded into the controller since we return data, not rendered pages.
+Background on the classic pattern: [MVCS introduction](https://pvha.hashnode.dev/mvcs-architecture); for how this maps onto FastAPI specifically, see [FastAPI's bigger-applications guide](https://fastapi.tiangolo.com/tutorial/bigger-applications/).
 
 | Layer               | Responsibility                                                                 |
 |---------------------|---------------------------------------------------------------------------------|
@@ -98,34 +80,26 @@ backend/
 
 ### Naming
 
-Use explicit suffixes so a filename alone tells you the layer: `user_route.py`,
-`user_service.py`... Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`... 
+Use explicit suffixes so a filename alone tells you the layer: `user_route.py`, `user_service.py`...
+Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`...
 Entities are named after themselves (e.g. `user.py` / `User`), no suffix needed.
 
 ### Services & dependency injection
 
-Services are always classes, wired up via
-[FastAPI's dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/)
-rather than instantiated ad hoc — this gives consistent, predictable
-initialization instead of hand-rolled setup.
+Services are always classes, wired up via [FastAPI's dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/) rather than instantiated ad hoc — this gives consistent, predictable initialization instead of hand-rolled setup.
 
 ### Linting & formatting
 
-Python code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/),
-configured per package in its own `pyproject.toml` — the same rule set
-everywhere, so which package a file is in never changes how it should look.
+Python code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/), configured per package in its own `pyproject.toml` — the same rule set everywhere, so which package a file is in never changes how it should look.
 
-- **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against every
-  Python package and auto-fixes what it can before each commit — see
-  [backend/README.md](https://github.com/manta-plan/manta/blob/main/backend/README.md) for one-time setup.
-- **In CI**, the same Ruff checks run read-only on every PR: they fail the
-  build on violations but never push a fixup commit. If pre-commit was
-  skipped or bypassed, fix locally and re-push.
+- **Locally**, a [pre-commit](https://pre-commit.com/) hook runs Ruff against every Python package and auto-fixes what it can before each commit — see [backend/README.md](https://github.com/manta-plan/manta/blob/main/backend/README.md) for one-time setup.
+- **In CI**, the same Ruff checks run read-only on every PR: they fail the build on violations but never push a fixup commit.
+  If pre-commit was skipped or bypassed, fix locally and re-push.
 
 ### Testing
 
-We use [pytest](https://docs.pytest.org/). `backend/tests/` is split by test
-type, mirroring `src/manta/` inside each:
+We use [pytest](https://docs.pytest.org/).
+`backend/tests/` is split by test type, mirroring `src/manta/` inside each:
 
 ```
 backend/tests/
@@ -135,35 +109,26 @@ backend/tests/
 
 Structure test bodies as **Given/When/Then**, using plain comments.
 
-**TODO**: expand this with more guidance (fixtures, mocking conventions, what
-belongs in unit vs. integration) as we accumulate more tests to draw examples
-from.
+**TODO**: expand this with more guidance (fixtures, mocking conventions, what belongs in unit vs. integration) as we accumulate more tests to draw examples from.
 <!-- --8<-- [end:docs-backend] -->
 
 ## Playbooks (`playbook/`, `playbook-library/`)
 <!-- --8<-- [start:docs-playbooks] -->
 
-These two are **not** backend code and deliberately do not follow the MSC pattern
-above: they are standalone libraries that must keep working outside Manta entirely.
+These two are **not** backend code and deliberately do not follow the MSC pattern above: they are standalone libraries that must keep working outside Manta entirely.
 
 - `playbook/` defines what a block and a playbook are, and runs playbooks.
-- `playbook-library/` is the modelling content — the blocks and playbooks Manta
-  ships.
+- `playbook-library/` is the modelling content — the blocks and playbooks Manta ships.
 
 Two boundaries matter more than anything else here, and both are enforced by tests:
 
-- **Neither package may import an orchestration tool** (Prefect, Docker, a scheduler)
-  or anything from `manta`. Running a block is a plain method call; what schedules
-  that call plugs in from outside through the `BlockRunner` protocol. This is what
-  lets a modeller write and test a block without any of Manta's infrastructure.
-- **`playbook.blocks` may not import `playbook.playbooks`.** A block library depends
-  on the block layer alone.
+- **Neither package may import an orchestration tool** (Prefect, Docker, a scheduler) or anything from `manta`.
+  Running a block is a plain method call; what schedules that call plugs in from outside through the `BlockRunner` protocol.
+  This is what lets a modeller write and test a block without any of Manta's infrastructure.
+- **`playbook.blocks` may not import `playbook.playbooks`.** A block library depends on the block layer alone.
 
-They keep the same Ruff rules as the backend, but are managed by their own tools:
-`playbook/` uses uv, and `playbook-library/` uses pixi, because the solver stack
-installs far more reliably from conda-forge and a block library needs several
-environments side by side. Each package's README explains how to run its tests, and
-a change to either is expected to keep both suites green.
+They keep the same Ruff rules as the backend, but are managed by their own tools: `playbook/` uses uv, and `playbook-library/` uses pixi, because the solver stack installs far more reliably from conda-forge and a block library needs several environments side by side.
+Each package's README explains how to run its tests, and a change to either is expected to keep both suites green.
 <!-- --8<-- [end:docs-playbooks] -->
 
 ## Frontend
