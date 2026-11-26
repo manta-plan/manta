@@ -1,7 +1,6 @@
 import { useState, type ClipboardEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation } from "wouter";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import clsx from "clsx";
 import type { IconType } from "react-icons";
 import {
@@ -21,6 +20,7 @@ import { RegionSelector } from "./region-selector";
 import { ScreenshotEditor } from "./screenshot-editor";
 import { useAppStore } from "../store";
 import { useFeedbackDraft } from "../lib/feedback-draft";
+import { useZoomPan } from "../../../utils/useZoomPan";
 
 const KINDS: { value: FeedbackKind; label: string; icon: IconType; placeholder: string }[] = [
   {
@@ -239,28 +239,12 @@ export function FeedbackDialog({
               <div className="mt-3 flex flex-col gap-1">
                 {image ? (
                   <div className="border-surface-600 bg-surface-900 relative h-48 overflow-hidden rounded border p-1.5">
-                    {/* Fitted on load; wheel zooms, drag pans, double-click resets.
-                        The key refits it for every new or re-edited image. */}
-                    <TransformWrapper
+                    {/* The key refits it for every new or re-edited image. */}
+                    <ZoomPanImage
                       key={image.previewUrl}
-                      centerOnInit
-                      minScale={1}
-                      maxScale={6}
-                      wheel={{ step: 0.15 }}
-                      doubleClick={{ mode: "reset" }}
-                    >
-                      <TransformComponent
-                        wrapperClass="h-full! w-full!"
-                        contentClass="h-full! w-full!"
-                      >
-                        <img
-                          src={image.previewUrl}
-                          alt="Attached screenshot"
-                          draggable={false}
-                          className="h-full w-full rounded-sm object-contain"
-                        />
-                      </TransformComponent>
-                    </TransformWrapper>
+                      src={image.previewUrl}
+                      alt="Attached screenshot"
+                    />
                     <div className="absolute top-2.5 right-2.5 z-10 flex gap-1">
                       <button
                         type="button"
@@ -390,6 +374,26 @@ export function FeedbackDialog({
         />
       )}
     </Dialog.Root>
+  );
+}
+
+/** Fitted on load; wheel zooms, drag pans, double-click resets. */
+function ZoomPanImage({ src, alt }: { src: string; alt: string }) {
+  const { ref, handlers, contentStyle } = useZoomPan<HTMLDivElement>({ maxScale: 6 });
+  return (
+    <div
+      ref={ref}
+      {...handlers}
+      className="h-full w-full cursor-grab touch-none overflow-hidden select-none active:cursor-grabbing"
+    >
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        style={contentStyle}
+        className="h-full w-full rounded-sm object-contain"
+      />
+    </div>
   );
 }
 
