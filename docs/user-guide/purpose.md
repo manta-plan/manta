@@ -78,7 +78,7 @@ Developers and tool creators can add new blocks, and analysts can build new play
 
 Manta's first goal is a consistent, reliable application that grid operators and industry can use, whatever tool runs underneath.
 To reach that goal quickly, the blocks included in Manta currently use [PyPSA](https://pypsa.org), an open-source power system modelling tool.
-For the models you can bring in today, see [Models describe the system](how-a-study-works.md#models-describe-the-system).
+For the models you can bring in today, see [Models](how-a-study-works.md#models).
 
 Manta is not a wrapper for PyPSA, though.
 None of its structure is designed for PyPSA: projects, runs, blocks, playbooks and stored results work the same whichever tool a block uses.
