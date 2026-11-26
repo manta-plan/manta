@@ -268,7 +268,7 @@ A session with unsaved edits and a live presence is exempt from both stages. Thi
 
 **Restore:** the next call of a session route runs `ensure_datarecord_session`, which starts an instance and replays the registration rows. A Quack request does not restore the session. The BE's check answers 409, and the FE then calls `POST .../datarecord-session` ([Quack auth check](#quack-auth-check)). The FE sees one slow request after that error.
 
-The replay skips a registration that the new instance refuses with 404 or 422, such as a revision whose store is gone. The BE logs a warning and keeps the row, so the FE can still `GET`, `PUT` or `DELETE` it. Any other error of the session aborts the start.
+The replay skips a registration that the new instance refuses with 404 or 422, such as a revision whose store is gone. The BE logs a warning and keeps the row, so the FE can still `GET`, `PUT` or `DELETE` it. A `POST .../datarecord-session` whose replay skipped a registration answers 207 instead of 200 and lists the names in `skipped_registrations`. Any other error of the session aborts the start.
 
 ### Generation
 
@@ -313,7 +313,7 @@ All routes are behind Keycloak auth and a project ownership check.
 | `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-revisions` | The [commit flow](storage-commit.md#1-commit-flow). The request names the reference to move and the revision expected there. The BE moves the reference by a conditional write of `store.json`. Optional `register_as`: a name under which the BE registers the new revision in the session at once, so the FE needs no second call. |
 | `POST /v1/projects/{id}/datarecord-stores/{store}/datarecord-references` | Create a reference. The name must be free, and `base` names an existing reference. The new reference points to the current revision of its base. |
 | `PATCH`, `DELETE /v1/projects/{id}/datarecord-stores/{store}/datarecord-references/{name}` | Change the label or description, rename, or delete a reference. A rename changes only the name, because dependents point to their base by `base_id`. A delete empties the `base_id` of its dependents. |
-| `POST /v1/projects/{id}/datarecord-session` | Open the project's session: runs `ensure_datarecord_session`. Returns `{status, generation, quack: {uri, token}}`. |
+| `POST /v1/projects/{id}/datarecord-session` | Open the project's session: runs `ensure_datarecord_session`. Returns `{status, generation, quack: {uri, token}, skipped_registrations}`, with 207 when `skipped_registrations` is not empty, else 200. |
 | `DELETE /v1/projects/{id}/datarecord-session` | Suspend now. |
 | `POST /v1/projects/{id}/datarecord-session/heartbeat` | Presence. |
 | `GET`, `PUT`, `DELETE /v1/projects/{id}/datarecord-session/registrations/{name}` | `PUT` writes the row, then applies it to the session, and keeps no row that the session refuses. `GET` reads the row and the session's registration. `DELETE` removes the row, then the registration in a running instance. The answer of `PUT` and `GET` carries the SQL prefix of the registration, for example `manta.r1`. The FE puts this prefix in front of every view name. |

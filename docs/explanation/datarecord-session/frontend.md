@@ -344,19 +344,21 @@ DR ships 20 cases as `datarecord/settle_cases.json` (PR 155, R14). Each case has
 
 ## 5. Errors the FE must handle
 
-The BE's session routes and the Quack auth check answer an error with the body `{"detail": "<text>"}`. A validation error has a list of problems in `detail` instead of a text. A 500 has the plain text `Internal Server Error`, and a 502 comes from Caddy, not from the BE. In the column Source, `test` means that a test of the session stack asserts the status, and the quoted text comes from the code where the test does not check it. `code` means read from the code only. `live run` means seen against a running session in spikes S1 and S4 ([spikes](appendix.md#8-spikes-and-measurements)). No row of the Caddy path has been checked live yet, and how DuckDB-Wasm reports an HTTP status of the Quack path is not checked either.
+The BE's session routes and the Quack auth check answer an error with the body `{"detail": "<text>"}`. A validation error has a list of problems in `detail` instead of a text. A 500 has the plain text `Internal Server Error`, and a 502 comes from Caddy, not from the BE. In the column Source, `test` means that a test of the session stack asserts the status, and the quoted text comes from the code where the test does not check it. `code` means read from the code only. `live run` means seen against a running session, in spikes S1 and S4 ([spikes](appendix.md#8-spikes-and-measurements)) or in an end-to-end run of the native DuckDB client through Caddy, the BE and a session container.
 
 | Where | Condition | What the FE sees | What the FE should do | Source |
 |---|---|---|---|---|
 | all routes, Quack auth | no bearer token | 401 `Not authenticated` | log in again | test |
-| all routes, Quack auth | invalid or expired token | 401 `Unauthorized` | log in again | test |
+| all routes, Quack auth | invalid token | 401 `Unauthorized` | log in again | test |
+| all routes, Quack auth | expired token, after 5 minutes | today 500 `Internal Server Error`, after the planned fix 401 | refresh the token in the Quack secret before it expires | live run |
 | all routes, Quack auth | valid token of a user the BE does not know | 401 `user is not registered` | log in again | code |
 | all routes, Quack auth | another user's project | 403 `The user does not own the selected project` | show no access | test |
 | all routes, Quack auth | unknown project | 404 `Project <uuid> not found` | show not found | test |
 | all routes, Quack auth | project id not a UUID, or `X-Manta-Project` missing | 422, list | client bug | test |
 | POST session, PUT and GET registration | a new session not healthy within 30 s | 503 `The datarecord session did not become healthy` | retry later | test |
 | POST session, PUT and GET registration | the session answers another error than 404 or 422, at the replay or to the request | 500 `Internal Server Error` | retry, then report | test for the replay, code for the rest |
-| POST session, PUT and GET registration | a registration is skipped at the replay | 200, no mark of the skip | see the last row | test |
+| POST session | the replay skips a registration | 207, same body as 200, `skipped_registrations` lists the names | show which registrations are missing; the session is usable; a query on one gives the catalog error of the last row | decided, not yet in code |
+| PUT and GET registration | the replay skips another registration | 200, no mark of the skip | see the last row | test |
 | PUT registration | name outside `[a-z0-9][a-z0-9_-]{0,62}` | 422, list | fix the input | test |
 | PUT registration | unknown store or revision | 404 `<store> has no revision <rev>`, no row kept | tell the user | test |
 | PUT registration | the session refuses the body, for example a reserved name, a store name with `/` or `..`, or an unknown view pack | 422, list from the session | fix the input | code |
@@ -365,14 +367,18 @@ The BE's session routes and the Quack auth check answer an error with the body `
 | DELETE registration | no such row | 404 `Registration '<name>' not found` | ignore | code |
 | DELETE registration | row exists, the session lacks it | 204 | none | test |
 | DELETE session | nothing active | 204 | none | code |
-| Quack via Caddy | no active session: never opened, or stopped by the idle sweep | 409 `No active datarecord session for project <id>, open it with POST /v1/projects/<id>/datarecord-session` | POST session, ATTACH again | test, Caddy part from code |
-| Quack via Caddy | container gone, row active | 502 from Caddy | POST session, ATTACH again | code |
+| Quack via Caddy | no active session: never opened, or stopped by the idle sweep | 409 `No active datarecord session for project <id>, open it with POST /v1/projects/<id>/datarecord-session` | POST session, ATTACH again | test, live run |
+| Quack via Caddy | container gone, row active | 502 from Caddy, empty body | POST session, ATTACH again | live run |
 | Quack, session | wrong Quack token | `Authentication failed` | use the token from POST session | live run |
 | Quack, session | a statement other than SELECT | `Authorization failed` | client bug | test |
 | Quack, session | session restarted | `Invalid connection id` | ATTACH again | live run |
-| Quack, session | catalog of a skipped registration | DuckDB catalog error: schema `manta."<name>"` not found | GET the registration, then PUT or DELETE as above | code |
+| Quack, session | catalog of a skipped registration, named in the 207 of POST session | `Catalog Error: Table with name "<name>" does not exist` | GET the registration, then PUT or DELETE as above | live run |
 
-After a replay skip, POST session answers 200 with no sign of the skip, so the FE learns of it only from a catalog error.
+The native DuckDB client hides the response body of the Quack path. It shows the 409 as `IO Error: Failed to send message: Conflict`. It shows the 502 as `IO Error: Failed to send message: HTTP Error: Request returned HTTP 502 for HTTP POST to '.../quack'`. So the FE must decide by the status or the error text, not by `detail`. How DuckDB-Wasm reports the 409 and the 502 is not tested yet.
+
+The expired token gives 500 because main's auth code does not map the error of an expired token to 401. A separate PR on main fixes this. Tokens live 5 minutes.
+
+Only POST session reports a replay skip. A skip during PUT or GET of a registration shows only later, as the catalog error of the last row.
 
 ## 6. Open points
 

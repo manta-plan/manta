@@ -91,7 +91,7 @@ Detail: [Stores of a project](backend-mvp.md#4-stores-of-a-project), [Revisions]
    - 2.1 The BE checks that the user owns the project and runs `ensure_datarecord_session` for the pair of user and project. `ensure_datarecord_session` means "start the session if none runs": it locks the datarecord session's row, starts a container when needed, and repeats the stored registrations. The BE stores the datarecord session's metadata in that row, so it can recreate the connection and continue operations later. The lock makes parallel requests start one container. `PUT` and `GET` of a registration run `ensure_datarecord_session` too. A query does not: the BE's check of a Quack request only reads the session row, and answers 409 when no session is active (flow 8).
    - 2.2 If no container runs, the BE's launcher starts one. It passes four inputs: the project's folder `s3://<bucket>/<project_uuid>/`, an S3 token that can only read that folder, a Quack token, and a secret for the API.
    - 2.3 The session opens one DuckDB connection and creates one DR workspace on it, attached as the catalog `manta`. It starts the Quack server on the same connection, installs the SQL guard, and reports ready. This takes under a second.
-   - 2.4 The BE returns the Quack address and the Quack token to the FE.
+   - 2.4 The BE returns the Quack address and the Quack token to the FE. It answers 207 instead of 200 when the replay skipped a registration, and lists the names in `skipped_registrations`.
 3. The FE registers the revision of the active scenario: `PUT /v1/projects/{id}/datarecord-session/registrations/{name}`, with store, revision and view packs.
    - 3.1 The BE writes this as a row, then calls the session. The row is what makes a restart possible (flow 8).
    - 3.2 The session opens the revision with DR and registers it. DR *folds* the revision: it works out, for every value, which layer of the revision's history holds it. The result is the *owner map*. DR creates lazy views in the DuckDB schema `manta.<name>`. No value is read.
@@ -224,7 +224,7 @@ Detail: [Commit flow](storage-commit.md#1-commit-flow), [References in `store.js
 3. After 60 minutes without activity the BE stops the session at once.
 4. Nothing is lost, because the session holds only views.
 5. The next query gets 409 from the BE's check, because no session is active. If the container is gone while its row is still active, Caddy answers 502 instead.
-6. On either answer the FE calls `POST /v1/projects/{id}/datarecord-session`. `ensure_datarecord_session` starts a new container and repeats every registration from the rows of flow 4. It skips a registration that the new session refuses with 404 or 422, logs a warning and keeps the row.
+6. On either answer the FE calls `POST /v1/projects/{id}/datarecord-session`. `ensure_datarecord_session` starts a new container and repeats every registration from the rows of flow 4. It skips a registration that the new session refuses with 404 or 422, logs a warning and keeps the row. The POST then answers 207 and lists the skipped names in `skipped_registrations`.
 7. The FE detaches, attaches and repeats the query. A restart that another call caused shows as `Invalid connection id` on the next query, and the FE recovers the same way. The user sees one slow request.
 
 A task in the BE stops containers that no session row claims. A container also exits by itself after a hard limit.
