@@ -1,7 +1,25 @@
 from fastapi import Depends, HTTPException
 from playbook.blocks import Catalogue
-from playbook.playbooks import PlaybookIssue, find_playbook_issues, playbook_from_doc
-from playbook.playbooks.yaml_io import StepDoc
+from playbook.playbooks import (
+    BlockStepDoc,
+    Planned,
+    PlannedBlock,
+    PlannedGroup,
+    Playbook,
+    PlaybookDoc,
+    PlaybookHasIssuesError,
+    PlaybookIssue,
+    PlaybookStep,
+    Step,
+    StepDoc,
+    apply_settings,
+    effective_inputs,
+    find_playbook_issues,
+    plan,
+    playbook_from_doc,
+    resolve_inputs,
+)
+from playbook.playbooks.expressions import Compare, Const, Ref, parse
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
 # MVP corner-cut, not the intended shape — see the TODO on these two
@@ -21,14 +39,70 @@ from manta.services.results.playbook_result import (
 )
 
 
+def _config_path(issue: PlaybookIssue) -> list[str | int] | None:
+    if issue.setting_path is not None:
+        return [*issue.step_path, *issue.setting_path]
+    if issue.input_path is not None:
+        return [*(issue.step_path or ("inputs",)), *issue.input_path]
+    return None
+
+
 def _build_issue_result(issue: PlaybookIssue) -> PlaybookIssueResult:
     return PlaybookIssueResult(
         kind=issue.kind,
         message=issue.message,
         step_path=list(issue.step_path),
-        config_path=list(issue.config_path) if issue.config_path is not None else None,
-        input=issue.input,
+        config_path=_config_path(issue),
+        input=None,
     )
+
+
+def _when(playbook_name: str, step: StepDoc) -> PlaybookStepConditionResult | None:
+    if step.if_ is None:
+        return None
+    match parse(step.if_):
+        case Compare("==", Ref("inputs", (name,)), Const(value)):
+            return PlaybookStepConditionResult(config=f"inputs.{name}", equals=value)
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"Playbook {playbook_name!r}, step {step.id!r}: the web app cannot show the "
+            f"condition {step.if_!r}. Write the condition in the form "
+            "`${{ inputs.<name> == <value> }}`."
+        ),
+    )
+
+
+def run_inputs(config: dict) -> object:
+    """Return the inputs of a run with `config` (see `PlaybookService.run_playbook`)."""
+    return config.get("inputs", {})
+
+
+def config_of_run(playbook: Playbook, inputs: dict) -> dict:
+    """Return the config a run started with, from its playbook and the inputs of its dispatch.
+
+    The config has the inputs with their defaults filled in, and the settings of each
+    step under its id. A step that ran has every expression in its settings evaluated.
+    A step that did not run has its `with` as written. A nested playbook step has the
+    settings of its own steps, by their ids.
+
+    Raises:
+        PlaybookHasIssuesError: If `inputs` do not fit `playbook`.
+    """
+    resolved = resolve_inputs(effective_inputs(playbook), inputs)
+    return {"inputs": resolved, **_settings_of(playbook.steps, plan(playbook, inputs).steps)}
+
+
+def _settings_of(steps: list[Step], planned: tuple[Planned, ...]) -> dict:
+    ran = {step.path[-1]: step for step in planned}
+    return {step.id: _step_settings(step, ran.get(step.id)) for step in steps}
+
+
+def _step_settings(step: Step, planned: Planned | None) -> dict:
+    if isinstance(step, PlaybookStep):
+        inner = planned.steps if isinstance(planned, PlannedGroup) else ()
+        return _settings_of(step.playbook.steps, inner)
+    return planned.settings if isinstance(planned, PlannedBlock) else step.with_
 
 
 class PlaybookService:
@@ -45,21 +119,46 @@ class PlaybookService:
             PlaybookSummaryResult(
                 name=name,
                 steps=[
-                    PlaybookStepSummaryResult(name=step.name, block=step.block)
-                    for step in library_playbook.doc.steps
+                    PlaybookStepSummaryResult(name=step.id, block=_block_name(step))
+                    for step in playbook.doc.steps
                 ],
             )
-            for name, library_playbook in self.playbooks.items()
+            for name, playbook in self.playbooks.items()
         ]
         return ListPlaybooksResult(items=items, total=len(items))
 
     def get_playbook(self, playbook_name: str) -> GetPlaybookResult:
-        library_playbook = self._get_library_playbook(playbook_name)
+        doc = self._get_doc(playbook_name)
         return GetPlaybookResult(
             name=playbook_name,
-            default_config=library_playbook.default_config,
-            steps=[self._build_step_result(step) for step in library_playbook.doc.steps],
+            default_config=self.default_config(playbook_name),
+            steps=[self._build_step_result(playbook_name, step) for step in doc.steps],
         )
+
+    def default_config(self, playbook_name: str) -> dict:
+        """Return the config of a run that is created without one.
+
+        The config has the default of each input that is not required under `inputs`,
+        and the default settings of each step under its id.
+        """
+        doc = self._get_doc(playbook_name)
+        inputs = effective_inputs(playbook_from_doc(doc, catalogue=self.catalogue))
+        defaults = {name: spec.default for name, spec in inputs.items() if not spec.required}
+        settings = self.playbooks[playbook_name].default_settings
+        return {"inputs": defaults, **{step.id: settings.get(step.id, {}) for step in doc.steps}}
+
+    def run_playbook(self, playbook_name: str, config: dict) -> Playbook:
+        """Return the playbook a run of `playbook_name` with `config` uses.
+
+        Every key of `config` but `inputs` gives the settings of a step, applied to the
+        playbook with `apply_settings`.
+
+        Raises:
+            PlaybookHasIssuesError: If a setting cannot be applied.
+        """
+        doc = self._get_doc(playbook_name)
+        settings = {key: value for key, value in config.items() if key != "inputs"}
+        return apply_settings(playbook_from_doc(doc, catalogue=self.catalogue), settings)
 
     def find_config_issues(self, playbook_name: str, config: dict) -> list[PlaybookIssueResult]:
         """Every reason `playbook_name` cannot run with exactly `config`.
@@ -69,9 +168,22 @@ class PlaybookService:
         caught, but a rule a block only expresses in code is not, and still fails when
         that block runs.
         """
-        library_playbook = self._get_library_playbook(playbook_name)
-        playbook = playbook_from_doc(library_playbook.doc, catalogue=self.catalogue)
-        return [_build_issue_result(issue) for issue in find_playbook_issues(playbook, config)]
+        inputs = run_inputs(config)
+        if not isinstance(inputs, dict):
+            message = (
+                f"the inputs are a mapping of input name to value, not {inputs!r}. "
+                "Write them as a mapping"
+            )
+            return [
+                PlaybookIssueResult(
+                    kind="inputs", message=message, step_path=[], config_path=["inputs"], input=None
+                )
+            ]
+        try:
+            playbook = self.run_playbook(playbook_name, config)
+        except PlaybookHasIssuesError as exc:
+            return list(map(_build_issue_result, exc.issues))
+        return list(map(_build_issue_result, find_playbook_issues(playbook, inputs)))
 
     def raise_for_config_issues(self, playbook_name: str, config: dict) -> None:
         """Refuse with a 422, listing every issue, if `playbook_name` cannot run with
@@ -95,30 +207,40 @@ class PlaybookService:
         data rather than an error, so an editor can show problems next to the form as
         the user edits. A missing config means the playbook's default, as for a run.
         """
-        library_playbook = self._get_library_playbook(playbook_name)
-        run_config = config if config is not None else library_playbook.default_config
+        run_config = config if config is not None else self.default_config(playbook_name)
         issues = self.find_config_issues(playbook_name, run_config)
         return ValidatePlaybookConfigResult(valid=not issues, issues=issues)
 
-    def _get_library_playbook(self, playbook_name: str) -> LibraryPlaybook:
-        library_playbook = self.playbooks.get(playbook_name)
-        if library_playbook is None:
+    def _get_doc(self, playbook_name: str) -> PlaybookDoc:
+        playbook = self.playbooks.get(playbook_name)
+        if playbook is None:
             raise HTTPException(status_code=404, detail=f"Playbook {playbook_name!r} not found")
-        return library_playbook
+        for step in playbook.doc.steps:
+            if step.id == "inputs":
+                raise HTTPException(
+                    status_code=501,
+                    detail=(
+                        f"Playbook {playbook_name!r} has a step called 'inputs', which the web "
+                        "app cannot tell apart from the inputs of a run. Rename the step."
+                    ),
+                )
+            _when(playbook_name, step)
+        return playbook.doc
 
-    def _build_step_result(self, step: StepDoc) -> PlaybookStepResult:
+    def _build_step_result(self, playbook_name: str, step: StepDoc) -> PlaybookStepResult:
         # A step running a nested playbook has no block of its own to describe. No
         # library playbook nests another yet, so it is listed but not expanded.
-        block = self.catalogue.blocks[step.block] if step.block is not None else None
+        name = _block_name(step)
+        block = self.catalogue.blocks[name] if name is not None else None
         return PlaybookStepResult(
-            name=step.name,
-            block=step.block,
+            name=step.id,
+            block=name,
             block_summary=block.doc if block is not None else None,
             block_config_schema=block.config_schema if block is not None else None,
-            when=(
-                PlaybookStepConditionResult(config=step.when.config, equals=step.when.equals)
-                if step.when is not None
-                else None
-            ),
-            inputs=step.inputs,
+            when=_when(playbook_name, step),
+            inputs={},
         )
+
+
+def _block_name(step: StepDoc) -> str | None:
+    return step.block if isinstance(step, BlockStepDoc) else None

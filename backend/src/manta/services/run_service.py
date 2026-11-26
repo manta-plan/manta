@@ -6,13 +6,12 @@ from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException
 from playbook.blocks import RevisionRef
-from playbook.playbooks import BlockStep, NestedPlaybookStep, Playbook, parse_doc, playbook_from_doc
+from playbook.playbooks import BlockStep, Playbook, Step, parse_doc, plan, playbook_from_doc
 
 # TODO(post-MVP): a direct dependency on one concrete block library here is an
 # MVP corner-cut, not the intended shape — see the TODO on these two
 # dependencies in backend/pyproject.toml.
 from playbook_library import library_catalogue
-from playbook_library.playbooks import library_playbooks
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.filters import (
     ArtifactFilter,
@@ -38,7 +37,7 @@ from sqlalchemy.orm import Session
 from manta.config.database_config import get_db_session
 from manta.entities import Project, Run, User
 from manta.services.errors import AuthorizationError
-from manta.services.playbook_service import PlaybookService
+from manta.services.playbook_service import PlaybookService, config_of_run, run_inputs
 from manta.services.results.run_result import (
     CreateRunResult,
     DataRecordResult,
@@ -129,7 +128,7 @@ def _flow_run_config(flow_run: FlowRun) -> dict:
     # doesn't persist it itself. It belongs to the run, not to a playbook, so when
     # the playbook entity is defined (see the TODOs on Run.playbook and
     # CreateRunRequest.config), store it on Run itself and read it from there.
-    return flow_run.parameters["config"]
+    return config_of_run(_flow_run_playbook(flow_run), flow_run.parameters["inputs"])
 
 
 def _flow_run_data_record(flow_run: FlowRun) -> DataRecordResult:
@@ -182,17 +181,17 @@ def _read_block_run_outputs(block_runs: list[FlowRun]) -> dict[UUID, DataRecordR
 
 
 def _build_run_step_result(
-    step: BlockStep | NestedPlaybookStep,
+    step: Step,
     active_step_names: set[str],
     block_runs_by_step_name: dict[str, FlowRun],
     outputs: dict[UUID, DataRecordResult],
 ) -> RunStepResult:
     block = step.block.name if isinstance(step, BlockStep) else None
-    block_run = block_runs_by_step_name.get(step.name) if block is not None else None
+    block_run = block_runs_by_step_name.get(step.id) if block is not None else None
 
     if block_run is not None:
         status = _flow_run_status(block_run)
-    elif step.name not in active_step_names:
+    elif step.id not in active_step_names:
         status = "SKIPPED"
     elif block is None:
         # A nested playbook has no flow run of its own: its blocks run as children
@@ -203,7 +202,7 @@ def _build_run_step_result(
         status = "NOT_STARTED"
 
     return RunStepResult(
-        name=step.name,
+        name=step.id,
         block=block,
         status=status,
         start_time=block_run.start_time if block_run is not None else None,
@@ -257,10 +256,9 @@ class RunService:
     ) -> CreateRunResult:
         project = self.user_service.get_owned_project(project_uuid, user)
 
-        library_playbook = library_playbooks().get(playbook)
-        if library_playbook is None:
-            raise HTTPException(status_code=404, detail=f"Playbook {playbook!r} not found")
-        run_config = config if config is not None else library_playbook.default_config
+        run_config = (
+            config if config is not None else self.playbook_service.default_config(playbook)
+        )
 
         # Before a run is minted or anything is dispatched, so a config that cannot
         # work is refused here with every reason, rather than failing minutes later
@@ -269,12 +267,16 @@ class RunService:
         self._raise_for_record_issues(project, store_url, revision_uuid)
 
         run_uuid = uuid4()
+        run_playbook = self.playbook_service.run_playbook(playbook, run_config)
+        run_document = run_playbook.to_doc().model_dump(
+            mode="json", by_alias=True, exclude_unset=True
+        )
 
         flow_run = run_deployment(
             PLAYBOOK_DEPLOYMENT,
             parameters={
-                "playbook": library_playbook.doc.model_dump(mode="json"),
-                "config": run_config,
+                "playbook": run_document,
+                "inputs": run_inputs(run_config),
                 "revision": RevisionRef(store=store_url, id=revision_uuid).to_dict(),
                 "catalogue": catalogue_parameter(library_catalogue()),
             },
@@ -460,9 +462,8 @@ class RunService:
         run, _ = self._get_run_with_project(run_uuid, user)
         flow_run, block_runs = _read_flow_run_with_block_runs(run.prefect_flow_run_id)
         playbook = _flow_run_playbook(flow_run)
-        active_step_names = {
-            step.name for step in playbook.active(_flow_run_config(flow_run)).steps
-        }
+        planned = plan(playbook, flow_run.parameters["inputs"])
+        active_step_names = {step.path[-1] for step in planned.steps}
         # Matched by the step name each block run was dispatched with. Should a step
         # ever have more than one (the playbook run was retried), the latest wins.
         block_runs_by_step_name = {

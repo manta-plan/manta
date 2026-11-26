@@ -64,7 +64,6 @@ def steps(ref: RevisionRef) -> list[str]:
 
 class FakeConfig(ConfigSchema):
     label: str = ""
-    source: RevisionRef | None = None
 
 
 class FakeBlock(MantaBlock[FakeConfig]):
@@ -73,7 +72,6 @@ class FakeBlock(MantaBlock[FakeConfig]):
     ENV = "default"
     CONFIG = FakeConfig
     DIMS = BlockDims()
-    INPUTS = frozenset()
 
     def run(self, base: Revision) -> Revision:
         return commit_step(base, self.config.label or type(self).__name__)
@@ -96,21 +94,7 @@ class FakeRequiresInvestmentPeriod(FakeBlock):
 
 @register("fake_removes_period")
 class FakeRemovesInvestmentPeriod(FakeBlock):
-    DIMS = BlockDims(
-        requires=frozenset({"period"}),
-        removes=frozenset({"period"}),
-    )
-
-
-@register("fake_needs_upstream")
-class FakeNeedsUpstream(FakeBlock):
-    INPUTS = frozenset({"source"})
-
-    def run(self, base: Revision) -> Revision:
-        if self.config.source is None:
-            return commit_step(base, "needs(none)")
-        source = open_revision(base.store.workspace, self.config.source)
-        return commit_step(base, f"needs({'+'.join(_steps(source))})")
+    DIMS = BlockDims(removes=frozenset({"period"}))
 
 
 class StrictConfig(ConfigSchema):
@@ -165,18 +149,11 @@ class RecordingRunner:
         self,
         block: BlockSpec,
         *,
-        step_name: str,
+        step_path: tuple[str, ...],
         config: dict,
         revision: RevisionRef,
-        inputs: dict[str, RevisionRef],
     ) -> RevisionRef:
         self.calls.append(
-            {
-                "block": block.name,
-                "step_name": step_name,
-                "config": config,
-                "revision": revision,
-                "inputs": inputs,
-            }
+            {"block": block.name, "step_path": step_path, "config": config, "revision": revision}
         )
-        return RevisionRef(store=f"{revision.store}/{step_name}", id=revision.id)
+        return RevisionRef(store=f"{revision.store}/{step_path[-1]}", id=revision.id)

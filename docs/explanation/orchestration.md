@@ -135,7 +135,7 @@ Blocks still get a fresh container each, for isolation between steps.
 
 The backend does three things with Prefect, and each is small:
 
-- It submits a run. `run_deployment` starts `run-playbook` with the playbook document, the settings, the starting record and the catalogue, with `timeout=0`, and returns the flow run's id.
+- It submits a run. `run_deployment` starts `run-playbook` with `timeout=0` and returns the flow run's id. The flow run gets the playbook document, the input values, the starting record, and the catalogue.
 - It observes a run. It reads the flow run's state, the states of its child flow runs for the status of each step, and the flow run's log.
 - It keeps the link. It inserts one row that ties the Manta run to the Prefect flow run id.
 

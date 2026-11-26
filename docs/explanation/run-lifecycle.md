@@ -19,7 +19,7 @@ The one-shot `block-image-builder-pypsa` service builds the image for the `pypsa
 That image contains `playbook-library`, the environment's own dependencies, Prefect and `runner`.
 The `MANTA_ENV_IMAGES` variable maps each environment name to its image.
 
-The second is the work pools, the deployments and the result storage.
+The second is the work pools and the deployments.
 The one-shot `playbooks-provision` service runs `python -m runner.deploy`, which creates or updates all of them.
 The two workers start once it has finished.
 
@@ -37,8 +37,7 @@ Nothing runs and no solver starts while a user prepares a run.
 The backend serves everything from the catalogue, without importing a block.
 
 `GET /v1/playbooks` lists the playbooks `playbook-library` ships.
-`GET /v1/playbooks/{playbook_name}` returns one, with each step's block summary, settings schema, condition and wires, and the default settings.
-A form built from a settings schema skips each setting marked `x-manta-input`.
+`GET /v1/playbooks/{playbook_name}` returns one, with each step's block summary, settings schema and condition, and the default settings.
 
 `POST /v1/playbooks/{playbook_name}/validate` checks a set of settings and returns every issue it finds.
 It answers with HTTP 200 even when it finds issues, because an editor calls it while the user types and issues are the expected answer.
@@ -52,9 +51,9 @@ The web app does not use these endpoints yet: it starts the `expand` playbook wi
 `POST /v1/runs` does five things, in this order:
 
 1. It finds the project and refuses a user who does not own it.
-2. It finds the playbook by name in `playbook-library`, and takes the playbook's default settings when the request has none.
-3. It checks the playbook against the settings, and refuses the run with HTTP 422 and every issue if any are found.
-4. It starts a `run-playbook` flow run with the playbook document, the settings, the starting record and the catalogue, without waiting for it.
+2. It finds the playbook by name in `playbook-library`, and takes the playbook's default config when the request has none. A config has the input values under `inputs`, and the settings of each step under its id.
+3. It merges the settings into each step's `with` with `apply_settings`, and checks the playbook against the input values. It refuses the run with HTTP 422 and every issue if any are found.
+4. It starts a `run-playbook` flow run, without waiting for it. The flow run gets the playbook document with the merged settings, the input values, the starting record, and the catalogue.
 5. It inserts a `runs` row that links the project and the playbook name to the flow run id.
 
 The request names the starting record itself, as a store URL and a revision uuid.
@@ -73,13 +72,13 @@ Manta checks a run's playbook and settings in three places, each with what it ca
 
 | Where                      | What it checks against                     | What it can catch                                                                         |
 | -------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| The backend                | The catalogue's JSON schemas               | Every structural, wiring, dimension, condition, settings and environment problem          |
+| The backend                | The catalogue's JSON schemas               | Every structure, reference, input, dimension, settings, and environment problem           |
 | The `run-playbook` flow run | The catalogue it was handed                | The same, before any block container starts                                               |
-| The `run-block` flow run   | The block's own settings model             | A record wired to a setting that cannot hold one, and rules the block states in code      |
+| The `run-block` flow run   | The block's own settings model             | Rules the block states in code                                                            |
 
 The backend checks first so that a run which cannot work is refused before anything is queued.
-Settings decide which steps run, and so which checks apply.
-A check without the run's exact settings could pass a run that then fails, so the backend checks the settings the run carries.
+The input values decide which steps run, and so which checks apply.
+A check without the run's exact config could pass a run that then fails, so the backend checks the config the run carries.
 
 `run-playbook` checks again because `execute_playbook` always checks before it runs anything.
 So any caller that dispatches a playbook gets the same check, whether or not it is Manta's backend.
@@ -96,18 +95,17 @@ The flow rebuilds the playbook from its document: it parses the JSON, looks up e
 It imports no block, reads nothing from the object store and loads no modelling framework.
 So the runner image stays small, and rebuilding a playbook takes far less time than any step.
 
-For each step that runs under the settings, `execute_playbook`:
+Before any step runs, `execute_playbook` works out which block steps run with the input values, and each step's settings from its `with` and those values.
+Then, for each of those steps in order, it:
 
-1. collects the records that the step's wires point at, from the steps already finished
-2. starts a `run-block` flow run with the block's name, the step's settings, the main-line record, the wired records and the image of the block's environment
-3. waits for that flow run to end, and takes the record it returns as the next main-line record
+1. starts a `run-block` flow run with the block's name, the step's path of ids, the settings, the input record, and the image of the block's environment
+2. waits for that flow run to end, and takes the record it returns as the input record of the next step
 
-The playbook worker keeps a map from step name to the record each step returned.
-Wiring a step is a lookup in that map, so the worker passes pointers along and never opens the object store.
-It gets no object store credentials in its environment, and reads each returned record through Prefect's result storage.
+A record is a pointer, so the worker passes records along and never opens the object store.
+It gets no object store credentials in its environment, and reads each returned record from the table artifact that the `run-block` flow run publishes.
 
 A nested playbook runs inside the same `run-playbook` flow run.
-Its blocks become child flow runs of the top-level run, named after their own steps.
+Its blocks become child flow runs of the top-level run, each named after its path of step ids and its block.
 
 ## Inside a block container
 
@@ -115,10 +113,9 @@ The block worker starts a fresh container from the image the flow run names.
 This is the first point at which any process imports the block's class, and the only process that can.
 
 `run-block` imports the libraries named in `MANTA_BLOCK_SOURCES` and looks the block up by name.
-It fills the wired records into the block's settings, and checks the result against the block's settings model.
-It then creates a fresh instance of the block and calls `run` with the input record.
+It checks the settings against the block's settings model, creates a fresh instance of the block, and calls `run` with the input record.
 The block reads its input revision from the store, does its work, and writes its result as a new revision.
-`run-block` returns the new record, which Prefect writes to result storage on the object store.
+`run-block` then publishes the new record as a table artifact on its flow run, through the Prefect API.
 
 The container gets the Prefect API address, the object store address and credentials, and the block libraries to import.
 It gets no route to the application database or the identity provider.
@@ -130,16 +127,17 @@ Steps run in separate containers, possibly on separate machines, and share no me
 ```mermaid
 flowchart LR
     a["Step A<br/>(block container)"] -- "writes a revision" --> store[("Datarecord store<br/>(object store)")]
-    a -- "returns the record" --> results[("Prefect result storage<br/>(object store)")]
+    a -- "publishes the record" --> results[("Table artifact<br/>(Prefect API)")]
     results -- "reads the record" --> pw["Playbook worker"]
     pw -- "passes the record" --> b["Step B<br/>(block container)"]
     store -- "reads the revision" --> b
 ```
 
 Two paths have to work for a step to read the step before it.
-The record, a store URL and a revision uuid, goes through Prefect's result storage to the playbook worker, which passes it to the next step.
+The record, a store URL and a revision uuid, goes through a table artifact in Prefect to the playbook worker, which passes it to the next step.
 The model data goes through the datarecord store, written by one container and read by the next.
-Both live on the object store, because a shared volume would tie every container to one machine.
+The model data is on the object store, because a shared volume would tie every container to one machine.
+The table artifact is in Prefect's database, which every container reaches through the Prefect API.
 
 ## Following a run
 
@@ -147,7 +145,7 @@ Both live on the object store, because a shared volume would tie every container
 
 `GET /v1/runs/{run_uuid}/steps` returns the state of each step.
 The backend reads the run's child flow runs from Prefect and matches each to a step by the step name it was started with.
-A step that the settings switch off is `SKIPPED`, and a step with no flow run yet is `NOT_STARTED`.
+A step that the input values switch off is `SKIPPED`, and a step with no flow run yet is `NOT_STARTED`.
 Because each step keeps the name it has in the playbook, a drawing of the playbook can show the state of each step.
 
 `GET /v1/runs/{run_uuid}/logs` returns the log of the `run-playbook` flow run, with the run's state, so a caller knows whether the log is still growing.

@@ -22,8 +22,8 @@ The blocks — single units of work on a model:
 | `perfect_capacity_expansion` | Decide what to build in every investment period at once, with perfect foresight |
 | `rolling_horizon_dispatch` | Decide how to run a system, a stretch of time at a time |
 
-The playbooks — those blocks chained into something worth running, each with default
-settings a user can start from:
+The playbooks chain those blocks into something you can run. Each one declares its
+inputs with defaults, so a user can run it without setting any input:
 
 | Playbook | What it does |
 | --- | --- |
@@ -46,7 +46,8 @@ src/playbook_library/
   pypsa_configs.py              Settings models mirroring PyPSA's optimize options
   examples.py                   A tiny network, and the example playbook run on it
   public_data.py                Downloads of the stores in the public test data bucket
-  playbooks/                    The playbooks this library ships, with default settings
+  playbooks/                    The playbooks this library ships
+    configs/                    The default settings of each playbook, by step id
 ```
 
 ## Getting started
@@ -115,21 +116,28 @@ catalogue must all keep working in an environment that has never heard of PyPSA.
 
 ## Adding a playbook
 
-1. Write it as a YAML document in `playbooks/` — see
-   [the framework's README](../playbook/README.md#writing-a-playbook) for the format,
-   and `expand.yaml` for a real one.
-2. Give it default settings under `playbooks/configs/`, in a file of the same name,
-   with an entry for every step. A user should start from a complete document rather
-   than a blank page.
-3. Run the tests. `tests/test_playbooks.py` checks every playbook in `playbooks/`
-   against its default settings, so a default that cannot run fails there. Add a case
-   for anything else the playbook has to get right. Most of those tests run without
-   PyPSA and check against the catalogue. That is the point: anything offering
-   playbooks to a user does so from an environment that cannot import the blocks they
-   name.
+1. Write it as a YAML document in `playbooks/`. For the format, see
+   [the playbook syntax](../docs/reference/playbook/syntax.md), and for a real
+   playbook, see `expand.yaml`.
+2. Write in the step's `with` only the settings that a run must not change. A run can
+   give every other setting of the block.
+3. Declare an input for a value that decides which steps run, or that several steps
+   share. `cluster_expand_dispatch.yaml` declares `solver_name`, and the `with` of
+   each optimisation step reads it, so one input sets the solver of every step. Give
+   every input a default, so that a user can run the playbook without setting any.
+4. Write the default of every other setting in `playbooks/configs/`, in a file with
+   the same name as the playbook file, by step id. `configs/cluster_expand_dispatch.yaml`
+   sets `n_hours` of `cluster` and the dispatch windows of `dispatch`. A run starts from
+   these settings and can change each of them.
+5. Run the tests. The tests in `tests/test_playbooks.py` check every playbook in
+   `playbooks/` with its default inputs and default settings, so a default that cannot
+   run fails there. Add a case for anything else the playbook has to get right.
+   Anything that offers playbooks to a user cannot import the blocks they name. So
+   most of those tests run without PyPSA, and check against the catalogue.
 
-Playbooks are found by the name written inside the document, not by filename, so
-renaming a file changes nothing and two playbooks claiming one name is an error.
+Playbooks are found by the name written inside the document, not by filename, so two
+playbooks claiming one name is an error. Their default settings are found by filename,
+so a renamed playbook file needs its file in `configs/` renamed too.
 
 ## The catalogue
 
@@ -163,7 +171,7 @@ What the suite covers, and where to add to it:
 | --- | --- |
 | `tests/test_catalogue.py` | the committed catalogue matches the blocks and works without PyPSA |
 | `tests/test_library.py` | each block, run on a tiny network: a usable network comes out as a new revision of the one it read |
-| `tests/test_playbooks.py` | the shipped playbooks parse, come with settings for every step, and have no issues with those settings, checked against the catalogue and, with PyPSA, against the blocks |
+| `tests/test_playbooks.py` | the shipped playbooks parse and have no issues with their default inputs, checked against the catalogue and, with PyPSA, against the blocks |
 | `tests/test_pypsa_end_to_end.py` | the whole playbook, one network in and one out |
 
 Tests that need PyPSA start with `pytest.importorskip("pypsa")` and carry

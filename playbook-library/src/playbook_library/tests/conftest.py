@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from playbook.playbooks import Playbook, apply_settings, playbook_from_doc
+
+from playbook_library import library_catalogue
+from playbook_library.playbooks import library_playbooks
 
 if TYPE_CHECKING:
     from datarecord import Revision, Workspace
@@ -36,3 +40,24 @@ def store_revision(tmp_path: Path, workspace: "Workspace") -> Callable[..., "Rev
         return store_network(n, workspace.store(str(tmp_path / name)))
 
     return write
+
+
+@pytest.fixture
+def tuned_playbook() -> Callable[..., Playbook]:
+    """Build a library playbook with its default settings, some of them replaced.
+
+    The fixture takes the name of the playbook, then the settings to replace, by step id
+    and setting name. Every other setting is as the library ships it. A block that
+    cannot be imported is known from the committed catalogue.
+    """
+
+    def tune(name: str, settings: dict[str, dict] | None = None) -> Playbook:
+        shipped = library_playbooks()[name]
+        defaults = shipped.default_settings
+        replaced = {
+            step: {**defaults.get(step, {}), **value} for step, value in (settings or {}).items()
+        }
+        playbook = playbook_from_doc(shipped.doc, catalogue=library_catalogue())
+        return apply_settings(playbook, {**defaults, **replaced})
+
+    return tune

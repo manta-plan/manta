@@ -38,5 +38,6 @@ Run these commands from the `playbook` folder.
 
 ## Next steps
 
-- To write a block or a playbook, read the [playbook README](https://github.com/manta-plan/manta/blob/main/playbook/README.md) and the [playbook-library README](https://github.com/manta-plan/manta/blob/main/playbook-library/README.md).
+- To write a playbook, see the [playbook syntax](../reference/playbook/syntax.md).
+- To write a block, read the [playbook README](https://github.com/manta-plan/manta/blob/main/playbook/README.md) and the [playbook-library README](https://github.com/manta-plan/manta/blob/main/playbook-library/README.md).
 - To run the full test suites and the linters, read [Contributing: playbook and playbook-library](../contributing/playbook.md).

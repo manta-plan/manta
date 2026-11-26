@@ -21,9 +21,14 @@ class GetRunResult(BaseModel):
     project_uuid: UUID
     playbook: str
     config: dict
-    """The config this run was started with, exactly as dispatched: the caller's own,
-    or the playbook's default_config when none was given (see GET /v1/playbooks/{name}
-    for those defaults)."""
+    """The config this run was started with: the value of each input under `inputs`,
+    with the defaults filled in, and the settings of each step under its id, with the
+    `with` of the playbook included. A step that ran has every expression evaluated,
+    and a step that did not run has its `with` as written. The settings come
+    from the caller's own config, or from the playbook's default_config when none was
+    given (see GET /v1/playbooks/{name} for those defaults). This is the resolved
+    config, so it cannot be posted as the config of a new run as it is: the settings
+    the playbook writes in `with` are refused there."""
 
     data_record: DataRecordResult
     """The record this run started from, exactly as dispatched."""
@@ -58,7 +63,7 @@ class RunStepResult(BaseModel):
     """Prefect's own state for the step's block run (COMPLETED, RUNNING, FAILED, ...),
     or, for a step with no block run:
 
-    - SKIPPED: its `when` condition is false for this run's config, so it never runs.
+    - SKIPPED: its `if` is false for this run's inputs, so it never runs.
     - NOT_STARTED: it should run, but hasn't started yet — or never will, if an
       earlier step failed.
     - UNKNOWN: it runs a nested playbook, whose own steps aren't tracked here yet.

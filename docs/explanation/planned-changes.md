@@ -34,9 +34,9 @@ The first release for confidential data adds single sign-on with multi-factor au
 Today a run names a playbook that `playbook-library` ships, and the request carries the settings.
 The `runs` row keeps the playbook's name, and the backend reads the settings and the playbook document back from the Prefect flow run.
 
-The plan is a `playbooks` table, scoped to a project, that holds a playbook document and its settings document.
-A run then refers to a stored playbook and its stored settings, rather than resupplying the settings with each request.
-Endpoints to create, read and update a playbook come with it.
+The plan is a `playbooks` table, scoped to a project, that contains playbook documents.
+A run then refers to a stored playbook, and the request contains only the values of its inputs.
+Endpoints to create, read, and update a playbook come with it.
 
 A nested playbook names another playbook by locator.
 Manta is to add a `PlaybookLoader` that finds a locator in this table, keyed by the playbook's uuid.
@@ -51,7 +51,7 @@ No endpoint returns the whole catalogue, and nothing draws a playbook.
 The plan adds two endpoints:
 
 - `GET /v1/blocks` returns the catalogue, so that the web app can offer every block and build a settings form for each one.
-- A drawing endpoint returns a playbook as plain nodes and edges: which steps run, the dimensions before each step, and what each wire connects.
+- A drawing endpoint returns a playbook as plain nodes and edges: which steps run and the dimensions before each step.
 
 `playbook` is to work out the drawing, without running any step, because drawing a playbook must never start a solver.
 The web app then draws the playbook, greys out the steps the settings switch off, and colours each step with its state during a run.

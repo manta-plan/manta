@@ -30,7 +30,7 @@ class ListPlaybooksResult(BaseModel):
 
 class PlaybookStepConditionResult(BaseModel):
     """A step only runs when the config value at `config` (a dotted path, e.g.
-    `globals.expansion_mode`) equals `equals`."""
+    `inputs.expansion_mode`) equals `equals`."""
 
     config: str
     equals: Any
@@ -48,21 +48,22 @@ class PlaybookStepResult(BaseModel):
 
     block_config_schema: dict | None
     """The block's settings, as a JSON schema. The values themselves go in a run's
-    config under this step's `name`. Settings tagged `x-manta-input` are filled in by
-    another step (see `inputs`), not typed by a user."""
+    config under this step's `name`."""
 
     when: PlaybookStepConditionResult | None
     """None means the step always runs."""
 
     inputs: dict[str, str]
-    """Each wired-in setting, and the `${steps.<step>.<output>}` reference feeding it."""
+    """Always empty. The key stays so that the answer has the shape the web app reads."""
 
 
 class GetPlaybookResult(BaseModel):
     name: str
     default_config: dict
-    """The config a run uses when it is created without one: values filed by step
-    name, plus a `globals` section every step can see."""
+    """The config a run uses when it is created without one. It has the default of each
+    input of the playbook that is not required under `inputs`, and the default settings
+    of each step under its name. The settings that the `with` of a step sets are not in
+    it, since a run cannot change them."""
 
     steps: list[PlaybookStepResult]
 
@@ -72,9 +73,10 @@ class PlaybookIssueResult(BaseModel):
     playbook.playbooks.PlaybookIssue)."""
 
     kind: PlaybookIssueKind
-    """What sort of problem it is: `structure`, `wiring` (how a step is fed), `dims`
-    (a dimension a step needs is missing), `config`, `when` (a condition on a setting
-    nobody set) or `environment`."""
+    """What sort of problem it is: `structure`, `reference` (an expression reads an
+    input that does not exist), `inputs` (a value under `inputs` does not fit, or an
+    expression cannot be evaluated with the values), `dims` (a dimension a step needs
+    is missing), `config`, or `environment`."""
 
     message: str
 
@@ -90,8 +92,7 @@ class PlaybookIssueResult(BaseModel):
     about one setting, such as a missing dimension."""
 
     input: str | None
-    """The wired-in setting this is about (a key of the step's `inputs`), for a
-    problem with how a step is fed."""
+    """Always None. The key stays so that the answer has the shape the web app reads."""
 
 
 class ValidatePlaybookConfigResult(BaseModel):

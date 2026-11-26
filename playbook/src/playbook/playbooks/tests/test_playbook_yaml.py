@@ -3,185 +3,111 @@
 # SPDX-License-Identifier: MIT
 
 import json
-from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
-from playbook.blocks.tests.fakes import FakePassthrough
-from playbook.playbooks.playbook import Playbook
+from playbook.playbooks.playbook import Playbook, PlaybookStep
+from playbook.playbooks.schema import SCHEMA_PATH, schema_text
+from playbook.playbooks.syntax import PlaybookDoc
+from playbook.playbooks.tests.specs import FIXTURES, SPEC_LOADER, SPEC_PLAYBOOKS, spec_doc
 from playbook.playbooks.yaml_io import (
-    PlaybookDoc,
     PlaybookLoadError,
-    load_config,
     load_playbook,
+    parse_doc,
     playbook_from_doc,
     playbook_to_doc,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+
+def test_reading_a_playbook_gets_its_inputs_and_steps(capacity_expansion):
+    assert capacity_expansion.name == "capacity_expansion"
+    assert list(capacity_expansion.inputs) == [
+        "snapshot",
+        "bus",
+        "resolution",
+        "expansion_method",
+        "solver",
+    ]
+    partition, expand = capacity_expansion.steps
+    assert (partition.id, partition.block.name) == ("partition", "timeseries_partitioning")
+    assert partition.if_ == "${{ inputs.snapshot != null }}"
+    assert partition.with_["method"] == "resample"
+    assert (expand.id, expand.block.name) == ("expand", "capacity_expansion")
 
 
-def test_reading_a_playbook_gets_its_structure_and_wiring():
-    pb = load_playbook(FIXTURES / "fake_playbook.yaml")
-
-    assert pb.name == "fake-playbook"
-    assert pb.initial_dims == frozenset({"period"})
-    assert [step.name for step in pb.steps] == ["cluster", "expand", "dispatch"]
-
-    cluster, expand, dispatch = pb.steps
-    assert cluster.block.name == "fake_adds_clustered"
-    assert expand.block.name == "fake_passthrough"
-    assert dispatch.block.name == "fake_needs_upstream"
-
-    assert dispatch.when is not None
-    assert dispatch.when.config == "globals.mode"
-    assert dispatch.when.equals == "full"
-
-    assert dispatch.inputs["source"].step == "expand"
-    assert dispatch.inputs["source"].output == "output"
+def test_reading_a_playbook_fetches_the_playbooks_it_nests(expand_and_dispatch):
+    plan = expand_and_dispatch.steps[0]
+    assert isinstance(plan, PlaybookStep)
+    assert (plan.playbook.name, plan.inherit) == ("capacity_expansion", True)
 
 
-def test_the_settings_alongside_a_playbook_are_read_as_a_mapping_per_step():
-    config = load_config(FIXTURES / "fake_config.yaml")
-    assert config["globals"] == {"mode": "full"}
-    assert config["cluster"] == {"label": "clustering"}
+def test_from_yaml_reads_a_file(spec_catalogue):
+    pb = Playbook.from_yaml(FIXTURES / "capacity_expansion.yaml", spec_catalogue)
+    assert pb == load_playbook("capacity_expansion", SPEC_LOADER, spec_catalogue)
 
 
-def test_a_playbook_read_from_file_has_no_issues_with_its_settings():
-    pb = load_playbook(FIXTURES / "fake_playbook.yaml")
-    pb.raise_for_issues(load_config(FIXTURES / "fake_config.yaml"))
+def test_a_block_known_nowhere_is_reported_as_a_load_error(build_playbook):
+    with pytest.raises(PlaybookLoadError, match="step 'a'.*not_a_real_block"):
+        build_playbook({"name": "x", "steps": [{"id": "a", "block": "not_a_real_block"}]})
 
 
-def test_from_yaml_matches_load_playbook():
-    assert Playbook.from_yaml(FIXTURES / "fake_playbook.yaml").name == "fake-playbook"
+def test_a_malformed_document_is_reported_as_a_load_error():
+    with pytest.raises(PlaybookLoadError, match="invalid playbook bad.yaml"):
+        parse_doc({"name": "x", "steps": [{"name": "a", "block": "b"}]}, source="bad.yaml")
 
 
-def test_unknown_block_error_lists_available_blocks(tmp_path):
-    yaml_path = tmp_path / "bad.yaml"
-    yaml_path.write_text("name: bad\nsteps:\n  - name: a\n    block: not_a_real_block\n")
-    with pytest.raises(PlaybookLoadError, match="not_a_real_block"):
-        load_playbook(yaml_path)
-
-
-def test_invalid_reference_syntax_is_rejected(tmp_path):
-    yaml_path = tmp_path / "bad_ref.yaml"
-    yaml_path.write_text(
-        "name: bad-ref\n"
-        "steps:\n"
-        "  - name: a\n"
-        "    block: fake_passthrough\n"
-        "  - name: b\n"
-        "    block: fake_needs_upstream\n"
-        "    inputs:\n"
-        "      source: not-a-valid-ref\n"
+@pytest.mark.parametrize("name", SPEC_PLAYBOOKS)
+def test_a_playbook_survives_a_round_trip_through_its_document(name, spec_catalogue):
+    original = load_playbook(name, SPEC_LOADER, spec_catalogue)
+    written = playbook_to_doc(original).model_dump(mode="json", by_alias=True, exclude_unset=True)
+    assert (
+        playbook_from_doc(PlaybookDoc.model_validate(written), catalogue=spec_catalogue) == original
     )
-    with pytest.raises(PlaybookLoadError, match="not-a-valid-ref"):
-        load_playbook(yaml_path)
 
 
-def test_malformed_top_level_document_is_rejected(tmp_path):
-    yaml_path = tmp_path / "malformed.yaml"
-    yaml_path.write_text("steps: not-a-list\n")  # no name, and steps is not a list
-    with pytest.raises(PlaybookLoadError):
-        load_playbook(yaml_path)
-
-
-def test_a_step_must_be_either_a_block_or_a_playbook(tmp_path):
-    yaml_path = tmp_path / "both.yaml"
-    yaml_path.write_text(
-        "name: both\nsteps:\n  - name: a\n    block: fake_passthrough\n    playbook: other.yaml\n"
+def test_a_nested_playbook_is_written_out_in_place(expand_and_dispatch):
+    written = expand_and_dispatch.to_doc().model_dump(by_alias=True, exclude_unset=True)
+    plan = written["steps"][0]
+    assert plan["inputs"] == "inherit"
+    assert plan["playbook"] == spec_doc("capacity_expansion").model_dump(
+        by_alias=True, exclude_unset=True
     )
-    with pytest.raises(PlaybookLoadError, match="Exactly one"):
-        load_playbook(yaml_path)
 
 
-def test_load_config_returns_empty_dict_for_empty_file(tmp_path):
-    yaml_path = tmp_path / "empty.yaml"
-    yaml_path.write_text("")
-    assert load_config(yaml_path) == {}
-
-
-def test_load_config_rejects_non_mapping_top_level(tmp_path):
-    yaml_path = tmp_path / "list.yaml"
-    yaml_path.write_text("- 1\n- 2\n")
-    with pytest.raises(PlaybookLoadError):
-        load_config(yaml_path)
-
-
-# --- The document is also the form a playbook travels in ---
-
-
-def test_a_playbook_survives_a_round_trip_through_its_document():
-    original = load_playbook(FIXTURES / "fake_playbook.yaml")
-    rebuilt = playbook_from_doc(playbook_to_doc(original))
-
-    assert rebuilt.name == original.name
-    assert rebuilt.initial_dims == original.initial_dims
-    assert [s.name for s in rebuilt.steps] == [s.name for s in original.steps]
-    assert [s.block.name for s in rebuilt.steps] == [s.block.name for s in original.steps]
-    assert rebuilt.steps[2].inputs == original.steps[2].inputs
-    assert rebuilt.steps[2].when == original.steps[2].when
-
-
-def test_a_document_round_trips_as_json():
-    original = load_playbook(FIXTURES / "fake_playbook.yaml")
-    as_json = playbook_to_doc(original).model_dump(mode="json")
-    rebuilt = playbook_from_doc(PlaybookDoc.model_validate(as_json))
-    assert [s.name for s in rebuilt.steps] == [s.name for s in original.steps]
-
-
-def test_a_reference_is_written_back_the_way_it_was_read():
-    doc = playbook_to_doc(load_playbook(FIXTURES / "fake_playbook.yaml"))
-    dispatch = next(step for step in doc.steps if step.name == "dispatch")
-    assert dispatch.inputs["source"] == "${steps.expand.output}"
-
-
-def test_a_nested_playbook_can_be_written_out_in_place():
-    # This is what a browser sends: there is no file to point at.
-    doc = PlaybookDoc.model_validate(
-        {
-            "name": "outer",
-            "steps": [
-                {
-                    "name": "regional",
-                    "playbook": {
-                        "name": "inner",
-                        "steps": [{"name": "leaf", "block": "fake_passthrough"}],
-                    },
-                }
-            ],
-        }
-    )
-    pb = playbook_from_doc(doc)
-    assert pb.steps[0].playbook.name == "inner"
-    assert pb.steps[0].playbook.steps[0].block.name == "fake_passthrough"
-
-
-def test_a_nested_playbook_round_trips_in_place():
-    outer = Playbook(name="outer")
-    inner = Playbook(name="inner")
-    inner.add("leaf", FakePassthrough)
-    outer.add_playbook("regional", inner)
-
-    rebuilt = playbook_from_doc(playbook_to_doc(outer))
-    assert rebuilt.steps[0].playbook.steps[0].block.name == "fake_passthrough"
-
-
-def test_an_editor_can_be_told_what_a_valid_document_looks_like():
-    schema = PlaybookDoc.model_json_schema()
-    # A playbook can contain a playbook, so the schema refers to itself by name
-    # rather than being written out inline.
-    playbook_schema = schema["$defs"]["PlaybookDoc"]
-    assert set(playbook_schema["properties"]) == {"name", "initial_data", "steps"}
-    assert set(schema["$defs"]["StepDoc"]["properties"]) == {
-        "name",
-        "block",
-        "playbook",
-        "when",
-        "inputs",
+def test_a_step_is_written_without_the_keys_it_leaves_unset(capacity_expansion):
+    written = capacity_expansion.to_doc().model_dump(by_alias=True, exclude_unset=True)
+    assert written["steps"][1] == {
+        "id": "expand",
+        "block": "capacity_expansion",
+        "with": {
+            "method": "${{ inputs.expansion_method }}",
+            "aggregation": {"snapshot": "${{ inputs.snapshot }}", "bus": "${{ inputs.bus }}"},
+            "solver": "${{ inputs.solver }}",
+        },
     }
 
 
+def test_a_setting_added_in_place_is_kept_on_reading_and_on_writing(spec_catalogue):
+    doc = parse_doc({"name": "x", "steps": [{"id": "a", "block": "timeseries_partitioning"}]})
+    doc.steps[0].with_["method"] = "resample"
+    playbook = playbook_from_doc(doc, SPEC_LOADER, spec_catalogue)
+    assert playbook.steps[0].with_ == {"method": "resample"}
+    playbook.steps[0].with_["resolution"] = 3
+    written = playbook.to_doc().model_dump(by_alias=True, exclude_unset=True)
+    assert written["steps"][0]["with"] == {"method": "resample", "resolution": 3}
+
+
 def test_committed_schema_matches_playbook_doc():
-    schema = Path(__file__).parents[1] / "playbook.schema.json"
-    assert json.loads(schema.read_text()) == PlaybookDoc.model_json_schema()
+    assert SCHEMA_PATH.read_text() == schema_text()
+
+
+def test_the_schema_refuses_an_input_name_that_parse_doc_refuses():
+    doc = {
+        "name": "x",
+        "inputs": {"bad-name": {"type": "string"}},
+        "steps": [{"id": "a", "block": "b"}],
+    }
+    assert not Draft202012Validator(json.loads(schema_text())).is_valid(doc)
+    with pytest.raises(PlaybookLoadError):
+        parse_doc(doc)

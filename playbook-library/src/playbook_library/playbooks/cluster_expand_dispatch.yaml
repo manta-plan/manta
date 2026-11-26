@@ -9,26 +9,39 @@ name: cluster-expand-dispatch
 initial_data:
   dims: [snapshot]
 
+inputs:
+  expansion_mode:
+    type: choice
+    options: [overnight, myopic]
+    default: overnight
+    description: How to optimise capacities. Only overnight expansion is dispatched.
+  solver_name:
+    type: choice
+    options: [highs]
+    default: highs
+    description: The solver that every optimisation of this playbook uses.
+
 steps:
-  - name: cluster
+  - id: cluster
     block: cluster_time
 
-  - name: expansion_overnight
+  - id: expansion_overnight
     block: overnight_capacity_expansion
-    when:
-      config: globals.expansion_mode
-      equals: overnight
+    if: ${{ inputs.expansion_mode == 'overnight' }}
+    with:
+      optimize_config:
+        solver_name: ${{ inputs.solver_name }}
 
-  - name: expansion_myopic
+  - id: expansion_myopic
     block: myopic_capacity_expansion
-    when:
-      config: globals.expansion_mode
-      equals: myopic
+    if: ${{ inputs.expansion_mode == 'myopic' }}
+    with:
+      optimize_config:
+        solver_name: ${{ inputs.solver_name }}
 
-  - name: dispatch
+  - id: dispatch
     block: rolling_horizon_dispatch
-    when:
-      config: globals.expansion_mode
-      equals: overnight
-    inputs:
-      capacity_source: ${steps.expansion_overnight.output}
+    if: ${{ inputs.expansion_mode == 'overnight' }}
+    with:
+      optimize_config:
+        solver_name: ${{ inputs.solver_name }}

@@ -2,122 +2,96 @@
 #
 # SPDX-License-Identifier: MIT
 
-from uuid import UUID
-
 import pytest
-from datarecord import Revision
-from pydantic import ValidationError, computed_field
 
-from playbook.blocks.core import ConfigSchema, MantaBlock, RevisionRef
-from playbook.blocks.tests.fakes import FakeNeedsUpstream, FakePassthrough, steps
-from playbook.playbooks.playbook import Playbook, When
-
-UPSTREAM = RevisionRef(store="s3://bucket/upstream", id=UUID(int=0))
+from playbook.blocks.tests.fakes import steps
+from playbook.playbooks.tests.specs import SPEC_REQUIRED_INPUTS
 
 
-def test_a_wired_input_is_separate_from_the_revision_handed_along(initial_revision):
-    pb = Playbook(name="exec-wiring")
-    cluster = pb.add("cluster", FakePassthrough)
-    pb.add("expand", FakePassthrough)
-    pb.add("dispatch", FakeNeedsUpstream, inputs={"source": cluster.output})
-
-    config = {
-        "cluster": {"label": "cluster"},
-        "expand": {"label": "expand"},
-        "dispatch": {},
-    }
-    result = pb.run(initial_revision, config)
-
-    # `dispatch` gets the revision from `expand` as usual, and separately the result
-    # of `cluster` specifically, from before `expand` ran.
-    assert steps(result) == ["cluster", "expand", "needs(cluster)"]
+def labelled(*labels: str, **step: object) -> list[dict]:
+    return [
+        {"id": f"step{index}", "block": "fake_passthrough", "with": {"label": label}, **step}
+        for index, label in enumerate(labels)
+    ]
 
 
-def test_only_the_matching_branch_runs(initial_revision):
-    pb = Playbook(name="exec-cond")
-    pb.add("branch_a", FakePassthrough, when=When(config="globals.mode", equals="a"))
-    pb.add("branch_b", FakePassthrough, when=When(config="globals.mode", equals="b"))
-
-    config = {
-        "globals": {"mode": "a"},
-        "branch_a": {"label": "A"},
-        "branch_b": {"label": "B"},
-    }
-    assert steps(pb.run(initial_revision, config)) == ["A"]
-
-    config["globals"]["mode"] = "b"
-    assert steps(pb.run(initial_revision, config)) == ["B"]
+def test_settings_reach_the_block_that_needs_them(build_playbook, initial_revision):
+    pb = build_playbook({"name": "p", "steps": labelled("one", "two")})
+    assert steps(pb.run(initial_revision, {})) == ["one", "two"]
 
 
-def test_a_step_that_does_not_run_passes_the_revision_straight_on(initial_revision):
-    pb = Playbook(name="exec-skip")
-    pb.add("maybe", FakePassthrough, when=When(config="globals.mode", equals="on"))
+@pytest.mark.parametrize(("mode", "label"), [("a", "A"), ("b", "B")])
+def test_only_the_step_the_inputs_pick_runs(build_playbook, initial_revision, mode, label):
+    pb = build_playbook(
+        {
+            "name": "p",
+            "inputs": {"mode": {"type": "choice", "options": ["a", "b"], "default": "a"}},
+            "steps": [
+                {**labelled("A")[0], "id": "a", "if": "${{ inputs.mode == 'a' }}"},
+                {**labelled("B")[0], "id": "b", "if": "${{ inputs.mode == 'b' }}"},
+            ],
+        }
+    )
+    assert steps(pb.run(initial_revision, {"mode": mode})) == [label]
 
-    assert pb.run(initial_revision, {"globals": {"mode": "off"}}) == initial_revision
+
+def test_an_input_reaches_a_blocks_setting(build_playbook, initial_revision):
+    pb = build_playbook(
+        {
+            "name": "p",
+            "inputs": {"label": {"type": "string", "default": "x"}},
+            "steps": labelled("${{ inputs.label }}"),
+        }
+    )
+    assert steps(pb.run(initial_revision, {"label": "given"})) == ["given"]
 
 
-def test_the_same_playbook_can_be_run_more_than_once(initial_revision):
-    # A block is built fresh each time it runs, so no run can be affected by an
-    # earlier one.
-    pb = Playbook(name="exec-reuse")
-    pb.add("a", FakePassthrough)
+def test_a_step_that_does_not_run_passes_the_revision_straight_on(build_playbook, initial_revision):
+    pb = build_playbook({"name": "p", "steps": labelled("never", **{"if": "${{ false }}"})})
+    assert pb.run(initial_revision, {}) == initial_revision
 
-    config = {"a": {"label": "a"}}
-    first, second = (pb.run(initial_revision, config) for _ in range(2))
+
+def test_the_same_playbook_can_be_run_more_than_once(build_playbook, initial_revision):
+    pb = build_playbook({"name": "p", "steps": labelled("a")})
+    first, second = (pb.run(initial_revision, {}) for _ in range(2))
     assert steps(first) == steps(second) == ["a"]
     assert first != second
 
 
-def test_a_steps_result_is_a_new_revision_in_its_inputs_store(initial_revision):
-    pb = Playbook(name="exec-outputs")
-    pb.add("first", FakePassthrough)
-
-    result = pb.run(initial_revision, {"first": {}})
+def test_a_steps_result_is_a_new_revision_in_its_inputs_store(build_playbook, initial_revision):
+    result = build_playbook({"name": "p", "steps": labelled("a")}).run(initial_revision, {})
     assert result.store == initial_revision.store
     assert result.id != initial_revision.id
 
 
-def test_a_wired_input_is_checked_against_the_setting_it_goes_into():
-    # `label` is text, so a revision wired into it cannot work. It is checked, rather
-    # than quietly leaving a revision where text was expected.
-    with pytest.raises(ValidationError, match="label"):
-        FakeNeedsUpstream.merge_config({}, {"label": UPSTREAM})
+def test_a_failing_step_stops_the_run(build_playbook, initial_revision):
+    pb = build_playbook({"name": "p", "steps": [{"id": "boom", "block": "fake_explodes"}]})
+    with pytest.raises(AssertionError, match="never have been run"):
+        pb.run(initial_revision, {})
 
 
-def test_a_wired_input_reaches_the_setting_it_is_meant_for():
-    assert FakeNeedsUpstream.merge_config({}, {"source": UPSTREAM}).source == UPSTREAM
-
-
-class _DerivedSettingConfig(ConfigSchema):
-    size: int = 1
-
-    @computed_field
-    def doubled(self) -> int:
-        return self.size * 2
-
-
-class _DerivedSettingBlock(MantaBlock[_DerivedSettingConfig]):
-    ENV = "default"
-    CONFIG = _DerivedSettingConfig
-
-    def run(self, base: Revision) -> Revision:
-        return base
-
-
-def test_settings_given_as_an_object_can_be_merged_again():
-    # A computed value is part of the settings object, but is not a setting: merging
-    # must not hand it back in, where it would be refused as unknown.
-    config = _DerivedSettingBlock.merge_config(_DerivedSettingConfig(size=3), {})
-    assert config.size == 3
-
-
-def test_settings_reach_the_block_that_needs_them(initial_revision):
-    pb = Playbook(name="exec-config")
-    pb.add("first", FakePassthrough)
-    pb.add("second", FakePassthrough)
-
-    result = pb.run(
-        initial_revision,
-        {"first": {"label": "one"}, "second": {"label": "two"}},
+def test_the_capacity_expansion_playbook_runs_its_steps_in_turn(
+    capacity_expansion, recording_runner, initial_revision
+):
+    result = capacity_expansion.run(
+        initial_revision, {"snapshot": "resampled", "bus": "busmap_country"}, recording_runner
     )
-    assert steps(result) == ["one", "two"]
+
+    partition, expand = recording_runner.calls
+    assert partition["config"] == {
+        "method": "resample",
+        "resolution": "3h",
+        "property": "resampled",
+    }
+    assert expand["revision"].store == f"{initial_revision.store}/partition"
+    assert expand["config"]["aggregation"] == {"snapshot": "resampled", "bus": "busmap_country"}
+    assert result.store == f"{initial_revision.store}/partition/expand"
+
+
+@pytest.mark.parametrize(("name", "inputs"), SPEC_REQUIRED_INPUTS.items())
+def test_the_partition_is_skipped_without_a_snapshot_property(
+    request, name, inputs, recording_runner, initial_revision
+):
+    request.getfixturevalue(name).run(initial_revision, inputs, recording_runner)
+    [expand] = [call for call in recording_runner.calls if call["step_path"][-1] == "expand"]
+    assert expand["revision"] == initial_revision

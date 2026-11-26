@@ -17,7 +17,7 @@ lives outside this package and can be swapped without touching a single block.
 """
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, ClassVar, cast, get_args
+from typing import TYPE_CHECKING, ClassVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -108,11 +108,6 @@ class ConfigSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-def _accepts_ref(annotation: object) -> bool:
-    """Whether a settings field can hold a `RevisionRef`."""
-    return annotation is RevisionRef or RevisionRef in get_args(annotation)
-
-
 class MantaBlock[CONFIG_T: ConfigSchema](ABC):
     """Base class for every block.
 
@@ -140,17 +135,6 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
     DIMS: ClassVar[BlockDims] = BlockDims()
     """The dimensions this block requires on, adds to, and removes from the model data."""
 
-    INPUTS: ClassVar[frozenset[str]] = frozenset()
-    """Settings that are filled in by another block's output rather than by the user.
-
-    Each name here must be a field of `CONFIG` that can hold a `RevisionRef` and has a
-    default, since the block also has to be usable with nothing wired to it. These are
-    extra data sources, on top of the revision handed along from the previous step.
-    """
-
-    OUTPUTS: ClassVar[frozenset[str]] = frozenset({"output"})
-    """The names of the results this block offers to later blocks in a playbook."""
-
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Check a new block class makes sense, as soon as it is written.
 
@@ -173,57 +157,16 @@ class MantaBlock[CONFIG_T: ConfigSchema](ABC):
                 "`CONFIG` to a `ConfigSchema` subclass."
             )
 
-        fields = cls.CONFIG.model_fields
-        for input_name in sorted(cls.INPUTS):
-            field = fields.get(input_name)
-            if field is None:
-                raise BlockDefinitionError(
-                    f"{cls.__name__} lists {input_name!r} in INPUTS, but "
-                    f"{cls.CONFIG.__name__} has no such setting. Every input is "
-                    f"filled into a setting of the same name (settings: "
-                    f"{sorted(fields)})."
-                )
-            if not _accepts_ref(field.annotation):
-                raise BlockDefinitionError(
-                    f"{cls.__name__} lists {input_name!r} in INPUTS, so that setting "
-                    f"has to be able to hold a RevisionRef, but "
-                    f"{cls.CONFIG.__name__}.{input_name} is typed as "
-                    f"{field.annotation}."
-                )
-            if field.is_required():
-                raise BlockDefinitionError(
-                    f"{cls.__name__} lists {input_name!r} in INPUTS, so that setting "
-                    f"needs a default: the block must still be usable when nothing "
-                    f"is wired to it."
-                )
-
     def __init__(self, config: CONFIG_T | dict) -> None:
         self.config: CONFIG_T = cast(
             CONFIG_T,
             config if isinstance(config, self.CONFIG) else self.CONFIG.model_validate(config),
         )
 
-    @classmethod
-    def merge_config(
-        cls, config: "ConfigSchema | dict", inputs: "dict[str, RevisionRef]"
-    ) -> ConfigSchema:
-        """The block's settings with any wired-in revisions filled into place.
-
-        The result is checked in full, so a revision wired to the wrong kind of setting
-        is reported here rather than surfacing much later inside the block.
-        """
-        # `round_trip` leaves out computed fields: they are worked out from the
-        # settings rather than being settings, so validating them back in would be
-        # refused as unknown.
-        base = config.model_dump(round_trip=True) if isinstance(config, BaseModel) else dict(config)
-        return cls.CONFIG.model_validate({**base, **inputs})
-
     @abstractmethod
     def run(self, base: "Revision") -> "Revision":
         """Do this block's work on `base`, returning the revision holding the result.
 
         The result is committed through `base.store`, as a new revision in the input's
-        own store, so the caller never has to say where it should go. Revisions wired
-        in through `INPUTS` arrive as `RevisionRef`s and open on the same workspace
-        with `playbook.blocks.run.open_revision(base.store.workspace, ref)`.
+        own store, so the caller never has to say where it should go.
         """

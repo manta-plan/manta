@@ -233,13 +233,13 @@ sequenceDiagram
 
     B->>API: POST /v1/runs (project, playbook, settings, starting record)
     API->>API: check the settings against the block catalogue
-    API->>P: start a run-playbook flow run (document, settings, record, catalogue)
+    API->>P: start a run-playbook flow run (document, input values, record, catalogue)
     API->>DB: insert a run row with the flow run id
     API-->>B: 201 Created, with the run's uuid
     PW->>P: pick up the run-playbook flow run
     PW->>PW: check the playbook again and work out the active steps
     loop each active step, in order
-        PW->>P: start a run-block flow run (block, settings, record, inputs, image)
+        PW->>P: start a run-block flow run (block, step path, settings, record, image)
         BW->>P: pick up the run-block flow run
         BW->>C: start a fresh container from the environment's image
         C->>S3: read the input revision, write a new revision
@@ -279,7 +279,7 @@ Each kind of data has one home, and Prefect holds pointers to model data but nev
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Postgres           | The backend's `users`, `projects` and `runs` tables, plus Keycloak's and Prefect's own databases. A `runs` row has the project, the playbook name and the Prefect flow run id. |
 | Object store       | The versioned stores of model data (datarecord stores), where every block writes a new revision of the model. Prefect's result storage, under `prefect-results/`. The folder `<project uuid>/runs/<run uuid>/output/`, where the backend lists a run's output files. |
-| Prefect            | Each flow run's parameters, state and logs. The parameters of a `run-playbook` flow run are the playbook document, the settings, the starting record and the catalogue. |
+| Prefect            | Each flow run's parameters, state, and logs. The parameters of a `run-playbook` flow run are the playbook document, the input values, the starting record, and the catalogue. |
 
 A record is a pointer, never the model itself: a store URL and the uuid of one revision in that store.
 The store URL is either a local directory or an `s3://` address.
@@ -323,7 +323,7 @@ The package READMEs go into each package in detail:
 The other explanation pages go deeper into one part each:
 
 - [Orchestration with Prefect](orchestration.md) explains the two flows, the work pools and why run state stays in Prefect.
-- [Blocks, playbooks and the catalogue](blocks-and-playbooks.md) explains how a playbook names, wires and checks blocks it cannot import.
+- [Blocks, playbooks and the catalogue](blocks-and-playbooks.md) explains how a playbook names its blocks, and how a process that cannot import them still checks the playbook.
 - [Run lifecycle](run-lifecycle.md) explains where a run is checked and what happens when part of it fails.
 - [Deployment topology](deployment.md) explains how the stack is set up, and what changes on Kubernetes.
 - [Planned changes](planned-changes.md) and [Open questions](open-questions.md) cover what is not built yet.

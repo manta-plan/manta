@@ -4,6 +4,12 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 
 _LIBRARY_PLAYBOOK = "expand"
+_DEFAULT_CONFIG = {
+    "inputs": {"expansion_mode": "overnight"},
+    "expansion_overnight": {},
+    "expansion_myopic": {},
+    "expansion_perfect": {},
+}
 
 
 def _auth_headers(app_server: str, kc_oidc_client: KeycloakOpenID) -> dict[str, str]:
@@ -55,7 +61,7 @@ def test_get_playbook(app_server: str, kc_oidc_client: KeycloakOpenID) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == _LIBRARY_PLAYBOOK
-    assert body["default_config"] == library_playbooks()[_LIBRARY_PLAYBOOK].default_config
+    assert body["default_config"] == _DEFAULT_CONFIG
     catalogue = library_catalogue()
     steps = {step["name"]: step for step in body["steps"]}
     for step in body["steps"]:
@@ -63,7 +69,7 @@ def test_get_playbook(app_server: str, kc_oidc_client: KeycloakOpenID) -> None:
         assert step["block_summary"] == block.doc
         assert step["block_config_schema"] == block.config_schema
     assert steps["expansion_overnight"]["when"] == {
-        "config": "globals.expansion_mode",
+        "config": "inputs.expansion_mode",
         "equals": "overnight",
     }
     assert steps["expansion_overnight"]["inputs"] == {}
@@ -104,10 +110,9 @@ def test_validate_playbook_config_lists_every_issue_with_a_200(
     # Given the default config switched to its myopic branch, which needs a dimension
     # the playbook's data does not have, and with a misspelt setting
     headers = _auth_headers(app_server, kc_oidc_client)
-    default_config = library_playbooks()[_LIBRARY_PLAYBOOK].default_config
     config = {
-        **default_config,
-        "globals": {"expansion_mode": "myopic"},
+        **_DEFAULT_CONFIG,
+        "inputs": {"expansion_mode": "myopic"},
         "expansion_myopic": {"optimize_confg": {}},
     }
 

@@ -5,95 +5,80 @@
 """The seam between a playbook and whatever actually runs its blocks.
 
 An orchestrator plugs in a `BlockRunner` and receives one fully spelled-out block
-invocation at a time; nothing else about running a playbook changes. These tests
-drive the executor with a recording runner, exactly the way Manta's own runner is
-driven, so the contract an orchestrator relies on is pinned down here.
+invocation at a time; nothing else about running a playbook changes. These tests drive
+the executor with a recording runner, the way Manta's own runner is driven, so the
+contract an orchestrator relies on is pinned down here.
 """
 
 import pytest
 
-from playbook.blocks.tests.fakes import (
-    FakeNeedsUpstream,
-    FakePassthrough,
-    FakeStrictConfig,
-    RecordingRunner,
-)
 from playbook.playbooks.execution import execute_playbook
-from playbook.playbooks.playbook import Playbook
-from playbook.playbooks.validation import PlaybookHasIssuesError
+from playbook.playbooks.issues import PlaybookHasIssuesError
 
 
-def test_every_step_reaches_the_runner_with_everything_spelled_out(initial_revision):
-    pb = Playbook(name="p")
-    cluster = pb.add("cluster", FakePassthrough)
-    pb.add("dispatch", FakeNeedsUpstream, inputs={"source": cluster.output})
-
-    runner = RecordingRunner()
-    result = execute_playbook(
-        pb,
-        initial_revision,
-        {"cluster": {"label": "c"}, "dispatch": {}},
-        runner=runner,
+def test_every_step_reaches_the_runner_with_everything_spelled_out(
+    build_playbook, recording_runner, initial_revision
+):
+    pb = build_playbook(
+        {
+            "name": "p",
+            "steps": [
+                {"id": "first", "block": "fake_passthrough", "with": {"label": "c"}},
+                {"id": "second", "block": "fake_passthrough"},
+            ],
+        }
     )
 
-    first, second = runner.calls
-    assert first["block"] == "fake_passthrough"
-    assert first["step_name"] == "cluster"
-    assert first["config"] == {"label": "c"}
-    assert first["revision"] is initial_revision
+    result = execute_playbook(pb, initial_revision, {}, runner=recording_runner)
 
-    # The next step receives the revision the runner returned for the previous one,
-    # and the wired input points at that same result.
-    assert second["revision"].store == f"{initial_revision.store}/cluster"
-    assert second["inputs"] == {"source": second["revision"]}
-    assert result.store == f"{initial_revision.store}/cluster/dispatch"
+    first, second = recording_runner.calls
+    assert first == {
+        "block": "fake_passthrough",
+        "step_path": ("first",),
+        "config": {"label": "c"},
+        "revision": initial_revision,
+    }
+    assert second["step_path"] == ("second",)
+    assert second["revision"].store == f"{initial_revision.store}/first"
+    assert result.store == f"{initial_revision.store}/first/second"
 
 
-def test_a_nested_playbooks_inner_config_reaches_its_steps(initial_revision):
-    inner = Playbook(name="inner")
-    inner.add("leaf", FakePassthrough)
-
-    outer = Playbook(name="outer")
-    outer.add_playbook("regional", inner)
-
-    runner = RecordingRunner()
-    execute_playbook(
-        outer,
-        initial_revision,
-        {"regional": {"leaf": {"label": "deep"}}},
-        runner=runner,
+def test_a_nested_playbooks_step_is_addressed_through_the_step_nesting_it(
+    spec_catalogue, build_playbook, recording_runner, initial_revision
+):
+    pb = build_playbook(
+        {
+            "name": "p",
+            "initial_data": {"dims": ["snapshot"]},
+            "steps": [
+                {
+                    "id": "plan",
+                    "playbook": "capacity_expansion",
+                    "with": {"snapshot": "resampled"},
+                }
+            ],
+        },
+        spec_catalogue,
     )
+    execute_playbook(pb, initial_revision, {}, runner=recording_runner)
+    assert [call["step_path"] for call in recording_runner.calls] == [
+        ("plan", "partition"),
+        ("plan", "expand"),
+    ]
 
-    assert runner.calls[0]["config"] == {"label": "deep"}
 
-
-def test_an_input_wired_into_a_nested_playbook_reaches_the_inner_step(initial_revision):
-    inner = Playbook(name="inner")
-    inner.add("leaf", FakeNeedsUpstream)
-
-    outer = Playbook(name="outer")
-    upstream = outer.add("upstream", FakePassthrough)
-    outer.add_playbook("regional", inner, inputs={"leaf.source": upstream.output})
-
-    runner = RecordingRunner()
-    execute_playbook(
-        outer,
-        initial_revision,
-        {"upstream": {}, "regional": {"leaf": {}}},
-        runner=runner,
+def test_a_playbook_with_issues_never_reaches_the_runner(
+    build_playbook, recording_runner, initial_revision
+):
+    pb = build_playbook(
+        {
+            "name": "p",
+            "steps": [
+                {"id": "first", "block": "fake_passthrough"},
+                {"id": "second", "block": "fake_strict_config"},
+            ],
+        }
     )
-
-    assert runner.calls[1]["inputs"]["source"].store == f"{initial_revision.store}/upstream"
-
-
-def test_a_playbook_with_issues_never_reaches_the_runner(initial_revision):
-    # The second step's settings are wrong, so not even the first step runs: a run
-    # that cannot finish is refused whole, rather than failing partway through.
-    pb = Playbook(name="p")
-    pb.add("first", FakePassthrough)
-    pb.add("second", FakeStrictConfig)
-
-    runner = RecordingRunner()
     with pytest.raises(PlaybookHasIssuesError, match="required_field"):
-        execute_playbook(pb, initial_revision, {"first": {}, "second": {}}, runner=runner)
-    assert runner.calls == []
+        execute_playbook(pb, initial_revision, {}, runner=recording_runner)
+    assert recording_runner.calls == []

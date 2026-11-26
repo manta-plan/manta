@@ -9,21 +9,22 @@ name: expand
 initial_data:
   dims: [snapshot]
 
+inputs:
+  expansion_mode:
+    type: choice
+    options: [overnight, myopic, perfect]
+    default: overnight
+    description: How to optimise capacities over the investment periods.
+
 steps:
-  - name: expansion_overnight
+  - id: expansion_overnight
     block: overnight_capacity_expansion
-    when:
-      config: globals.expansion_mode
-      equals: overnight
+    if: ${{ inputs.expansion_mode == 'overnight' }}
 
-  - name: expansion_myopic
+  - id: expansion_myopic
     block: myopic_capacity_expansion
-    when:
-      config: globals.expansion_mode
-      equals: myopic
+    if: ${{ inputs.expansion_mode == 'myopic' }}
 
-  - name: expansion_perfect
+  - id: expansion_perfect
     block: perfect_capacity_expansion
-    when:
-      config: globals.expansion_mode
-      equals: perfect
+    if: ${{ inputs.expansion_mode == 'perfect' }}

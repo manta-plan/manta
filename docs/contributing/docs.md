@@ -5,7 +5,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Documentation
 
-This page shows how to build the documentation site, refresh the REST API reference, and find the rules a page follows.
+This page shows how to build the documentation site, refresh the generated reference pages, and find the rules a page follows.
 You need [pixi](https://pixi.prefix.dev/) for the site and [uv](https://docs.astral.sh/uv/) for the API schema.
 
 ## Build and serve the site
@@ -49,6 +49,13 @@ pixi run docs-openapi
 This runs `tools/docs/export_openapi.py` in the backend's uv environment.
 It builds the app from the v1 router alone, so no database or other service needs to be running.
 CI exports the schema on every pull request and fails if the result differs from the committed file.
+
+## Refresh the playbook schema reference
+
+The [playbook schema](../reference/playbook/schema.md) page is generated from `playbook/src/playbook/playbooks/playbook.schema.json`, the JSON schema of a playbook document.
+`pixi run docs-build` and `pixi run docs-serve` regenerate the page first, with `tools/docs/gen_playbook_schema.py`.
+To regenerate it alone, run `pixi run docs-playbook-schema`.
+Git ignores the page, so edit the generator rather than the page.
 
 ## Writing rules
 

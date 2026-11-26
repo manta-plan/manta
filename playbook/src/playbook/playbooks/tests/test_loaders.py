@@ -4,77 +4,59 @@
 
 """Fetching the playbooks a playbook refers to.
 
-A reference need not be a file: the loader is the seam a system keeping playbooks in
-a database would replace, so the in-memory loader below has to work exactly as the
-file one does.
+A reference need not be a file: the loader is the seam a block library or a database
+replaces, so the in-memory loader has to work exactly as the file one does.
 """
 
 import pytest
 
-import playbook.blocks.tests.fakes  # noqa: F401 - registers the blocks the documents below name
-from playbook.playbooks.yaml_io import (
-    LoadedPlaybook,
-    PlaybookDoc,
-    PlaybookLoadError,
-    load_playbook,
-    playbook_from_doc,
-)
+from playbook.playbooks.syntax import PlaybookDoc
+from playbook.playbooks.tests.specs import InMemoryPlaybookLoader
+from playbook.playbooks.yaml_io import PlaybookLoadError, load_playbook, playbook_from_doc
+
+LEAF = "name: child\nsteps:\n  - id: inner\n    block: fake_passthrough\n"
 
 
-class InMemoryPlaybookLoader:
-    """A loader backed by a dict, touching no files at all."""
+def nesting(name: str, *locators: str) -> PlaybookDoc:
+    steps = [{"id": f"step{index}", "playbook": locator} for index, locator in enumerate(locators)]
+    return PlaybookDoc.model_validate({"name": name, "steps": steps})
 
-    def __init__(self, docs: dict[str, PlaybookDoc]) -> None:
-        self._docs = docs
 
-    def load(self, locator: str) -> LoadedPlaybook:
-        if locator not in self._docs:
-            raise PlaybookLoadError(f"no playbook stored under {locator!r}")
-        return LoadedPlaybook(key=locator, doc=self._docs[locator], loader=self)
+def nesting_yaml(*locators: str) -> str:
+    steps = "".join(
+        f"  - id: step{index}\n    playbook: {locator}\n" for index, locator in enumerate(locators)
+    )
+    return f"name: outer\nsteps:\n{steps}"
 
 
 def test_a_nested_playbook_can_come_from_somewhere_other_than_a_file():
     child = PlaybookDoc.model_validate(
-        {"name": "child", "steps": [{"name": "inner", "block": "fake_passthrough"}]}
+        {"name": "child", "steps": [{"id": "inner", "block": "fake_passthrough"}]}
     )
-    outer = PlaybookDoc.model_validate(
-        {"name": "outer", "steps": [{"name": "regional", "playbook": "memory://child"}]}
-    )
+    loader = InMemoryPlaybookLoader({"memory://child": child})
 
-    pb = playbook_from_doc(outer, loader=InMemoryPlaybookLoader({"memory://child": child}))
+    pb = playbook_from_doc(nesting("outer", "memory://child"), loader=loader)
 
-    assert len(pb.steps) == 1
-    assert pb.steps[0].playbook.name == "child"
     assert pb.steps[0].playbook.steps[0].block.name == "fake_passthrough"
-    pb.raise_for_issues(config={"regional": {"inner": {}}})
+    assert pb.find_issues({}) == []
 
 
 def test_a_missing_nested_playbook_is_reported_clearly():
-    outer = PlaybookDoc.model_validate(
-        {"name": "outer", "steps": [{"name": "regional", "playbook": "memory://gone"}]}
-    )
     with pytest.raises(PlaybookLoadError, match="memory://gone"):
-        playbook_from_doc(outer, loader=InMemoryPlaybookLoader({}))
+        playbook_from_doc(nesting("outer", "memory://gone"), loader=InMemoryPlaybookLoader({}))
 
 
 def test_a_playbook_that_refers_back_to_itself_is_reported_not_followed():
-    # Two documents that include each other. Following the references would go on
-    # until the process ran out of stack, so the loop is spotted first.
-    a = PlaybookDoc.model_validate(
-        {"name": "a", "steps": [{"name": "to_b", "playbook": "memory://b"}]}
+    loader = InMemoryPlaybookLoader(
+        {"memory://a": nesting("a", "memory://b"), "memory://b": nesting("b", "memory://a")}
     )
-    b = PlaybookDoc.model_validate(
-        {"name": "b", "steps": [{"name": "to_a", "playbook": "memory://a"}]}
-    )
-    loader = InMemoryPlaybookLoader({"memory://a": a, "memory://b": b})
-
     with pytest.raises(PlaybookLoadError, match="circular"):
-        playbook_from_doc(a, loader=loader, _chain=("memory://a",))
+        load_playbook("memory://a", loader=loader)
 
 
 def test_two_files_that_refer_to_each_other_are_reported_not_followed(tmp_path):
-    (tmp_path / "a.yaml").write_text("name: a\nsteps:\n  - name: to_b\n    playbook: b.yaml\n")
-    (tmp_path / "b.yaml").write_text("name: b\nsteps:\n  - name: to_a\n    playbook: a.yaml\n")
+    (tmp_path / "a.yaml").write_text(nesting_yaml("b.yaml"))
+    (tmp_path / "b.yaml").write_text(nesting_yaml("a.yaml"))
 
     with pytest.raises(PlaybookLoadError, match="circular"):
         load_playbook(tmp_path / "a.yaml")
@@ -82,54 +64,43 @@ def test_two_files_that_refer_to_each_other_are_reported_not_followed(tmp_path):
 
 def test_a_file_reference_is_resolved_next_to_the_playbook_that_made_it(tmp_path):
     (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "child.yaml").write_text(
-        "name: child\nsteps:\n  - name: inner\n    block: fake_passthrough\n"
-    )
-    (tmp_path / "outer.yaml").write_text(
-        "name: outer\nsteps:\n  - name: regional\n    playbook: nested/child.yaml\n"
-    )
+    (tmp_path / "nested" / "child.yaml").write_text(LEAF)
+    (tmp_path / "outer.yaml").write_text(nesting_yaml("nested/child.yaml"))
 
-    pb = load_playbook(tmp_path / "outer.yaml")
-    assert pb.steps[0].playbook.name == "child"
+    assert load_playbook(tmp_path / "outer.yaml").steps[0].playbook.name == "child"
 
 
-def test_a_reference_cannot_reach_outside_the_first_playbooks_directory(tmp_path):
-    (tmp_path / "secret.yaml").write_text("name: secret\nsteps: []\n")
-    (tmp_path / "playbooks").mkdir()
-    (tmp_path / "playbooks" / "outer.yaml").write_text(
-        "name: outer\nsteps:\n  - name: sneaky\n    playbook: ../secret.yaml\n"
-    )
-
-    with pytest.raises(PlaybookLoadError, match="points outside"):
-        load_playbook(tmp_path / "playbooks" / "outer.yaml")
-
-
-def test_a_chain_of_references_cannot_walk_out_one_directory_at_a_time(tmp_path):
-    (tmp_path / "secret.yaml").write_text("name: secret\nsteps: []\n")
-    (tmp_path / "playbooks" / "nested").mkdir(parents=True)
-    (tmp_path / "playbooks" / "outer.yaml").write_text(
-        "name: outer\nsteps:\n  - name: down\n    playbook: nested/inner.yaml\n"
-    )
-    (tmp_path / "playbooks" / "nested" / "inner.yaml").write_text(
-        "name: inner\nsteps:\n  - name: out\n    playbook: ../../secret.yaml\n"
-    )
+@pytest.mark.parametrize(
+    ("files", "start"),
+    [
+        pytest.param(
+            {"playbooks/outer.yaml": nesting_yaml("../secret.yaml")},
+            "playbooks/outer.yaml",
+            id="one-step-out",
+        ),
+        pytest.param(
+            {
+                "playbooks/outer.yaml": nesting_yaml("nested/inner.yaml"),
+                "playbooks/nested/inner.yaml": nesting_yaml("../../secret.yaml"),
+            },
+            "playbooks/outer.yaml",
+            id="one-directory-at-a-time",
+        ),
+    ],
+)
+def test_a_reference_cannot_reach_outside_the_first_playbooks_directory(tmp_path, files, start):
+    (tmp_path / "secret.yaml").write_text(LEAF)
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text)
 
     with pytest.raises(PlaybookLoadError, match="points outside"):
-        load_playbook(tmp_path / "playbooks" / "outer.yaml")
+        load_playbook(tmp_path / start)
 
 
 def test_the_same_playbook_used_twice_is_not_mistaken_for_a_loop(tmp_path):
-    (tmp_path / "child.yaml").write_text(
-        "name: child\nsteps:\n  - name: inner\n    block: fake_passthrough\n"
-    )
-    (tmp_path / "outer.yaml").write_text(
-        "name: outer\n"
-        "steps:\n"
-        "  - name: first\n"
-        "    playbook: child.yaml\n"
-        "  - name: second\n"
-        "    playbook: child.yaml\n"
-    )
+    (tmp_path / "child.yaml").write_text(LEAF)
+    (tmp_path / "outer.yaml").write_text(nesting_yaml("child.yaml", "child.yaml"))
 
     pb = load_playbook(tmp_path / "outer.yaml")
-    assert [step.name for step in pb.steps] == ["first", "second"]
+    assert [step.id for step in pb.steps] == ["step0", "step1"]

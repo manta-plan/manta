@@ -82,7 +82,7 @@ one for the requests.
    curl -s -X POST http://localhost:8000/v1/playbooks/expand/validate \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"config": {"globals": {"expansion_mode": "myopic"}}}'
+     -d '{"config": {"inputs": {"expansion_mode": "myopic"}}}'
    ```
 
    Sending `{}` instead checks the `default_config`, which has no issues.
@@ -104,7 +104,12 @@ one for the requests.
    Copy the returned `uuid` as `RUN_UUID`.
 
 7. Follow the run. The first request returns the run's overall `status`, and the
-   `config` and `data_record` it was started with. The second returns each step's `status`:
+   `config` and `data_record` it was started with. The `config` is resolved: it has the
+   default of each input that the run left out, and each step has its `with` merged
+   in. A step that runs has every expression evaluated, and a step that does not run has
+   its `with` as written. A run cannot set what `with` sets, so for a playbook with
+   settings in `with`, the backend refuses this `config` for a new run. The second
+   returns each step's `status`:
    `SKIPPED` when the run's config turns the step off, `NOT_STARTED` before it
    begins, and Prefect's own state from then on, plus its `output` record once
    it has completed, or the `message` with its error if it failed. The third returns the run's

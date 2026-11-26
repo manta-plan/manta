@@ -141,6 +141,8 @@ nav:
       - Open questions: explanation/open-questions.md
   - Reference:
       - reference/index.md
+      - Playbook syntax: reference/playbook/syntax.md
+      - Playbook schema: reference/playbook/schema.md
       - playbook: reference/playbook/api.md
       - runner: reference/runner/api.md
       - REST API: reference/backend/rest-api.md

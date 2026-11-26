@@ -3,9 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-from datarecord import Revision
 
-from playbook.blocks.core import BlockDims, ConfigSchema, MantaBlock, RevisionRef
 from playbook.blocks.registry import (
     BlockDescription,
     BlockNotRegisteredError,
@@ -21,7 +19,7 @@ from playbook.blocks.registry import (
     register_lazy,
     resolve_block,
 )
-from playbook.blocks.tests.fakes import FakeBlock, FakeNeedsUpstream, FakePassthrough
+from playbook.blocks.tests.fakes import FakeBlock, FakePassthrough
 
 
 def test_get_block_resolves_registered_name():
@@ -105,13 +103,11 @@ def test_block_name_refuses_to_guess_for_an_unregistered_block():
 
 
 def test_describe_block_reads_what_the_block_declares():
-    spec = describe_block(FakeNeedsUpstream)
-    assert spec.name == "fake_needs_upstream"
+    spec = describe_block(FakePassthrough)
+    assert spec.name == "fake_passthrough"
     assert spec.env == "default"
-    assert spec.inputs == frozenset({"source"})
-    assert spec.outputs == frozenset({"output"})
     assert spec.available
-    assert spec.block_class() is FakeNeedsUpstream
+    assert spec.block_class() is FakePassthrough
 
 
 def test_resolve_block_by_name_gives_a_usable_block():
@@ -139,50 +135,3 @@ def test_resolve_block_falls_back_to_the_catalogue_for_a_name_nothing_has_regist
 def test_resolve_block_raises_when_neither_registered_nor_in_the_catalogue():
     with pytest.raises(BlockNotRegisteredError):
         resolve_block("fake_never_registered_here", Catalogue())
-
-
-class NotARevisionRefConfig(ConfigSchema):
-    source: int = 0
-
-
-def test_a_block_cannot_wire_an_input_to_a_setting_that_has_no_such_name():
-    with pytest.raises(Exception, match="INPUTS"):
-
-        class Broken(MantaBlock[NotARevisionRefConfig]):
-            ENV = "default"
-            CONFIG = NotARevisionRefConfig
-            DIMS = BlockDims()
-            INPUTS = frozenset({"missing"})
-
-            def run(self, base: Revision) -> Revision:
-                return base
-
-
-def test_a_block_cannot_wire_an_input_to_a_setting_that_cannot_hold_a_revision():
-    with pytest.raises(Exception, match="RevisionRef"):
-
-        class Broken(MantaBlock[NotARevisionRefConfig]):
-            ENV = "default"
-            CONFIG = NotARevisionRefConfig
-            DIMS = BlockDims()
-            INPUTS = frozenset({"source"})
-
-            def run(self, base: Revision) -> Revision:
-                return base
-
-
-class RequiredRevisionConfig(ConfigSchema):
-    source: RevisionRef
-
-
-def test_a_wired_setting_has_to_have_a_default():
-    with pytest.raises(Exception, match="default"):
-
-        class Broken(MantaBlock[RequiredRevisionConfig]):
-            ENV = "default"
-            CONFIG = RequiredRevisionConfig
-            DIMS = BlockDims()
-            INPUTS = frozenset({"source"})
-
-            def run(self, base: Revision) -> Revision:
-                return base

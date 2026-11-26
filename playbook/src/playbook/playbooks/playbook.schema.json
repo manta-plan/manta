@@ -1,7 +1,158 @@
 {
   "$defs": {
+    "BlockStepDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z_]\\w*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "if": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "If"
+        },
+        "block": {
+          "title": "Block",
+          "type": "string"
+        },
+        "with": {
+          "additionalProperties": true,
+          "title": "With",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "block"
+      ],
+      "title": "BlockStepDoc",
+      "type": "object"
+    },
+    "BooleanInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "boolean",
+          "title": "Type",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "BooleanInput",
+      "type": "object"
+    },
+    "ChoiceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "choice",
+          "title": "Type",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Options",
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        }
+      },
+      "required": [
+        "type",
+        "options"
+      ],
+      "title": "ChoiceInput",
+      "type": "object"
+    },
     "InitialDataDoc": {
-      "description": "What the data already looks like before the playbook starts.",
+      "additionalProperties": false,
+      "description": "What the data already looks like before the playbook starts.\n\nThe author of the playbook states these dimensions. We aim to drop this key once\nthe backend can read the data record itself. The dimensions check needs to know\nwhether a dimension is populated, and the manifest of the record shows only that\nthe dimension is recorded.",
       "properties": {
         "dims": {
           "items": {
@@ -14,34 +165,10 @@
       "title": "InitialDataDoc",
       "type": "object"
     },
-    "PlaybookDoc": {
-      "description": "A whole playbook, as written down.",
+    "NumberInput": {
+      "additionalProperties": false,
       "properties": {
-        "initial_data": {
-          "$ref": "#/$defs/InitialDataDoc"
-        },
-        "name": {
-          "title": "Name",
-          "type": "string"
-        },
-        "steps": {
-          "items": {
-            "$ref": "#/$defs/StepDoc"
-          },
-          "title": "Steps",
-          "type": "array"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "PlaybookDoc",
-      "type": "object"
-    },
-    "StepDoc": {
-      "description": "One step, as written down.\n\nA step is either a block, named so it can be looked up, or another playbook. That\nplaybook can be given as a locator to fetch, or written out in place - which is\nwhat a browser sends, having nowhere to put a file.",
-      "properties": {
-        "block": {
+        "description": {
           "anyOf": [
             {
               "type": "string"
@@ -51,18 +178,125 @@
             }
           ],
           "default": null,
-          "title": "Block"
+          "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "number",
+          "title": "Type",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "NumberInput",
+      "type": "object"
+    },
+    "PlaybookDoc": {
+      "additionalProperties": false,
+      "description": "A whole playbook, as written down.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "initial_data": {
+          "$ref": "#/$defs/InitialDataDoc"
         },
         "inputs": {
-          "additionalProperties": {
-            "type": "string"
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_]\\w*$": {
+              "discriminator": {
+                "mapping": {
+                  "boolean": "#/$defs/BooleanInput",
+                  "choice": "#/$defs/ChoiceInput",
+                  "number": "#/$defs/NumberInput",
+                  "string": "#/$defs/StringInput"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/StringInput"
+                },
+                {
+                  "$ref": "#/$defs/NumberInput"
+                },
+                {
+                  "$ref": "#/$defs/BooleanInput"
+                },
+                {
+                  "$ref": "#/$defs/ChoiceInput"
+                }
+              ]
+            }
           },
           "title": "Inputs",
           "type": "object"
         },
-        "name": {
-          "title": "Name",
+        "steps": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BlockStepDoc"
+              },
+              {
+                "$ref": "#/$defs/PlaybookStepDoc"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "steps"
+      ],
+      "title": "PlaybookDoc",
+      "type": "object"
+    },
+    "PlaybookStepDoc": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z_]\\w*$",
+          "title": "Id",
           "type": "string"
+        },
+        "if": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "If"
         },
         "playbook": {
           "anyOf": [
@@ -71,48 +305,78 @@
             },
             {
               "$ref": "#/$defs/PlaybookDoc"
+            }
+          ],
+          "title": "Playbook"
+        },
+        "with": {
+          "additionalProperties": true,
+          "title": "With",
+          "type": "object"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "const": "inherit",
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Playbook"
-        },
-        "when": {
+          "title": "Inputs"
+        }
+      },
+      "required": [
+        "id",
+        "playbook"
+      ],
+      "title": "PlaybookStepDoc",
+      "type": "object"
+    },
+    "StringInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
           "anyOf": [
             {
-              "$ref": "#/$defs/WhenDoc"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
-          "default": null
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "StepDoc",
-      "type": "object"
-    },
-    "WhenDoc": {
-      "description": "A written-down condition on a step.",
-      "properties": {
-        "config": {
-          "title": "Config",
+          "default": null,
+          "title": "Description"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "string",
+          "title": "Type",
           "type": "string"
         },
-        "equals": {
-          "title": "Equals"
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
         }
       },
       "required": [
-        "config",
-        "equals"
+        "type"
       ],
-      "title": "WhenDoc",
+      "title": "StringInput",
       "type": "object"
     }
   },

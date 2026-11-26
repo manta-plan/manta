@@ -11,7 +11,7 @@ of them. That is also why the catalogue exists. Run
     python -m playbook.blocks <block library module>
 
 once per environment and merge the results, and you get a description of every block
-in the system - enough to describe it, offer its settings, and check how it is wired -
+in the system - enough to describe it, offer its settings, and check a playbook using it -
 without needing an environment that can import them all.
 
 Block libraries (such as `playbook_library`) announce their blocks by calling
@@ -35,11 +35,8 @@ if TYPE_CHECKING:
 
 _SNAKE_CASE_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
-CATALOGUE_VERSION = 1
+CATALOGUE_VERSION = 2
 """Bumped when the catalogue's shape changes, so a reader can tell what it has."""
-
-INPUT_MARKER = "x-manta-input"
-"""Marks a setting that another block fills in, so no form asks the user for it."""
 
 
 def _snake_case(name: str) -> str:
@@ -71,7 +68,7 @@ class BlockDescription(BaseModel):
     """Everything about a block that can be known without importing it.
 
     This is what a playbook needs in order to name a block, offer its settings, and
-    work out how it is wired, in a process that cannot import it.
+    check them, in a process that cannot import it.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -84,8 +81,6 @@ class BlockDescription(BaseModel):
     doc: str = ""
     """The first line of the block's docstring, as a one-line summary."""
     dims: BlockDims = BlockDims()
-    inputs: frozenset[str] = frozenset()
-    outputs: frozenset[str] = frozenset({"output"})
     config_schema: dict = Field(default_factory=dict)
     """The block's settings, as a JSON schema."""
 
@@ -98,10 +93,6 @@ class BlockDescription(BaseModel):
             "removes": sorted(dims.removes),
         }
 
-    @field_serializer("inputs", "outputs")
-    def _serialise_names(self, names: frozenset[str]) -> list[str]:
-        return sorted(names)
-
     @classmethod
     def for_block(cls, block: type[MantaBlock], name: str) -> "BlockDescription":
         return cls(
@@ -111,23 +102,8 @@ class BlockDescription(BaseModel):
             module=f"{block.__module__}:{block.__qualname__}",
             doc=(block.__doc__ or "").strip().split("\n")[0],
             dims=block.DIMS,
-            inputs=block.INPUTS,
-            outputs=block.OUTPUTS,
-            config_schema=_tag_wired_settings(block.CONFIG.model_json_schema(), block.INPUTS),
+            config_schema=block.CONFIG.model_json_schema(),
         )
-
-
-def _tag_wired_settings(schema: dict, inputs: frozenset[str]) -> dict:
-    """Mark the settings that another block fills in.
-
-    A form built from this schema should skip them: they are connection points in the
-    playbook, not something a user types.
-    """
-    properties = schema.get("properties", {})
-    for input_name in inputs:
-        if input_name in properties:
-            properties[input_name] = {**properties[input_name], INPUT_MARKER: True}
-    return schema
 
 
 class Catalogue(BaseModel):
@@ -175,14 +151,6 @@ class BlockSpec:
     @property
     def dims(self) -> BlockDims:
         return self.description.dims
-
-    @property
-    def inputs(self) -> frozenset[str]:
-        return self.description.inputs
-
-    @property
-    def outputs(self) -> frozenset[str]:
-        return self.description.outputs
 
     @property
     def config_schema(self) -> dict:

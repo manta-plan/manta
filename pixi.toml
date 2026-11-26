@@ -31,13 +31,16 @@ cmd = "uv run --project backend python tools/docs/export_openapi.py"
 [feature.docs.tasks.docs-rest-api]
 cmd = "python tools/docs/gen_rest_api.py"
 
+[feature.docs.tasks.docs-playbook-schema]
+cmd = "python tools/docs/gen_playbook_schema.py"
+
 [feature.docs.tasks.docs-serve]
 cmd = "python -m zensical serve"
-depends-on = ["docs-rest-api"]
+depends-on = ["docs-rest-api", "docs-playbook-schema"]
 
 [feature.docs.tasks.docs-build]
 cmd = "python -m zensical build --strict"
-depends-on = ["docs-rest-api"]
+depends-on = ["docs-rest-api", "docs-playbook-schema"]
 
 [environments]
 default = ["docs"]
