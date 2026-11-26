@@ -26,7 +26,7 @@ Fill in its sections and keep its headings, checkboxes, and comments, rather tha
 
 Follow [Architecture decision records](docs/contributing/decisions/index.md).
 When a change makes a decision of the kind it describes, say so and offer to draft an ADR.
-When a PR completes an accepted ADR's plan, summarize the design into the ADR and delete the plan folder in the same PR.
+In whichever merges last of the ADR PR and its implementation PRs, rewrite the ADR's design section to describe the design as built, and delete any plan folder.
 
 ## Comments
 

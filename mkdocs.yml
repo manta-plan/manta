@@ -155,4 +155,3 @@ nav:
       - Test deployment: contributing/test-deployment.md
       - Architecture decisions:
           - contributing/decisions/index.md
-          - Template: contributing/decisions/template.md

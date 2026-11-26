@@ -15,39 +15,33 @@ Examples are a service boundary, where data lives, a tool the services depend on
 Decisions about how the team works, such as sprint length, need no ADR.
 Neither does a choice inside one module that the code and its review explain.
 
-## From plan to record
+## Plans
 
-A large decision, such as a new service, starts as a detailed plan and ends as an ADR that summarizes it.
+An ADR has no plan, a short plan, or a long plan:
 
-A plan PR adds the ADR as `NNNN-title.md` with the status Proposed, and the detailed implementation plan in a folder `NNNN-title/` next to it.
-The ADR states the decision and a summary of the design, and links to the plan.
-The team reviews both in the plan PR.
-Implementation PRs link to the plan, and update it where the build departs from it.
+- **No plan.**
+  The ADR records a decision made in a meeting, an issue, or a PR review, and links to where it was made.
+- **A short plan.**
+  The plan is the ADR's design section, so the decision and the plan are one page.
+- **A long plan.**
+  When the plan is too long to review as one page, it goes in a folder `NNNN-title/` next to the ADR for review and implementation.
+  The ADR summarises the plan and links to it.
+  Implementation PRs link to the plan, and update it where the build departs from it.
+  The plan folder is **removed** once implementation is complete, and the ADR retains a final summary.
 
-Once the team agrees on the plan, it continues in one of two ways:
+The last PR to merge, whether the ADR PR or an implementation PR, completes the ADR.
+It rewrites the design section to describe the design as built, deletes any plan folder, and sets the status to Implemented.
+The ADR then links to the plan at its last commit, so the detail stays in the history.
 
-- **The plan PR merges before the implementation**, with the status Accepted.
-  This suits a plan built over several PRs, which then link to the plan on `main`.
-  When the last of them is merged, a final PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, and sets the status to Implemented.
-- **The plan PR stays open during the implementation.**
-  This suits a plan built in one PR, or one the team expects to change while it is built.
-  Once the implementation is approved and merged, the plan PR rewrites the ADR's design section to describe the design as built, deletes the plan folder, sets the status to Implemented, and merges.
-  The plan folder never reaches `main`.
-
-Either way, the ADR then links to the plan at its last commit, so the detail stays reachable in the history.
-
-A small decision needs no plan.
-Its ADR is usually written after the decision was made in a meeting, an issue, or a PR review, and links to where it was made.
-
-An implemented ADR is not edited, except for its status.
+An implemented ADR is not edited, except to update its status or to make its prose clearer.
 To change a decision, write a new ADR and set the old one's status to "Superseded by ADR N".
 This includes a decision made for the MVP and revisited after it.
 
 ## How to write one
 
-1. Copy the [template](template.md) to `NNNN-title.md`, with the decision as the title.
-   `NNNN` is the number of the plan PR, padded to four digits, such as `0303-one-session-container-per-user-and-project.md` for PR #303.
-   A decision without a plan takes the number of the issue where it was made, or of the PR that adds its ADR.
+1. Copy the [template](_template.md) to `NNNN-title.md`, with the decision as the title.
+   `NNNN` is the number of the PR that adds the ADR, or of the issue where the decision was made, padded to four digits.
+   For PR #303, that is `0303-one-session-container-per-user-and-project.md`.
    Issues and PRs share one sequence of numbers on GitHub, so two ADRs never get the same number, and none is renumbered when another is rejected.
    Open the PR as a draft to learn its number before naming the files.
 2. Fill it in.
