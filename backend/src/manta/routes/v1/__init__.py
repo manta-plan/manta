@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from manta.routes.v1.auth_route import router as auth_router
+from manta.routes.v1.chat_route import router as chat_router
 from manta.routes.v1.health_route import router as health_router
 from manta.routes.v1.playbook_route import router as playbook_router
 from manta.routes.v1.project_route import router as project_router
@@ -8,6 +9,7 @@ from manta.routes.v1.run_route import router as run_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
+router.include_router(chat_router)
 router.include_router(health_router)
 router.include_router(playbook_router)
 router.include_router(project_router)

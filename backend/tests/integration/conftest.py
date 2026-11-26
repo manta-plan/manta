@@ -1,10 +1,14 @@
+import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from functools import cache
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -276,17 +280,14 @@ def _wait_until_healthy(base_url: str, process: subprocess.Popen, timeout: float
 
 
 @pytest.fixture(scope="session")
-def app_server(
+def app_env(
     postgres_service: dict[str, str],
     seaweedfs_service: dict[str, str],
     prefect_service: dict[str, str],
     keycloak_service: dict[str, str],
-) -> Iterator[str]:
-    """Runs the real app as a host subprocess on a free port, so the integration
-    suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
-    port = _free_port()
-    base_url = f"http://127.0.0.1:{port}"
-    env = {
+) -> dict[str, str]:
+    """The environment that points an app subprocess at the test stack."""
+    return {
         **os.environ,
         "POSTGRES_HOST": postgres_service["host"],
         "POSTGRES_PORT": postgres_service["port"],
@@ -299,6 +300,11 @@ def app_server(
         "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
     }
 
+
+@contextmanager
+def _run_app(env: dict[str, str]) -> Iterator[str]:
+    port = _free_port()
+    base_url = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
         [
             sys.executable,
@@ -318,3 +324,113 @@ def app_server(
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+
+@pytest.fixture(scope="session")
+def app_server(app_env: dict[str, str]) -> Iterator[str]:
+    """Runs the real app as a host subprocess on a free port, so the integration
+    suite exercises an actual HTTP round trip instead of an in-process ASGI call."""
+    with _run_app(app_env) as base_url:
+        yield base_url
+
+
+class FakeChatModel:
+    """A stand-in for the chat model: an OpenAI-compatible chat-completions API that
+    answers by what the last message of the user says.
+
+    - `use tool <name> <json arguments>`: calls that tool, then answers with the
+      tool's result word for word, so a test can read what the model was given.
+    - `slow`: streams the start of an answer, then waits for `release` before the rest.
+    - anything else: streams a short answer.
+    """
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.payloads: list[dict] = []
+        """Every request body received, oldest first."""
+
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 — the name http.server calls
+                length = int(self.headers["Content-Length"])
+                payload = json.loads(self.rfile.read(length))
+                fake.payloads.append(payload)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                try:
+                    for chunk in fake._chunks(payload):
+                        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                        self.wfile.flush()
+                    self.wfile.write(b"data: [DONE]\n\n")
+                # The app hung up, which is what cancelling an answer does.
+                except OSError:
+                    return
+
+            def log_message(self, *_args) -> None:
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base_url = f"http://127.0.0.1:{self._server.server_port}/v1"
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.release.set()
+        self._server.shutdown()
+        self._server.server_close()
+
+    def _chunks(self, payload: dict) -> Iterator[dict]:
+        messages = payload["messages"]
+        question = next(m["content"] for m in reversed(messages) if m["role"] == "user")
+        if messages[-1]["role"] == "tool":
+            yield _text_chunk(messages[-1]["content"])
+        elif question.startswith("use tool "):
+            name, arguments = question.removeprefix("use tool ").split(" ", 1)
+            call = {"index": 0, "id": "call_1", "function": {"name": name, "arguments": arguments}}
+            yield {"choices": [{"index": 0, "delta": {"tool_calls": [call]}}]}
+        elif question == "slow":
+            yield _text_chunk("Thinking")
+            self.release.wait(timeout=30)
+            yield _text_chunk(" it over.")
+            yield _text_chunk(" Done.")
+        else:
+            yield _text_chunk("Hello")
+            yield _text_chunk(" from the fake model.")
+        yield {"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 5}}
+
+
+def _text_chunk(text: str) -> dict:
+    return {"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
+
+
+@pytest.fixture(scope="session")
+def fake_chat_model() -> Iterator[FakeChatModel]:
+    fake = FakeChatModel()
+    yield fake
+    fake.close()
+
+
+@pytest.fixture(scope="session")
+def chat_app_server(
+    app_env: dict[str, str], app_server: str, fake_chat_model: FakeChatModel
+) -> Iterator[str]:
+    """A second app subprocess with the chat enabled and pointed at the fake model.
+    `app_server` keeps the chat disabled, which is the default and has tests of its
+    own. Started after it, so migrations and example data are already in place.
+
+    One answer at a time, so a test can fill the only slot, and a daily limit low
+    enough for a test to reach. That limit is counted per user in the app's memory
+    for the whole session, so a test that uses it up must be a file's last one."""
+    env = {
+        **app_env,
+        "EXAMPLE_DATA_SEED": "false",
+        "CHAT_ENABLED": "true",
+        "CHAT_BASE_URL": fake_chat_model.base_url,
+        "CHAT_EMBED_BASE_URL": fake_chat_model.base_url,
+        "CHAT_MODEL": "fake-model",
+        "CHAT_MAX_CONCURRENT": "1",
+        "CHAT_DAILY_MESSAGE_LIMIT": "12",
+    }
+    with _run_app(env) as base_url:
+        yield base_url

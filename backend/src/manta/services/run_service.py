@@ -47,12 +47,18 @@ from manta.services.results.run_result import (
     GetRunStepsResult,
     GetRunSummaryResult,
     ListRunsResult,
+    ListUserRunsResult,
     RunStepResult,
+    UserRunResult,
 )
 from manta.services.s3_file_storage_service import S3FileStorageService
 from manta.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+
+_USER_RUNS_STATUS_SCAN = 50
+"""How many of a user's newest runs list_user_runs() looks through for a status. A
+run's status is only known to Prefect, one request per run."""
 
 
 class PrefectUnavailableError(Exception):
@@ -359,6 +365,53 @@ class RunService:
             offset=offset,
             summary=_build_run_summary(run_results),
         )
+
+    def list_user_runs(
+        self, user: User, limit: int, status_filters: list[str] | None = None
+    ) -> ListUserRunsResult:
+        """The user's newest runs over all their projects, newest first.
+
+        With `status_filters`, only the newest `_USER_RUNS_STATUS_SCAN` runs are
+        looked through, so an older run with that status is not found."""
+        projects = {
+            project.id: project
+            for project in self.db.query(Project).filter(Project.owner_id == user.id).all()
+        }
+        normalized_status_filters = _normalize_status_filters(status_filters)
+        runs = (
+            self.db.query(Run)
+            .filter(Run.project_id.in_(list(projects)))
+            .order_by(desc(Run.created_at))
+            .limit(limit if normalized_status_filters is None else _USER_RUNS_STATUS_SCAN)
+            .all()
+        )
+        flow_runs = self._read_project_flow_runs(runs)
+
+        items = [
+            UserRunResult(
+                uuid=run.uuid,
+                project_uuid=projects[run.project_id].uuid,
+                project_name=projects[run.project_id].name,
+                playbook=run.playbook,
+                status=_flow_run_status(flow_runs[run.prefect_flow_run_id]),
+                created_at=run.created_at,
+            )
+            for run in runs
+        ]
+        if normalized_status_filters is not None:
+            items = [item for item in items if item.status.upper() in normalized_status_filters]
+        return ListUserRunsResult(items=items[:limit])
+
+    def owns_run(self, run_uuid: UUID, user: User) -> bool:
+        """Whether the run exists and is the user's. Reads the database only, so it
+        answers without Prefect."""
+        try:
+            self._get_run_with_project(run_uuid, user)
+        except HTTPException as error:
+            if error.status_code in (403, 404):
+                return False
+            raise
+        return True
 
     def get_run_summary(self, project_uuid: UUID, user: User) -> GetRunSummaryResult:
         project = self.user_service.get_owned_project(project_uuid, user)

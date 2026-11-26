@@ -162,6 +162,100 @@
         }
       }
     },
+    "/v1/chat/status": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Chat Status",
+        "operationId": "get_chat_status_v1_chat_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetChatStatusResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/chat/messages": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send Chat Messages",
+        "description": "Sends the conversation so far, ending with the user's new message, and streams\nthe answer as server-sent events, each with JSON data:\n\n- `text_delta`: `{\"text\"}`, the next piece of the answer.\n- `tool_call`: `{\"name\", \"label\"}`, a lookup that has started.\n- `tool_result_summary`: `{\"name\", \"ok\"}`, that lookup has ended.\n- `citation`: `{\"index\", \"title\", \"heading_path\", \"url\"}`, a documentation section\n  the answer can refer to as `[index]`. `url` is relative to the docs root.\n- `usage`: `{\"input_tokens\", \"output_tokens\"}`, when the model reports them.\n- `error`: `{\"code\", \"message\"}`, with code `model_unavailable`, `timeout` or\n  `internal`. Ends the stream.\n- `done`: `{\"finish_reason\"}`, with `stop`, `length` or `tool_limit`. Ends the stream.\n\nA stream that ends without `done` or `error` was interrupted.\n\nNothing is stored: the client keeps the conversation and sends it along each time.",
+        "operationId": "send_chat_messages_v1_chat_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendChatMessagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Chat is disabled."
+          },
+          "429": {
+            "description": "The user's daily message limit is reached (`detail.code` is `daily_limit`), or too many answers are being generated (`concurrency_limit`). `Retry-After` says when to try again."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/v1/health": {
       "get": {
         "summary": "Get Health",
@@ -1023,6 +1117,29 @@
   },
   "components": {
     "schemas": {
+      "ChatMessageRequest": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessageRequest"
+      },
       "CreateProjectRequest": {
         "properties": {
           "name": {
@@ -1139,6 +1256,44 @@
           "revision_uuid"
         ],
         "title": "DataRecordResult"
+      },
+      "GetChatStatusResult": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "max_messages": {
+            "type": "integer",
+            "title": "Max Messages"
+          },
+          "max_message_chars": {
+            "type": "integer",
+            "title": "Max Message Chars"
+          },
+          "max_history_chars": {
+            "type": "integer",
+            "title": "Max History Chars"
+          },
+          "daily_message_limit": {
+            "type": "integer",
+            "title": "Daily Message Limit"
+          },
+          "messages_used_today": {
+            "type": "integer",
+            "title": "Messages Used Today"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "max_messages",
+          "max_message_chars",
+          "max_history_chars",
+          "daily_message_limit",
+          "messages_used_today"
+        ],
+        "title": "GetChatStatusResult"
       },
       "GetPlaybookResult": {
         "properties": {
@@ -1858,6 +2013,36 @@
           "output"
         ],
         "title": "RunStepResult"
+      },
+      "SendChatMessagesRequest": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageRequest"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Messages"
+          },
+          "run_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Uuid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "SendChatMessagesRequest"
       },
       "UpdateProjectRequest": {
         "properties": {

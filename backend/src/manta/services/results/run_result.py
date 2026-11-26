@@ -45,6 +45,23 @@ class ListRunsResult(BaseModel):
     summary: GetRunSummaryResult
 
 
+class UserRunResult(BaseModel):
+    """A run as listed across all of a user's projects. Leaves out the config and the
+    data record, which GetRunResult has."""
+
+    uuid: UUID
+    project_uuid: UUID
+    project_name: str
+    playbook: str
+    status: str
+    created_at: datetime
+
+
+class ListUserRunsResult(BaseModel):
+    items: list[UserRunResult]
+    """Newest first."""
+
+
 class RunStepResult(BaseModel):
     name: str
     """The step's own name within its playbook, e.g. `dispatch` (see

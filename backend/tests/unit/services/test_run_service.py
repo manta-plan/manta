@@ -1165,3 +1165,124 @@ def test_ensure_no_active_runs_rejects_non_owner() -> None:
         RunService(db=MagicMock(), user_service=UserService(MagicMock())).ensure_no_active_runs(
             _existing_project(owner_id=1), _existing_user(user_id=2)
         )
+
+
+def _two_runs_of_one_project(monkeypatch: pytest.MonkeyPatch, mock_db_class):
+    """A project with a COMPLETED and a FAILED run, newest first, and the session
+    that returns them."""
+    project = _existing_project()
+    completed_run = _existing_run(project)
+    failed_run = _existing_run(project)
+    failed_run.id = 2
+    failed_run.uuid = uuid4()
+    failed_run.prefect_flow_run_id = uuid4()
+    db = mock_db_class(query_results={Project: [project], Run: [completed_run, failed_run]})
+    monkeypatch.setattr(
+        run_service_module,
+        "_read_flow_runs",
+        MagicMock(
+            return_value={
+                completed_run.prefect_flow_run_id: _fake_flow_run("COMPLETED"),
+                failed_run.prefect_flow_run_id: _fake_flow_run("FAILED"),
+            }
+        ),
+    )
+    return project, completed_run, failed_run, db
+
+
+def test_list_user_runs_returns_the_users_runs_with_their_project_and_status(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project, completed_run, failed_run, db = _two_runs_of_one_project(monkeypatch, mock_db_class)
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    result = service.list_user_runs(user=_existing_user(), limit=5)
+
+    # Then
+    assert [(run.uuid, run.status) for run in result.items] == [
+        (completed_run.uuid, "COMPLETED"),
+        (failed_run.uuid, "FAILED"),
+    ]
+    assert [(run.project_uuid, run.project_name) for run in result.items] == [
+        (project.uuid, "North Sea Wind")
+    ] * 2
+    assert db.last_query.limit_value == 5
+    # A run lists no config and no data record: those are for its owner's own pages.
+    assert set(type(result.items[0]).model_fields) == {
+        "uuid",
+        "project_uuid",
+        "project_name",
+        "playbook",
+        "status",
+        "created_at",
+    }
+
+
+def test_list_user_runs_filters_by_status_within_the_newest_runs(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    _, _, failed_run, db = _two_runs_of_one_project(monkeypatch, mock_db_class)
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    result = service.list_user_runs(user=_existing_user(), limit=1, status_filters=["failed"])
+
+    # Then: more runs than asked for were read, since the status is not in the database
+    assert [run.uuid for run in result.items] == [failed_run.uuid]
+    assert db.last_query.limit_value == run_service_module._USER_RUNS_STATUS_SCAN
+
+
+def test_list_user_runs_is_empty_for_a_user_without_projects(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    db = mock_db_class(query_results={Project: [], Run: []})
+    monkeypatch.setattr(run_service_module, "_read_flow_runs", MagicMock(return_value={}))
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When
+    result = service.list_user_runs(user=_existing_user(), limit=10)
+
+    # Then
+    assert result.items == []
+
+
+def test_owns_run_is_true_for_the_owners_run_without_asking_prefect(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class
+) -> None:
+    # Given
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    db = mock_db_class(query_results={Run: run, Project: project})
+    get_client = MagicMock()
+    monkeypatch.setattr(run_service_module, "get_client", get_client)
+    service = RunService(db=db, user_service=UserService(db))
+
+    # When/Then
+    assert service.owns_run(run.uuid, _existing_user(user_id=1)) is True
+    get_client.assert_not_called()
+
+
+def test_owns_run_is_false_for_someone_elses_run_and_for_an_unknown_one(mock_db_class) -> None:
+    # Given
+    project = _existing_project(owner_id=1)
+    run = _existing_run(project)
+    someone_elses = mock_db_class(query_results={Run: run, Project: project})
+    unknown = mock_db_class(query_results={Run: None})
+
+    # When/Then
+    assert (
+        RunService(db=someone_elses, user_service=UserService(someone_elses)).owns_run(
+            run.uuid, _existing_user(user_id=2, username="mallory")
+        )
+        is False
+    )
+    assert (
+        RunService(db=unknown, user_service=UserService(unknown)).owns_run(
+            uuid4(), _existing_user()
+        )
+        is False
+    )
