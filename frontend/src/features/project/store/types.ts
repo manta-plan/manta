@@ -58,6 +58,14 @@ export interface LoadedRecord {
 
 export type UtilityDrawerFlow = "ai-chat" | "share";
 
+/** A run the chat is asked about, and the question to start with. */
+export interface AiChatRequest {
+  /** Counts the requests, so that each one starts a new conversation. */
+  id: number;
+  run: { id: string; name: string };
+  question: string;
+}
+
 export interface ScenarioSelection {
   scenarioId: string;
   mutationId: string | null;
@@ -136,6 +144,10 @@ export interface ProjectState {
   utilityDrawerFlow: UtilityDrawerFlow | null;
   toggleUtilityDrawer: (flow: UtilityDrawerFlow) => void;
   closeUtilityDrawer: () => void;
+  /** What the chat was opened with; null when it was opened from the header, or is closed. */
+  aiChatRequest: AiChatRequest | null;
+  /** Opens the chat on a new conversation about `run`, with `question` ready to send. */
+  openAiChat: (request: Omit<AiChatRequest, "id">) => void;
 
   /** Closes the tab-specific drawers (the scenario change table, the inner right stack) on project tab changes. */
   closePageDrawers: () => void;

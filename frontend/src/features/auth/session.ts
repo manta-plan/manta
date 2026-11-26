@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 
+import { clearStoredChats } from "../chat/storage";
 import type { RefreshResponse, TokenResponse } from "./types";
 
 // Access token, refresh token and their expiries live under one key so another
@@ -110,6 +111,8 @@ export function clearSession() {
   for (const storage of [window.sessionStorage, window.localStorage]) {
     storage.removeItem(sessionStorageKey);
   }
+  // The chat this tab keeps belongs to the user who is leaving.
+  clearStoredChats();
   notifyListeners();
 }
 

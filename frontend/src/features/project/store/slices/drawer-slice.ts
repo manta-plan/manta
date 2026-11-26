@@ -1,11 +1,23 @@
-import type { ProjectStoreSet, UtilityDrawerFlow } from "../types";
+import type { AiChatRequest, ProjectStoreSet, UtilityDrawerFlow } from "../types";
 
 export function createDrawerSlice(set: ProjectStoreSet) {
   return {
     utilityDrawerFlow: null,
     toggleUtilityDrawer: (flow: UtilityDrawerFlow) =>
-      set((state) => ({ utilityDrawerFlow: state.utilityDrawerFlow === flow ? null : flow })),
-    closeUtilityDrawer: () => set({ utilityDrawerFlow: null }),
+      set((state) => ({
+        utilityDrawerFlow: state.utilityDrawerFlow === flow ? null : flow,
+        aiChatRequest: null,
+      })),
+    closeUtilityDrawer: () => set({ utilityDrawerFlow: null, aiChatRequest: null }),
+
+    // The run and question a "Why did this fail?" opens the chat with. Closing the drawer drops
+    // them, so the header's Ask Rai opens a chat about no run.
+    aiChatRequest: null,
+    openAiChat: (request: Omit<AiChatRequest, "id">) =>
+      set((state) => ({
+        utilityDrawerFlow: "ai-chat",
+        aiChatRequest: { ...request, id: (state.aiChatRequest?.id ?? 0) + 1 },
+      })),
 
     // Closes what a tab opened, on leaving the tab.
     closePageDrawers: () =>

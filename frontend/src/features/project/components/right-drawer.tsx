@@ -100,6 +100,7 @@ function SharePanel() {
 export function RightDrawer() {
   const utilityDrawerFlow = useProjectStore((s) => s.utilityDrawerFlow);
   const closeUtilityDrawer = useProjectStore((s) => s.closeUtilityDrawer);
+  const aiChatRequest = useProjectStore((s) => s.aiChatRequest);
   const isRunNodeOpen = useProjectStore((s) => s.configuringRunNodeId !== null);
   const closeRunNodeConfigDrawer = useProjectStore((s) => s.closeRunNodeConfigDrawer);
 
@@ -162,7 +163,12 @@ export function RightDrawer() {
         </div>
         <div className="flex flex-1 flex-col overflow-hidden">
           {utilityDrawerFlow === "ai-chat" ? (
-            <AiChatView />
+            // Keyed by the request, so each "Why did this fail?" starts a new conversation.
+            <AiChatView
+              key={aiChatRequest?.id ?? "header"}
+              run={aiChatRequest?.run}
+              question={aiChatRequest?.question}
+            />
           ) : utilityDrawerFlow === "share" ? (
             <SharePanel />
           ) : (

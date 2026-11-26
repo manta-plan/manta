@@ -5,6 +5,7 @@ import { Link, useLocation } from "wouter";
 import { isObject } from "../../../utils/jsonObject";
 import type { PlaybookConfig, PlaybookDetail, PlaybookStep } from "../../../utils/playbookTypes";
 import { isStepActive } from "../../playbook-config/conditions";
+import { RaiMascot } from "../../project/components/rai-mascot";
 import { projectRunHref } from "../../project/lib/project-route";
 import { useProjectStore } from "../../project/store/project-store";
 import { describeStepErrors, getActiveSteps, getStepErrors } from "../run-draft";
@@ -22,6 +23,8 @@ import { RunStatusBadge } from "./run-status-badge";
 const messageVisibilityMs = 10_000;
 // The run logs refresh at this interval until the run is finished.
 const logsRefreshMs = 10_000;
+// What "Why did this fail?" puts in the chat, ready to send.
+const whyFailedQuestion = "Why did this run fail?";
 
 const cardLabelClassName = "text-surface-400 text-[11px] font-semibold tracking-wide uppercase";
 
@@ -100,6 +103,7 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
   const closeRunNodeConfigDrawer = useProjectStore((s) => s.closeRunNodeConfigDrawer);
   const configuringRunNodeId = useProjectStore((s) => s.configuringRunNodeId);
   const openRunNodeConfigDrawer = useProjectStore((s) => s.openRunNodeConfigDrawer);
+  const openAiChat = useProjectStore((s) => s.openAiChat);
 
   const kind = selected?.kind;
   const playbookName =
@@ -232,6 +236,21 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
         <h1 className="text-surface-50 min-w-0 truncate text-[13px] font-semibold">
           {draft?.playbook ?? (selected.kind === "run" ? selected.run.name : "")}
         </h1>
+        {selected.kind === "run" && (runStatus === "FAILED" || runStatus === "CRASHED") ? (
+          <button
+            className="border-surface-600 text-surface-200 hover:bg-surface-700 focus-visible:outline-accent-400 ml-auto inline-flex h-7 shrink-0 items-center gap-1.5 rounded border px-2 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
+            onClick={() =>
+              openAiChat({
+                run: { id: selected.run.id, name: selected.run.name },
+                question: whyFailedQuestion,
+              })
+            }
+            type="button"
+          >
+            <RaiMascot className="text-accent-500" size={18} />
+            Why did this fail?
+          </button>
+        ) : null}
       </div>
 
       <div className="border-surface-600 shrink-0 border-b p-3">
