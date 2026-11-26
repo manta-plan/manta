@@ -159,3 +159,82 @@ export function WidgetBody({ state, children }: { state?: LoadState; children: R
     </>
   );
 }
+
+/** A few short lines standing in for small text: a list of columns, some counts. */
+export function LinesSkeleton({
+  lines = 4,
+  label = "Loading",
+}: {
+  lines?: number;
+  label?: string;
+}) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col gap-2 py-1">
+      {Array.from({ length: lines }, (_, index) => (
+        <SkeletonBlock key={index} className="h-3" style={{ width: skeletonWidth(index) }} />
+      ))}
+    </div>
+  );
+}
+
+/** A table's rows standing in for a preview: a header, then `rows` rows of `columns` cells. */
+export function TableSkeleton({
+  rows = 8,
+  columns = 5,
+  label = "Loading",
+}: {
+  rows?: number;
+  columns?: number;
+  label?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="border-surface-700 overflow-hidden rounded border"
+    >
+      {Array.from({ length: rows + 1 }, (_, row) => (
+        <div
+          key={row}
+          className={`flex gap-3 px-2 py-1.5 ${row === 0 ? "border-surface-600 bg-surface-800 border-b" : "border-surface-700/60 border-b last:border-0"}`}
+        >
+          {Array.from({ length: columns }, (_, column) => (
+            <SkeletonBlock
+              key={column}
+              className={`h-3 flex-1 ${row === 0 ? "bg-surface-700" : ""}`}
+              style={{ maxWidth: `${55 + ((row * 7 + column * 13) % 40)}%` }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A page of widgets while it loads: its header, then `cards` widget cards. */
+export function PageSkeleton({ cards = 2, label = "Loading" }: { cards?: number; label?: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="bg-surface-900 flex h-full flex-col gap-3 overflow-hidden p-4"
+    >
+      <div className="flex flex-col gap-1.5 pb-1">
+        <SkeletonBlock className="h-4 w-48" />
+        <SkeletonBlock className="h-3 w-80" />
+      </div>
+      {Array.from({ length: cards }, (_, index) => (
+        <div
+          key={index}
+          className="border-surface-700 bg-surface-900 flex h-72 shrink-0 flex-col rounded border p-3"
+        >
+          <SkeletonBlock className="h-3.5 w-56" />
+          <SkeletonBlock className="mt-1.5 h-3 w-72" />
+          <div className="relative mt-2 flex-1">
+            <WidgetSkeleton />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

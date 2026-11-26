@@ -6,7 +6,7 @@ function openScenarioDisclosure(tourId: string) {
   if (disclosure?.getAttribute("aria-expanded") === "false") disclosure.click();
 }
 
-function startAfterRender(steps: DriveStep[], onDestroyed?: () => void) {
+export function startAfterRender(steps: DriveStep[], onDestroyed?: () => void) {
   window.requestAnimationFrame(() => {
     driver({
       animate: true,
@@ -200,74 +200,6 @@ export function startRunWorkspaceTour() {
     hasRealRunItem
       ? undefined
       : () => useProjectStore.getState().setRunTourPlaceholderVisible(false),
-  );
-}
-
-export function startReportWorkspaceTour() {
-  // Same stand-in approach as the Run tour when there's no report yet.
-  const hasRealReportItem = Boolean(document.querySelector('[data-tour="report-item"]'));
-  if (!hasRealReportItem) useProjectStore.getState().setReportTourPlaceholderVisible(true);
-  startAfterRender(
-    [
-      {
-        element: '[data-tour="reports-panel"]',
-        popover: {
-          title: "Reports",
-          description: "This panel lists every report in the project.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="new-report-action"]',
-        popover: {
-          title: "Create a report",
-          description: "Use this action to open the new-report form.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="report-item"]',
-        popover: {
-          title: "Select a report",
-          description: "Select a row to open its dashboard. Select it again to return here.",
-          side: "right",
-          align: "center",
-        },
-      },
-      {
-        element: '[data-tour="run-main-section"]',
-        popover: {
-          title: "Report workspace",
-          description:
-            "This area shows the selected report dashboard. When no report is selected, it provides this overview and tour.",
-          side: "left",
-          align: "center",
-        },
-      },
-      {
-        element: '[data-tour="scenario-runs-panel"]',
-        popover: {
-          title: "Run results",
-          description: "These are the run results a report can be built from.",
-          side: "right",
-          align: "start",
-        },
-      },
-      {
-        element: '[data-tour="report-result-item"]',
-        popover: {
-          title: "Create from a result",
-          description: "Select a run result to prefill the new-report form with it.",
-          side: "right",
-          align: "center",
-        },
-      },
-    ],
-    hasRealReportItem
-      ? undefined
-      : () => useProjectStore.getState().setReportTourPlaceholderVisible(false),
   );
 }
 
