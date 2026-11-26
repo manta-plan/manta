@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from keycloak.exceptions import KeycloakError, KeycloakPostError
@@ -7,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
 from manta.services.errors import AuthenticationError, BackendError
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 
 ISSUER = "http://localhost:8080/realms/manta"
 
@@ -22,6 +24,7 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     # Given
     existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
     existing_user.id = 1
+    existing_user.uuid = uuid4()
     mock_db = mock_db_class(query_results={User: existing_user})
     mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
 
@@ -29,7 +32,7 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     user = _authenticate(mock_db, mock_kc_client, "some-token")
 
     # Then
-    assert user is existing_user
+    assert user == AuthenticatedUserResult(id=1, uuid=existing_user.uuid, username="alice")
 
 
 def test_authenticate_rejects_unregistered_user(mock_db, mock_kc_client) -> None:
@@ -104,7 +107,7 @@ def test_login_creates_user_from_token_claims_on_first_login(mock_db, mock_kc_cl
     assert user.username == "alice"
     assert user.idp_subject == "abc-123"
     assert user.idp_source == ISSUER
-    example_data.create_project.assert_called_once_with(owner=user)
+    example_data.create_project.assert_called_once_with(owner_id=user.id)
     assert result.access_token == "some-access"  # noqa: S105 It's not a password
     assert result.refresh_token == "some-refresh"  # noqa: S105 It's not a password
 
@@ -373,7 +376,7 @@ def test_login_as_guest_creates_keycloak_and_manta_users_and_returns_tokens(
     assert user.username == payload["username"]
     assert user.idp_subject == "kc-guest-id"
     assert user.idp_source == ISSUER
-    example_data.create_project.assert_called_once_with(owner=user)
+    example_data.create_project.assert_called_once_with(owner_id=user.id)
 
     assert result.access_token == "guest-access"  # noqa: S105 It's not a password
     assert result.refresh_token == "guest-refresh"  # noqa: S105 It's not a password

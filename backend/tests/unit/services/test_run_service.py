@@ -11,10 +11,11 @@ from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
 from runner.flows import OUTPUT_ARTIFACT_KEY, catalogue_parameter
 
-from manta.entities import Project, Run, User
+from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.run_result import DataRecordResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -61,16 +62,8 @@ def _library_playbook_service() -> PlaybookService:
     return PlaybookService(playbooks=library_playbooks(), catalogue=library_catalogue())
 
 
-def _existing_user(user_id: int = 1, username: str = "alice") -> User:
-    user = User(
-        username=username,
-        idp_subject=f"abc-{user_id}",
-        idp_source="https://idp.example/realms/manta",
-    )
-    user.id = user_id
-    user.uuid = uuid4()
-    user.created_at = datetime.now(UTC)
-    return user
+def _existing_user(user_id: int = 1, username: str = "alice") -> AuthenticatedUserResult:
+    return AuthenticatedUserResult(id=user_id, uuid=uuid4(), username=username)
 
 
 def _existing_project(owner_id: int = 1) -> Project:

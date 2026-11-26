@@ -8,7 +8,6 @@ import pytest
 from botocore.exceptions import BotoCoreError
 
 from manta.config.example_data_config import ADMIN_IDP_SUBJECT, ADMIN_USERNAME
-from manta.entities import User
 from manta.services import example_data_service
 from manta.services.example_data_service import (
     PUBLIC_DATA_VERSION,
@@ -135,7 +134,7 @@ def test_create_project_keeps_the_project_when_copying_the_example_data_fails(
     s3_client.copy_object.side_effect = BotoCoreError()
 
     # When
-    _service(mock_db, s3_client).create_project(User(username="alice"))
+    _service(mock_db, s3_client).create_project(owner_id=1)
 
     # Then
     mock_db.commit.assert_called_once()
