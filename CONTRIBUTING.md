@@ -39,6 +39,7 @@ To sign off an open PR, you can add an empty commit with just the trailer.
 
 Write one sentence per line, with no line breaks at a fixed width.
 A diff of an edited sentence then shows that sentence alone, rather than the rest of a reflowed paragraph.
+A sentence too long to read on one line may break after a comma or colon, so each line holds one clause.
 This applies to Markdown files in the repository, not to PR or issue bodies, where GitHub renders each line break.
 <!-- --8<-- [end:docs-general] -->
 
