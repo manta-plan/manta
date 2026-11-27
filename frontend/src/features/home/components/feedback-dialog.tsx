@@ -2,43 +2,43 @@ import { useState, type ClipboardEvent } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation } from "wouter";
 import clsx from "clsx";
-import type { IconType } from "react-icons";
 import {
-  LuBug,
   LuCircleCheck,
   LuCrop,
-  LuLightbulb,
   LuLoaderCircle,
   LuMessageSquareText,
   LuPencil,
   LuX,
 } from "react-icons/lu";
-import { sendFeedback, type FeedbackKind } from "../lib/send-feedback";
+import { sendFeedback, type FeedbackCategory } from "../lib/send-feedback";
 import { FeedbackImageError, prepareFeedbackImage } from "../lib/feedback-image";
 import { captureRegion, type Rect } from "../lib/capture-region";
 import { RegionSelector } from "./region-selector";
 import { ScreenshotEditor } from "./screenshot-editor";
-import { useAppStore } from "../store";
+import { ApiError } from "../../../api/manta";
 import { useFeedbackDraft } from "../lib/feedback-draft";
 import { useZoomPan } from "../../../utils/useZoomPan";
 
-const KINDS: { value: FeedbackKind; label: string; icon: IconType; placeholder: string }[] = [
+const CATEGORIES: { value: FeedbackCategory; label: string; placeholder: string }[] = [
   {
-    value: "bug",
-    label: "Bug",
-    icon: LuBug,
+    value: "bug_report",
+    label: "Bug report",
     placeholder: "What happened, and what did you expect instead?",
   },
   {
-    value: "idea",
-    label: "Idea",
-    icon: LuLightbulb,
+    value: "feature_request",
+    label: "Feature request",
     placeholder: "What would you like Manta to do?",
   },
-  { value: "other", label: "Other", icon: LuMessageSquareText, placeholder: "Tell us anything." },
+  {
+    value: "pain_point",
+    label: "Pain point",
+    placeholder: "What is hard, slow or confusing?",
+  },
+  { value: "question", label: "Question", placeholder: "What would you like to know?" },
 ];
 
-// Rows land in the team's feedback Google Sheet via sendFeedback.
+// The backend adds the username and files it in the team's feedback sheet.
 export function FeedbackDialog({
   open,
   onOpenChange,
@@ -47,9 +47,7 @@ export function FeedbackDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [location] = useLocation();
-  const theme = useAppStore((s) => s.theme);
-  const { kind, message, includePage, image, update, setImage, clear } = useFeedbackDraft();
-  const [website, setWebsite] = useState("");
+  const { category, message, includePage, image, update, setImage, clear } = useFeedbackDraft();
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSent, setIsSent] = useState(false);
@@ -61,7 +59,7 @@ export function FeedbackDialog({
   // the outside-press / Escape closes they would otherwise trigger.
   const overlayActive = isSelecting || isEditing;
 
-  const activeKind = KINDS.find((k) => k.value === kind) ?? KINDS[0];
+  const activeCategory = CATEGORIES.find((c) => c.value === category) ?? CATEGORIES[0];
   const canSend = message.trim().length > 0 && !isSending && !isPreparingImage;
 
   const attachImage = async (file: File) => {
@@ -112,21 +110,16 @@ export function FeedbackDialog({
     setError(null);
     try {
       await sendFeedback({
-        type: kind,
+        category,
         message: message.trim(),
         page: includePage ? location : "",
-        theme,
-        website,
-        image: image ? { name: image.name, type: image.type, base64: image.base64 } : undefined,
+        screenshot: image?.base64,
       });
       setIsSent(true);
     } catch (err) {
-      // The sheet rejects bad images with a specific reason; anything else is
-      // most likely the network.
-      const reason = err instanceof Error ? err.message : "";
       setError(
-        /^(Image too large|Invalid image type)$/.test(reason)
-          ? `The screenshot couldn't be uploaded (${reason.toLowerCase()}). Remove it or try another.`
+        err instanceof ApiError && err.status === 422
+          ? "The screenshot couldn't be sent. Remove it or take another."
           : "Couldn't send your feedback. Check your connection and try again.",
       );
     } finally {
@@ -141,7 +134,6 @@ export function FeedbackDialog({
       // The draft stays so the dialog can be reopened to carry on; only a
       // sent message is cleared.
       if (isSent) clear();
-      setWebsite("");
       setError(null);
       setIsSent(false);
       setImageError(null);
@@ -198,42 +190,36 @@ export function FeedbackDialog({
                 Found a bug or have an idea? Let us know what's working and what isn't.
               </Dialog.Description>
 
-              <div role="radiogroup" aria-label="Feedback type" className="grid grid-cols-3 gap-2">
-                {KINDS.map((option) => {
-                  const Icon = option.icon;
-                  const selected = option.value === kind;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => update({ kind: option.value })}
-                      className={clsx(
-                        "flex h-9 items-center justify-center gap-1.5 rounded border text-[12px] font-medium outline-none transition-colors",
-                        selected
-                          ? "border-accent-500 bg-accent-600/15 text-surface-50"
-                          : "border-surface-600 bg-surface-900 text-surface-300 hover:border-surface-500 hover:text-surface-100",
-                      )}
-                    >
-                      <Icon size={14} className={selected ? "text-accent-400" : undefined} />
+              <label className="flex flex-col gap-1">
+                <span className="text-surface-400 text-[11px] font-medium">Category</span>
+                <select
+                  value={category}
+                  onChange={(event) => update({ category: event.target.value as FeedbackCategory })}
+                  className="border-surface-600 bg-surface-900 text-surface-50 focus:border-accent-500 h-9 rounded border px-2 text-[13px] outline-none"
+                >
+                  {CATEGORIES.map((option) => (
+                    <option key={option.value} value={option.value}>
                       {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <label className="mt-4 flex flex-col gap-1">
                 <span className="text-surface-400 text-[11px] font-medium">Message</span>
                 <textarea
                   value={message}
                   onChange={(event) => update({ message: event.target.value })}
-                  placeholder={activeKind.placeholder}
+                  placeholder={activeCategory.placeholder}
                   onPaste={handlePaste}
                   rows={5}
                   autoFocus
                   className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 resize-none rounded border px-2 py-1.5 text-[13px] outline-none"
                 />
+                <span className="text-surface-500 text-[11px]">
+                  Please don't include personal data, such as names, email addresses or passwords,
+                  in your message or screenshot.
+                </span>
               </label>
 
               <div className="mt-3 flex flex-col gap-1">
@@ -302,19 +288,6 @@ export function FeedbackDialog({
                   <span className="text-surface-500 font-mono text-[11px]">{location}</span>
                 </span>
               </label>
-
-              {/* Honeypot: off-screen and skipped by keyboard and autofill, so
-                  only bots fill it in. */}
-              <input
-                type="text"
-                name="website"
-                value={website}
-                onChange={(event) => setWebsite(event.target.value)}
-                tabIndex={-1}
-                autoComplete="off"
-                aria-hidden
-                className="absolute -left-[9999px] h-px w-px opacity-0"
-              />
 
               {error && (
                 <p role="alert" className="text-danger-400 mt-3 text-[12px]">

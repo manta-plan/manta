@@ -195,6 +195,19 @@ client, so clients can't call Keycloak directly.
   stay valid until they expire, since they're verified by signature alone.
 - Logging out an already-ended session returns `204`. An invalid refresh
   token returns `401`.
+## Feedback
+
+`POST /v1/feedback` takes feedback from signed-in users and forwards it to an
+Apps Script web app that appends it to a Google Sheet (source and setup:
+`tools/feedback-apps-script`). The backend adds the username and gives an
+optional screenshot (a base64 PNG) a random UUID, which the script saves the
+file under and records in the row.
+
+The backend can only add feedback, never read or delete it, so it survives a
+compromised or wiped app. Set `FEEDBACK_SCRIPT_URL` and
+`FEEDBACK_SCRIPT_SECRET` in the deploy's `backend/.env`. Without a URL the
+endpoint returns `503`.
+
 <!-- --8<-- [end:docs-dev] -->
 
 ## Manually testing a run
