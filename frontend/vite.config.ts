@@ -4,17 +4,26 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 
-// The short git commit of the build, shown in feedback reports.
-function appVersion() {
+function git(...args: string[]) {
   try {
-    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
-      stdio: ["ignore", "pipe", "ignore"],
-    })
+    return execFileSync("git", args, { stdio: ["ignore", "pipe", "ignore"] })
       .toString()
       .trim();
   } catch {
-    return "unknown";
+    return "";
   }
+}
+
+// The git commit of the build and its date, shown in the About dialog and in
+// feedback reports. A Docker build has no .git, so frontend/Dockerfile passes
+// them in as GIT_COMMIT and GIT_COMMIT_DATE.
+function appVersion() {
+  const commit = process.env.GIT_COMMIT || git("rev-parse", "HEAD");
+  return commit ? commit.slice(0, 7) : "unknown";
+}
+
+function appCommitDate() {
+  return process.env.GIT_COMMIT_DATE || git("log", "-1", "--format=%cI") || "";
 }
 
 // https://vite.dev/config/
@@ -29,6 +38,7 @@ export default defineConfig(({ mode }) => {
     plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion()),
+      __APP_COMMIT_DATE__: JSON.stringify(appCommitDate()),
     },
     server: {
       proxy: {

@@ -1,8 +1,16 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { format } from "date-fns";
 import { LuX } from "react-icons/lu";
 import { MantaLogo } from "../../home/components/manta-logo";
 
-// Placeholder until there's a real version and credits to show.
+// The commit date as YYYY-MM-DD in the viewer's time zone, or "" if unknown.
+function commitDate() {
+  const date = new Date(__APP_COMMIT_DATE__);
+  return Number.isNaN(date.getTime()) ? "" : format(date, "yyyy-MM-dd");
+}
+
+// Shows which build is running: the git commit it was built from and that
+// commit's date. Credits can go here later.
 export function AboutDialog({
   open,
   onOpenChange,
@@ -27,8 +35,12 @@ export function AboutDialog({
             <MantaLogo />
             <Dialog.Title className="sr-only">About Manta</Dialog.Title>
             <Dialog.Description className="text-surface-400 text-[12px]">
-              Version 0.0.0 · Work in progress
+              Work in progress
             </Dialog.Description>
+            <p className="text-surface-400 text-[12px]">
+              Commit <span className="text-surface-200 font-mono">{__APP_VERSION__}</span>
+              {commitDate() && <> · {commitDate()}</>}
+            </p>
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

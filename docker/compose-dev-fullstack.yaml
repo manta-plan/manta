@@ -23,6 +23,10 @@ services:
       # bundle (see frontend/Dockerfile) and is the server's QUACK_TOKEN.
       args:
         VITE_RECORD_TOKEN: ${QUACK_TOKEN}
+      # The repo's git metadata, from which the image reads the commit and
+      # date shown in the About dialog (see frontend/Dockerfile).
+      additional_contexts:
+        git: ../.git
     environment:
       BACKEND_URL: http://backend:8000
       # Container port, not QUACK_SERVER_PORT (that's the host-published one).
