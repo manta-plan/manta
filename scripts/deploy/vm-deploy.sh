@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Runs on the VM as root: checks out a commit and (re)starts the whole stack
+# Runs on the VM as root: installs Docker and git when they are missing (the
+# only things a deployment needs, since the whole stack runs in containers),
+# checks out a commit and (re)starts the whole stack
 # from docker/compose-dev-fullstack.yaml, with the frontend on ports 80 and 443
 # and the temporary record server (quack-server) behind it. The VM builds
 # nothing: the commit is only checked out for its compose files and
@@ -74,6 +76,39 @@ delete_data_volumes() {
   done
 }
 
+# Installs Docker (with Compose), git and curl from Docker's own apt repository,
+# see https://docs.docker.com/engine/install/debian/. Does nothing when they are
+# already there, so a VM whose first setup was interrupted repairs itself.
+install_docker() {
+  if command -v git >/dev/null && command -v curl >/dev/null && docker compose version >/dev/null 2>&1; then
+    echo "==> Docker, git and curl are already installed"
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  # A VM that just booted may still hold the dpkg lock for its own first-boot
+  # package run: wait for it instead of failing.
+  apt_get() { apt-get -o DPkg::Lock::Timeout=300 -y "$@"; }
+
+  echo "==> Installing Docker and git"
+  apt_get update
+  apt_get install ca-certificates curl git
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  cat >/etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+  apt_get update
+  apt_get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  systemctl enable --now docker
+}
+
 # Everything lives in a function, called on the last line: the script arrives
 # on stdin, and a command that reads stdin would otherwise swallow the rest.
 main() {
@@ -93,6 +128,8 @@ main() {
     exit 2
   fi
   IMAGE_TAG=$sha
+
+  install_docker
 
   echo "==> Checking out $sha"
   git init --quiet "$APP_DIR"

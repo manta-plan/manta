@@ -206,9 +206,6 @@ jobs:
           echo "::error::Could not SSH into $VM_NAME."
           exit 1
 
-      - name: Set up the VM
-        run: bash scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
-
       # Before the deployment itself, so the new record spreads while the
       # images build: Caddy asks Let's Encrypt for a certificate as soon as the
       # frontend starts, and Let's Encrypt must then find the VM at the name.

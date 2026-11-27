@@ -63,18 +63,13 @@ ensure_firewall_rule manta-allow-web \
   --allow tcp:80,tcp:443 --source-ranges 0.0.0.0/0 \
   --description "HTTP and HTTPS to the frontend (Caddy) of Manta instances"
 
-if g compute instances describe "$VM_NAME" --zone "$GCP_ZONE" >/dev/null 2>&1; then
+if status=$(g compute instances describe "$VM_NAME" --zone "$GCP_ZONE" --format='value(status)' 2>/dev/null); then
   created=false
-  status=$(g compute instances describe "$VM_NAME" --zone "$GCP_ZONE" --format='value(status)')
   echo "==> VM $VM_NAME already exists ($status)"
-  if [ "$status" = "TERMINATED" ] || [ "$status" = "SUSPENDED" ]; then
-    echo "==> Starting $VM_NAME"
-    if [ "$status" = "SUSPENDED" ]; then
-      g compute instances resume "$VM_NAME" --zone "$GCP_ZONE"
-    else
-      g compute instances start "$VM_NAME" --zone "$GCP_ZONE"
-    fi
-  fi
+  case "$status" in
+    TERMINATED) g compute instances start "$VM_NAME" --zone "$GCP_ZONE" ;;
+    SUSPENDED) g compute instances resume "$VM_NAME" --zone "$GCP_ZONE" ;;
+  esac
 else
   created=true
   if ! g compute addresses describe "$ADDRESS" --region "$REGION" >/dev/null 2>&1; then
