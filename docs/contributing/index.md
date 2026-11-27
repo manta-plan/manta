@@ -15,5 +15,6 @@ Start with the conventions below, then open the page for the part of the reposit
 - [Documentation](docs.md): build this site, refresh the REST API reference, and find the writing rules.
 - [Run a playbook through the REST API](manual-run.md): run a playbook on real model data on the local stack, without the web app.
 - [Test deployment](test-deployment.md): the core team's internal test instance.
+- [Architecture decisions](decisions/index.md): the decisions about how Manta is built, and when to record a new one.
 
 --8<-- "CONTRIBUTING.md:docs-general"

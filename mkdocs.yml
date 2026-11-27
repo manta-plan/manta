@@ -153,3 +153,5 @@ nav:
       - Documentation: contributing/docs.md
       - Run a playbook through the REST API: contributing/manual-run.md
       - Test deployment: contributing/test-deployment.md
+      - Architecture decisions:
+          - contributing/decisions/index.md

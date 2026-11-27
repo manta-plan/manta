@@ -66,6 +66,12 @@ must stay human and honest. Three rules:
 In the tree nothing is marked: a `Co-Authored-By:` trailer naming the AI tool
 is the record.
 
+### Architecture decisions
+
+A decision that is costly to reverse or reaches across services is recorded as an architecture decision record (ADR).
+An ADR can contain a plan, reviewed before or with the implementation, and ends as a summary of the design as built.
+[Architecture decision records](https://github.com/manta-plan/manta/blob/main/docs/contributing/decisions/index.md) sets out when to write one and how.
+
 ### Commits
 
 We squash-merge PRs, so the **PR title** becomes the commit message — that's
@@ -89,6 +95,8 @@ commits get squashed together:
   a changelog.
 - The description should be imperative and descriptive — read it as
   completing "If applied, this commit will...".
+- The description starts with a lowercase letter (`feat: add login endpoint`,
+  not `feat: Add login endpoint`), as commitlint requires.
 - Header (the whole `<type>[!]: <description>` line) must be 100 characters
   or fewer, and the description must not end with a full stop.
 - CI enforces this on the PR title via
