@@ -99,7 +99,12 @@ export function LoginPage() {
           />
 
           <label className="flex items-center gap-2 text-[12px] text-slate-500">
-            <input className="accent-secondary size-3.5 rounded" name="remember" type="checkbox" />
+            <input
+              className="accent-secondary size-3.5 rounded"
+              name="remember"
+              type="checkbox"
+              defaultChecked
+            />
             Remember me
           </label>
 

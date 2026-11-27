@@ -201,6 +201,34 @@ def test_logout_ends_the_session(app_server: str) -> None:
     assert refresh.status_code == 401
 
 
+def test_logout_refuses_the_sessions_access_token(app_server: str) -> None:
+    # Given
+    # Two sessions for the seeded admin: one shows a token works, the other is
+    # logged out before its token is first used (so no cached answer applies).
+    def login() -> dict:
+        return httpx2.post(
+            f"{app_server}/v1/auth/login",
+            json={"username": "manta-admin", "password": "manta-admin"},
+        ).json()
+
+    kept, ended = login(), login()
+    kept_response = httpx2.get(
+        f"{app_server}/v1/projects",
+        headers={"Authorization": f"Bearer {kept['access_token']}"},
+    )
+    assert kept_response.status_code == 200
+
+    # When
+    httpx2.post(f"{app_server}/v1/auth/logout", json={"refresh_token": ended["refresh_token"]})
+    response = httpx2.get(
+        f"{app_server}/v1/projects",
+        headers={"Authorization": f"Bearer {ended['access_token']}"},
+    )
+
+    # Then
+    assert response.status_code == 401
+
+
 def test_logout_twice_is_not_an_error(app_server: str) -> None:
     # Given
     login = httpx2.post(

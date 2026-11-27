@@ -2,11 +2,13 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from jwcrypto.jws import InvalidJWSSignature
+from jwcrypto.jwt import JWTExpired
 from keycloak.exceptions import KeycloakError, KeycloakPostError
 from sqlalchemy.exc import OperationalError
 
 from manta.entities import User
-from manta.services.auth_service import AuthService, _authenticate
+from manta.services.auth_service import AuthService, _authenticate, _forget_active_tokens
 from manta.services.errors import AuthenticationError, BackendError
 from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 
@@ -18,6 +20,15 @@ def _stub_well_known(mock_kc_client):
     # AuthService compares each token's `iss` against Keycloak's own discovery
     # document rather than reconstructed config, so that's what needs stubbing.
     mock_kc_client.well_known.return_value = {"issuer": ISSUER}
+    # Every token's session counts as active unless a test says otherwise.
+    mock_kc_client.introspect.return_value = {"active": True}
+
+
+@pytest.fixture(autouse=True)
+def _empty_active_token_cache():
+    _forget_active_tokens()
+    yield
+    _forget_active_tokens()
 
 
 def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> None:
@@ -74,6 +85,65 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
     # When / Then
     with pytest.raises(BackendError):
         _authenticate(mock_db, mock_kc_client, "some-token")
+
+
+@pytest.mark.parametrize(
+    "error", [JWTExpired("token expired"), InvalidJWSSignature("bad signature")]
+)
+def test_authenticate_rejects_expired_or_forged_token(mock_db, mock_kc_client, error) -> None:
+    # Given
+    # jwcrypto raises these as JWException, neither a ValueError nor a
+    # KeycloakError. They must be a 401, so the frontend refreshes its token.
+    mock_kc_client.decode_token.side_effect = error
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        _authenticate(mock_db, mock_kc_client, "some-token")
+
+
+def test_authenticate_rejects_token_of_logged_out_session(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
+    mock_kc_client.introspect.return_value = {"active": False}
+
+    # When / Then
+    with pytest.raises(AuthenticationError):
+        _authenticate(mock_db, mock_kc_client, "some-token")
+
+
+def test_authenticate_wraps_introspection_error_as_backend_error(
+    mock_db_class, mock_kc_client
+) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
+    mock_kc_client.introspect.side_effect = KeycloakError("keycloak unavailable")
+
+    # When / Then
+    with pytest.raises(BackendError):
+        _authenticate(mock_db, mock_kc_client, "some-token")
+
+
+def test_authenticate_asks_keycloak_once_per_token_while_cached(
+    mock_db_class, mock_kc_client
+) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    existing_user.id = 1
+    existing_user.uuid = uuid4()
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
+
+    # When
+    _authenticate(mock_db, mock_kc_client, "some-token")
+    _authenticate(mock_db, mock_kc_client, "some-token")
+    _authenticate(mock_db, mock_kc_client, "other-token")
+
+    # Then
+    assert mock_kc_client.introspect.call_count == 2
 
 
 def _login_service(mock_db, mock_kc_client, example_data=None) -> AuthService:
