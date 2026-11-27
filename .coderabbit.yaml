@@ -56,7 +56,6 @@ reviews:
         instructions: >-
           Fail if any page under docs/ now describes behaviour, APIs, configuration, or architecture that this PR changed.
           Name each page and the stale claim.
-          Also fail if the PR makes an architecture decision, as defined in docs/contributing/decisions/index.md, without adding or updating an ADR.
       - name: "TODOs and shortcuts tracked"
         mode: warning
         instructions: >-
@@ -68,7 +67,7 @@ reviews:
         instructions: >-
           Find where the repo documents how to run, deploy, or manually test Manta, by searching docs/ and the READMEs.
           Fail if this PR changes a command, service, port, environment variable, container, or user-facing flow those steps rely on and the steps were not updated.
-          Also fail if the PR description's testing section is empty for a change that is not docs-only.
+          Also fail if the "How has this been tested?" section of the PR description is empty for a change that is not docs-only.
       - name: "Prefer existing solutions"
         mode: warning
         instructions: >-
@@ -92,8 +91,12 @@ reviews:
           Name the source and the sink.
 knowledge_base:
   # CodeRabbit already reads AGENTS.md and CLAUDE.md; these add the rules they link to.
+  # A bare pattern applies a document only to its own directory, so the root
+  # CONTRIBUTING.md and each package README cover their own tree, and the
+  # contributing pages and skills name the whole repo in applyTo.
   code_guidelines:
     filePatterns:
       - "CONTRIBUTING.md"
-      - "docs/contributing/**/*.md"
-      - ".claude/skills/**/*.md"
+      - "**/README.md"
+      - files: "docs/contributing/**/*.md,.claude/skills/**/*.md"
+        applyTo: "**"
