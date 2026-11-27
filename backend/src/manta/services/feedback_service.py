@@ -16,6 +16,8 @@ from manta.services.results.feedback_result import SubmitFeedbackResult
 logger = logging.getLogger(__name__)
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_PNG_IHDR = b"\x00\x00\x00\x0dIHDR"
+_PNG_IEND = b"\x00\x00\x00\x00IEND\xaeB`\x82"
 
 
 def _http_client() -> httpx2.Client:
@@ -68,8 +70,8 @@ class FeedbackService:
             raise BackendError(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not store the feedback"
             ) from None
-        if not result.get("ok"):
-            logger.error("The Apps Script rejected the feedback: %s", result.get("error"))
+        if not isinstance(result, dict) or not result.get("ok"):
+            logger.error("The Apps Script rejected the feedback: %s", result)
             raise BackendError(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not store the feedback"
             )
@@ -82,7 +84,12 @@ class FeedbackService:
             data = base64.b64decode(screenshot, validate=True)
         except binascii.Error, ValueError:
             data = b""
-        if not data.startswith(_PNG_SIGNATURE):
+        # A complete PNG is the signature, an IHDR chunk first, and an IEND chunk last.
+        if not (
+            data.startswith(_PNG_SIGNATURE + _PNG_IHDR)
+            and data.endswith(_PNG_IEND)
+            and len(data) >= len(_PNG_SIGNATURE + _PNG_IHDR) + 13 + 4 + len(_PNG_IEND)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="The screenshot must be a base64-encoded PNG",

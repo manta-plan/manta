@@ -13,7 +13,11 @@ from manta.services.errors import BackendError
 from manta.services.feedback_service import FeedbackService
 from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 
-PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"data").decode()
+# A complete 1x1 PNG: signature, IHDR, IDAT, IEND.
+PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGA"
+    "hKmMIQAAAABJRU5ErkJggg=="
+)
 USER = AuthenticatedUserResult(id=1, uuid=uuid4(), username="alice")
 
 
@@ -38,6 +42,12 @@ def script(monkeypatch):
     client.__enter__.return_value = http
     monkeypatch.setattr(feedback_service, "_http_client", lambda: client)
     return http
+
+
+def _assert_sent_once(http: MagicMock) -> None:
+    http.post.assert_called_once()
+    assert http.post.call_args.args == ("https://script.example/exec",)
+    assert _sent(http)["message"] == "It broke"
 
 
 def _sent(http: MagicMock) -> dict:
@@ -70,7 +80,16 @@ def test_gives_the_screenshot_a_uuid(script) -> None:
     assert sent["screenshot"] == PNG
 
 
-@pytest.mark.parametrize("screenshot", ["not base64!", base64.b64encode(b"GIF89a").decode()])
+@pytest.mark.parametrize(
+    "screenshot",
+    [
+        "not base64!",
+        base64.b64encode(b"GIF89a").decode(),
+        # Only the signature, and a real PNG cut short.
+        base64.b64encode(b"\x89PNG\r\n\x1a\n").decode(),
+        PNG[:40],
+    ],
+)
 def test_rejects_a_screenshot_that_is_not_a_png(script, screenshot) -> None:
     # When / Then
     with pytest.raises(HTTPException) as refused:
@@ -98,11 +117,24 @@ def test_reports_a_bad_gateway_when_the_script_is_unreachable(script) -> None:
     with pytest.raises(BackendError) as failed:
         FeedbackService().submit(_request(), USER)
     assert failed.value.status_code == 502
+    _assert_sent_once(script)
 
 
 def test_reports_a_bad_gateway_when_the_script_rejects_it(script) -> None:
     # Given
     script.post.return_value.json.return_value = {"ok": False, "error": "Bad secret"}
+
+    # When / Then
+    with pytest.raises(BackendError) as failed:
+        FeedbackService().submit(_request(), USER)
+    assert failed.value.status_code == 502
+    _assert_sent_once(script)
+
+
+@pytest.mark.parametrize("answer", [None, [], "ok"])
+def test_reports_a_bad_gateway_when_the_script_answers_with_a_non_object(script, answer) -> None:
+    # Given
+    script.post.return_value.json.return_value = answer
 
     # When / Then
     with pytest.raises(BackendError) as failed:

@@ -13,6 +13,7 @@
 // Script properties (Project settings → Script properties), never in the source:
 //   SECRET     the shared secret; the same value as the backend's FEEDBACK_SCRIPT_SECRET
 //   FOLDER_ID  the Drive folder the screenshots go to
+//   SPREADSHEET_ID  the Sheet the rows go to (the ID in its URL)
 //
 // The backend POSTs JSON as text/plain, read from e.postData.contents.
 // Deploy as a web app that runs as you, with access for anyone, and put its
@@ -37,18 +38,21 @@ function doPost(e) {
     // Save the screenshot before taking the lock: the Drive upload is the slow
     // part, and only the row append needs serialising.
     const screenshotId = String(data.screenshot_id || "");
+    let file = null;
     if (data.screenshot) {
       if (!UUID_PATTERN.test(screenshotId)) return json({ ok: false, error: "Invalid screenshot ID" });
       const bytes = Utilities.base64Decode(String(data.screenshot));
       if (bytes.length > MAX_IMAGE_BYTES) return json({ ok: false, error: "Image too large" });
-      DriveApp.getFolderById(props.getProperty("FOLDER_ID"))
+      file = DriveApp.getFolderById(props.getProperty("FOLDER_ID"))
         .createFile(Utilities.newBlob(bytes, "image/png", screenshotId + ".png"));
     }
 
+    // A screenshot without a row is an orphan, so trash it unless the row is added.
+    let added = false;
     const lock = LockService.getScriptLock();
-    if (!lock.tryLock(10000)) return json({ ok: false, error: "busy" });
     try {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      if (!lock.tryLock(10000)) return json({ ok: false, error: "busy" });
+      const ss = SpreadsheetApp.openById(props.getProperty("SPREADSHEET_ID"));
       const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
       sheet.appendRow([
         new Date(),                                      // A Timestamp
@@ -63,8 +67,10 @@ function doPost(e) {
         "New",                                           // J Status
         "",                                              // K Notes
       ]);
+      added = true;
     } finally {
       lock.releaseLock();
+      if (file && !added) file.setTrashed(true);
     }
     return json({ ok: true });
   } catch (err) {

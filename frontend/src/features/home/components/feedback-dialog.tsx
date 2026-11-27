@@ -1,4 +1,4 @@
-import { useState, type ClipboardEvent } from "react";
+import { useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { useLocation } from "wouter";
 import clsx from "clsx";
@@ -18,6 +18,9 @@ import { ScreenshotEditor } from "./screenshot-editor";
 import { ApiError } from "../../../api/manta";
 import { useFeedbackDraft } from "../lib/feedback-draft";
 import { useZoomPan } from "../../../utils/useZoomPan";
+
+/** The backend's limit on a message. */
+const MAX_MESSAGE_LENGTH = 2000;
 
 const CATEGORIES: { value: FeedbackCategory; label: string; placeholder: string }[] = [
   {
@@ -76,17 +79,6 @@ export function FeedbackDialog({
     }
   };
 
-  // Pasting a screenshot (e.g. after Cmd+Shift+Ctrl+4) into the message
-  // attaches it; ordinary text pastes are left alone.
-  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const file = Array.from(event.clipboardData.files).find((item) =>
-      item.type.startsWith("image/"),
-    );
-    if (!file) return;
-    event.preventDefault();
-    void attachImage(file);
-  };
-
   const handleSelect = async (rect: Rect) => {
     setIsSelecting(false);
     setImageError(null);
@@ -119,7 +111,9 @@ export function FeedbackDialog({
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 422
-          ? "The screenshot couldn't be sent. Remove it or take another."
+          ? /screenshot/i.test(err.message)
+            ? "The screenshot couldn't be sent. Remove it or take another."
+            : `Your feedback was rejected. Keep the message under ${MAX_MESSAGE_LENGTH} characters.`
           : "Couldn't send your feedback. Check your connection and try again.",
       );
     } finally {
@@ -211,7 +205,7 @@ export function FeedbackDialog({
                   value={message}
                   onChange={(event) => update({ message: event.target.value })}
                   placeholder={activeCategory.placeholder}
-                  onPaste={handlePaste}
+                  maxLength={MAX_MESSAGE_LENGTH}
                   rows={5}
                   autoFocus
                   className="border-surface-600 bg-surface-900 text-surface-50 placeholder:text-surface-500 focus:border-accent-500 resize-none rounded border px-2 py-1.5 text-[13px] outline-none"

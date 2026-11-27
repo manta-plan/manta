@@ -1,9 +1,9 @@
-// Screenshot attachments for the feedback form. The sheet's Apps Script
-// accepts PNG, JPEG, WebP or GIF up to 5 MB (see its doPost); anything
-// larger is downscaled here first (as PNG), since full-screen retina PNGs routinely
+// The feedback screenshot is always a PNG made inside the app (the region
+// capture, then the annotation editor). The backend takes PNG only, up to 5 MB;
+// a larger one is downscaled here first, since full-screen retina PNGs routinely
 // exceed that.
 
-export const FEEDBACK_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export const FEEDBACK_IMAGE_TYPE = "image/png";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Longest sides tried, in order, when shrinking — still sharp enough to read UI text.
 const DIMENSION_STEPS = [2560, 1920, 1280];
@@ -63,21 +63,17 @@ function toBase64(blob: Blob): Promise<string> {
 }
 
 export async function prepareFeedbackImage(file: File): Promise<FeedbackImage> {
-  if (!(FEEDBACK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
-    throw new FeedbackImageError("Use a PNG, JPEG, WebP or GIF image.");
+  // Only the app's own screenshot and annotation editor make images, and both
+  // produce PNG, so the backend takes PNG only.
+  if (file.type !== FEEDBACK_IMAGE_TYPE) {
+    throw new FeedbackImageError("Screenshots must be PNG images.");
   }
   let blob: Blob = file;
-  let name = file.name || "screenshot.png";
-  // GIFs may be animated, which a canvas re-encode would flatten — only the
-  // still formats get shrunk.
-  if (file.size > MAX_IMAGE_BYTES && file.type !== "image/gif") {
-    blob = await shrink(file);
-    name = name.replace(/\.[^.]+$/, "") + ".png";
-  }
+  if (file.size > MAX_IMAGE_BYTES) blob = await shrink(file);
   if (blob.size > MAX_IMAGE_BYTES) throw new FeedbackImageError("Image must be under 5 MB.");
   return {
-    name,
-    type: blob.type,
+    name: file.name || "screenshot.png",
+    type: FEEDBACK_IMAGE_TYPE,
     size: blob.size,
     base64: await toBase64(blob),
     previewUrl: URL.createObjectURL(blob),
