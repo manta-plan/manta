@@ -1,6 +1,14 @@
 # Manta
 
 <!-- --8<-- [start:docs-preamble] -->
+[![Backend tests](https://github.com/manta-plan/manta/actions/workflows/backend-test.yml/badge.svg?branch=main)](https://github.com/manta-plan/manta/actions/workflows/backend-test.yml?query=branch%3Amain)
+[![Playbook tests](https://github.com/manta-plan/manta/actions/workflows/playbook-test.yml/badge.svg?branch=main)](https://github.com/manta-plan/manta/actions/workflows/playbook-test.yml?query=branch%3Amain)
+[![Runner tests](https://github.com/manta-plan/manta/actions/workflows/runner-test.yml/badge.svg?branch=main)](https://github.com/manta-plan/manta/actions/workflows/runner-test.yml?query=branch%3Amain)
+[![Documentation](https://readthedocs.org/projects/manta-plan/badge/?version=latest)](https://manta-plan.readthedocs.io/en/latest/)
+[![Licence](https://img.shields.io/github/license/manta-plan/manta)](https://github.com/manta-plan/manta/blob/main/LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196)](https://www.conventionalcommits.org/en/v1.0.0/)
+
 Manta is an open-source energy modeling tool, designed to make cutting-edge
 energy models accessible to all.
 
