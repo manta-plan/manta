@@ -87,7 +87,9 @@ function PeriodNote() {
   const timeWindow = useLevelStore((s) => s.timeWindow);
   const axis = useShownData(
     "level-chart-axis",
-    scope ? [scopeKey({ ...scope, level: { kind: "all-entities" }, locations: [] })] : null,
+    scope
+      ? [scopeKey({ ...scope, level: { kind: "all-entities" }, locations: [], filter: null })]
+      : null,
     () => loadAxis(scope!),
   );
   if (!scope) return null;

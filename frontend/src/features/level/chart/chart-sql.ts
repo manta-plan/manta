@@ -108,13 +108,20 @@ function attributeValuesSql(
     SELECT x.key, t.snapshot, a.value FROM ${from} CROSS JOIN span t WHERE a.snapshot IS NULL`;
 }
 
+/** The location or bus the scope is at: its level's, else its cross-tree filter's (Generators at a location). */
+function placeOf(scope: LevelQueryScope) {
+  for (const level of [scope.level, scope.filter])
+    if (level?.kind === "location" || level?.kind === "bus") return level;
+  return null;
+}
+
 /** The level's buses: every real one, those at the location (or the selected ones), or the bus itself. */
-function levelBusesSql(scope: LevelQueryScope, acOnly: boolean): string {
+export function levelBusesSql(scope: LevelQueryScope, acOnly: boolean): string {
   const conditions = ["NOT b.virtual"];
   if (acOnly) conditions.push("b.carrier = 'AC'");
-  if (scope.level.kind === "location")
-    conditions.push(`b.location = ${sqlString(scope.level.location)}`);
-  if (scope.level.kind === "bus") return `SELECT ${sqlString(scope.level.bus)} AS bus`;
+  const place = placeOf(scope);
+  if (place?.kind === "location") conditions.push(`b.location = ${sqlString(place.location)}`);
+  if (place?.kind === "bus") return `SELECT ${sqlString(place.bus)} AS bus`;
   if (scope.locations && scope.locations.length > 0)
     conditions.push(`b.location IN (${scope.locations.map(sqlString).join(", ")})`);
   return `SELECT b.bus FROM ${N("manta.bus_location")} b WHERE ${conditions.join(" AND ")}`;
@@ -388,7 +395,7 @@ export async function loadMeanPrice(scope: LevelQueryScope): Promise<(number | n
   const lists = await loadLists(
     scope,
     [
-      `vals AS (${attributeValuesSql(scope, "marginal_price", "bus", `SELECT bus AS key, bus AS subject FROM (${levelBusesSql(scope, scope.level.kind !== "bus")})`)})`,
+      `vals AS (${attributeValuesSql(scope, "marginal_price", "bus", `SELECT bus AS key, bus AS subject FROM (${levelBusesSql(scope, placeOf(scope)?.kind !== "bus")})`)})`,
     ],
     `SELECT 'price' AS key, snapshot, avg(value) AS v FROM vals GROUP BY snapshot`,
   );

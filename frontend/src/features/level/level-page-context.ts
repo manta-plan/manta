@@ -13,7 +13,7 @@ export interface LevelPageValue {
   /** The run result shown, on Inspect; null on Build or with a scenario shown. */
   result: InspectResult | null;
   scope: LevelQueryScope | null;
-  /** Opens another level (navigates; the tree follows). */
+  /** Opens another level (navigates; the tree follows), or narrows this one by a pick from the other tree (level-pick). */
   openLevel: (level: Level) => void;
 }
 

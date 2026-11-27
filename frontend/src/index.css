@@ -180,6 +180,8 @@
 /* Redefining the custom properties re-themes every component with no class
    changes. Written unlayered so they win over Tailwind's theme layer. */
 :root[data-theme="dark"] {
+  /* Native controls and scrollbars (tree, table) follow the theme. */
+  color-scheme: dark;
   --color-surface-950: #05090f;
   --color-surface-900: #0a121d;
   --color-surface-800: #0f1a29;
@@ -194,6 +196,7 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --color-surface-950: #ffffff;
   --color-surface-900: #f8fafc;
   --color-surface-800: #ffffff;

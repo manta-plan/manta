@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { ExpandableBlock } from "./fullscreen/fullscreen-context";
+import { levelPageId, type Level } from "./level";
+import type { CrossFilter } from "./level-pick";
 
 // What the parts of a level's page share: the investment period and time
 // window (global, they survive navigation), the split's size, and what one
@@ -78,6 +80,10 @@ interface LevelState {
   setSelectedLocations: (locations: string[]) => void;
   toggleSelectedLocation: (location: string) => void;
 
+  /** A pick from the other tree that narrows the level whose page id is `context` (level-pick). Cleared on navigation. */
+  crossFilter: { context: string | null; filter: CrossFilter } | null;
+  setCrossFilter: (context: string | null, filter: CrossFilter | null) => void;
+
   /** The table's column filters, by column key, and its sort. Cleared on navigation. */
   columnFilters: Record<string, ColumnFilter>;
   setColumnFilter: (column: string, filter: ColumnFilter | null) => void;
@@ -143,6 +149,9 @@ export const useLevelStore = create<LevelState>((set) => ({
         : [...state.selectedLocations, location].sort(),
     })),
 
+  crossFilter: null,
+  setCrossFilter: (context, filter) => set({ crossFilter: filter && { context, filter } }),
+
   columnFilters: {},
   setColumnFilter: (column, filter) =>
     set((state) => {
@@ -183,6 +192,7 @@ export const useLevelStore = create<LevelState>((set) => ({
 
   resetForLevel: () =>
     set({
+      crossFilter: null,
       columnFilters: {},
       columnSort: null,
       mapFocus: null,
@@ -194,6 +204,7 @@ export const useLevelStore = create<LevelState>((set) => ({
       period: null,
       timeWindow: null,
       selectedLocations: [],
+      crossFilter: null,
       columnFilters: {},
       columnSort: null,
       mapFocus: null,
@@ -201,3 +212,9 @@ export const useLevelStore = create<LevelState>((set) => ({
       expandedBlock: null,
     }),
 }));
+
+/** The cross-tree filter on `level`'s page; none while another level's is still in the store. */
+export function useCrossFilter(level: Level): CrossFilter | null {
+  const crossFilter = useLevelStore((s) => s.crossFilter);
+  return crossFilter && crossFilter.context === levelPageId(level) ? crossFilter.filter : null;
+}

@@ -3,11 +3,8 @@ import { Tree, type NodeRendererProps, type RowRendererProps, type TreeApi } fro
 import { LuBoxes, LuCircleDot, LuFolder, LuFolderOpen, LuMapPin, LuTag } from "react-icons/lu";
 import {
   buildTree,
-  busNodeId,
-  carrierNodeId,
-  ctypeNodeId,
+  findTreeNode,
   loadChildren,
-  locationNodeId,
   type TreeNode,
   type TreeNodeKind,
 } from "./tree-nodes";
@@ -28,6 +25,8 @@ import {
 } from "./record-tree-skeleton";
 import { TreeToggle } from "./tree-toggle";
 import { activateTreeRow } from "./tree-actions";
+import { revealStep, shownRowOf, type EntityPlace, type RevealStep } from "./tree-reveal";
+import { loadEntityPlace } from "../scenarios/change-sql";
 
 // The record's tree beside its pages (Build and Inspect): Entities › type ›
 // carrier › entity, and Locations › location › bus › entity, built by
@@ -143,37 +142,10 @@ function TruncatingRow({ node, attrs, innerRef, children }: RowRendererProps<Tre
   );
 }
 
-function findNode(nodes: TreeNode[], id: string): TreeNode | null {
-  for (const node of nodes) {
-    if (node.id === id) return node;
-    const found = node.children ? findNode(node.children, id) : null;
-    if (found) return found;
-  }
-  return null;
-}
-
 function orNone(id: string, children: TreeNode[]): TreeNode[] {
   return children.length > 0
     ? children
     : [{ id: `${id}/empty`, name: "None", kind: "placeholder" }];
-}
-
-/** The tree row a level is, and for a bus the location row it sits under. */
-function rowOfLevel(level: Level | null): { id: string; location?: string } | null {
-  switch (level?.kind) {
-    case "component":
-      return { id: ctypeNodeId(level.ctype) };
-    case "carrier":
-      return { id: carrierNodeId(level.ctype, level.carrier) };
-    case "location":
-      return { id: locationNodeId(level.location) };
-    case "bus":
-      return level.location === null
-        ? null
-        : { id: busNodeId(level.bus, level.location), location: locationNodeId(level.location) };
-    default:
-      return null;
-  }
 }
 
 export function RecordTree() {
@@ -221,7 +193,7 @@ export function RecordTree() {
         loading.current.has(key)
       )
         return;
-      const lazy = findNode(treeDataRef.current ?? [], id)?.lazy;
+      const lazy = findTreeNode(treeDataRef.current ?? [], id)?.lazy;
       if (!lazy) return;
       const { cached, read } = readShown("tree-children", catalog, [id, period], () =>
         loadChildren(lazy, id, record, period),
@@ -255,31 +227,41 @@ export function RecordTree() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, period]);
 
-  // The open level's row is unfolded to and scrolled into view, e.g. after
-  // a link or a search pick. Once per level, so later loads don't reopen
-  // folders closed since. A bus waits for its location's buses.
+  // The open level's row is unfolded to and scrolled into view, whether
+  // it was picked here, in search, in the table or on the map. Once per
+  // level, so later loads don't reopen folders closed since; only folders
+  // on the way are opened, none closed. An entity waits for its type and
+  // carrier (the same read as the change dialogs'), then for its folder's
+  // list; a bus for its location's buses.
   const openPageId = useOpenRecordPageId();
+  const openLevelNow = levelOfPageId(openPageId);
+  const placeEntity = openLevelNow?.kind === "entity" ? openLevelNow.entity : null;
+  const placeData = useShownData(
+    "change-entity-place",
+    placeEntity === null ? null : [placeEntity],
+    () => loadEntityPlace(placeEntity!),
+  );
+  const place: EntityPlace | null | undefined =
+    placeData.status === "ready" ? placeData.data : placeData.status === "error" ? null : undefined;
   const revealed = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const api = treeRef.current;
     if (!api || !treeData || revealed.current === openPageId) return;
-    const row = rowOfLevel(levelOfPageId(openPageId));
-    if (
-      row &&
-      !findNode(treeData, row.id) &&
-      row.location &&
-      findNode(treeData, row.location) &&
-      !loaded[row.location]
-    ) {
-      // Its buses arrive with a new treeData, which runs this again.
-      ensureLoaded(row.location);
+    const shown = shownRowOf(api.visibleNodes, openPageId);
+    const step: RevealStep = shown
+      ? { kind: "reveal", id: shown }
+      : revealStep(levelOfPageId(openPageId), treeData, loaded, place);
+    if (step.kind === "wait") return;
+    if (step.kind === "load") {
+      // Its children arrive with a new treeData, which runs this again.
+      ensureLoaded(step.id);
       return;
     }
     revealed.current = openPageId;
-    if (!row || !findNode(treeData, row.id)) return;
-    api.openParents(row.id);
-    void api.scrollTo(row.id);
-  }, [ensureLoaded, loaded, openPageId, size.height, treeData]);
+    if (step.kind !== "reveal") return;
+    api.openParents(step.id);
+    void api.scrollTo(step.id);
+  }, [ensureLoaded, loaded, openPageId, place, size.height, treeData]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

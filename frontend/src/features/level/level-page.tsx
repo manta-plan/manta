@@ -16,6 +16,7 @@ import { useOpenRecordPage } from "../project/lib/use-record-page";
 import { useProjectStore } from "../project/store/project-store";
 import { ALL_ENTITIES, ALL_LOCATIONS, levelPageId, type Level } from "./level";
 import { LevelPageContext, useLevelPage, type LevelPageValue } from "./level-page-context";
+import { pickLevel } from "./level-pick";
 import { levelCtes, scopeKey } from "./level-sql";
 import {
   SPLIT_HEIGHT_DEFAULT,
@@ -46,15 +47,27 @@ export function LevelPage({
   const openPage = useOpenRecordPage();
   const scope = useLevelScope(level);
   const resetForLevel = useLevelStore((s) => s.resetForLevel);
+  const setCrossFilter = useLevelStore((s) => s.setCrossFilter);
   const pageId = levelPageId(level);
   // What belongs to the last level (filters, sort, focus, picks) goes.
   useEffect(() => resetForLevel(), [pageId, resetForLevel]);
 
   const value = useMemo<LevelPageValue>(
-    () => ({ level, stage, result, scope, openLevel: (next) => openPage(levelPageId(next)) }),
+    () => ({
+      level,
+      stage,
+      result,
+      scope,
+      // A pick from the other tree narrows this page; any other opens its level.
+      openLevel: (next) => {
+        const outcome = pickLevel(level, next);
+        if (outcome.kind === "filter") setCrossFilter(pageId, outcome.filter);
+        else openPage(levelPageId(outcome.level));
+      },
+    }),
     // scope is rebuilt each render; its key says when it changed.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [pageId, stage, result, scope && scopeKey(scope), openPage],
+    [pageId, stage, result, scope && scopeKey(scope), openPage, setCrossFilter],
   );
 
   return (

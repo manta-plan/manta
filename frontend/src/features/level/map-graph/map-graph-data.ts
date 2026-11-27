@@ -43,9 +43,15 @@ export interface BranchRow {
   capacity_opt: number | null;
 }
 
-/** The scope with the level's own filters off: what the whole map reads. */
+/** The scope with the level's own filters (and the cross-tree filter) off: what the whole map reads. */
 export function baseScope(scope: LevelQueryScope): LevelQueryScope {
-  return { level: ALL_ENTITIES, period: scope.period, timeWindow: scope.timeWindow, locations: [] };
+  return {
+    level: ALL_ENTITIES,
+    period: scope.period,
+    timeWindow: scope.timeWindow,
+    locations: [],
+    filter: null,
+  };
 }
 
 /** The level without the map's location selection: what the map highlights. */
@@ -351,4 +357,52 @@ async function loadAreaName(): Promise<string | null> {
 export function useAreaName(): string | null {
   const data = useShownData("side-area", [], loadAreaName);
   return data.status === "ready" ? data.data : null;
+}
+
+// ------------------------------------------------------------ Summary
+
+export interface MapSummary {
+  /** Highlighted real buses, of all of them. */
+  buses: number;
+  allBuses: number;
+  /** Far ends of highlighted lines that are not themselves highlighted. */
+  lineEnds: number;
+  /** Highlighted lines, of all of them. */
+  lines: number;
+  allLines: number;
+  /** The level's entities with a location of their own, of its members; null when the record has no siting. */
+  located: number | null;
+  members: number;
+}
+
+/** Locations at the far end of a highlighted line that the level doesn't highlight itself. */
+export function lineEndsOf(highlight: Highlight, branches: BranchRow[] | null): Set<string> {
+  const found = new Set<string>();
+  if (highlight.all) return found;
+  for (const branch of branches ?? []) {
+    if (branch.ctype !== "Line" || !highlight.lines.has(branch.entity)) continue;
+    for (const location of [branch.location0, branch.location1])
+      if (!highlight.locations.has(location)) found.add(location);
+  }
+  return found;
+}
+
+/** What the map shows of the level, in numbers: the line above the map. */
+export function mapSummaryOf(
+  level: Level,
+  highlight: Highlight,
+  buses: BusRow[],
+  branches: BranchRow[] | null,
+  sites: SiteRow[] | null,
+): MapSummary {
+  const lines = branches?.filter((branch) => branch.ctype === "Line") ?? [];
+  return {
+    buses: highlight.buses.size,
+    allBuses: buses.length,
+    lineEnds: lineEndsOf(highlight, branches).size,
+    lines: lines.filter((branch) => highlight.all || highlight.lines.has(branch.entity)).length,
+    allLines: lines.length,
+    located: sites === null ? null : sites.length,
+    members: level.kind === "entity" ? 1 : highlight.members,
+  };
 }
