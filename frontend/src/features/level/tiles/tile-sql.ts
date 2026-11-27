@@ -1,6 +1,6 @@
-import { serverName, sqlString } from "../../project/lib/record-server/client";
-import { levelFilter, type Level } from "../level";
-import { levelCtes, spanCondition, type LevelQueryScope } from "../level-sql";
+import { serverName } from "../../project/lib/record-server/client";
+import type { Level } from "../level";
+import { levelConditions, levelCtes, spanCondition, type LevelQueryScope } from "../level-sql";
 
 // The tiles' SQL (the handover's 5.1–5.6): one query of the inputs and, on
 // Inspect, one of the run result, each a single row whose nested parts are
@@ -60,17 +60,7 @@ export function inputParts(level: Level, results: boolean): InputParts {
 
 /** The level's entities whether active in the period or not (for "not active"), at the selected locations. */
 function levelAllSql(scope: LevelQueryScope): string {
-  const f = levelFilter(scope.level);
-  const conditions = ["true"];
-  const literal = (value: string) => sqlString(value);
-  if (f.ctype !== null) conditions.push(`ctype = ${literal(f.ctype)}`);
-  if (f.carrier !== null) conditions.push(`carrier IS NOT DISTINCT FROM ${literal(f.carrier)}`);
-  if (f.location !== null) conditions.push(`list_contains(locations, ${literal(f.location)})`);
-  if (f.bus !== null) conditions.push(`list_contains(buses, ${literal(f.bus)})`);
-  if (f.entity !== null) conditions.push(`entity = ${literal(f.entity)}`);
-  const locations = scope.locations ?? [];
-  if (locations.length > 0)
-    conditions.push(`list_has_any(locations, [${locations.map(sqlString).join(", ")}])`);
+  const conditions = ["true", ...levelConditions(scope.level, scope.locations, scope.filter)];
   return `SELECT * FROM entities WHERE ${conditions.join(" AND ")}`;
 }
 

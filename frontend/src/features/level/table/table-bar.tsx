@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
-import { LuFilter, LuMap, LuMapPin, LuX } from "react-icons/lu";
+import { LuBoxes, LuFilter, LuMap, LuMapPin, LuX } from "react-icons/lu";
+import { useProjectStore } from "../../project/store/project-store";
+import { crossFilterLabel } from "../level-pick";
 import { useLevelStore } from "../level-store";
 import { FullscreenButton } from "../fullscreen/fullscreen-button";
 import { useInFullscreen } from "../fullscreen/fullscreen-context";
 
-// The bar over the table: its title, what narrows it (locations picked on
-// the map, column filters; each chip clears its own), the column picker and
+// The bar over the table: its title, what narrows it (a pick from the other
+// tree, locations picked on the map, column filters; each chip clears its
+// own), the column picker and
 // the full screen button, the column picker and the "Map & graph" toggle
 // (not in the full screen dialog).
 
@@ -33,6 +36,7 @@ export function TableBar({
   return (
     <div className="border-surface-700 flex h-10 shrink-0 items-center gap-2 border-b px-3">
       <h2 className="text-surface-100 shrink-0 text-[12px] font-medium">{title}</h2>
+      <CrossFilterChip />
       {locations.length > 0 && (
         <button
           type="button"
@@ -78,5 +82,29 @@ export function TableBar({
         </button>
       )}
     </div>
+  );
+}
+
+/** The pick from the other tree that narrows the page ("Generator" at a location); × removes it. */
+function CrossFilterChip() {
+  const crossFilter = useLevelStore((s) => s.crossFilter);
+  const setCrossFilter = useLevelStore((s) => s.setCrossFilter);
+  const carriers = useProjectStore((s) => s.record?.carriers);
+  if (!crossFilter) return null;
+  const { filter, context } = crossFilter;
+  const label = crossFilterLabel(filter, (carrier) => carriers?.[carrier]?.niceName || carrier);
+  const Icon = filter.kind === "location" || filter.kind === "bus" ? LuMapPin : LuBoxes;
+  return (
+    <button
+      type="button"
+      onClick={() => setCrossFilter(context, null)}
+      aria-label={`Remove the filter: ${label}`}
+      title={`Showing only ${label}. Remove this filter`}
+      className={`${chip} max-w-56`}
+    >
+      <Icon size={11} className="shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+      <LuX size={11} className="shrink-0" aria-hidden />
+    </button>
   );
 }

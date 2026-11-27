@@ -1,5 +1,6 @@
 import { serverName, sqlString } from "../project/lib/record-server/client";
 import { levelFilter, type Level } from "./level";
+import type { CrossFilter } from "./level-pick";
 import type { TimeWindow } from "./level-store";
 
 // The shared SQL fragments every level query starts from (see the handover's
@@ -9,8 +10,8 @@ import type { TimeWindow } from "./level-store";
 //                and value, optimised capacity, and whether it's active in
 //                the period (build_year ≤ Y < build_year + lifetime; without
 //                both it always is)
-//   members      the active entities at the level, and at the selected
-//                locations when any are selected
+//   members      the active entities at the level, narrowed by the
+//                cross-tree filter and the selected locations, if any
 //   span         the period's snapshots inside the time window
 //
 // Every relation is in the shown catalog (serverName). Values are written in
@@ -24,6 +25,8 @@ export interface LevelQueryScope {
   timeWindow: TimeWindow | null;
   /** Locations selected on the map; empty is all. */
   locations?: readonly string[];
+  /** A level of the other tree that narrows this one (see level-pick); null or absent is none. */
+  filter?: CrossFilter | null;
 }
 
 const literal = (value: string | null) => (value === null ? "NULL::VARCHAR" : sqlString(value));
@@ -75,17 +78,32 @@ export function entitiesSql(period: string): string {
     ) s USING (entity)`;
 }
 
-/** The `members` CTE body (needs `entities`). */
-export function membersSql(level: Level, locations: readonly string[] = []): string {
-  const f = levelFilter(level);
-  const conditions = ["in_period"];
-  if (f.ctype !== null) conditions.push(`ctype = ${literal(f.ctype)}`);
-  if (f.carrier !== null) conditions.push(`carrier IS NOT DISTINCT FROM ${literal(f.carrier)}`);
-  if (f.location !== null) conditions.push(`list_contains(locations, ${literal(f.location)})`);
-  if (f.bus !== null) conditions.push(`list_contains(buses, ${literal(f.bus)})`);
-  if (f.entity !== null) conditions.push(`entity = ${literal(f.entity)}`);
+/** Conditions on `entities` rows: the level's, the cross-tree filter's and the selected locations'. */
+export function levelConditions(
+  level: Level,
+  locations: readonly string[] = [],
+  filter: CrossFilter | null = null,
+): string[] {
+  const conditions: string[] = [];
+  for (const f of [levelFilter(level), ...(filter ? [levelFilter(filter)] : [])]) {
+    if (f.ctype !== null) conditions.push(`ctype = ${literal(f.ctype)}`);
+    if (f.carrier !== null) conditions.push(`carrier IS NOT DISTINCT FROM ${literal(f.carrier)}`);
+    if (f.location !== null) conditions.push(`list_contains(locations, ${literal(f.location)})`);
+    if (f.bus !== null) conditions.push(`list_contains(buses, ${literal(f.bus)})`);
+    if (f.entity !== null) conditions.push(`entity = ${literal(f.entity)}`);
+  }
   if (locations.length > 0)
     conditions.push(`list_has_any(locations, [${locations.map(sqlString).join(", ")}])`);
+  return conditions;
+}
+
+/** The `members` CTE body (needs `entities`). */
+export function membersSql(
+  level: Level,
+  locations: readonly string[] = [],
+  filter: CrossFilter | null = null,
+): string {
+  const conditions = ["in_period", ...levelConditions(level, locations, filter)];
   return `SELECT * FROM entities WHERE ${conditions.join(" AND ")}`;
 }
 
@@ -116,7 +134,7 @@ export function spanSql(period: string, timeWindow: TimeWindow | null): string {
 export function levelCtes(scope: LevelQueryScope): string {
   return [
     `entities AS (${entitiesSql(scope.period)})`,
-    `members AS (${membersSql(scope.level, scope.locations)})`,
+    `members AS (${membersSql(scope.level, scope.locations, scope.filter ?? null)})`,
     `span AS (${spanSql(scope.period, scope.timeWindow)})`,
   ].join(",\n");
 }
@@ -137,5 +155,6 @@ export function scopeKey(scope: LevelQueryScope): string {
     scope.period,
     ...windowKey(scope.timeWindow),
     scope.locations ?? [],
+    scope.filter ?? null,
   ]);
 }

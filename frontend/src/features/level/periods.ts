@@ -3,7 +3,7 @@ import { useShownData } from "../project/lib/record-data";
 import { serverName, serverQuery } from "../project/lib/record-server/client";
 import type { Level } from "./level";
 import type { LevelQueryScope } from "./level-sql";
-import { useLevelStore } from "./level-store";
+import { useCrossFilter, useLevelStore } from "./level-store";
 
 // The record's investment periods (dims.snapshot's periods), each with its
 // span of timesteps, and the one shown: global, first by default.
@@ -59,6 +59,7 @@ export function useLevelScope(level: Level): LevelQueryScope | null {
   const { period } = usePeriods();
   const timeWindow = useLevelStore((s) => s.timeWindow);
   const locations = useLevelStore((s) => s.selectedLocations);
+  const filter = useCrossFilter(level);
   if (period === null) return null;
-  return { level, period, timeWindow, locations };
+  return { level, period, timeWindow, locations, filter };
 }
