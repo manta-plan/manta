@@ -25,7 +25,7 @@ from importlib import resources
 
 from playbook.blocks import Catalogue, register_lazy
 
-register_lazy("cluster_time", "playbook_library.time_cluster:ClusterTime")
+register_lazy("time_partition", "playbook_library.time_partition:TimePartition")
 register_lazy(
     "overnight_capacity_expansion",
     "playbook_library.overnight_capacity_expansion:OvernightCapacityExpansion",

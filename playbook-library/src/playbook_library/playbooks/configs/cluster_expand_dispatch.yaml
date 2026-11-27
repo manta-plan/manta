@@ -6,11 +6,14 @@ globals:
   expansion_mode: overnight
 
 cluster:
-  n_hours: 3
+  name: seg_730
+  segments: 730
 
-expansion_overnight: {}
+expansion_overnight:
+  time_aggregation: seg_730
 
-expansion_myopic: {}
+expansion_myopic:
+  time_aggregation: seg_730
 
 dispatch:
   optimize_config:

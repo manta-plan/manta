@@ -3,6 +3,7 @@ import { useParams } from "wouter";
 import { useSessionUser } from "../../auth/session";
 import { useProjectStore } from "../../project/store/project-store";
 import { useRunsStore } from "../store/runs-store";
+import { useRunsAutoRefresh } from "../use-runs-auto-refresh";
 import { NewRunDrawer } from "./new-run-drawer";
 import { RunDetailView } from "./run-detail-view";
 import { RunFilterDrawer } from "./run-filter-drawer";
@@ -22,6 +23,8 @@ export function RunsView() {
   useEffect(() => {
     void init(projectId, owner);
   }, [projectId, owner, init]);
+
+  useRunsAutoRefresh();
 
   // The two left panels belong to this tab: leaving it should not carry them along.
   useEffect(

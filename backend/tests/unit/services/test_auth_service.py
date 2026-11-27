@@ -1,13 +1,14 @@
-from datetime import UTC, datetime
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 from keycloak.exceptions import KeycloakError, KeycloakPostError
+from sqlalchemy.exc import OperationalError
 
 from manta.entities import User
 from manta.services.auth_service import AuthService, _authenticate
 from manta.services.errors import AuthenticationError, BackendError
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 
 ISSUER = "http://localhost:8080/realms/manta"
 
@@ -23,6 +24,7 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     # Given
     existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
     existing_user.id = 1
+    existing_user.uuid = uuid4()
     mock_db = mock_db_class(query_results={User: existing_user})
     mock_kc_client.decode_token.return_value = {"sub": "abc-123", "iss": ISSUER}
 
@@ -30,7 +32,7 @@ def test_authenticate_returns_existing_user(mock_db_class, mock_kc_client) -> No
     user = _authenticate(mock_db, mock_kc_client, "some-token")
 
     # Then
-    assert user is existing_user
+    assert user == AuthenticatedUserResult(id=1, uuid=existing_user.uuid, username="alice")
 
 
 def test_authenticate_rejects_unregistered_user(mock_db, mock_kc_client) -> None:
@@ -74,6 +76,89 @@ def test_authenticate_wraps_keycloak_error_as_backend_error(mock_db, mock_kc_cli
         _authenticate(mock_db, mock_kc_client, "some-token")
 
 
+def _login_service(mock_db, mock_kc_client, example_data=None) -> AuthService:
+    mock_kc_client.token.return_value = {
+        "access_token": "some-access",
+        "expires_in": 300,
+        "refresh_token": "some-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+    mock_kc_client.decode_token.return_value = {
+        "sub": "abc-123",
+        "iss": ISSUER,
+        "preferred_username": "alice",
+    }
+    return AuthService(
+        db=mock_db, kc_client=mock_kc_client, example_data=example_data or MagicMock()
+    )
+
+
+def test_login_creates_user_from_token_claims_on_first_login(mock_db, mock_kc_client) -> None:
+    # Given
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When - the username typed differs from the one the IdP knows
+    result = service.login("Alice", "secret")
+
+    # Then
+    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
+    assert user.username == "alice"
+    assert user.idp_subject == "abc-123"
+    assert user.idp_source == ISSUER
+    example_data.create_project.assert_called_once_with(owner_id=user.id)
+    assert result.access_token == "some-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "some-refresh"  # noqa: S105 It's not a password
+
+
+def test_login_creates_no_example_project_when_disabled(
+    mock_db, mock_kc_client, monkeypatch
+) -> None:
+    # Given
+    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    mock_db.add.assert_called_once()
+    example_data.create_project.assert_not_called()
+
+
+def test_login_does_not_recreate_existing_user(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    example_data = MagicMock()
+    service = _login_service(mock_db, mock_kc_client, example_data)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
+    example_data.create_project.assert_not_called()
+
+
+def test_login_updates_username_renamed_in_the_idp(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _login_service(mock_db, mock_kc_client)
+
+    # When
+    service.login("alice", "secret")
+
+    # Then
+    assert existing_user.username == "alice"
+    mock_db.commit.assert_called_once()
+    mock_db.add.assert_not_called()
+
+
 def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
     # Given - Keycloak's response to a wrong username or password
     mock_kc_client.token.side_effect = KeycloakPostError(
@@ -85,6 +170,7 @@ def test_login_rejects_invalid_credentials(mock_db, mock_kc_client) -> None:
     # When / Then
     with pytest.raises(AuthenticationError):
         AuthService(db=mock_db, kc_client=mock_kc_client).login("manta-admin", "wrong")
+    mock_db.add.assert_not_called()
 
 
 def test_login_wraps_other_keycloak_post_errors_as_backend_error(mock_db, mock_kc_client) -> None:
@@ -119,6 +205,82 @@ def test_refresh_returns_new_tokens(mock_db, mock_kc_client) -> None:
     assert result.refresh_token == "new-refresh"  # noqa: S105 It's not a password
     assert result.expires_in == 300
     assert result.refresh_expires_in == 1800
+
+
+def _refresh_service(mock_db, mock_kc_client) -> AuthService:
+    mock_kc_client.refresh_token.return_value = {
+        "access_token": "new-access",
+        "expires_in": 300,
+        "refresh_token": "new-refresh",
+        "refresh_expires_in": 1800,
+        "token_type": "Bearer",
+    }
+    mock_kc_client.decode_token.return_value = {
+        "sub": "abc-123",
+        "iss": ISSUER,
+        "preferred_username": "alice",
+    }
+    return AuthService(db=mock_db, kc_client=mock_kc_client)
+
+
+def test_refresh_updates_username_renamed_in_the_idp(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    service.refresh("old-refresh")
+
+    # Then
+    mock_kc_client.decode_token.assert_called_once_with("new-access", validate=False)
+    assert existing_user.username == "alice"
+    mock_db.commit.assert_called_once()
+    mock_db.add.assert_not_called()
+
+
+def test_refresh_leaves_an_unchanged_user_alone(mock_db_class, mock_kc_client) -> None:
+    # Given
+    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    service.refresh("old-refresh")
+
+    # Then
+    mock_db.commit.assert_not_called()
+    mock_db.add.assert_not_called()
+
+
+def test_refresh_does_not_create_an_unknown_user(mock_db, mock_kc_client) -> None:
+    # Given - a valid Keycloak session whose manta user does not exist
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    result = service.refresh("old-refresh")
+
+    # Then - only login creates users
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
+
+
+def test_refresh_returns_new_tokens_when_the_sync_fails(mock_db_class, mock_kc_client) -> None:
+    # Given - the database fails while saving a username renamed in the IdP
+    existing_user = User(username="alice-old", idp_subject="abc-123", idp_source=ISSUER)
+    mock_db = mock_db_class(query_results={User: existing_user})
+    mock_db.commit.side_effect = OperationalError("UPDATE users", {}, Exception("down"))
+    mock_db.rollback = MagicMock()
+    service = _refresh_service(mock_db, mock_kc_client)
+
+    # When
+    result = service.refresh("old-refresh")
+
+    # Then - Keycloak may have revoked the old refresh token, so the new ones must get out
+    assert result.access_token == "new-access"  # noqa: S105 It's not a password
+    assert result.refresh_token == "new-refresh"  # noqa: S105 It's not a password
+    mock_db.rollback.assert_called_once()
 
 
 def test_refresh_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
@@ -171,57 +333,6 @@ def test_logout_rejects_invalid_refresh_token(mock_db, mock_kc_client) -> None:
         AuthService(db=mock_db, kc_client=mock_kc_client).logout("bad-refresh")
 
 
-def test_register_creates_new_user_with_an_example_project(mock_db, mock_kc_client) -> None:
-    # Given
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    assert result.username == "alice"
-    assert result.idp_subject == "abc-123"
-    assert result.idp_source == ISSUER
-    (user,) = [call.args[0] for call in mock_db.add.call_args_list]
-    mock_db.commit.assert_called_once()
-    example_data.create_project.assert_called_once_with(owner=user)
-
-
-def test_register_creates_no_example_project_when_disabled(
-    mock_db, mock_kc_client, monkeypatch
-) -> None:
-    # Given
-    monkeypatch.setenv("EXAMPLE_PROJECT_FOR_NEW_USERS", "false")
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    example_data.create_project.assert_not_called()
-
-
-def test_register_is_idempotent_for_existing_user(mock_db_class, mock_kc_client) -> None:
-    # Given
-    existing_user = User(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-    existing_user.id = 1
-    existing_user.uuid = uuid4()
-    existing_user.created_at = datetime.now(UTC)
-    mock_db = mock_db_class(query_results={User: existing_user})
-    example_data = MagicMock()
-    service = AuthService(db=mock_db, kc_client=mock_kc_client, example_data=example_data)
-
-    # When
-    result = service.register(username="alice", idp_subject="abc-123", idp_source=ISSUER)
-
-    # Then
-    assert result.username == existing_user.username
-    mock_db.add.assert_not_called()
-    example_data.create_project.assert_not_called()
-
-
 def _guest_service(mock_db, mock_kc_client, kc_admin=None, example_data=None) -> AuthService:
     mock_kc_client.token.return_value = {
         "access_token": "guest-access",
@@ -265,7 +376,7 @@ def test_login_as_guest_creates_keycloak_and_manta_users_and_returns_tokens(
     assert user.username == payload["username"]
     assert user.idp_subject == "kc-guest-id"
     assert user.idp_source == ISSUER
-    example_data.create_project.assert_called_once_with(owner=user)
+    example_data.create_project.assert_called_once_with(owner_id=user.id)
 
     assert result.access_token == "guest-access"  # noqa: S105 It's not a password
     assert result.refresh_token == "guest-refresh"  # noqa: S105 It's not a password

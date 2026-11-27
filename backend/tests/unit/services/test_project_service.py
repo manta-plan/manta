@@ -5,9 +5,10 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from manta.entities import Project, Run, User
+from manta.entities import Project, Run
 from manta.services.errors import AuthorizationError
 from manta.services.project_service import ProjectService, UpdateProjectChanges
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.s3_file_storage_service import S3StorageError
 from manta.services.user_service import UserService
 
@@ -20,8 +21,7 @@ from manta.services.user_service import UserService
 def test_create_project(description, mock_db) -> None:
     # Given
     service = ProjectService(db=mock_db, user_service=UserService(mock_db))
-    owner = User(username="alice")
-    owner.id = 1
+    owner = _user()
 
     # When
     result = service.create_project(name="North Sea Wind", description=description, owner=owner)
@@ -45,10 +45,8 @@ def _project(owner_id: int = 1, name: str = "North Sea Wind", description: str |
     return project
 
 
-def _user(user_id: int = 1) -> User:
-    user = User(username="alice")
-    user.id = user_id
-    return user
+def _user(user_id: int = 1) -> AuthenticatedUserResult:
+    return AuthenticatedUserResult(id=user_id, uuid=uuid4(), username="alice")
 
 
 def test_list_projects_returns_the_users_projects(mock_db_class) -> None:

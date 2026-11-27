@@ -36,28 +36,13 @@ one for the requests.
    uv run manta
    ```
 
-3. In the third terminal, log in as the dev user and keep the token (from
-   `backend/`). This also registers the user with Manta, which every other
-   request needs:
+3. In the third terminal, log in as the dev user and keep the token:
 
    ```bash
-   export TOKEN=$(uv run python -c "
-   import base64, json, urllib.request
-
-   def post(path, body):
-       request = urllib.request.Request(
-           f'http://localhost:8000{path}',
-           data=json.dumps(body).encode(),
-           headers={'Content-Type': 'application/json'},
-       )
-       return json.load(urllib.request.urlopen(request))
-
-   token = post('/v1/auth/login', {'username': 'manta-admin', 'password': 'manta-admin'})['access_token']
-   payload = token.split('.')[1]
-   claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
-   post('/v1/auth/register', {'username': 'manta-admin', 'idp_subject': claims['sub'], 'idp_source': claims['iss']})
-   print(token)
-   ")
+   export TOKEN=$(curl -s http://localhost:8000/v1/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username": "manta-admin", "password": "manta-admin"}' \
+     | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
    ```
 
    The token expires after 5 minutes. Repeat this step when a request returns

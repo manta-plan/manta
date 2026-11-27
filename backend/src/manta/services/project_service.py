@@ -8,7 +8,8 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
-from manta.entities import Project, User
+from manta.entities import Project
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.project_result import ListProjectsResult, ProjectResult
 from manta.services.run_service import RunService
 from manta.services.s3_file_storage_service import S3FileStorageService
@@ -43,7 +44,9 @@ class ProjectService:
         self.run_service = run_service
         self.user_service = user_service
 
-    def create_project(self, name: str, description: str | None, owner: User) -> ProjectResult:
+    def create_project(
+        self, name: str, description: str | None, owner: AuthenticatedUserResult
+    ) -> ProjectResult:
         project = Project(name=name, description=description, owner_id=owner.id)
         self.db.add(project)
         self.db.commit()
@@ -56,7 +59,7 @@ class ProjectService:
         self,
         limit: int,
         offset: int,
-        user: User,
+        user: AuthenticatedUserResult,
         name: str | None = None,
         description: str | None = None,
         created_from: datetime | None = None,
@@ -100,11 +103,11 @@ class ProjectService:
             offset=offset,
         )
 
-    def get_project(self, project_uuid: UUID, user: User) -> ProjectResult:
+    def get_project(self, project_uuid: UUID, user: AuthenticatedUserResult) -> ProjectResult:
         return _to_result(self.user_service.get_owned_project(project_uuid, user))
 
     def update_project(
-        self, project_uuid: UUID, changes: UpdateProjectChanges, user: User
+        self, project_uuid: UUID, changes: UpdateProjectChanges, user: AuthenticatedUserResult
     ) -> ProjectResult:
         project = self.user_service.get_owned_project(project_uuid, user)
         if changes.name is not UNSET:
@@ -117,7 +120,7 @@ class ProjectService:
 
         return _to_result(project)
 
-    def delete_project(self, project_uuid: UUID, user: User) -> None:
+    def delete_project(self, project_uuid: UUID, user: AuthenticatedUserResult) -> None:
         """Deletes the project and everything it owns: its runs' Prefect flow runs, its
         files in S3, then the project row (its runs' rows go with it, ON DELETE CASCADE).
         Refused with a 409 while any of its runs is still active.
