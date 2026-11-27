@@ -42,6 +42,10 @@ register_lazy(
     "rolling_horizon_dispatch",
     "playbook_library.rolling_horizon_dispatch:RollingHorizonDispatch",
 )
+register_lazy(
+    "water_value_calculation",
+    "playbook_library.water_value_calculation:WaterValueCalculation",
+)
 
 
 def library_catalogue() -> Catalogue:

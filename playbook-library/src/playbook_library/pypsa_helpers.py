@@ -15,19 +15,31 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import pypsa
-from datarecord import Revision
+from datarecord import Revision, WorkingRecord
 from datarecord.tools.base import UnsupportedRecordError
 from datarecord.tools.pypsa import PyPSA
 from playbook.blocks.core import DataRecordError, SolveError
 
-from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
+from playbook_library.pypsa_configs import (
+    Aggregation,
+    LoadSheddingConfig,
+    PyPSAFixedCapacityBlockConfig,
+    PyPSAOptimizeSchema,
+)
 from playbook_library.pypsa_spatial_aggregation import (
+    LAND_USE,
     aggregate_network,
     dropped_assets,
     expand_network,
 )
-from playbook_library.pypsa_time_aggregation import PYPSA_LABELS, write_expanded_results
+from playbook_library.pypsa_time_aggregation import (
+    PYPSA_LABELS,
+    STATES,
+    snapshot_rows,
+    write_expanded_results,
+)
 from playbook_library.time_aggregation import carry_time_properties
 
 BUILT_COMPONENTS = ["Generator", "Link", "StorageUnit", "Store", "Line", "Transformer"]
@@ -75,6 +87,41 @@ def write_network(n: pypsa.Network, parent: Revision, results_only: bool = False
     return parent.store.commit(source, parent=parent)
 
 
+def with_load_shedding(
+    rev: Revision, config: LoadSheddingConfig | None, entity: str | None
+) -> Revision:
+    """Add load shedding by `config` to the network of `rev`, stored as a child revision.
+
+    The load-shedding generators are then part of the stored model, so a later
+    results-only write includes their results. They are `existing` assets, and take their
+    carrier as the value of the entity property `entity`, so that an entity aggregation
+    merges them. Without `config`, `rev` is returned as it is.
+    """
+    if config is None:
+        return rev
+    n = to_network(rev)
+    before = n.c.generators.static.index
+    n.optimize.add_load_shedding(**config.model_dump())
+    added = n.c.generators.static.index.difference(before)
+    n.c.generators.static.loc[added, "asset_status"] = "existing"
+    if entity is not None:
+        n.c.generators.static.loc[added, entity] = n.c.generators.static.loc[added, "carrier"]
+    return write_network(n, rev)
+
+
+def write_series(rev: Revision, attribute: str, values: pd.DataFrame) -> Revision:
+    """Store `values` as input `attribute` in a child revision of `rev`.
+
+    `values` has a column per entity and a row per snapshot of a network built from
+    `rev`. The child holds these rows alone, so everything else reads as in `rev`.
+    """
+    con = rev.store.workspace.con
+    rows = values.melt(var_name="entity").assign(snapshot=list(values.index) * values.shape[1])
+    edits = WorkingRecord(rev.record)
+    edits.set(attribute, snapshot_rows(rev.record.schema, con, rows, ["snapshot"]))
+    return rev.store.commit(edits)
+
+
 def remove_unbuilt_cohorts(n: pypsa.Network) -> None:
     """Remove the cohorts `n` could only have built before its one investment period.
 
@@ -88,6 +135,168 @@ def remove_unbuilt_cohorts(n: pypsa.Network) -> None:
         static = c.static
         earlier = static[nominal_attr(c.name) + "_extendable"] & (static.build_year < period)
         n.remove(c.name, static.index[earlier & np.isfinite(static.lifetime)])
+
+
+def solved_periods(rev: Revision) -> list[int]:
+    """Return the investment periods that `rev` has results for, without building a network.
+
+    A revision without the result `p` or without investment periods has none.
+    """
+    if "p" not in rev.record.attributes or "period" not in rev.record.dims:
+        return []
+    solved = rev.record.attributes["p"].filter("snapshot IS NOT NULL")
+    held = solved.project("snapshot.period").distinct()
+    return sorted(period for (period,) in held.fetchall())
+
+
+def selected_periods(rev: Revision, periods: list[int] | None) -> list[int]:
+    """Return the investment periods of `rev` that `periods` selects, in model order.
+
+    None selects all of them. Raises `ValueError` if `periods` is set and the model has no
+    investment periods, or lacks one of those set.
+    """
+    held = investment_periods(rev)
+    if periods is None:
+        return held
+    if not held:
+        raise ValueError("The model has no investment periods to select some of.")
+    missing = sorted(set(periods) - set(held))
+    if missing:
+        raise ValueError(f"The model has no investment periods {missing}: {held}.")
+    return [period for period in held if period in periods]
+
+
+def decided_capacities(rev: Revision) -> pd.Series:
+    """Return the optimised capacity of each asset that `rev` has one for, by asset name.
+
+    It reads the revision, not a network built from it, because a network fills an
+    undecided capacity with 0.
+    """
+    names = {nominal_attr(c) + "_opt" for c in BUILT_COMPONENTS} & set(rev.record.attributes)
+    frames = [rev.record.attributes[name].df().set_index("entity")["value"] for name in names]
+    return pd.concat(frames) if frames else pd.Series(dtype=float)
+
+
+def extendable_assets(n: pypsa.Network) -> dict[str, pd.Index]:
+    """Return the extendable assets of each built component of `n` that has some, by name."""
+    assets = {}
+    for c in n.components[BUILT_COMPONENTS]:
+        static = c.static
+        extendable = static.index[static[nominal_attr(c.name) + "_extendable"]]
+        if not extendable.empty:
+            assets[c.name] = extendable
+    return assets
+
+
+def apply_decided_capacities(n: pypsa.Network, decided: pd.Series) -> None:
+    """Fix the capacity of each extendable asset of `n` that `decided` has one for, by name.
+
+    Such an asset takes its decided capacity and stops being extendable, so a solve cannot
+    change it. An asset that is not extendable keeps its own capacity.
+    """
+    for name, extendable in extendable_assets(n).items():
+        attr = nominal_attr(name)
+        static = n.components[name].static
+        fixed = extendable.intersection(decided.index)
+        static.loc[fixed, attr] = decided[fixed]
+        static.loc[fixed, attr + "_extendable"] = False
+
+
+def refuse_undecided_capacities(n: pypsa.Network) -> None:
+    """Raise `ValueError` if an asset of `n` is still extendable, its capacity undecided."""
+    undecided = {name: assets.tolist() for name, assets in extendable_assets(n).items()}
+    if undecided:
+        raise ValueError(f"The record decided no capacity of {undecided}")
+
+
+def restarting_storage(
+    static: pd.DataFrame, state: str, multi_investment_periods: bool
+) -> pd.Series:
+    """Mark each asset of `static` whose `state` a rolling horizon window starts afresh.
+
+    `state` is a key of `STATES`. Cyclic storage cycles within each window. Over investment
+    periods, storage that cycles or starts afresh per period does so within each window too.
+    """
+    _, cyclic, cycles_per_period, starts_per_period, _ = STATES[state]
+    per_period = static[cycles_per_period] | static[starts_per_period]
+    return static[cyclic] | (multi_investment_periods & per_period)
+
+
+def fix_capacities(n: pypsa.Network, rev: Revision, periods: list[int]) -> None:
+    """Fix in `n` the capacities that `rev` decided, `n` being built from it over `periods`.
+
+    Each extendable asset takes the capacity a solve of `rev` decided, and every other
+    asset keeps its own. Over a single period, overnight expansion removes the cohorts only
+    an earlier period could have built. So this removes them too, where `rev` decided no
+    capacity for them. With nothing left to build, the limits on capacity expansion, such
+    as land use, limit nothing, so they are removed too. Raises `ValueError` if `n` has an
+    extendable asset and `rev` has no results for one of `periods`, or if an extendable
+    asset is left without a decided capacity.
+    """
+    limits = n.c.global_constraints.static
+    n.remove("GlobalConstraint", limits.index[limits["type"] == LAND_USE])
+    if not extendable_assets(n):
+        return
+    unsolved = sorted(set(periods).difference(solved_periods(rev))) if periods else []
+    if unsolved:
+        raise ValueError(f"The record holds no results of the periods {unsolved}.")
+    apply_decided_capacities(n, decided_capacities(rev))
+    if len(periods) == 1:
+        remove_unbuilt_cohorts(n)
+    refuse_undecided_capacities(n)
+
+
+def unscope_global_constraints(n: pypsa.Network) -> None:
+    """Let the global constraints of the one investment period of `n` hold over every snapshot.
+
+    PyPSA solves a network without investment periods only with global constraints of no
+    period. Over one period, those of it hold over every snapshot, and those of another
+    hold over none, so they are removed. A network of several periods is left as it is.
+    """
+    if len(n.investment_periods) != 1:
+        return
+    (period,) = n.investment_periods
+    scoped = n.c.global_constraints.static["investment_period"]
+    n.remove("GlobalConstraint", scoped.index[scoped.notna() & (scoped != period)])
+    n.c.global_constraints.static["investment_period"] = np.nan
+
+
+def refuse_split_global_constraints(n: pypsa.Network) -> None:
+    """Raise `ValueError` for a global constraint of `n` with a limit other than 0.
+
+    A windowed solve, such as a rolling horizon, holds each global constraint within each
+    window in full. That is the limit over its period, or over every snapshot if it has no
+    period, only if the limit is 0.
+    """
+    static = n.c.global_constraints.static
+    split = static.index[static["constant"] != 0]
+    if not split.empty:
+        raise ValueError(
+            f"The global constraints {split.tolist()} limit their snapshots as a whole, "
+            "which a rolling horizon would apply to each window in full."
+        )
+
+
+def fixed_capacity_model(
+    rev: Revision, config: PyPSAFixedCapacityBlockConfig, windowed: bool
+) -> tuple[Revision, pypsa.Network]:
+    """Return `rev` with the load shedding of `config`, and its network to solve.
+
+    The network covers the `periods` of `config`, with the capacities a solve of `rev`
+    decided. Not solved over investment periods, the global constraints of its one period
+    hold over every snapshot, as `unscope_global_constraints` sets out. A `windowed` solve
+    refuses global constraints with a limit other than 0, as
+    `refuse_split_global_constraints` sets out.
+    """
+    periods = selected_periods(rev, config.periods)
+    model = with_load_shedding(rev, config.load_shedding, config.aggregation.entity)
+    n = to_network(model, select={"period": periods}) if periods else to_network(model)
+    fix_capacities(n, rev, periods)
+    if not config.optimize_config.multi_investment_periods:
+        unscope_global_constraints(n)
+    if windowed:
+        refuse_split_global_constraints(n)
+    return model, n
 
 
 def optimize_network(

@@ -103,13 +103,12 @@ flowchart LR
     initial(["Input record<br/>dims: snapshot"]) --> cluster["cluster<br/>(time_partition)"]
     cluster --> expansion["expansion_overnight<br/>(overnight_capacity_expansion)"]
     expansion --> dispatch["dispatch<br/>(rolling_horizon_dispatch)"]
-    expansion -. "capacity_source" .-> dispatch
 ```
 
 The diagram shows part of the `cluster-expand-dispatch` playbook, with each step's name above its block.
-The solid arrows are the main line, and the dashed arrow is a wire.
-`dispatch` gets the record that `expansion_overnight` returned along the main line.
-It also gets the same step's result in its `capacity_source` setting, which gives it the capacities to dispatch against.
+Every arrow is part of the main line, because no playbook in the library uses a wire currently.
+`dispatch` gets the record that `expansion_overnight` returned, which contains the optimised capacities to dispatch against.
+A step that needs an earlier result lists it under `inputs`, with the setting as the key and `${steps.<step>.output}` as the value.
 
 Most energy model studies run in a line, so the main line needs no wiring at all.
 Wires cover the cases where a later step needs one particular earlier result.

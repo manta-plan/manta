@@ -2,9 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
+from typing import Annotated
+
 import pypsa
 from datarecord import Revision
+from playbook.blocks import RecordDimCoord
 from playbook.blocks.core import BlockDims, MantaBlock
+from pydantic import Field
 
 from playbook_library.pypsa_configs import PyPSAOptimizeBlockConfig
 from playbook_library.pypsa_helpers import (
@@ -17,7 +21,7 @@ from playbook_library.pypsa_helpers import (
 
 
 class OvernightCapacityExpansionConfig(PyPSAOptimizeBlockConfig):
-    period: int | None = None
+    period: Annotated[int, RecordDimCoord("period")] | None = Field(default=None)
     """The investment period to build for, in a model with investment periods.
 
     None takes the last one. A model without investment periods is solved whole."""

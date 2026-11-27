@@ -169,21 +169,28 @@ def _held_frame(n: pypsa.Network, base: RecordLike) -> pd.DataFrame:
     return frame[frame["period"].isin(n.snapshots.unique(level="period"))]
 
 
-def cluster_network(n: pypsa.Network, rev: Revision, name: str) -> pypsa.Network:
-    """Cluster `n`, built from `rev`, by the time aggregation `snapshot.<name>` of `rev`.
+def snapshot_map(n: pypsa.Network, rev: Revision, name: str) -> pd.Series:
+    """Return the representative of each snapshot of `n`, built from `rev`, by `snapshot.<name>`.
 
-    `n` may have only some investment periods of `rev`. Each cluster becomes one
-    snapshot at its representative, weighted by the sum of its snapshots' weightings.
-    Series are aggregated as PyPSA's `from_snapshot_map` aggregates them. Raises
-    `ValueError` if `rev` has no valid `snapshot.<name>`.
+    `n` may have only some investment periods of `rev`. Snapshots are labelled as `n`
+    labels them. Raises `ValueError` if `rev` has no valid `snapshot.<name>`.
     """
     base = rev.record
     frame = _held_frame(n, base)
     representatives = checked_clusters(frame, name, pypsa_time(base.schema))
     snapshots = _network_snapshots(base, frame)
     positions = pd.Index(frame["snapshot"]).get_indexer(representatives)
-    snapshot_map = pd.Series(list(snapshots[positions]), index=snapshots)
-    return n.cluster.temporal.from_snapshot_map(snapshot_map)
+    return pd.Series(list(snapshots[positions]), index=snapshots)
+
+
+def cluster_network(n: pypsa.Network, rev: Revision, name: str) -> pypsa.Network:
+    """Cluster `n`, built from `rev`, by the time aggregation `snapshot.<name>` of `rev`.
+
+    Each cluster becomes one snapshot at its representative, weighted by the sum of its
+    snapshots' weightings. Series are aggregated as PyPSA's `from_snapshot_map` aggregates
+    them. Raises `ValueError` as `snapshot_map` does.
+    """
+    return n.cluster.temporal.from_snapshot_map(snapshot_map(n, rev, name))
 
 
 STATES = {

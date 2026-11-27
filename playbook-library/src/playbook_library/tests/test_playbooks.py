@@ -55,6 +55,10 @@ def with_its_blocks_imported(name: str) -> Playbook:
             "cluster-expand-dispatch",
             ["cluster", "expansion_overnight", "expansion_myopic", "dispatch"],
         ),
+        (
+            "expand-water-value-dispatch",
+            ["cluster", "cluster_monthly", "expansion_overnight", "water_value", "dispatch"],
+        ),
     ],
 )
 def test_the_library_ships_the_playbook(name, steps):

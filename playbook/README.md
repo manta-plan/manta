@@ -190,17 +190,17 @@ everything can see. Keeping them apart is what lets one playbook be run several 
 
 Every step is handed the revision the previous step produced. On top of that, a step can
 reach back for a *particular* earlier step's result and put it into one of its settings
-(`${steps.<step>.<output>}`). Those are separate things: a `dispatch` step written as
+(`${steps.<step>.<output>}`). Those are separate things: a `compare` step written as
 
 ```yaml
-  - name: dispatch
-    block: rolling_horizon_dispatch
+  - name: compare
+    block: compare_results
     inputs:
-      capacity_source: ${steps.expansion_overnight.output}
+      baseline: ${steps.expansion_overnight.output}
 ```
 
-receives the revision from the step before it *and* the capacities that the expansion
-step specifically decided.
+receives the revision from the step before it *and*, in its `baseline` setting, the
+revision that the expansion step produced.
 
 ### Using a block more than once
 
@@ -259,7 +259,7 @@ list. `Playbook.find_issues` and `Playbook.raise_for_issues` do the same as meth
 | `message` | what is wrong, in words | `"there is no setting called 'optimize_confg'"` |
 | `step_path` | the step, as names from the outermost playbook inwards; empty for the playbook as a whole | `("expansion_myopic",)` |
 | `config_path` | where in the settings, counted from the top of the settings document; `None` when no one setting is at fault | `("expansion_myopic", "optimize_confg")` |
-| `input` | the wired-in setting, for a problem with how a step is fed | `"capacity_source"` |
+| `input` | the wired-in setting, for a problem with how a step is fed | `"baseline"` |
 
 A step inside a nested playbook has a longer `step_path`, such as
 `("regional", "dispatch")`. Its settings sit under the nesting step, so its

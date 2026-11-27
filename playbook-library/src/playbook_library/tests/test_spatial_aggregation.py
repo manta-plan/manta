@@ -25,7 +25,12 @@ from pypsa.geo import haversine_pts
 
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.pypsa_configs import Aggregation, PyPSAOptimizeSchema
-from playbook_library.pypsa_helpers import optimize_network, to_network, write_aggregated_results
+from playbook_library.pypsa_helpers import (
+    fix_capacities,
+    optimize_network,
+    to_network,
+    write_aggregated_results,
+)
 from playbook_library.pypsa_spatial_aggregation import (
     aggregate_network,
     expand_network,
@@ -1087,6 +1092,16 @@ def test_land_use_limits_without_extendable_generators_are_dropped(land_use_reco
     n = to_network(land_use_record)
     n.generators["p_nom_extendable"] = False
     n_c = aggregate_network(n, land_use_record, Aggregation(entity="carrier"))
+    assert n_c.global_constraints.index.tolist() == ["co2"]
+
+
+def test_fixed_capacities_leave_no_land_use_limit_to_merge(land_use_record):
+    expanded = _run(OvernightCapacityExpansion, {}, land_use_record)
+    n = to_network(expanded, select={"period": [2050]})
+    fix_capacities(n, expanded, [2050])
+
+    n_c = aggregate_network(n, land_use_record, Aggregation(entity="carrier"))
+
     assert n_c.global_constraints.index.tolist() == ["co2"]
 
 
