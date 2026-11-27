@@ -220,14 +220,12 @@ def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
 
 
 @pytest.fixture(scope="session")
-def second_user(
-    app_server: str, kc_oidc_client: KeycloakOpenID, kc_admin_client: KeycloakAdmin
-) -> tuple[str, str]:
-    """A second, distinct registered identity's username and password — for asserting
+def second_user(app_server: str, kc_admin_client: KeycloakAdmin) -> tuple[str, str]:
+    """A second, distinct identity's username and password — for asserting
     that one user can't act on another user's resources (e.g. project ownership
-    checks). Session-scoped: created once via the Keycloak admin API and reused by
-    every test that needs a non-owner, rather than provisioning a fresh Keycloak user
-    per test."""
+    checks). Session-scoped: created once via the Keycloak admin API, logged in once
+    so its manta user exists, and reused by every test that needs a non-owner, rather
+    than provisioning a fresh Keycloak user per test."""
     username = f"mallory-{uuid4()}"
     password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
     kc_admin_client.create_user(
@@ -240,13 +238,10 @@ def second_user(
         }
     )
 
-    token = kc_oidc_client.token(username, password)
-    claims = kc_oidc_client.decode_token(token["access_token"], validate=False)
     response = httpx2.post(
-        f"{app_server}/v1/auth/register",
-        json={"username": username, "idp_subject": claims["sub"], "idp_source": claims["iss"]},
+        f"{app_server}/v1/auth/login", json={"username": username, "password": password}
     )
-    assert response.status_code == 201
+    assert response.status_code == 200
     return username, password
 
 

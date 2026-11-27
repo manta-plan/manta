@@ -8,6 +8,9 @@ name: Deploy
 # https://<vm_name>.manta-plan.org. Manual trigger only: Actions > Deploy >
 # Run workflow. Setup and usage are in docs/deployment.md.
 #
+# The VM serves HTTPS itself: a Cloud DNS record points the subdomain at the
+# VM, and the frontend's Caddy gets a Let's Encrypt certificate for it.
+#
 # Two refs are involved. The workflow and scripts/deploy/ come from the branch
 # picked under "Use workflow from"; the `ref` input is what gets deployed.
 
@@ -59,8 +62,9 @@ env:
   GCP_PROJECT: ${{ inputs.gcp_project }}
   GCP_ZONE: ${{ vars.GCP_ZONE }}
   GCP_MACHINE_TYPE: ${{ vars.GCP_MACHINE_TYPE }}
-  GCP_LB_PROJECT: ${{ vars.GCP_LB_PROJECT }}
-  GCP_URL_MAP: ${{ vars.GCP_URL_MAP }}
+  # The project of the manta-plan.org Cloud DNS zone. Defaults to the VM's own
+  # project; set the variable when the VM lives elsewhere.
+  GCP_DNS_PROJECT: ${{ vars.GCP_DNS_PROJECT || inputs.gcp_project }}
 
 jobs:
   # Everything that can be checked without changing anything. With `dry_run`
@@ -80,7 +84,7 @@ jobs:
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
         run: |
           failed=0
-          for name in GCP_WIF_PROVIDER GCP_SERVICE_ACCOUNT GCP_ZONE GCP_MACHINE_TYPE GCP_LB_PROJECT GCP_URL_MAP; do
+          for name in GCP_WIF_PROVIDER GCP_SERVICE_ACCOUNT GCP_ZONE GCP_MACHINE_TYPE; do
             if [ -z "${!name}" ]; then
               echo "::error::Repository variable $name is not set (Settings > Secrets and variables > Actions > Variables)."
               failed=1
@@ -122,7 +126,7 @@ jobs:
       # Before anything is created: a vm_name another project already uses
       # would otherwise only fail after its VM and IP exist.
       - name: Check that the subdomain is free
-        run: bash scripts/deploy/gcp-register-lb.sh --check-only
+        run: bash scripts/deploy/gcp-register-dns.sh --check-only
 
   deploy:
     name: Deploy
@@ -168,12 +172,13 @@ jobs:
       - name: Set up the VM
         run: bash scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
 
-      # Before the deployment itself, so the new host rule spreads across the
-      # load balancer while the images build.
-      - name: Register with the load balancer
+      # Before the deployment itself, so the new record spreads while the
+      # images build: Caddy asks Let's Encrypt for a certificate as soon as the
+      # frontend starts, and Let's Encrypt must then find the VM at the name.
+      - name: Point the subdomain at the VM
         env:
           VM_IP: ${{ steps.vm.outputs.ip }}
-        run: bash scripts/deploy/gcp-register-lb.sh
+        run: bash scripts/deploy/gcp-register-dns.sh
 
       - name: Deploy to the VM
         env:
@@ -199,7 +204,7 @@ jobs:
             echo "Got $code from $url (attempt $attempt of 60) $(head -n 1 curl-error.txt)"
             sleep 10
           done
-          echo "::error::$url did not return 200 within 10 minutes. The instance is healthy on the VM itself, so look at the wildcard DNS record, the wildcard certificate and the load balancer."
+          echo "::error::$url did not return 200 within 10 minutes. The VM itself serves it over HTTPS, so the public name does not reach the VM yet: look at the $SITE_HOST record in Cloud DNS and the manta-allow-web firewall rule."
           exit 1
 
       - name: Summary

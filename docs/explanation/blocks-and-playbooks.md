@@ -61,7 +61,7 @@ A playbook has to declare its input's dimensions because a record does not yet d
 
 ## Blocks are found by name
 
-A playbook names its blocks as strings, such as `cluster_time`.
+A playbook names its blocks as strings, such as `time_partition`.
 A name is all a playbook needs, because no single Python environment can import every block.
 
 A block library registers each block with `register_lazy`, as a name and the module that holds it.
@@ -100,7 +100,7 @@ A step can also take one earlier step's result into one of its settings, written
 
 ```mermaid
 flowchart LR
-    initial(["Input record<br/>dims: snapshot"]) --> cluster["cluster<br/>(cluster_time)"]
+    initial(["Input record<br/>dims: snapshot"]) --> cluster["cluster<br/>(time_partition)"]
     cluster --> expansion["expansion_overnight<br/>(overnight_capacity_expansion)"]
     expansion --> dispatch["dispatch<br/>(rolling_horizon_dispatch)"]
     expansion -. "capacity_source" .-> dispatch
@@ -164,7 +164,7 @@ Every other check depends on which steps run, and so on the settings.
 Where a block can be imported, its own settings model checks its settings.
 Where it cannot, its JSON schema from the catalogue does, which catches wrong types and missing or unknown settings.
 A rule that a block states in code cannot travel in a schema.
-`cluster_time` needs exactly one of `n_hours` and `segments`, so a process without PyPSA cannot check that rule, and the block refuses it when it runs.
+`time_partition` needs exactly one of `n_hours` and `segments`, so a process without PyPSA cannot check that rule, and the block refuses it when it runs.
 [Run lifecycle](run-lifecycle.md#where-a-playbook-is-checked) lists where each check runs.
 
 ## What this design costs

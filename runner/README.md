@@ -38,6 +38,30 @@ container per run would idle for hours and take the run down with it if it were
 evicted. It is also why a playbook run survives a restart of whatever dispatched
 it.
 
+That pool has a concurrency limit, `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS`, which
+`deploy.py` applies on every deploy, also to a pool that already exists. A run
+submitted beyond it is accepted and waits in Prefect as `SCHEDULED` until a slot
+frees up. The blocks pool has no limit of its own.
+
+Both flows have a timeout, read from the environment of the process that
+executes the flow: `MANTA_PLAYBOOK_TIMEOUT_SECONDS` in the playbook worker, and
+`MANTA_BLOCK_TIMEOUT_SECONDS` in a block's container, where `deploy.py` puts it
+through the blocks pool. The playbook timeout covers every step, so `deploy.py`
+refuses one that is not the larger of the two.
+
+- A block past its timeout ends as `FAILED` with the state name `TimedOut`, and
+  its container exits and is removed. `PrefectBlockRunner` turns that into a
+  `BlockTimedOutError`, a `TimeoutError`, so the playbook run ends as `TimedOut`
+  as well.
+- A playbook past its timeout ends as `TimedOut`, and `PrefectBlockRunner`
+  cancels the step it was waiting for. The cancellation is carried out by the
+  process Prefect runs beside the block in its container, which kills the block
+  from outside whatever it is doing.
+
+That is why `PrefectBlockRunner` dispatches a step without waiting
+(`timeout=0`) and does the waiting itself: a wait inside `run_deployment` would
+give it no flow run to cancel when the wait is cut short.
+
 Before its first step, `run-playbook` checks the playbook against its config
 (`execute_playbook` does this), using the catalogue it was handed. A run that Manta's
 backend would refuse therefore also fails here, before any block container starts.

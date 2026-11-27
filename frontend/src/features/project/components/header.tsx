@@ -23,6 +23,9 @@ import {
   projectTabHref,
   type ProjectTab,
 } from "../lib/project-route";
+import { InspectResultToolbar } from "../../analyse/components/inspect-result-toolbar";
+import { startAnalyseWorkspaceTour } from "../../analyse/lib/analyse-tours";
+import { lastAnalyseLocation, rememberAnalyseLocation } from "../lib/last-analyse-location";
 import { startBuildWorkspaceTour } from "../lib/workspace-tours";
 import { useWorkspaceView } from "../lib/use-workspace-view";
 import { MantaLogo } from "../../home/components/manta-logo";
@@ -39,6 +42,8 @@ export function Header() {
   const [location, setLocation] = useLocation();
   const { projectId } = useParams<{ projectId: string }>();
   const activeTab = getActiveProjectTab(location);
+  const selectedViewId = useProjectStore((s) => s.selectedViewId);
+  const isDataPage = /\/analyse\/(computed|raw):/.test(location);
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const viewState = useProjectStore((s) => s.viewState);
   const setViewState = useProjectStore((s) => s.setViewState);
@@ -86,8 +91,19 @@ export function Header() {
     },
   ];
 
+  // Remember the open view, report or data page so the Analyse tab comes back to it.
+  useEffect(() => {
+    if (activeTab === "analyse") rememberAnalyseLocation(projectId, location);
+  }, [activeTab, location, projectId]);
+
   const goToTab = (tab: ProjectTab) =>
-    setLocation(tab === "run" ? projectRunHref(projectId) : projectTabHref(projectId, tab));
+    setLocation(
+      tab === "run"
+        ? projectRunHref(projectId)
+        : tab === "analyse" && activeTab !== "analyse"
+          ? (lastAnalyseLocation(projectId) ?? projectTabHref(projectId, tab))
+          : projectTabHref(projectId, tab),
+    );
 
   // Plain-key shortcuts, listed in KeyboardShortcutsDialog. They stay out of
   // the way of typing, browser chords and any open dialog.
@@ -207,6 +223,10 @@ export function Header() {
         {/* Right toolbar */}
         <Toolbar.Root className="ml-auto flex shrink-0 items-center gap-1 pr-1">
           {/* The open level's actions (Build) come first, then the project-wide ones. */}
+          {activeTab === "analyse" && (selectedViewId || isDataPage) && (
+            <InspectResultToolbar withComparison={!isDataPage} />
+          )}
+
           <LevelToolbarActions />
 
           {/* Project-wide actions */}
@@ -214,8 +234,10 @@ export function Header() {
             <ToolbarIconButton
               icon={FaFly}
               label="Start tour"
-              disabled={activeTab !== "build"}
-              onClick={startBuildWorkspaceTour}
+              disabled={activeTab !== "build" && activeTab !== "analyse"}
+              onClick={
+                activeTab === "analyse" ? startAnalyseWorkspaceTour : startBuildWorkspaceTour
+              }
             />
             <ToolbarIconButton
               icon={theme === "dark" ? LuMoon : LuSun}

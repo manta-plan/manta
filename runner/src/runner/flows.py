@@ -20,6 +20,7 @@ pass pointers to data rather than the data itself.
 
 import json
 import logging
+import time
 from contextlib import closing
 from uuid import UUID
 
@@ -34,9 +35,11 @@ from prefect.client.schemas.filters import (
     ArtifactFilterFlowRunId,
     ArtifactFilterKey,
 )
+from prefect.client.schemas.objects import FlowRun
 from prefect.deployments import run_deployment
+from prefect.states import Cancelling
 
-from runner.config import exec_image
+from runner.config import block_timeout_seconds, exec_image, playbook_timeout_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,15 @@ OUTPUT_ARTIFACT_KEY = "block-output"
 """The key of the one-row table artifact `run-block` publishes its output revision as.
 It is how that revision travels back out of the block's container: to the orchestrator,
 which hands it to the next step, and to Manta's backend, which reports it."""
+
+TIMED_OUT_STATE_NAME = "TimedOut"
+"""The name Prefect gives the `FAILED` state of a flow run that exceeded its timeout,
+or that raised a `TimeoutError`. Nothing else tells a timeout from another failure:
+`PrefectBlockRunner` reads it off a step, and Manta's backend off a run."""
+
+BLOCK_POLL_SECONDS = 5
+"""How often `PrefectBlockRunner` asks whether a step has finished. The same interval
+`run_deployment` polls at when it does the waiting itself."""
 
 
 def deployment_name(flow_name: str) -> str:
@@ -67,6 +79,15 @@ PLAYBOOK_DEPLOYMENT = deployment_name(PLAYBOOK_FLOW_NAME)
 
 class BlockRunFailedError(Exception):
     """Raised when a step's flow run did not complete."""
+
+
+class BlockTimedOutError(BlockRunFailedError, TimeoutError):
+    """Raised when a step's flow run exceeded the block timeout.
+
+    A `TimeoutError` on purpose: Prefect ends a flow run that raises one as timed
+    out, so the playbook run reports the timeout as well, not a failure of some
+    other kind.
+    """
 
 
 def catalogue_parameter(catalogue: Catalogue) -> str:
@@ -93,6 +114,10 @@ def parse_catalogue_parameter(raw: str) -> Catalogue:
     flow_run_name="{step_name}[{block}]",
     # A block's own print()s are part of its log, and solvers are talkative.
     log_prints=True,
+    # Read when this module is imported, so in the block's own container (see
+    # config.job_environment). Once it passes, Prefect raises inside the block: the
+    # flow run ends as timed out, and its container exits and is removed.
+    timeout_seconds=block_timeout_seconds(),
 )
 def run_block(
     block: str,
@@ -169,8 +194,17 @@ class PrefectBlockRunner:
                 "revision": revision.to_dict(),
                 "inputs": {name: value.to_dict() for name, value in inputs.items()},
             },
+            # Only create the flow run: `_wait_for_block_run` does the waiting, so
+            # that the step can be cancelled if this playbook run stops waiting.
+            timeout=0,
         )
+        flow_run = _wait_for_block_run(flow_run)
         state = flow_run.state
+        if state is not None and state.name == TIMED_OUT_STATE_NAME:
+            raise BlockTimedOutError(
+                f"step {step_name!r} ({block.name}) exceeded the block timeout; "
+                f"its log is on flow run {flow_run.id}"
+            )
         if state is None or not state.is_completed():
             raise BlockRunFailedError(
                 f"step {step_name!r} ({block.name}) ended in state "
@@ -178,6 +212,44 @@ class PrefectBlockRunner:
                 f"its log is on flow run {flow_run.id}"
             )
         return _block_output(flow_run.id, step_name)
+
+
+def _wait_for_block_run(flow_run: FlowRun) -> FlowRun:
+    """Wait until a step's flow run is final, and cancel it if the wait is cut short.
+
+    The wait is cut short when the playbook run itself is ending: by its own
+    timeout, which Prefect raises in here, by a cancellation, or because its worker
+    is shutting down. The step would then run on with nothing waiting for its
+    result, so it is cancelled, which stops its container.
+    """
+    try:
+        with get_client(sync_client=True) as client:
+            while flow_run.state is not None and not flow_run.state.is_final():
+                time.sleep(BLOCK_POLL_SECONDS)
+                flow_run = client.read_flow_run(flow_run.id)
+    except BaseException:
+        _cancel_block_run(flow_run.id)
+        raise
+    return flow_run
+
+
+def _cancel_block_run(flow_run_id: UUID) -> None:
+    """Ask Prefect to cancel a step's flow run, which stops and removes its container.
+
+    The process Prefect runs beside the block in that container acts on this: it
+    kills the block from outside, whatever the block is doing. Best effort, as the
+    playbook run is already ending for a reason of its own that must not be masked.
+    """
+    try:
+        with get_client(sync_client=True) as client:
+            client.set_flow_run_state(
+                flow_run_id,
+                Cancelling(message="The playbook run ended before this step finished."),
+            )
+    except Exception:
+        logger.exception(
+            "Could not cancel flow run %s; its container may still be running", flow_run_id
+        )
 
 
 def _block_output(flow_run_id: UUID, step_name: str) -> RevisionRef:
@@ -201,7 +273,13 @@ def _block_output(flow_run_id: UUID, step_name: str) -> RevisionRef:
     return RevisionRef.from_dict(row)
 
 
-@flow(name=PLAYBOOK_FLOW_NAME)
+@flow(
+    name=PLAYBOOK_FLOW_NAME,
+    # Read when this module is imported, so in the playbook worker. It covers the
+    # whole playbook. A step still running when it passes is cancelled (see
+    # `_wait_for_block_run`), and the run ends as timed out, which frees its slot.
+    timeout_seconds=playbook_timeout_seconds(),
+)
 def run_playbook(playbook: dict, config: dict, revision: dict, catalogue: str) -> dict:
     """Run a whole playbook, given its document rather than the playbook itself.
 

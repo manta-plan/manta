@@ -18,9 +18,15 @@ Quack hands every client the full SQL surface of the server. Two guards:
    - it must parse as SELECT statements only (no DDL, DML, COPY, ATTACH, SET,
      PRAGMA), bar the bare transaction statements the client wraps every query in,
    - table functions are limited to the catalog ones the Quack client calls when
-     it attaches, which shuts out read_csv/read_parquet/glob/query/quack_* and
-     friends, including inside the record directory,
+     it attaches, plus a few that only make rows (range, unnest), which shuts out
+     read_csv/read_parquet/read_text/glob/query/duckdb_settings/duckdb_secrets/
+     quack_* and friends, including inside the record directory,
+   - no call, anywhere in the query and however it's qualified or cased, to a
+     function that reveals the server: its settings (current_setting), its
+     environment (getenv), its secrets, Quack's own functions,
    - table names can't be file paths or URLs (replacement scans like `FROM 'x.csv'`).
+
+Every name is read from json_serialize_sql's parse of the query, not its text.
 
 Treat this as a proof-of-concept guard, not an audited security boundary.
 """
@@ -40,12 +46,36 @@ CATALOG_TABLE_FUNCTIONS = (
     "duckdb_views",
 )
 
+# Table functions that only make rows from their arguments; for modellers' SQL.
+ROW_TABLE_FUNCTIONS = ("generate_series", "range", "unnest")
+
+# Functions no query may call, in any position: they read the server's
+# settings, environment or secrets, run SQL of their own, or are Quack's.
+# (Most are table functions, already shut out; listed so they stay out if the
+# list above grows.) Anything starting with QUACK_PREFIX is denied too.
+DENIED_FUNCTIONS = (
+    "current_setting",
+    "getenv",
+    "duckdb_secrets",
+    "which_secret",
+    "duckdb_settings",
+    "json_execute_serialized_sql",
+    "query",
+    "query_table",
+    AUTHORIZE_MACRO,
+)
+QUACK_PREFIX = "quack_"
+
 # Picks the function name out of every TABLE_FUNCTION node in json_serialize_sql's
 # output. If a node doesn't match the pattern, the count check below fails closed.
 _TABLE_FUNCTION_NAME = (
     r'"type":"TABLE_FUNCTION","alias":"(?:[^"\\]|\\.)*","sample":null,'
     r'[^{]*"function":\{[^{}]*"function_name":"([^"]+)"'
 )
+
+# Every function call's name (scalar, aggregate, window, table or macro). A
+# string literal holding the same text is escaped in the JSON, so it can't match.
+_FUNCTION_NAME = r'"function_name":"((?:[^"\\]|\\.)*)"'
 
 # Sent verbatim by the Quack client around each query; they change no data.
 TRANSACTION_STATEMENTS = ("BEGIN TRANSACTION", "COMMIT", "ROLLBACK")
@@ -56,7 +86,8 @@ def _sql_string(value: str) -> str:
 
 
 def install_authorization(con: duckdb.DuckDBPyConnection) -> None:
-    allowed = ", ".join(_sql_string(name) for name in CATALOG_TABLE_FUNCTIONS)
+    allowed = ", ".join(_sql_string(name) for name in CATALOG_TABLE_FUNCTIONS + ROW_TABLE_FUNCTIONS)
+    denied = ", ".join(_sql_string(name) for name in DENIED_FUNCTIONS)
     transactions = ", ".join(_sql_string(s) for s in TRANSACTION_STATEMENTS)
     con.execute(f"""
         CREATE OR REPLACE MACRO {AUTHORIZE_MACRO}(sid, query) AS (
@@ -67,13 +98,17 @@ def install_authorization(con: duckdb.DuckDBPyConnection) -> None:
                 SELECT
                     j,
                     len(regexp_extract_all(j, '"type":"TABLE_FUNCTION"')) AS n,
-                    regexp_extract_all(j, {_sql_string(_TABLE_FUNCTION_NAME)}, 1) AS names
+                    regexp_extract_all(j, {_sql_string(_TABLE_FUNCTION_NAME)}, 1) AS names,
+                    list_transform(regexp_extract_all(j, {_sql_string(_FUNCTION_NAME)}, 1), lambda f: lower(f)) AS calls
                 FROM parsed
             )
             SELECT
                 NOT coalesce(json_extract_string(j, '$.error')::BOOLEAN, true)
+                AND coalesce(json_array_length(j, '$.statements'), 0) > 0
                 AND n = len(names)
                 AND list_bool_and(list_transform(names, lambda f: lower(f) IN ({allowed}))) IS NOT FALSE
+                AND NOT list_has_any(calls, [{denied}])
+                AND NOT list_bool_or(list_transform(calls, lambda f: starts_with(f, {_sql_string(QUACK_PREFIX)}))) IS TRUE
                 AND NOT regexp_matches(j, '"table_name":"[^"]*[./:\\\\][^"]*"')
             FROM table_functions
         )

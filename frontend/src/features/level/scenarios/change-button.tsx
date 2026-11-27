@@ -5,7 +5,9 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { LuPackagePlus, LuPencil } from "react-icons/lu";
 import { ToolbarIconButton } from "../../project/components/toolbar-icon-button";
-import { useOpenRecordPageId, useRecordPageTab } from "../../project/lib/use-record-page";
+import { useLocation } from "wouter";
+import { getActiveProjectTab } from "../../project/lib/project-route";
+import { useOpenRecordPageId } from "../../project/lib/use-record-page";
 import { useShownDraft } from "../../project/lib/use-shown-draft";
 import { useProjectStore } from "../../project/store/project-store";
 import { levelOfPageId, type Level } from "../level";
@@ -18,7 +20,9 @@ import { levelFilterTarget, useLevelChangeTarget } from "./level-target";
 // comparison.
 
 export function LevelToolbarActions() {
-  const tab = useRecordPageTab();
+  // useRecordPageTab reads Run and Analyse as Build, so ask the address.
+  const [location] = useLocation();
+  const tab = getActiveProjectTab(location);
   const pageId = useOpenRecordPageId();
   const level = levelOfPageId(pageId);
   if (tab !== "build" || !level) return null;

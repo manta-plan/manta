@@ -12,7 +12,7 @@ import { isStepActive } from "../../playbook-config/conditions";
 import { projectRunHref } from "../../project/lib/project-route";
 import { useProjectStore } from "../../project/store/project-store";
 import { describeStepErrors, getActiveSteps, getStepErrors } from "../run-draft";
-import { normalizeRunStatus } from "../status";
+import { getRunStatusHint, normalizeRunStatus } from "../status";
 import { useRunsStore } from "../store/runs-store";
 import type { RunDraft } from "../types";
 import { useSelectedRun } from "../use-selected-run";
@@ -24,6 +24,8 @@ import { RunStatusBadge } from "./run-status-badge";
 
 // How long an error message stays on screen.
 const messageVisibilityMs = 10_000;
+// The run logs refresh at this interval until the run is finished.
+const logsRefreshMs = 10_000;
 
 const cardLabelClassName = "text-surface-400 text-[11px] font-semibold tracking-wide uppercase";
 
@@ -47,6 +49,7 @@ function toNodeStatus(status: string): RunFlowNodeStatus {
     case "COMPLETED":
       return "done";
     case "FAILED":
+    case "TIMED_OUT":
     case "CRASHED":
       return "failed";
     case "RUNNING":
@@ -200,6 +203,7 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
           expanded?.logs?.run_status || selected.detail?.status || selected.run.status,
         )
       : null;
+  const statusHint = runStatus === null ? null : getRunStatusHint(runStatus);
   const nodeStatus: RunFlowNodeStatus = runStatus === null ? "planned" : toNodeStatus(runStatus);
 
   const stepErrors =
@@ -248,6 +252,9 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
               <dt className={cardLabelClassName}>Status</dt>
               <dd className="mt-1">
                 {runStatus === null ? null : <RunStatusBadge status={runStatus} />}
+                {statusHint === null ? null : (
+                  <p className="text-surface-400 mt-1.5 text-[11px] leading-4">{statusHint}</p>
+                )}
               </dd>
             </div>
             <div>
@@ -346,13 +353,14 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
               </p>
             ) : null}
             <RunLogsSection
+              autoRefreshMs={logsRefreshMs}
               logClassName="bg-transparent p-0"
               onRefresh={() => void refreshRunDetails(runId)}
               state={expanded}
+              status={runStatus ?? undefined}
             />
           </>
         )}
-
         {draft !== null && startError !== null ? (
           <div className="mt-3 grid gap-2 text-[12px] text-red-300" role="alert">
             <p>{startError}</p>
@@ -370,7 +378,6 @@ export function RunDetailView({ runId, projectId }: { runId: string; projectId: 
             ) : null}
           </div>
         ) : null}
-
         {draft !== null && blockedReason !== null && startError === null ? (
           <p className="mt-3 text-[12px] text-red-300" role="alert">
             {blockedReason}

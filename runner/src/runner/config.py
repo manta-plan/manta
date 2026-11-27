@@ -19,6 +19,10 @@ class UnknownEnvironmentError(Exception):
     """Raised when a block needs an environment this installation has no image for."""
 
 
+class InvalidTimeoutsError(Exception):
+    """Raised when the playbook timeout leaves no room for a block to reach its own."""
+
+
 def exec_images() -> dict[str, str]:
     """Each block environment's execution image, from `MANTA_ENV_IMAGES`.
 
@@ -89,6 +93,52 @@ def playbooks_pool() -> str:
     return os.environ.get("MANTA_PLAYBOOKS_POOL", "manta-playbooks")
 
 
+def max_concurrent_playbook_runs() -> int:
+    """How many playbook runs execute at once, from `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS`.
+
+    Becomes the concurrency limit of the playbooks pool. A run submitted beyond it
+    is still accepted: it waits in Prefect as `SCHEDULED` until a slot frees up.
+    The blocks pool gets no limit of its own.
+    """
+    load_dotenv()
+    return int(os.environ.get("MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS", "20"))
+
+
+def block_timeout_seconds() -> int:
+    """How long one block may run, from `MANTA_BLOCK_TIMEOUT_SECONDS`.
+
+    The timeout of the `run-block` flow. It is read where that flow executes, in
+    the block's own container, which is why `job_environment` passes it on.
+    """
+    load_dotenv()
+    return int(os.environ.get("MANTA_BLOCK_TIMEOUT_SECONDS", "3600"))
+
+
+def playbook_timeout_seconds() -> int:
+    """How long a whole playbook run may take, from `MANTA_PLAYBOOK_TIMEOUT_SECONDS`.
+
+    The timeout of the `run-playbook` flow. It is read where that flow executes,
+    in the playbook worker. It covers every step of the playbook, so it has to be
+    larger than the block timeout (see `check_timeouts`).
+    """
+    load_dotenv()
+    return int(os.environ.get("MANTA_PLAYBOOK_TIMEOUT_SECONDS", "10800"))
+
+
+def check_timeouts() -> None:
+    """Refuse a playbook timeout that is not larger than the block timeout.
+
+    With one that is not, a block could never reach its own timeout: the playbook
+    run would always time out first, and report the wrong thing.
+    """
+    block, playbook = block_timeout_seconds(), playbook_timeout_seconds()
+    if playbook <= block:
+        raise InvalidTimeoutsError(
+            f"MANTA_PLAYBOOK_TIMEOUT_SECONDS ({playbook}) must be larger than "
+            f"MANTA_BLOCK_TIMEOUT_SECONDS ({block}): it covers all of a playbook's steps"
+        )
+
+
 def docker_network() -> str:
     """The compose network block containers join, so they can reach object storage."""
     load_dotenv()
@@ -146,9 +196,10 @@ def job_environment() -> dict[str, str]:
     """The environment every block container is started with.
 
     How to reach the Prefect API (the flow run reports its own state and ships
-    its logs), which block library to import before looking anything up, and how
-    to reach the object store (blocks read and write records through the standard
-    AWS_* variables). Nothing else: a container that runs modelling code —
+    its logs), which block library to import before looking anything up, how long
+    the block may run, and how to reach the object store (blocks read and write
+    records through the standard AWS_* variables). Nothing else: a container that
+    runs modelling code —
     eventually third-party code — gets no route to the app database or the
     identity provider.
     """
@@ -157,6 +208,7 @@ def job_environment() -> dict[str, str]:
         "PREFECT_API_URL": prefect_api_url(),
         "PREFECT_LOGGING_EXTRA_LOGGERS": block_loggers(),
         "MANTA_BLOCK_SOURCES": block_sources(),
+        "MANTA_BLOCK_TIMEOUT_SECONDS": str(block_timeout_seconds()),
         "AWS_ACCESS_KEY_ID": access_key,
         "AWS_SECRET_ACCESS_KEY": secret_key,
         "AWS_ENDPOINT_URL": s3_endpoint(),

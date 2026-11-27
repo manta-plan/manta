@@ -10,6 +10,9 @@ flow through its undecorated function, the runner with `run_deployment` stubbed.
 """
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -28,6 +31,7 @@ from runner.config import UnknownEnvironmentError
 from runner.flows import (
     BLOCK_DEPLOYMENT,
     BlockRunFailedError,
+    BlockTimedOutError,
     PrefectBlockRunner,
     catalogue_parameter,
     parse_catalogue_parameter,
@@ -89,15 +93,31 @@ def published(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 _PUBLISHED_OUTPUTS: dict = {}
 """The output revision each completed fake step published, by its flow run id."""
 
+_POLLS: dict = {}
+"""What a fake step's flow run looks like each time it is asked for, in order, by its
+flow run id. An exception stands for the wait being cut short at that point."""
+
+_STATE_CHANGES: list = []
+"""Each state the runner asked Prefect to move a flow run to, with the flow run's id."""
+
 
 class _FakePrefectClient:
-    """Serves the output artifacts of the steps `_completed` made up."""
+    """Serves the flow runs and output artifacts of the steps the tests made up."""
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc_info) -> None:
         return None
+
+    def read_flow_run(self, flow_run_id):
+        polled = _POLLS[flow_run_id].pop(0)
+        if isinstance(polled, BaseException):
+            raise polled
+        return polled
+
+    def set_flow_run_state(self, flow_run_id, state) -> None:
+        _STATE_CHANGES.append((flow_run_id, state))
 
     def read_artifacts(self, artifact_filter):
         assert artifact_filter.key.any_ == [flows.OUTPUT_ARTIFACT_KEY]
@@ -109,16 +129,30 @@ class _FakePrefectClient:
 @pytest.fixture(autouse=True)
 def _prefect_client(monkeypatch: pytest.MonkeyPatch) -> None:
     _PUBLISHED_OUTPUTS.clear()
+    _POLLS.clear()
+    _STATE_CHANGES.clear()
     monkeypatch.setattr(flows, "get_client", lambda sync_client: _FakePrefectClient())
+    # A step that is not final yet is asked for again without the real pause.
+    monkeypatch.setattr(flows, "BLOCK_POLL_SECONDS", 0)
+
+
+def _flow_run(state_type: str, name: str | None = None, flow_run_id=None):
+    """A step's flow run in the given Prefect state, as far as the runner looks at it."""
+    state = SimpleNamespace(
+        type=SimpleNamespace(value=state_type),
+        name=name or state_type.title(),
+        is_final=lambda: state_type in {"COMPLETED", "FAILED", "CRASHED", "CANCELLED"},
+        is_completed=lambda: state_type == "COMPLETED",
+    )
+    return SimpleNamespace(id=flow_run_id or uuid4(), state=state)
 
 
 def _completed(output: dict | None):
     """A step's flow run that completed, having published `output` (None: nothing)."""
-    flow_run_id = uuid4()
+    flow_run = _flow_run("COMPLETED")
     if output is not None:
-        _PUBLISHED_OUTPUTS[flow_run_id] = output
-    state = SimpleNamespace(is_completed=lambda: True, type=SimpleNamespace(value="COMPLETED"))
-    return SimpleNamespace(id=flow_run_id, state=state)
+        _PUBLISHED_OUTPUTS[flow_run.id] = output
+    return flow_run
 
 
 @pytest.mark.parametrize(
@@ -219,10 +253,7 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given a step whose flow run ended badly
-    crashed = SimpleNamespace(
-        id="flow-run-id",
-        state=SimpleNamespace(is_completed=lambda: False, type=SimpleNamespace(value="CRASHED")),
-    )
+    crashed = _flow_run("CRASHED", flow_run_id="flow-run-id")
     monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=crashed))
 
     # When/Then: the error says which step, which block, and where to look
@@ -239,6 +270,134 @@ def test_a_step_that_did_not_complete_fails_the_playbook(
     assert "runtime_fake" in message
     assert "CRASHED" in message
     assert "flow-run-id" in message
+
+
+def test_a_step_is_dispatched_without_waiting_and_then_waited_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a step that is queued when dispatched, and takes two more looks to finish
+    scheduled = _flow_run("SCHEDULED")
+    finished = _flow_run("COMPLETED", flow_run_id=scheduled.id)
+    _PUBLISHED_OUTPUTS[scheduled.id] = {"store": STORE, "id": OUTPUT_ID}
+    _POLLS[scheduled.id] = [_flow_run("RUNNING", flow_run_id=scheduled.id), finished]
+    dispatch = MagicMock(return_value=scheduled)
+    monkeypatch.setattr(flows, "run_deployment", dispatch)
+
+    # When
+    result = PrefectBlockRunner().run_block(
+        _spec(),
+        step_name="cluster",
+        config={},
+        revision=RevisionRef(store=STORE, id=REVISION_ID),
+        inputs={},
+    )
+
+    # Then: the dispatch only created the flow run, so the waiting is the runner's
+    # own, and nothing was cancelled on the way.
+    assert dispatch.call_args.kwargs["timeout"] == 0
+    assert result == RevisionRef(store=STORE, id=OUTPUT_ID)
+    assert _POLLS[scheduled.id] == []
+    assert _STATE_CHANGES == []
+
+
+def test_a_step_that_timed_out_fails_the_playbook_as_a_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a step whose flow run Prefect ended for exceeding its timeout
+    timed_out = _flow_run("FAILED", name=flows.TIMED_OUT_STATE_NAME, flow_run_id="flow-run-id")
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=timed_out))
+
+    # When/Then: a TimeoutError, which is what makes Prefect end the playbook run as
+    # timed out too, and still the failure of a step that callers already expect
+    with pytest.raises(BlockTimedOutError) as exc_info:
+        PrefectBlockRunner().run_block(
+            _spec(),
+            step_name="cluster",
+            config={},
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
+            inputs={},
+        )
+    assert isinstance(exc_info.value, TimeoutError)
+    assert isinstance(exc_info.value, BlockRunFailedError)
+    message = str(exc_info.value)
+    assert "cluster" in message
+    assert "runtime_fake" in message
+    assert "block timeout" in message
+    assert "flow-run-id" in message
+
+
+class _PlaybookRunEnding(BaseException):
+    """Stands for what Prefect raises inside a flow whose own timeout has passed."""
+
+
+def test_a_step_still_running_when_the_playbook_run_ends_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a running step, and a playbook run whose timeout passes while it waits
+    running = _flow_run("RUNNING")
+    _POLLS[running.id] = [_PlaybookRunEnding()]
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=running))
+
+    # When/Then: the playbook run ends for its own reason...
+    with pytest.raises(_PlaybookRunEnding):
+        PrefectBlockRunner().run_block(
+            _spec(),
+            step_name="cluster",
+            config={},
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
+            inputs={},
+        )
+
+    # ...and the step is not left running with nothing waiting for it.
+    [(flow_run_id, state)] = _STATE_CHANGES
+    assert flow_run_id == running.id
+    assert state.is_cancelling()
+
+
+def test_a_step_that_cannot_be_cancelled_does_not_hide_why_the_playbook_run_ended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a running step, a playbook run that ends, and a Prefect API that is gone
+    running = _flow_run("RUNNING")
+    _POLLS[running.id] = [_PlaybookRunEnding()]
+    monkeypatch.setattr(flows, "run_deployment", MagicMock(return_value=running))
+    monkeypatch.setattr(
+        _FakePrefectClient,
+        "set_flow_run_state",
+        MagicMock(side_effect=RuntimeError("Prefect is unreachable")),
+    )
+
+    # When/Then
+    with pytest.raises(_PlaybookRunEnding):
+        PrefectBlockRunner().run_block(
+            _spec(),
+            step_name="cluster",
+            config={},
+            revision=RevisionRef(store=STORE, id=REVISION_ID),
+            inputs={},
+        )
+
+
+def test_each_flow_takes_its_timeout_from_the_environment_it_is_imported_in() -> None:
+    # Given: Prefect reads a flow's timeout off the flow where it executes, so it
+    # is whatever the environment said when that process imported the flows.
+    env = {
+        **os.environ,
+        "MANTA_BLOCK_TIMEOUT_SECONDS": "7",
+        "MANTA_PLAYBOOK_TIMEOUT_SECONDS": "11",
+    }
+    script = (
+        "from runner import flows; "
+        "print(flows.run_block.timeout_seconds, flows.run_playbook.timeout_seconds)"
+    )
+
+    # When
+    printed = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True
+    ).stdout
+
+    # Then
+    assert [float(value) for value in printed.split()] == [7.0, 11.0]
 
 
 def test_a_step_that_completed_without_publishing_its_output_fails_the_playbook(

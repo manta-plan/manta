@@ -8,7 +8,7 @@ import type { GetRunSummaryResponse, RunStatus } from "./types";
 // The four numbers of the Run Workspace. CANCELLING, CANCELLED and PAUSED count only in the total.
 const succeededStatuses = ["COMPLETED"];
 const inProgressStatuses = ["SCHEDULED", "PENDING", "RUNNING"];
-const failedStatuses = ["FAILED", "CRASHED"];
+const failedStatuses = ["FAILED", "TIMED_OUT", "CRASHED"];
 
 export type RunStatusCounts = {
   total: number;

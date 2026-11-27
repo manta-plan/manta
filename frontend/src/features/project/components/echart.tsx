@@ -6,7 +6,7 @@ import { useEffect, useId, useRef } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 import { leaveChartScale, syncChartScale } from "../lib/chart-scale-sync";
-import { useComparison } from "../lib/result-comparison";
+import { useComparison } from "../../analyse/lib/result-comparison";
 
 // Thin imperative wrapper (init/setOption/resize/dispose) rather than a
 // dependency like echarts-for-react — mirrors how MapView drives maplibre

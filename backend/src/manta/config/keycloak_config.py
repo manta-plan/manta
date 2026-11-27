@@ -7,7 +7,7 @@ from functools import lru_cache
 from typing import Any
 
 from dotenv import load_dotenv
-from keycloak import KeycloakOpenID
+from keycloak import KeycloakAdmin, KeycloakOpenID, KeycloakOpenIDConnection
 
 
 def keycloak_server_url() -> str:
@@ -32,6 +32,33 @@ def keycloak_client_id() -> str:
 def keycloak_client_secret() -> str:
     load_dotenv()
     return os.environ["IDP_CLIENT_SECRET"]
+
+
+def keycloak_admin_username() -> str:
+    load_dotenv()
+    return os.environ["KEYCLOAK_ADMIN_USERNAME"]
+
+
+def keycloak_admin_password() -> str:
+    load_dotenv()
+    return os.environ["KEYCLOAK_ADMIN_PASSWORD"]
+
+
+@lru_cache
+def get_keycloak_admin() -> KeycloakAdmin:
+    # Used to create guest accounts. The admin user lives in the master realm
+    # (see docker/compose-dev-services.yaml), but its operations target ours.
+    # Cached so the admin access token is reused across requests; python-keycloak
+    # fetches it lazily on first use and refreshes it when it nears expiry.
+    return KeycloakAdmin(
+        connection=KeycloakOpenIDConnection(
+            server_url=keycloak_server_url(),
+            realm_name=keycloak_realm(),
+            user_realm_name="master",
+            username=keycloak_admin_username(),
+            password=keycloak_admin_password(),
+        )
+    )
 
 
 @lru_cache

@@ -5,19 +5,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Runs on the VM as root: checks out a commit and (re)starts the whole stack
-# from docker/compose-dev-fullstack.yaml, with the frontend on port 80 and the
-# temporary record server (quack-server) behind it.
+# from docker/compose-dev-fullstack.yaml, with the frontend on ports 80 and 443
+# and the temporary record server (quack-server) behind it.
 #
 #   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--reset-data]' \
 #     < scripts/deploy/vm-deploy.sh
 #
-# --site-host is the public hostname (<vm_name>.manta-plan.org). The frontend
-# reaches the record server through its own Caddy at that hostname (same
-# origin, HTTPS through the load balancer), never at the record server's
-# published port, so the frontend is built with VITE_RECORD_SERVER set to it.
+# --site-host is the public hostname (<vm_name>.manta-plan.org), which DNS
+# already points at this VM. It becomes the frontend's SITE_ADDRESS, so its
+# Caddy gets and renews a Let's Encrypt certificate for it and serves the site
+# over HTTPS. The certificate lives in the caddy-data volume and outlives
+# redeployments.
 #
 # --reset-data also deletes the data volumes (database, stored files, Keycloak
-# users), so the instance starts from scratch.
+# users), so the instance starts from scratch. It keeps caddy-data: Let's
+# Encrypt issues at most 5 certificates for the same name a week.
 #
 # This script comes from the branch the workflow runs from, not from the commit
 # being deployed, so a branch that predates it can still be deployed.
@@ -26,13 +28,21 @@ set -euo pipefail
 APP_DIR=/opt/manta
 OVERRIDE=/opt/manta-compose-deploy.yaml
 PORT=80
+HTTPS_PORT=443
 SITE_HOST=""
+# Compose's project name (`name:` in compose-dev-fullstack.yaml) and the
+# volume that holds Caddy's certificates.
+PROJECT=manta
+CADDY_VOLUME=caddy-data
 
 # The temporary-quack-setup profile adds quack-server. Variables set here take
-# precedence over backend/.env, whose VITE_RECORD_SERVER (localhost:5173) is
-# only right for a local run.
+# precedence over backend/.env, whose SITE_ADDRESS (empty, plain HTTP) and
+# VITE_RECORD_SERVER (localhost:5173, read by older commits) are only right
+# for a local run.
 compose() {
   FRONTEND_PORT=$PORT \
+    FRONTEND_HTTPS_PORT=$HTTPS_PORT \
+    SITE_ADDRESS=$SITE_HOST \
     COMPOSE_PROFILES=temporary-quack-setup \
     VITE_RECORD_SERVER=$SITE_HOST \
     docker compose \
@@ -47,6 +57,19 @@ diagnostics() {
   compose ps --all || true
   echo "==> Last backend logs:"
   compose logs --no-color --tail 100 backend || true
+  echo "==> Last frontend (Caddy) logs, which show why a certificate was not issued:"
+  compose logs --no-color --tail 50 frontend || true
+}
+
+# Deletes the stack's volumes except Caddy's certificates. Run after `down`.
+delete_data_volumes() {
+  local volume
+  for volume in $(docker volume ls --quiet --filter "label=com.docker.compose.project=$PROJECT"); do
+    if [ "$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume")" != "$CADDY_VOLUME" ]; then
+      docker volume rm "$volume" >/dev/null
+      echo "    deleted $volume"
+    fi
+  done
 }
 
 # Everything lives in a function, called on the last line: the script arrives
@@ -79,6 +102,12 @@ main() {
     echo "This commit has no docker/compose-dev-fullstack.yaml: it predates the backend and frontend images, and cannot be deployed this way." >&2
     exit 1
   fi
+  # Older frontends serve plain HTTP only (no SITE_ADDRESS, no port 443, no
+  # volume for the certificate), and nothing in front of the VM adds HTTPS.
+  if ! grep -q 'SITE_ADDRESS' docker/compose-dev-fullstack.yaml; then
+    echo "This commit's frontend cannot serve HTTPS itself (no SITE_ADDRESS in docker/compose-dev-fullstack.yaml), so it cannot be deployed this way. Deploy a commit that includes it." >&2
+    exit 1
+  fi
 
   # The dev compose files have no restart policy on purpose (a crash should be
   # visible locally). A deployed instance must come back after a reboot or a
@@ -108,8 +137,9 @@ EOF
   compose build
 
   if [ "$reset_data" = true ]; then
-    echo "==> Stopping the stack and deleting its data"
-    compose down --remove-orphans --volumes
+    echo "==> Stopping the stack and deleting its data (keeping $CADDY_VOLUME)"
+    compose down --remove-orphans
+    delete_data_volumes
   else
     echo "==> Stopping the stack"
     compose down --remove-orphans
@@ -124,19 +154,25 @@ EOF
     exit 1
   fi
 
-  echo "==> Checking http://localhost:$PORT/v1/health"
-  for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null --max-time 5 "http://localhost:$PORT/v1/health"; then
+  # Over HTTPS, with the site's own name but to this VM, so the check covers
+  # Caddy's certificate too. On plain HTTP Caddy only redirects to HTTPS. A
+  # first certificate usually takes under a minute, more while the DNS record
+  # is new.
+  local url="https://$SITE_HOST/v1/health"
+  echo "==> Checking $url on this VM"
+  for _ in $(seq 1 60); do
+    if curl -fsS -o /dev/null --max-time 5 \
+      --resolve "$SITE_HOST:$HTTPS_PORT:127.0.0.1" "$url" 2>/dev/null; then
       # Each deployment leaves the previous images and build layers behind.
       docker image prune --force >/dev/null
       docker builder prune --force --filter until=168h >/dev/null
       echo "==> Deployed $sha"
       return 0
     fi
-    sleep 2
+    sleep 5
   done
 
-  echo "No 200 from http://localhost:$PORT/v1/health within 60s." >&2
+  echo "No 200 from $url on this VM within 5 minutes. When the backend logs look fine, the frontend logs below say whether Let's Encrypt could not reach the VM (DNS record, firewall) or refused the request (rate limit)." >&2
   diagnostics
   exit 1
 }

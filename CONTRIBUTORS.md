@@ -9,6 +9,7 @@ SPDX-License-Identifier: CC-BY-4.0
 people listed here. Add your name to this list in your first pull request.
 
 - Shanti Chellaram
+- Lauren Clisby
 - Kristijan Faust
 - Jatmiko Herjati
 - Jonas Hörsch

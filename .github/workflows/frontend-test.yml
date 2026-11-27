@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Manta contributors
+#
+# SPDX-License-Identifier: CC0-1.0
+
+name: Frontend test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with:
+          runtime: "node@24"
+          version: "11.10.0"
+          cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test

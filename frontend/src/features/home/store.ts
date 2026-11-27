@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { create } from "zustand";
-import { removeProjectInspections } from "../project/lib/project-inspections";
-import { removeProjectReports } from "../project/lib/project-reports";
+import { removeProjectInspections } from "../analyse/lib/project-inspections";
+import { removeProjectReports } from "../analyse/lib/project-reports";
 import { removeProjectRuns } from "../project/lib/project-runs";
 import { removeProjectScenarios } from "../project/lib/project-scenarios";
 

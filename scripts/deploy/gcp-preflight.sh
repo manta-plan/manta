@@ -5,15 +5,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Lists which of the permissions a deployment needs the current identity is
-# missing, in the hosting project and in the load balancer project. Changes
+# missing, in the hosting project and in the project of the DNS zone. Changes
 # nothing, so it is safe to run at any time, also locally:
 #
-#   GCP_PROJECT=my-project GCP_LB_PROJECT=paros-491610 scripts/deploy/gcp-preflight.sh
+#   GCP_PROJECT=my-project GCP_DNS_PROJECT=paros-491610 scripts/deploy/gcp-preflight.sh
 #
 # The roles that grant these are listed in docs/deployment.md.
 set -euo pipefail
 
-: "${GCP_PROJECT:?}" "${GCP_LB_PROJECT:?}"
+: "${GCP_PROJECT:?}" "${GCP_DNS_PROJECT:?}"
 
 # roles/compute.instanceAdmin.v1, roles/compute.publicIpAdmin,
 # roles/compute.securityAdmin and roles/compute.osAdminLogin.
@@ -39,22 +39,13 @@ HOSTING_PERMISSIONS=(
   compute.instances.osAdminLogin
 )
 
-# roles/compute.loadBalancerAdmin
-LB_PERMISSIONS=(
-  compute.urlMaps.get
-  compute.urlMaps.update
-  compute.backendServices.create
-  compute.backendServices.get
-  compute.backendServices.update
-  compute.backendServices.use
-  compute.globalNetworkEndpointGroups.create
-  compute.globalNetworkEndpointGroups.get
-  compute.globalNetworkEndpointGroups.use
-  compute.globalNetworkEndpointGroups.attachNetworkEndpoints
-  compute.globalNetworkEndpointGroups.detachNetworkEndpoints
-  compute.targetHttpsProxies.list
-  compute.targetHttpProxies.list
-  compute.globalForwardingRules.list
+# roles/dns.admin, or a custom role with only these.
+DNS_PERMISSIONS=(
+  dns.managedZones.list
+  dns.resourceRecordSets.list
+  dns.resourceRecordSets.create
+  dns.changes.create
+  dns.changes.get
 )
 
 account=$(gcloud config get-value account 2>/dev/null)
@@ -98,7 +89,7 @@ check() {
 }
 
 check "$GCP_PROJECT" "${HOSTING_PERMISSIONS[@]}"
-check "$GCP_LB_PROJECT" "${LB_PERMISSIONS[@]}"
+check "$GCP_DNS_PROJECT" "${DNS_PERMISSIONS[@]}"
 
 echo
 if [ "$missing" -ne 0 ]; then

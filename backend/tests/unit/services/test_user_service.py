@@ -8,8 +8,9 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from manta.entities import Project, User
+from manta.entities import Project
 from manta.services.errors import AuthorizationError
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.user_service import NOT_PROJECT_OWNER_MESSAGE, UserService
 
 
@@ -21,10 +22,8 @@ def _project(owner_id: int = 1) -> Project:
     return project
 
 
-def _user(user_id: int = 1) -> User:
-    user = User(username="alice")
-    user.id = user_id
-    return user
+def _user(user_id: int = 1) -> AuthenticatedUserResult:
+    return AuthenticatedUserResult(id=user_id, uuid=uuid4(), username="alice")
 
 
 def test_get_owned_project_returns_the_users_project(mock_db_class) -> None:

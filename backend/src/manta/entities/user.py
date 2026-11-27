@@ -16,7 +16,7 @@ class User(Base):
 
     # A cached copy of the IdP's `preferred_username` claim - not an identity
     # key (that's idp_subject) and not guaranteed unique or stable: the IdP
-    # can rename a user, and our copy won't reflect it.
+    # can rename a user, and our copy follows on their next login or token refresh.
     username: Mapped[str]
     # the openid connect subject that authenticates to this user
     idp_subject: Mapped[str]

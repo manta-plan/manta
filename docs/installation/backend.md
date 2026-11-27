@@ -12,7 +12,7 @@ You need [uv](https://docs.astral.sh/uv/getting-started/installation/), Docker, 
 
 When the backend starts, it applies database migrations, creates the storage bucket, and checks that Prefect is reachable.
 So it needs every service from Docker running first.
-Start them as [step 2 of Full stack](full-stack.md#2-start-the-services) shows, and leave them running.
+Start them as [step 1 of Development setup](full-stack.md#1-start-the-services) shows, and leave them running.
 Then open a second terminal in the `backend` folder for the steps below.
 
 --8<-- "backend/README.md:docs-setup"

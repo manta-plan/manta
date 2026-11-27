@@ -14,7 +14,7 @@ from fastapi import Depends
 from mypy_boto3_s3.client import S3Client
 
 from manta.config.s3_config import get_s3_client, s3_bucket_name
-from manta.entities import User
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.s3_file_result import (
     GetS3FileContentResult,
     GetS3FileResult,
@@ -148,7 +148,7 @@ class S3FileStorageService:
 
         logger.info("Deleted %r", key)
 
-    def delete_project_files(self, project_uuid: UUID, user: User) -> None:
+    def delete_project_files(self, project_uuid: UUID, user: AuthenticatedUserResult) -> None:
         """Deletes every object under the project's own prefix. Nothing to delete is
         not an error."""
         self.user_service.get_owned_project(project_uuid, user)

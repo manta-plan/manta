@@ -6,7 +6,7 @@
 
 TODO: temporary, until projects can get real data in some other way. It is deliberately
 self-contained, so removing it means deleting this module, its config and its callers
-(create_app() and AuthService.register()). That is also why it talks to S3 directly
+(create_app() and AuthService). That is also why it talks to S3 directly
 rather than through S3FileStorageService: the originals live outside every project,
 which that service rightly refuses to address, and growing it for this alone isn't
 worth it. The resulting duplication of key building and error handling is accepted.
@@ -136,8 +136,8 @@ class ExampleDataService:
 
         self._fill_project(project.uuid)
 
-    def create_project(self, owner: User) -> None:
-        project = Project(name=EXAMPLE_PROJECT_NAME, description=_DESCRIPTION, owner_id=owner.id)
+    def create_project(self, owner_id: int) -> None:
+        project = Project(name=EXAMPLE_PROJECT_NAME, description=_DESCRIPTION, owner_id=owner_id)
         self.db.add(project)
         self.db.commit()
         logger.info("Created project %r (uuid=%s)", project.name, project.uuid)

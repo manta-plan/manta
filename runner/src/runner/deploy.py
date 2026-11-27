@@ -17,7 +17,8 @@ Two kinds of pool, because the two kinds of work want different things:
   containers need.
 - **process**, for the playbook orchestration flow. `run_playbook` blocks for
   the whole playbook, so it runs inside a long-lived worker rather than in a
-  container that would idle for hours waiting on its steps.
+  container that would idle for hours waiting on its steps. This pool carries
+  the limit on how many playbook runs go at once.
 
 This is the local apply layer: `playbook` works out *what* a playbook needs, and
 this file decides *how* it exists here. A Kubernetes-based apply layer is the
@@ -77,9 +78,8 @@ def docker_job_template() -> dict:
 def ensure_docker_pool(name: str, base_job_template: dict) -> None:
     """Create the docker work pool `name`, or bring it up to date.
 
-    Unlike a process pool, an existing pool is updated rather than left alone: the
-    template carries the image and wiring, and re-provisioning is how changes to
-    those roll out.
+    An existing pool is updated rather than left alone: the template carries the
+    image and wiring, and re-provisioning is how changes to those roll out.
     """
     create = WorkPoolCreate(name=name, type="docker", base_job_template=base_job_template)
     with get_client(sync_client=True) as client:
@@ -93,14 +93,24 @@ def ensure_docker_pool(name: str, base_job_template: dict) -> None:
             logger.info("Updated work pool %r", name)
 
 
-def ensure_process_pool(name: str) -> None:
-    """Create the process work pool `name`, or leave it be if it already exists."""
+def ensure_process_pool(name: str, concurrency_limit: int) -> None:
+    """Create the process work pool `name`, or bring its concurrency limit up to date.
+
+    At most `concurrency_limit` of the pool's flow runs are active at once; further
+    ones stay queued in Prefect until a slot frees up. An existing pool is updated
+    too, because re-provisioning is how a changed limit rolls out.
+    """
     with get_client(sync_client=True) as client:
         try:
-            client.create_work_pool(WorkPoolCreate(name=name, type="process"))
-            logger.info("Created work pool %r", name)
+            client.create_work_pool(
+                WorkPoolCreate(name=name, type="process", concurrency_limit=concurrency_limit)
+            )
+            logger.info("Created work pool %r, limited to %d runs at once", name, concurrency_limit)
         except ObjectAlreadyExists:
-            logger.info("Work pool %r already exists", name)
+            client.update_work_pool(
+                work_pool_name=name, work_pool=WorkPoolUpdate(concurrency_limit=concurrency_limit)
+            )
+            logger.info("Updated work pool %r, limited to %d runs at once", name, concurrency_limit)
 
 
 def deploy(flow, name: str, pool: str) -> str:
@@ -119,12 +129,16 @@ def deploy(flow, name: str, pool: str) -> str:
 
 
 def main() -> None:
+    # Before anything is touched: a deploy with timeouts that cannot work stops
+    # here, and the workers, which wait for this to succeed, never start.
+    config.check_timeouts()
+
     blocks_pool = config.blocks_pool()
     ensure_docker_pool(blocks_pool, docker_job_template())
     deploy(run_block, BLOCK_FLOW_NAME, blocks_pool)
 
     playbooks_pool = config.playbooks_pool()
-    ensure_process_pool(playbooks_pool)
+    ensure_process_pool(playbooks_pool, config.max_concurrent_playbook_runs())
     deploy(run_playbook, PLAYBOOK_FLOW_NAME, playbooks_pool)
 
 

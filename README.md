@@ -29,20 +29,15 @@ For more details on the vision and roadmap, see our website: https://manta-plan.
 <!-- --8<-- [start:docs-install] -->
 ## Running Manta locally
 
-The quickest way to try Manta is to run the whole stack on your own machine:
-the supporting services in Docker, and the backend and frontend from source.
+The quickest way to try Manta is to run the whole stack (frontend, backend and
+all supporting services) in Docker. If you want to work on the backend or
+frontend, see [Development setup](#development-setup) below instead.
 
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) with Docker Compose
   (Docker Desktop includes it; on Linux, add the
   [Compose plugin](https://docs.docker.com/compose/install/linux/))
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs
-  the right Python for you)
-- [Node.js](https://nodejs.org/en/download) and pnpm (run
-  `corepack enable pnpm` to get the version pinned in
-  [`frontend/package.json`](https://github.com/manta-plan/manta/blob/main/frontend/package.json), or see the
-  [pnpm docs](https://pnpm.io/installation))
 
 ### 1. Clone the repository
 
@@ -51,7 +46,90 @@ git clone https://github.com/manta-plan/manta.git
 cd manta
 ```
 
-### 2. Start the services
+### 2. Start Manta
+
+From the repo root:
+
+```bash
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup up --build
+```
+
+This builds the backend and frontend images and starts them along with
+Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the playbook workers and
+the temporary record server (`quack-server`), which serves the example data
+records: the list you pick from when creating a project, and the data the
+Model, Inspect and Report tabs read. The `--profile temporary-quack-setup`
+flag is what starts the record server; without it the frontend has no records
+to show.
+
+All configuration comes from [`backend/.env`](backend/.env), which already has
+working local defaults. Nothing needs to be filled in.
+
+The first run takes a while: besides building the images, the backend
+downloads the example data on its first boot and puts it in SeaweedFS. Wait
+until the `frontend` container has started. The record server picks the
+example data up within a minute after that.
+
+### 3. Open Manta
+
+Go to `localhost:5173` and log in as `manta-admin`,
+password `manta-admin`.
+
+The services also have their own UIs, which help when you want to see what is
+happening under the hood:
+
+| Service       | URL             | Notes                          |
+| ------------- | --------------- | ------------------------------ |
+| Prefect       | localhost:4200  | playbook runs and their steps  |
+| SeaweedFS     | localhost:23646 | buckets and stored files       |
+| Keycloak      | localhost:8080  | admin console, `admin`/`admin` |
+| Record server | localhost:8010  | catalogue API, token `devtoken` |
+
+### Stopping
+
+To stop the containers, press `Ctrl+C` in their terminal, or run from the repo
+root:
+
+```bash
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down
+```
+
+This does not delete your local data (database, stored files, Keycloak
+state), so the next `up` picks up where you left off.
+
+To wipe everything and start from scratch next time, add `-v` to also delete
+the data volumes:
+
+```bash
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup down -v
+```
+
+See [docker/README.md](docker/README.md) for details on each service.
+
+### Development setup
+
+When working on Manta, run the backend and frontend from source so changes
+reload on save, and keep only the supporting services in Docker.
+
+> [!NOTE]
+> The backend and frontend containers from the setup above use the same ports
+> as the dev servers. Stop them first (see [Stopping](#stopping)).
+
+#### Prerequisites
+
+In addition to Docker:
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs
+  the right Python for you)
+- [Node.js](https://nodejs.org/en/download) and pnpm (run
+  `corepack enable pnpm` to get the version pinned in
+  [`frontend/package.json`](frontend/package.json), or see the
+  [pnpm docs](https://pnpm.io/installation))
+
+#### 1. Start the services
 
 From the repo root:
 
@@ -60,104 +138,47 @@ docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
   --profile temporary-quack-setup up
 ```
 
-This starts Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the
-playbook workers, and the record server the frontend's data catalogue reads,
-and builds the images playbook steps run in. The first run
-takes a while. Leave it running and wait until the logs settle. All
-configuration comes from [`backend/.env`](https://github.com/manta-plan/manta/blob/main/backend/.env), which already has
-working local defaults. Nothing needs to be filled in.
+This starts everything except the backend and frontend, including the record
+server. Leave it running and wait until the logs settle. Stop it the same way
+as above, using `compose-dev-services.yaml` in place of
+`compose-dev-fullstack.yaml`.
 
-### 3. Start the backend
+#### 2. Start the backend
 
 In a second terminal:
 
 ```bash
 cd backend
 uv sync
-uv run manta
+uv run uvicorn manta.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 On startup the backend applies database migrations, creates the storage
-bucket, and checks that Prefect is reachable, then serves the API on
-`localhost:8000`. The first start also downloads the example data, which takes
-a few minutes, and creates the `manta-admin` user with an example project (see
-[Example data](https://github.com/manta-plan/manta/blob/main/backend/README.md#example-data)).
-The record server finds the example data within a minute of the download.
+bucket and checks that Prefect is reachable, then serves the API on
+`localhost:8000`. `--reload` restarts it whenever you save a file under
+`backend/`.
 
-### 4. Start the frontend
+#### 3. Start the frontend
 
-In a third terminal, move into the `frontend` folder and create a file named
-`.env.local` there that points the app at the record server:
+In a third terminal:
 
 ```bash
 cd frontend
-printf 'VITE_RECORD_SERVER=localhost:8010\nVITE_RECORD_TOKEN=devtoken\n' > .env.local
-```
-
-Then install the dependencies and start the dev server:
-
-```bash
 pnpm install
-pnpm dev
+VITE_RECORD_SERVER=localhost:8010 VITE_RECORD_TOKEN=devtoken pnpm dev
 ```
 
-The dev server proxies `/v1` requests to the backend on `localhost:8000`.
+The dev server proxies `/v1` requests to the backend on `localhost:8000`. The
+two `VITE_RECORD_*` variables point the frontend straight at the record server
+(`QUACK_SERVER_PORT` and `QUACK_TOKEN` in [`backend/.env`](backend/.env));
+without them the data catalogue reports `VITE_RECORD_SERVER is not set.`
+Open `localhost:5173` and log in as above.
 
-### 5. Open Manta
-
-Go to `localhost:5173` and log in as `manta-admin`,
-password `manta-admin`. The "Example project" contains the example data.
-
-The services also have their own UIs, which help when you want to see what is
-happening under the hood:
-
-| Service   | URL                                       | Notes                          |
-| --------- | ----------------------------------------- | ------------------------------ |
-| Prefect   | localhost:4200  | playbook runs and their steps  |
-| SeaweedFS | localhost:23646 | buckets and stored files       |
-| Keycloak  | localhost:8080  | admin console, `admin`/`admin` |
-
-
-### Stopping
-
-To stop Docker containers, press
-`Ctrl+C` in their terminal, or run from the repo root:
-
-```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
-  --profile temporary-quack-setup down
-```
-
-This will not delete your local data (database, stored files, Keycloak state) so the next
-`up` command picks up where you left off.
-
-To wipe everything and start from scratch next time, add `-v` to also delete
-the data volumes. The backend then downloads the example data again at its
-next start.
-
-```bash
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env \
-  --profile temporary-quack-setup down -v
-```
-
-### Run the backend and frontend in Docker instead
-
-To run the whole stack in containers, with no uv, Node.js, or pnpm on your
-machine, replace steps 2 to 4 with this command from the repo root:
-
-```bash
-docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
-  --profile temporary-quack-setup up --build
-```
-
-It builds the backend and frontend images, and serves the web app on
-`localhost:5173` once the backend is healthy, which takes a few minutes on the
-first start. To stop it, run the same command with `down` in place of
-`up --build`. To run the backend or frontend from source again, stop its
-container first, because they share ports.
-
-See [docker/README.md](https://github.com/manta-plan/manta/blob/main/docker/README.md) for details on each service.
-<!-- --8<-- [end:docs-install] -->
+If you only work on the frontend, you can skip step 2 and start the services
+with `compose-dev-backend.yaml` instead (same flags), which runs the backend
+in Docker too. For more on each part, see
+[backend/README.md](backend/README.md) and
+[frontend/README.md](frontend/README.md).
 
 ## Repository Structure
 

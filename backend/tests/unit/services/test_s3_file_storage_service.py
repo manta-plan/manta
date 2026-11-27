@@ -12,19 +12,21 @@ from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException
 
-from manta.entities import Project, User
+from manta.entities import Project
 from manta.services.errors import AuthorizationError
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.s3_file_result import GetS3FileResult
 from manta.services.s3_file_storage_service import S3FileStorageService, S3StorageError
 from manta.services.user_service import UserService
 
 
-def _project_and_owner(project_uuid=None, owner_id: int = 1) -> tuple[Project, User]:
+def _project_and_owner(
+    project_uuid=None, owner_id: int = 1
+) -> tuple[Project, AuthenticatedUserResult]:
     project = Project(name="North Sea Wind", owner_id=owner_id)
     project.id = 10
     project.uuid = project_uuid if project_uuid is not None else uuid4()
-    owner = User(username="alice")
-    owner.id = 1
+    owner = AuthenticatedUserResult(id=1, uuid=uuid4(), username="alice")
     return project, owner
 
 
