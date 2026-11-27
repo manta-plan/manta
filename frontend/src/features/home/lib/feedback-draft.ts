@@ -1,13 +1,13 @@
 import { create } from "zustand";
-import type { FeedbackKind } from "./send-feedback";
+import type { FeedbackCategory } from "./send-feedback";
 import type { FeedbackImage } from "./feedback-image";
 
 interface FeedbackDraft {
-  kind: FeedbackKind;
+  category: FeedbackCategory;
   message: string;
   includePage: boolean;
   image: FeedbackImage | null;
-  update: (patch: Partial<Pick<FeedbackDraft, "kind" | "message" | "includePage">>) => void;
+  update: (patch: Partial<Pick<FeedbackDraft, "category" | "message" | "includePage">>) => void;
   setImage: (image: FeedbackImage | null) => void;
   clear: () => void;
 }
@@ -15,7 +15,7 @@ interface FeedbackDraft {
 // Lives outside the dialog so closing it (or navigating between pages, which
 // mount separate dialogs) keeps what the user typed until it's sent.
 export const useFeedbackDraft = create<FeedbackDraft>((set, get) => ({
-  kind: "bug",
+  category: "bug_report",
   message: "",
   includePage: true,
   image: null,
@@ -27,6 +27,6 @@ export const useFeedbackDraft = create<FeedbackDraft>((set, get) => ({
   },
   clear: () => {
     get().setImage(null);
-    set({ kind: "bug", message: "", includePage: true });
+    set({ category: "bug_report", message: "", includePage: true });
   },
 }));
