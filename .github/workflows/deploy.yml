@@ -1,8 +1,12 @@
 name: Deploy
 
 # Deploys a Manta instance to a VM on GCP and serves it at
-# https://<vm_name>.manta-plan.org. Manual trigger only: Actions > Deploy >
-# Run workflow. Setup and usage are in docs/deployment.md.
+# https://<vm_name>.manta-plan.org. Run it by hand (Actions > Deploy > Run
+# workflow) or let deploy-app.yml call it on every push to the `app` branch. Usage is in
+# the README, under "Internal test deployment".
+#
+# The images are built here, in CI (publish-images.yml, pushed to GitHub
+# Container Registry), and the VM only pulls them.
 #
 # The VM serves HTTPS itself: a Cloud DNS record points the subdomain at the
 # VM, and the frontend's Caddy gets a Let's Encrypt certificate for it.
@@ -34,6 +38,29 @@ on:
         description: Only check the configuration, authentication and permissions
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      vm_name:
+        description: VM name, also the subdomain (<vm_name>.manta-plan.org)
+        required: true
+        type: string
+      gcp_project:
+        description: GCP project that hosts the VM
+        required: true
+        type: string
+      ref:
+        description: Branch, tag or SHA to deploy
+        required: true
+        default: main
+        type: string
+      reset_data:
+        description: Delete the instance's data (database, files, users) first
+        type: boolean
+        default: false
+      dry_run:
+        description: Only check the configuration, authentication and permissions
+        type: boolean
+        default: false
 
 run-name: >-
   ${{ inputs.dry_run && 'Dry run:' || 'Deploy' }}
@@ -43,6 +70,7 @@ run-name: >-
 permissions:
   contents: read
   id-token: write # for Workload Identity Federation
+  packages: write # for the images job
 
 # One deployment per VM at a time; a second one waits rather than cancelling a
 # deployment halfway through.
@@ -124,9 +152,22 @@ jobs:
       - name: Check that the subdomain is free
         run: bash scripts/deploy/gcp-register-dns.sh --check-only
 
+  # Builds the images for the commit and pushes them to GHCR, skipping any that
+  # already exist for it.
+  images:
+    name: Images
+    needs: preflight
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-images.yml
+    with:
+      sha: ${{ needs.preflight.outputs.sha }}
+
   deploy:
     name: Deploy
-    needs: preflight
+    needs: [preflight, images]
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -165,9 +206,6 @@ jobs:
           echo "::error::Could not SSH into $VM_NAME."
           exit 1
 
-      - name: Set up the VM
-        run: bash scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
-
       # Before the deployment itself, so the new record spreads while the
       # images build: Caddy asks Let's Encrypt for a certificate as soon as the
       # frontend starts, and Let's Encrypt must then find the VM at the name.
@@ -180,7 +218,8 @@ jobs:
         env:
           RESET_DATA: ${{ inputs.reset_data }}
         run: |
-          args="--repo $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git --sha $SHA --site-host $SITE_HOST"
+          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          args="--repo $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git --sha $SHA --site-host $SITE_HOST --image-prefix $prefix"
           if [ "$RESET_DATA" = "true" ]; then
             args="$args --reset-data"
           fi

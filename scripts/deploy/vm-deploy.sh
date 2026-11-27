@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# Runs on the VM as root: checks out a commit and (re)starts the whole stack
+# Runs on the VM as root: installs Docker and git when they are missing (the
+# only things a deployment needs, since the whole stack runs in containers),
+# checks out a commit and (re)starts the whole stack
 # from docker/compose-dev-fullstack.yaml, with the frontend on ports 80 and 443
-# and the temporary record server (quack-server) behind it.
+# and the temporary record server (quack-server) behind it. The VM builds
+# nothing: the commit is only checked out for its compose files and
+# backend/.env, and the images are pulled from a registry, where
+# .github/workflows/publish-images.yml pushed them tagged with the commit SHA.
 #
-#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--reset-data]' \
+#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> --image-prefix <prefix> [--reset-data]' \
 #     < scripts/deploy/vm-deploy.sh
+#
+# --image-prefix is the registry path the images share (ghcr.io/manta-plan),
+# followed by /manta-backend, /manta-frontend and so on.
 #
 # --site-host is the public hostname (<vm_name>.manta-plan.org), which DNS
 # already points at this VM. It becomes the frontend's SITE_ADDRESS, so its
@@ -17,33 +25,34 @@
 # Encrypt issues at most 5 certificates for the same name a week.
 #
 # This script comes from the branch the workflow runs from, not from the commit
-# being deployed, so a branch that predates it can still be deployed.
+# being deployed. The commit must include docker/compose-deploy.yaml.
 set -euo pipefail
 
 APP_DIR=/opt/manta
-OVERRIDE=/opt/manta-compose-deploy.yaml
 PORT=80
 HTTPS_PORT=443
 SITE_HOST=""
+IMAGE_PREFIX=""
+IMAGE_TAG=""
 # Compose's project name (`name:` in compose-dev-fullstack.yaml) and the
 # volume that holds Caddy's certificates.
 PROJECT=manta
 CADDY_VOLUME=caddy-data
 
 # The temporary-quack-setup profile adds quack-server. Variables set here take
-# precedence over backend/.env, whose SITE_ADDRESS (empty, plain HTTP) and
-# VITE_RECORD_SERVER (localhost:5173, read by older commits) are only right
-# for a local run.
+# precedence over backend/.env, whose SITE_ADDRESS (empty, plain HTTP) is only
+# right for a local run.
 compose() {
   FRONTEND_PORT=$PORT \
     FRONTEND_HTTPS_PORT=$HTTPS_PORT \
     SITE_ADDRESS=$SITE_HOST \
     COMPOSE_PROFILES=temporary-quack-setup \
-    VITE_RECORD_SERVER=$SITE_HOST \
+    MANTA_IMAGE_PREFIX=$IMAGE_PREFIX \
+    IMAGE_TAG=$IMAGE_TAG \
     docker compose \
     --env-file backend/.env \
     -f docker/compose-dev-fullstack.yaml \
-    -f "$OVERRIDE" \
+    -f docker/compose-deploy.yaml \
     "$@"
 }
 
@@ -67,6 +76,39 @@ delete_data_volumes() {
   done
 }
 
+# Installs Docker (with Compose), git and curl from Docker's own apt repository,
+# see https://docs.docker.com/engine/install/debian/. Does nothing when they are
+# already there, so a VM whose first setup was interrupted repairs itself.
+install_docker() {
+  if command -v git >/dev/null && command -v curl >/dev/null && docker compose version >/dev/null 2>&1; then
+    echo "==> Docker, git and curl are already installed"
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  # A VM that just booted may still hold the dpkg lock for its own first-boot
+  # package run: wait for it instead of failing.
+  apt_get() { apt-get -o DPkg::Lock::Timeout=300 -y "$@"; }
+
+  echo "==> Installing Docker and git"
+  apt_get update
+  apt_get install ca-certificates curl git
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  cat >/etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+  apt_get update
+  apt_get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  systemctl enable --now docker
+}
+
 # Everything lives in a function, called on the last line: the script arrives
 # on stdin, and a command that reads stdin would otherwise swallow the rest.
 main() {
@@ -76,14 +118,18 @@ main() {
       --repo) repo=$2 && shift 2 ;;
       --sha) sha=$2 && shift 2 ;;
       --site-host) SITE_HOST=$2 && shift 2 ;;
+      --image-prefix) IMAGE_PREFIX=$2 && shift 2 ;;
       --reset-data) reset_data=true && shift ;;
       *) echo "Unknown argument: $1" >&2 && exit 2 ;;
     esac
   done
-  if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ]; then
-    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> [--reset-data]" >&2
+  if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ] || [ -z "$IMAGE_PREFIX" ]; then
+    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> --image-prefix <prefix> [--reset-data]" >&2
     exit 2
   fi
+  IMAGE_TAG=$sha
+
+  install_docker
 
   echo "==> Checking out $sha"
   git init --quiet "$APP_DIR"
@@ -93,43 +139,18 @@ main() {
   git fetch --quiet --depth 1 origin "$sha"
   git checkout --quiet --force --detach FETCH_HEAD
 
-  if [ ! -f docker/compose-dev-fullstack.yaml ]; then
-    echo "This commit has no docker/compose-dev-fullstack.yaml: it predates the backend and frontend images, and cannot be deployed this way." >&2
-    exit 1
-  fi
-  # Older frontends serve plain HTTP only (no SITE_ADDRESS, no port 443, no
-  # volume for the certificate), and nothing in front of the VM adds HTTPS.
-  if ! grep -q 'SITE_ADDRESS' docker/compose-dev-fullstack.yaml; then
-    echo "This commit's frontend cannot serve HTTPS itself (no SITE_ADDRESS in docker/compose-dev-fullstack.yaml), so it cannot be deployed this way. Deploy a commit that includes it." >&2
+  if [ ! -f docker/compose-deploy.yaml ]; then
+    echo "This commit has no docker/compose-deploy.yaml, so it predates the current deployment setup and cannot be deployed this way. Deploy a more recent commit." >&2
     exit 1
   fi
 
-  # The dev compose files have no restart policy on purpose (a crash should be
-  # visible locally). A deployed instance must come back after a reboot or a
-  # Docker upgrade, so add one to every long-lived service; the one-shot
-  # services (the image builder, the provisioner) are left alone.
-  cat >"$OVERRIDE" <<'EOF'
-# Written by scripts/deploy/vm-deploy.sh on every deployment. Do not edit.
-services:
-  postgres: { restart: unless-stopped }
-  seaweedfs: { restart: unless-stopped }
-  prefect-server: { restart: unless-stopped }
-  keycloak: { restart: unless-stopped }
-  block-worker: { restart: unless-stopped }
-  playbook-worker: { restart: unless-stopped }
-  backend: { restart: unless-stopped }
-  frontend: { restart: unless-stopped }
-EOF
-  # Only in commits that have it: an override for a service that does not
-  # exist fails the whole compose file.
-  if grep -q '^  quack-server:' docker/compose-dev-services.yaml; then
-    echo "  quack-server: { restart: unless-stopped }" >>"$OVERRIDE"
+  # Pull while the previous version keeps serving, so the downtime is the
+  # restart alone and a missing image takes nothing down.
+  echo "==> Pulling images"
+  if ! compose pull; then
+    echo "Could not pull the images for $sha. Either the Deploy workflow's images job did not publish them, or the GHCR packages are private (they must be public: see the README, under \"Internal test deployment\")." >&2
+    exit 1
   fi
-
-  # Build while the previous version keeps serving, so the downtime is the
-  # restart alone and a broken build takes nothing down.
-  echo "==> Building images"
-  compose build
 
   if [ "$reset_data" = true ]; then
     echo "==> Stopping the stack and deleting its data (keeping $CADDY_VOLUME)"
@@ -144,7 +165,7 @@ EOF
   # which in turn waits for every service it depends on. On a fresh volume the
   # backend first downloads the example data, which takes a few minutes.
   echo "==> Starting the stack"
-  if ! compose up --detach; then
+  if ! compose up --detach --no-build; then
     diagnostics
     exit 1
   fi
@@ -158,9 +179,8 @@ EOF
   for _ in $(seq 1 60); do
     if curl -fsS -o /dev/null --max-time 5 \
       --resolve "$SITE_HOST:$HTTPS_PORT:127.0.0.1" "$url" 2>/dev/null; then
-      # Each deployment leaves the previous images and build layers behind.
-      docker image prune --force >/dev/null
-      docker builder prune --force --filter until=168h >/dev/null
+      # Each deployment leaves the previous commit's images behind.
+      docker image prune --all --force >/dev/null
       echo "==> Deployed $sha"
       return 0
     fi

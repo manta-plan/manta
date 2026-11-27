@@ -45,7 +45,7 @@ This builds the backend and frontend images and starts them along with
 Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the playbook workers and
 the temporary record server (`quack-server`), which serves the example data
 records: the list you pick from when creating a project, and the data the
-Model, Inspect and Report tabs read. The `--profile temporary-quack-setup`
+Build, Inspect and Analyse tabs read. The `--profile temporary-quack-setup`
 flag is what starts the record server; without it the frontend has no records
 to show.
 
@@ -59,18 +59,22 @@ example data up within a minute after that.
 
 ### 3. Open Manta
 
-Go to `localhost:5173` and log in as `manta-admin`,
-password `manta-admin`.
+Go to `localhost` (port 80) and log in as `manta-admin`,
+password `manta-admin`. Everything goes through this one address: the frontend's
+Caddy serves the app and forwards `/v1` to the backend and `/api` and `/quack`
+to the record server, so there is nothing else to configure. To use another host
+port, set `FRONTEND_PORT` in [`backend/.env`](backend/.env).
 
 The services also have their own UIs, which help when you want to see what is
 happening under the hood:
 
 | Service       | URL             | Notes                          |
 | ------------- | --------------- | ------------------------------ |
+| Backend API   | localhost:8000  | the API the app calls under `/v1` |
 | Prefect       | localhost:4200  | playbook runs and their steps  |
 | SeaweedFS     | localhost:23646 | buckets and stored files       |
 | Keycloak      | localhost:8080  | admin console, `admin`/`admin` |
-| Record server | localhost:8010  | catalogue API, token `devtoken` |
+| Record server | localhost:8010  | catalogue API, token `devtoken`; reachable from this machine only, and through the app at `localhost/api` |
 
 ### Stopping
 
@@ -101,8 +105,9 @@ When working on Manta, run the backend and frontend from source so changes
 reload on save, and keep only the supporting services in Docker.
 
 > [!NOTE]
-> The backend and frontend containers from the setup above use the same ports
-> as the dev servers. Stop them first (see [Stopping](#stopping)).
+> The backend container from the setup above uses the same port (8000) as the
+> backend dev server. Stop it first (see [Stopping](#stopping)). The frontend
+> container is on port 80, so the Vite dev server (5173) can run beside it.
 
 #### Prerequisites
 
@@ -151,14 +156,14 @@ In a third terminal:
 ```bash
 cd frontend
 pnpm install
-VITE_RECORD_SERVER=localhost:8010 VITE_RECORD_TOKEN=devtoken pnpm dev
+pnpm dev
 ```
 
-The dev server proxies `/v1` requests to the backend on `localhost:8000`. The
-two `VITE_RECORD_*` variables point the frontend straight at the record server
-(`QUACK_SERVER_PORT` and `QUACK_TOKEN` in [`backend/.env`](backend/.env));
-without them the data catalogue reports `VITE_RECORD_SERVER is not set.`
-Open `localhost:5173` and log in as above.
+The dev server proxies `/v1` requests to the backend on `localhost:8000`, and
+`/api` and `/quack` to the record server on `localhost:8010`. It reads the
+record server's port and token (`QUACK_SERVER_PORT` and `QUACK_TOKEN`) from
+[`backend/.env`](backend/.env), so no environment variables are needed. Open
+`localhost:5173` and log in as above.
 
 If you only work on the frontend, you can skip step 2 and start the services
 with `compose-dev-backend.yaml` instead (same flags), which runs the backend
@@ -175,9 +180,13 @@ tooling:
 manta/
 ├── backend/           # Python/FastAPI backend — see backend/README.md
 ├── frontend/          # React/Vite frontend — see frontend/README.md
+├── runner/            # the Prefect runtime that executes playbooks — see runner/README.md
 ├── playbook/          # blocks and playbooks: the modelling framework
 ├── playbook-library/  # the blocks and playbooks Manta ships, built on PyPSA
-└── docker/            # local dev services (Postgres, SeaweedFS) — see docker/README.md
+├── docker/            # the local stack (Postgres, SeaweedFS, Prefect, Keycloak, record server) — see docker/README.md
+├── docs/              # the documentation site, built with MkDocs
+├── scripts/deploy/    # scripts the Deploy workflow runs to set up a VM
+└── tools/docs/        # helpers that generate parts of the docs site
 ```
 
 `playbook/` and `playbook-library/` are standalone Python packages that know nothing
@@ -190,6 +199,7 @@ the package-level READMEs for setup instructions:
 
 - [backend/README.md](backend/README.md) for the FastAPI backend.
 - [frontend/README.md](frontend/README.md) for the React frontend.
+- [runner/README.md](runner/README.md) for the Prefect runtime that executes playbooks.
 - [playbook/README.md](playbook/README.md) for writing blocks and playbooks.
 - [playbook-library/README.md](playbook-library/README.md) for the blocks and playbooks Manta ships.
 - [docker/README.md](docker/README.md) for local services and Docker notes.
@@ -202,82 +212,65 @@ the package-level READMEs for setup instructions:
 > instance on our own GCP project and is not a supported way to deploy Manta.
 > To try Manta yourself, see [Running Manta locally](https://github.com/manta-plan/manta/blob/main/README.md#running-manta-locally).
 
-Currently a test instance is deployed for internal purposes, in `europe-north2`
-(Stockholm). Its container name is `manta-adhoc-2` (no points for creativity).
+Currently a test instance is deployed for internal purposes on a GCP VM, at
+`https://<vm_name>.manta-plan.org`. It runs the same stack as
+[Running Manta locally](#running-manta-locally): `compose-dev-fullstack.yaml`
+with the `temporary-quack-setup` profile, so the frontend's Caddy serves the app
+on ports 80 and 443.
 
-### Setup
+### Deploying
 
-On a base Debian image, we begin by refreshing the system and installing docker. See [the official docs](https://docs.docker.com/engine/install/debian/).
+Deployments are manual and run from GitHub: **Actions > Deploy > Run workflow**
+([`deploy.yml`](.github/workflows/deploy.yml)). The inputs are:
 
-```bash
-sudo apt update # update repositories
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+| Input         | Meaning                                                       |
+| ------------- | ------------------------------------------------------------- |
+| `vm_name`     | VM name, also the subdomain (`<vm_name>.manta-plan.org`)      |
+| `gcp_project` | GCP project that hosts the VM                                 |
+| `ref`         | branch, tag or SHA to deploy (default `main`)                 |
+| `reset_data`  | delete the instance's data (database, files, users) first     |
+| `dry_run`     | only check the configuration, authentication and permissions  |
 
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/debian
-Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
+The workflow builds the images in CI and pushes them to GitHub Container
+Registry as `ghcr.io/manta-plan/manta-<name>`, tagged with the commit SHA. It
+skips any image that already exists for the commit. It then creates the VM and
+its firewall rules if they don't exist, points a Cloud DNS record at it, and
+runs [`scripts/deploy/vm-deploy.sh`](scripts/deploy/vm-deploy.sh) on the VM.
+The VM builds nothing: it checks out `ref` for the compose files, pulls the
+images and starts the stack
+([`docker/compose-deploy.yaml`](docker/compose-deploy.yaml) points the services
+at them and adds restart policies). The frontend's Caddy gets and renews a
+Let's Encrypt certificate for the hostname by itself, so nothing else needs to
+be installed or configured by hand. The certificate lives in the `caddy-data`
+volume and survives redeployments, including `reset_data`. For how HTTPS is
+configured, see [docker/README.md](docker/README.md#https-on-a-domain).
 
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
+The VM pulls the images without logging in, so the five packages must be public.
+GitHub creates them private on the first publish: in the organisation's
+**Packages**, open each `manta-*` package, then **Package settings > Change
+visibility > Public**. This is needed once.
 
-You need to additionally, explicitly pull down manta afterwards.
+### Deploying the `app` branch
 
-```bash
-git clone https://github.com/manta-plan/manta
-```
-
-Now we can spin up the dependencies:
-
-```bash
-cd manta
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up -d
-```
-
-Now that the dependencies are running, it's time to spin up a runtime instance.
-
-Install python, nodejs, pnpm, and uv, to allow for building and running the application.
-
-```bash
-sudo apt install nodejs npm
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-uv python install
-curl -fsSL https://get.pnpm.io/install.sh | sh -
-source ~/.bashrc # reload to get access to pnpm
-```
-
-Spin up the backend
+[`deploy-app.yml`](.github/workflows/deploy-app.yml) calls the same workflow on
+every push to the `app` branch and deploys it to `app.manta-plan.org`. To
+release, fast-forward `app` to the commit you want to ship:
 
 ```bash
-cd backend
-uv sync
-uv run uvicorn manta.main:app --host 0.0.0.0 --port 8000
+git push origin main:app
 ```
 
-Build and serve the frontend, which proxies `/v1` requests to the backend on
-port 8000
+It stays off until you set one repository variable (**Settings > Secrets and
+variables > Actions > Variables**): `AUTO_DEPLOY_GCP_PROJECT`, the GCP project
+that hosts the VM. Delete it to turn the automatic deploy off again. A push runs
+the workflow file of the pushed branch, so create `app` from a `main` that
+already has `deploy-app.yml`. Deployments to one VM queue rather than overlap.
 
-```bash
-cd ../frontend
-pnpm install && pnpm build
-pnpm preview --host 0.0.0.0
-```
-
-Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to
-background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on. 
+Pushing to `app` releases to the live instance, so restrict who can push to it
+in the branch settings.
 
 ### Summary
 
-This is a very quick and dirty guide to spinning up an instance of manta. There
-are many many issues with this right now, but a proper deployment with terraform
-etc. is on the way.
+This is still a prototype: one VM, no backups and development credentials. A
+proper deployment with Terraform and the like is on the way.
 <!-- --8<-- [end:docs-test-deployment] -->

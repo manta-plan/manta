@@ -3,10 +3,10 @@
 #
 #   scripts/deploy/gcp-ssh.sh '<remote command>'
 #
-# Stdin is passed through to the remote command, which is how the vm-*.sh
-# scripts reach the VM:
+# Stdin is passed through to the remote command, which is how vm-deploy.sh
+# reaches the VM:
 #
-#   scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-setup.sh
+#   scripts/deploy/gcp-ssh.sh 'sudo bash -s' < scripts/deploy/vm-deploy.sh
 set -euo pipefail
 
 : "${GCP_PROJECT:?}" "${GCP_ZONE:?}" "${VM_NAME:?}"

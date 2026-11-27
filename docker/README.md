@@ -10,8 +10,13 @@ not-yet-addressed concern.
 ## Usage
 
 ```bash
+cd docker
 docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
 ```
+
+The [root README](../README.md#running-manta-locally) runs the same commands
+from the repo root, as `docker compose -f docker/compose-dev-fullstack.yaml
+--env-file backend/.env ...`. Both work.
 
 Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
@@ -27,10 +32,12 @@ To run the app itself in containers too, use one of the files layered on top:
 docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --build
 ```
 
-To run the backend or frontend on the host instead (`uv run manta`,
-`pnpm dev`), stop its container first: they share ports.
+To run the backend on the host instead (`uv run manta`), stop its container
+first: they share port 8000. The frontend container is on port 80 and `pnpm dev`
+on 5173, so the two can run side by side.
 
-The frontend's data catalogue reads from the temporary **quack-server** (see
+The app is then at <http://localhost> (port 80, `FRONTEND_PORT`). The frontend's
+data catalogue reads from the temporary **quack-server** (see
 below), which only starts with its profile. Deploys therefore run:
 
 ```bash
@@ -48,6 +55,13 @@ The token is also built into the public frontend bundle, so only a dev value
 belongs there. The app calls the server on its own origin, over the page's own
 protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets
 HTTPS from Caddy. No CORS settings are needed.
+
+### Deployed instances
+
+A deployed instance doesn't build anything. `compose-deploy.yaml` is layered on
+`compose-dev-fullstack.yaml` by `scripts/deploy/vm-deploy.sh`: it runs the images
+that CI pushed to GHCR (`MANTA_IMAGE_PREFIX` and `IMAGE_TAG` pick which) and adds
+restart policies. See the root README's "Internal test deployment".
 
 ### HTTPS on a domain
 

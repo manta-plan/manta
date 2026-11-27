@@ -1,0 +1,108 @@
+name: Publish images
+
+# Builds the five images a deployment runs and pushes them to GitHub Container
+# Registry, tagged with the full commit SHA:
+#
+#   ghcr.io/<owner>/manta-backend, manta-frontend, manta-quack-server,
+#   manta-runner and manta-block-pypsa
+#
+# Called by deploy.yml, so a VM only ever pulls images and never builds. An
+# image that already exists for the commit is skipped, which makes a repeat
+# deployment of the same commit, or a second VM, cost almost nothing.
+#
+# The packages must be public for the VM to pull them without logging in; see
+# the README, under "Internal test deployment".
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full commit SHA to build and tag the images with
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Mirrors the build sections of docker/compose-dev-*.yaml.
+          - name: backend
+            context: backend
+            file: backend/Dockerfile
+            build-contexts: |
+              playbook=playbook
+              playbook-library=playbook-library
+              runner=runner
+          - name: frontend
+            context: frontend
+            file: frontend/Dockerfile
+            # The record server's shared dev token is built into the bundle;
+            # it is QUACK_TOKEN in backend/.env, set once there.
+            token-arg: true
+          - name: quack-server
+            context: docker/quack-server
+            file: docker/quack-server/Dockerfile
+          - name: runner
+            context: .
+            file: docker/runner-image.Dockerfile
+          - name: block-pypsa
+            context: .
+            file: docker/block-image.Dockerfile
+            target: block-prefect-runtime
+            build-args: ENV_NAME=pypsa
+    env:
+      SHA: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Name the image
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/manta-${{ matrix.name }}" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Check whether the image exists
+        id: exists
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:$SHA" >/dev/null 2>&1; then
+            echo "$IMAGE:$SHA already exists"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read the record server token
+        id: token
+        if: ${{ matrix.token-arg && steps.exists.outputs.exists != 'true' }}
+        run: echo "build-args=VITE_RECORD_TOKEN=$(sed -n 's/^QUACK_TOKEN=//p' backend/.env)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+        if: ${{ steps.exists.outputs.exists != 'true' }}
+
+      - uses: docker/build-push-action@v6
+        if: ${{ steps.exists.outputs.exists != 'true' }}
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          build-args: ${{ matrix.build-args || steps.token.outputs.build-args }}
+          build-contexts: ${{ matrix.build-contexts }}
+          tags: ${{ env.IMAGE }}:${{ env.SHA }}
+          push: true
+          # Labels the package with this repository, so it shows up under it
+          # and inherits its access.
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
