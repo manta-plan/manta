@@ -30,4 +30,4 @@ class PerfectCapacityExpansion(MantaBlock[PerfectCapacityExpansionConfig]):
 
     def run(self, base: Revision) -> Revision:
         n = to_network(base)
-        return solve_and_write(n, base, self.optimize, self.config.time_aggregation, True)[1]
+        return solve_and_write(n, base, self.optimize, self.config.aggregation, True)[1]

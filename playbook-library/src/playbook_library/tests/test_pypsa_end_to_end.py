@@ -19,17 +19,17 @@ from playbook.blocks.run import open_revision
 from playbook.playbooks import Playbook
 from playbook.playbooks.yaml_io import playbook_from_doc
 
-from playbook_library.examples import EXAMPLE_PLAYBOOK
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
 from playbook_library.perfect_capacity_expansion import PerfectCapacityExpansion
 from playbook_library.playbooks import library_playbooks
 from playbook_library.pypsa_helpers import BUILT_COMPONENTS, nominal_attr, to_network
+from playbook_library.tests.networks import new_zoned_network
 
 pytestmark = pytest.mark.pypsa
 
 
-def build_playbook(name: str = EXAMPLE_PLAYBOOK) -> Playbook:
+def build_playbook(name: str) -> Playbook:
     return playbook_from_doc(library_playbooks()[name].doc)
 
 
@@ -41,15 +41,26 @@ def network(store_revision, new_single_period_network) -> Revision:
 CLUSTER_EXPAND_DISPATCH_CONFIG = {
     "globals": {"expansion_mode": "overnight"},
     "cluster": {"name": "agg_3h", "n_hours": 3},
-    "expansion_overnight": {"time_aggregation": "agg_3h"},
-    "expansion_myopic": {"time_aggregation": "agg_3h"},
+    "expansion_overnight": {"aggregation": {"snapshot": "agg_3h"}},
+    "expansion_myopic": {"aggregation": {"snapshot": "agg_3h"}},
     "dispatch": {"optimize_config": {"horizon": 4}},
+}
+ZONES_AND_CARRIERS = {"bus": "zone", "entity": "carrier"}
+ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG = {
+    **CLUSTER_EXPAND_DISPATCH_CONFIG,
+    "expansion_overnight": {"aggregation": {"snapshot": "agg_3h", **ZONES_AND_CARRIERS}},
+    "expansion_myopic": {"aggregation": {"snapshot": "agg_3h", **ZONES_AND_CARRIERS}},
+    "dispatch": {
+        "aggregation": ZONES_AND_CARRIERS,
+        "load_shedding": {},
+        "optimize_config": {"horizon": 4},
+    },
 }
 
 
-def test_the_example_playbook_runs_from_one_network_to_another(network, workspace):
-    ref = build_playbook().run(
-        RevisionRef.from_revision(network), library_playbooks()[EXAMPLE_PLAYBOOK].default_config
+def test_the_expand_playbook_runs_from_one_network_to_another(network, workspace):
+    ref = build_playbook("expand").run(
+        RevisionRef.from_revision(network), library_playbooks()["expand"].default_config
     )
     result = open_revision(workspace, ref)
 
@@ -74,6 +85,18 @@ def test_a_playbook_of_chained_blocks_runs_from_one_network_to_another(network, 
     n = to_network(result)
     assert len(n.snapshots) == 24
     assert n.generators.p_nom_opt["gen"] == pytest.approx(50.0, rel=1e-3)
+
+
+def test_a_playbook_of_chained_blocks_solves_merged_buses_and_assets(store_revision, workspace):
+    rev = store_revision(new_zoned_network(), "zoned")
+    ref = build_playbook("cluster-expand-dispatch").run(
+        RevisionRef.from_revision(rev), ZONED_CLUSTER_EXPAND_DISPATCH_CONFIG
+    )
+
+    n = to_network(open_revision(workspace, ref))
+    assert list(n.buses.index) == ["a", "b", "c", "d"]
+    assert n.generators_t.p.shape == (6, len(n.generators))
+    assert n.generators_t.p.notna().all().all()
 
 
 def test_the_network_the_playbook_started_from_is_left_alone(network):

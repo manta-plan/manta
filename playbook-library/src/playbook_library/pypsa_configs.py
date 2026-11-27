@@ -46,24 +46,16 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # TODO: dynamically generate this schema from the PyPSA optimize function
     # signature, so that we don't have to maintain it manually.
     snapshots: Sequence | None = None
-    """A list of snapshots to optimise, must be a subset of n.snapshots, defaults to n.snapshots"""
+    """Snapshots to solve, a subset of the model's snapshots. None solves all of them."""
 
     multi_investment_periods: bool = False
-    """Whether to optimise as a single investment period or to optimise in multiple investment
-    periods.
-
-    If multiple investment periods requested, the `period` dimension must exist in the
-    model data.
-    """
+    """Solve all investment periods together. Needs a model with a `period` dimension."""
 
     transmission_losses: _PyPSAOptimizeTransmissionLossesSchema | None = None
-    """Include piecewise linear approximation of transmission losses for passive branches
-
-    See `https://go.pypsa.org/transmission-losses` for details.
-    """
+    """Approximate transmission losses on passive branches (go.pypsa.org/transmission-losses)."""
 
     linearized_unit_commitment: bool = False
-    """Whether to optimise using the linearised unit commitment formulation or not."""
+    """Use the linearised unit commitment formulation."""
 
     model_kwargs: linopy_configs.LinopyModelSchema = Field(
         default_factory=linopy_configs.LinopyModelSchema
@@ -73,8 +65,7 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # extra_functionality: Callable | None = None # we do not allow this in blocks
 
     assign_all_duals: bool = False
-    """Whether to assign all dual values or only those that already have a designated place in the
-    network."""
+    """Keep every dual value, not only those the network has a place for."""
 
     solver_name: Literal["highs"] = "highs"
     """Name of the solver to use."""
@@ -84,28 +75,16 @@ class PyPSAOptimizeSchema(ConfigSchema):
     # compute_infeasibilities: bool = False # we do not allow this in MVP blocks
 
     include_objective_constant: bool = True
-    """Whether to include the objective constant (capital costs of existing infrastructure) as a
-    variable in the objective function.
-
-    Setting to False improves LP numerical conditioning, but the objective then leaves out the
-    capital costs of what already exists."""
+    """Include the capital cost of existing assets in the objective."""
 
     committable_big_m: float | None = None
-    """Big-M value for committable+extendable constraints.
-
-    If None, PyPSA infers a scale from the network (e.g. peak load).
-    Otherwise this numeric bound is used when no component-specific limit (p_nom_max) is available.
-    """
+    """Big-M for committable, extendable assets without `p_nom_max`. None lets PyPSA infer it."""
 
     meshed_thresholds: Sequence[int] = Field(default_factory=lambda: [30, 100, 400])
-    """Thresholds for splitting buses into nodal-balance constraint groups by bus connectivity
-    count."""
+    """Bus connectivity thresholds that group the nodal balance constraints."""
 
     piecewise_options: list[PiecewiseOptions] = Field(default_factory=list)
-    """Options to override defaults in piecewise constraint formulation.
-
-    Each operator is interpreted as ``y operator f(x)``.
-    """
+    """Overrides for piecewise constraints, each read as `y operator f(x)`."""
 
     @computed_field
     def solver_options(self) -> linopy_configs.HighsOptions:
@@ -121,10 +100,7 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
     """Number of snapshots to consider in each iteration."""
 
     overlap: int = 0
-    """Number of snapshots to overlap between two iterations.
-
-    Results of overlapping snapshots will be superseded by those provided by the next
-    iteration(s)."""
+    """Snapshots shared by two windows. The later window's results replace the earlier ones."""
 
     @model_validator(mode="after")
     def overlap_must_be_shorter_than_horizon(self: Self) -> Self:
@@ -133,22 +109,39 @@ class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
         return self
 
 
+class Aggregation(ConfigSchema):
+    snapshot: str | None = Field(None, json_schema_extra={"x-uses-property": "snapshot"})
+    """Time aggregation to solve by: the `name` of an earlier `time_partition` step."""
+
+    bus: str | None = Field(None, json_schema_extra={"x-uses-property": "bus"})
+    """Bus property to merge buses by, such as `country`."""
+
+    entity: str | None = Field(None, json_schema_extra={"x-uses-property": "entity"})
+    """Entity property to merge assets by, such as `carrier`."""
+
+    ungrouped: Literal["keep", "drop"] = "keep"
+    """What to do with an asset that has no `entity` value: solve it alone, or leave it out."""
+
+    clip_p_max_pu: float | None = Field(None, ge=0.0)
+    """Set availability values at or below this threshold to 0, as PyPSA-Eur does."""
+
+    @model_validator(mode="after")
+    def drop_needs_entity(self: Self) -> Self:
+        if self.ungrouped == "drop" and self.entity is None:
+            raise ValueError("`ungrouped: drop` needs `entity` to be set.")
+        return self
+
+
 class PyPSAOptimizeBlockConfig(ConfigSchema):
     optimize_config: PyPSAOptimizeSchema = Field(default_factory=PyPSAOptimizeSchema)
-    time_aggregation: str | None = None
-    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
-
-    A time aggregation groups the snapshots into clusters, and the block solves one
-    snapshot per cluster. The results cover every snapshot, spread over the cluster each
-    falls in. A model without that time aggregation is refused. None solves at full
-    resolution. A time aggregation cannot be combined with `optimize_config.snapshots`.
-    """
+    aggregation: Aggregation = Field(default_factory=Aggregation)
+    """Merge buses, assets and snapshots before solving. Results cover the full model."""
 
     @model_validator(mode="after")
     def snapshots_are_not_chosen_with_a_time_aggregation(self: Self) -> Self:
-        if self.time_aggregation is not None and self.optimize_config.snapshots is not None:
+        if self.aggregation.snapshot is not None and self.optimize_config.snapshots is not None:
             raise ValueError(
-                "`optimize_config.snapshots` cannot be set together with `time_aggregation`."
+                "`optimize_config.snapshots` cannot be set together with `aggregation.snapshot`."
             )
         return self
 
@@ -161,7 +154,4 @@ class LoadSheddingConfig(ConfigSchema):
     """The most load each bus can shed, in the unit `sign` sets."""
 
     sign: float = 1e-3
-    """The scale of shed load against the model's power unit.
-
-    With power in MW, 1e-3 counts shed load in kW.
-    """
+    """Scale of shed load against the model's power unit; 1e-3 turns MW into kW."""

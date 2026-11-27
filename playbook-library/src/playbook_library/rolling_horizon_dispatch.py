@@ -13,6 +13,7 @@ from playbook.blocks.run import open_revision
 from pydantic import Field
 
 from playbook_library.pypsa_configs import (
+    Aggregation,
     LoadSheddingConfig,
     PyPSAOptimizeBlockConfig,
     PyPSAOptimizeRollingHorizonConfig,
@@ -52,38 +53,16 @@ class RollingHorizonDispatchConfig(PyPSAOptimizeBlockConfig):
         default_factory=PyPSAOptimizeRollingHorizonConfig
     )
     capacity_source: RevisionRef | None = Field(default=None, title="Capacity data source")
-    """Where the capacities to dispatch against come from.
-
-    It is normally wired to a capacity-expansion block earlier in the playbook. Left
-    unset, the block dispatches against whatever capacities the model already has. Set,
-    it must have results for every period dispatched, and a capacity for every asset that
-    can be built in them. A cohort is an extendable asset of finite lifetime. When a
-    single period is dispatched, a cohort that only an earlier period could have built
-    may lack a capacity, and is left out.
-    """
+    """Results to take capacities from, such as an expansion step. None keeps the model's own."""
 
     periods: list[int] | None = Field(default=None, min_length=1)
-    """The investment periods to dispatch, in a model with investment periods.
-
-    An investment period is one of the years in which the model builds capacity. None
-    dispatches every one, and an empty list is refused.
-    """
+    """Investment periods to dispatch. None dispatches all of them."""
 
     load_shedding: LoadSheddingConfig | None = None
-    """Load each bus may shed at a cost, so demand the capacities cannot meet is shed.
+    """Let each bus shed load at a cost. None adds no load shedding."""
 
-    None adds no load shedding, which leaves any to the model. Set, the block adds a
-    load-shedding generator at every bus before it dispatches.
-    """
-
-    time_aggregation: str | None = None
-    """The time aggregation to solve by: the `name` given to an earlier `time_partition` block.
-
-    A time aggregation groups the snapshots into clusters. With one, `horizon` and
-    `overlap` count clusters, not snapshots, and the results are spread over every
-    snapshot. A model without that time aggregation is refused. So is a model with
-    storage that each window cycles or starts afresh. None solves at full resolution.
-    """
+    aggregation: Aggregation = Field(default_factory=Aggregation)
+    """Merge buses, assets and snapshots before dispatch. Results cover the full model."""
 
 
 class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
@@ -184,10 +163,17 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         """Add load shedding to the network of `base`, and store it as a child revision of it.
 
         The load-shedding generators are then part of the stored model, so a later
-        results-only write includes their results.
+        results-only write includes their results. They are `existing` assets with their
+        carrier as the value of the entity property, so that an entity aggregation merges them.
         """
         n = to_network(base)
+        before = n.c.generators.static.index
         n.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
+        added = n.c.generators.static.index.difference(before)
+        n.c.generators.static.loc[added, "asset_status"] = "existing"
+        entity = self.config.aggregation.entity
+        if entity is not None:
+            n.c.generators.static.loc[added, entity] = n.c.generators.static.loc[added, "carrier"]
         return write_network(n, base)
 
     def refuse_restarting_storage(self, n: pypsa.Network) -> None:
@@ -239,7 +225,7 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
         if self.config.capacity_source is not None:
             source = open_revision(base.store.workspace, self.config.capacity_source)
             self.fix_capacities(n_new, source, periods)
-        if self.config.time_aggregation is not None:
+        if self.config.aggregation.snapshot is not None:
             self.refuse_restarting_storage(n_new)
         if self.config.load_shedding is not None:
             n_new.optimize.add_load_shedding(**self.config.load_shedding.model_dump())
@@ -249,6 +235,6 @@ class RollingHorizonDispatch(MantaBlock[RollingHorizonDispatchConfig]):
             n_new,
             base,
             self.optimize,
-            self.config.time_aggregation,
+            self.config.aggregation,
             multi_investment_periods=self.config.optimize_config.multi_investment_periods,
         )[1]

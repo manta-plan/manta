@@ -129,13 +129,18 @@ AGGREGATED = [
 ]
 
 
+@pytest.mark.parametrize(
+    "aggregation",
+    [{"snapshot": "agg_3h"}, {"snapshot": "agg_3h", "bus": "carrier", "entity": "ctype"}],
+    ids=["time", "time-buses-assets"],
+)
 @pytest.mark.parametrize(("block_cls", "config", "base_name", "solved"), AGGREGATED)
-def test_a_block_solving_by_a_time_aggregation_writes_results_at_every_snapshot(
-    block_cls, config, base_name, solved, request
+def test_a_block_solving_by_an_aggregation_writes_results_at_every_snapshot(
+    block_cls, config, base_name, solved, aggregation, request
 ):
     rev = _run(TimePartition, CLUSTER, request.getfixturevalue(base_name))
 
-    result = _run(block_cls, {**config, "time_aggregation": "agg_3h"}, rev)
+    result = _run(block_cls, {**config, "aggregation": aggregation}, rev)
 
     frame = _snapshots(result)
     snapshots = frame["snapshot"][frame["period"].isin(solved)]
@@ -150,14 +155,14 @@ def test_a_block_solving_by_a_time_aggregation_writes_results_at_every_snapshot(
 def test_a_block_needs_the_time_aggregation_it_is_given(block_cls, config, base_name, _, request):
     rev = request.getfixturevalue(base_name)
     with pytest.raises(ValueError, match="no time aggregation snapshot.agg_3h"):
-        _run(block_cls, {**config, "time_aggregation": "agg_3h"}, rev)
+        _run(block_cls, {**config, "aggregation": {"snapshot": "agg_3h"}}, rev)
 
 
 @pytest.mark.parametrize("name", ["p", "marginal_price"])
 def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(name, multi_period):
     rev = _run(TimePartition, CLUSTER, multi_period)
     solved = _run(PerfectCapacityExpansion, {}, rev)
-    configs = [{"period": 2030}, {"period": 2030, "time_aggregation": "agg_3h"}]
+    configs = [{"period": 2030}, {"period": 2030, "aggregation": {"snapshot": "agg_3h"}}]
     full, aggregated = (_run(OvernightCapacityExpansion, c, solved) for c in configs)
 
     frame = _snapshots(solved)
@@ -173,7 +178,7 @@ def test_expanding_one_period_leaves_the_others_as_solving_it_in_full_does(name,
 
 def test_myopic_expansion_by_a_time_aggregation_keeps_each_period_it_expanded(multi_period):
     rev = _run(TimePartition, CLUSTER, multi_period)
-    result = _run(MyopicCapacityExpansion, {"time_aggregation": "agg_3h"}, rev)
+    result = _run(MyopicCapacityExpansion, {"aggregation": {"snapshot": "agg_3h"}}, rev)
     *_, first, _, last = result.ancestry()
 
     expanded = [_stored(result.store.revision(u), "p") for u in (first, last)]
@@ -426,11 +431,15 @@ def test_dispatch_refuses_an_asset_its_source_decided_no_capacity_of(single_peri
         )
 
 
+TECHNOLOGY_GROUPS = {"entity": "technology_group", "ungrouped": "drop"}
+
+
 @pytest.mark.parametrize(
     ("base_name", "config", "shed"),
     [
         ("single_period", {}, 720.0),
-        ("single_period", {"time_aggregation": "agg_3h"}, 720.0),
+        ("single_period", {"aggregation": {"snapshot": "agg_3h"}}, 720.0),
+        ("single_period", {"aggregation": TECHNOLOGY_GROUPS}, 720.0),
         ("multi_period", {"periods": [2050]}, 320.0),
     ],
 )
@@ -440,6 +449,8 @@ def test_load_shedding_meets_the_demand_fixed_capacities_cannot(
     n = to_network(request.getfixturevalue(base_name))
     n.generators["p_nom_extendable"] = False
     n.generators.loc[n.generators.index[0], "p_nom"] = 20.0
+    n.generators["technology_group"] = "supply"
+    n.loads["technology_group"] = "demand"
     rev = _run(TimePartition, CLUSTER, store_revision(n, "short"))
     with pytest.raises(SolveError, match="could not solve a window"):
         _dispatch(rev, **config)
@@ -461,7 +472,7 @@ def test_dispatch_by_a_time_aggregation_starts_its_storage_at_its_initial_state(
     single_period, store_revision
 ):
     rev = _with_storage(single_period, store_revision, "Store", e_nom=100.0, e_initial=60.0)
-    config = {"optimize_config": {"horizon": 4}, "time_aggregation": "agg_3h"}
+    config = {"optimize_config": {"horizon": 4}, "aggregation": {"snapshot": "agg_3h"}}
 
     result = _run(RollingHorizonDispatch, config, rev)
 
@@ -478,7 +489,7 @@ def test_dispatch_by_a_time_aggregation_not_over_investment_periods_carries_stor
 ):
     storage = {"e_nom": 100.0, "e_initial": 60.0, "e_initial_per_period": True}
     rev = _with_storage(multi_period, store_revision, "Store", **storage)
-    config = {"optimize_config": {"horizon": 2}, "time_aggregation": "agg_3h"}
+    config = {"optimize_config": {"horizon": 2}, "aggregation": {"snapshot": "agg_3h"}}
 
     result = _run(RollingHorizonDispatch, config, rev)
 
@@ -501,7 +512,7 @@ def test_dispatch_by_a_time_aggregation_refuses_storage_each_window_cycles(
     component, storage, single_period, store_revision
 ):
     rev = _with_storage(single_period, store_revision, component, **storage)
-    config = {"optimize_config": {"horizon": 4}, "time_aggregation": "agg_3h"}
+    config = {"optimize_config": {"horizon": 4}, "aggregation": {"snapshot": "agg_3h"}}
     with pytest.raises(NotImplementedError, match="each window restarts"):
         _run(RollingHorizonDispatch, config, rev)
 
@@ -521,7 +532,7 @@ def test_a_rolling_horizon_must_move_forward():
     ],
 )
 def test_a_time_aggregation_is_not_combined_with_chosen_snapshots(block_cls):
-    config = {"time_aggregation": "agg", "optimize_config": {"snapshots": [0]}}
+    config = {"aggregation": {"snapshot": "agg"}, "optimize_config": {"snapshots": [0]}}
     with pytest.raises(Exception, match="snapshots"):
         block_cls.merge_config(config, {})
 

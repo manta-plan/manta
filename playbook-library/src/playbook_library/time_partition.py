@@ -251,18 +251,10 @@ def segment_starts(rev: Revision, n_segments: int) -> DuckDBPyRelation:
 
 class TimePartitionConfig(ConfigSchema):
     name: str
-    """What to call the time aggregation, so later blocks can choose to solve by it.
-
-    A record can have several time aggregations, each under its own name. The name cannot
-    be `period` or `timestep`, which describe the snapshots themselves.
-    """
+    """Name later steps use to solve by this time aggregation. Not `period` or `timestep`."""
 
     segments: int | None = Field(default=None, gt=0)
-    """Group the time series into this many stretches of similar conditions.
-
-    Stretches can be of different lengths, so a few hours of unusual weather are kept
-    apart from a long stretch of ordinary weather.
-    """
+    """Group the snapshots into this many stretches of similar conditions, of varying length."""
 
     n_hours: int | None = Field(default=None, gt=0)
     """Group the time series into even blocks of this many hours."""
@@ -286,7 +278,7 @@ class TimePartition(MantaBlock[TimePartitionConfig]):
 
     A cluster is a contiguous stretch of snapshots within one investment period. The
     record keeps this time aggregation under its `name`, alongside the full time series.
-    Only the blocks whose `time_aggregation` names it solve by it, and their results
+    Only the blocks whose `aggregation.snapshot` names it solve by it, and their results
     cover every snapshot.
     """
 
