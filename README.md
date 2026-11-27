@@ -250,19 +250,24 @@ GitHub creates them private on the first publish: in the organisation's
 **Packages**, open each `manta-*` package, then **Package settings > Change
 visibility > Public**. This is needed once.
 
-### Deploying every push to main
+### Deploying the `app` branch
 
-[`deploy-main.yml`](.github/workflows/deploy-main.yml) calls the same workflow
-on every push to `main`. It stays off until you set two repository variables
-(**Settings > Secrets and variables > Actions > Variables**):
+[`deploy-app.yml`](.github/workflows/deploy-app.yml) calls the same workflow on
+every push to the `app` branch and deploys it to `app.manta-plan.org`. To
+release, fast-forward `app` to the commit you want to ship:
 
-| Variable                  | Example   | Meaning                                  |
-| ------------------------- | --------- | ---------------------------------------- |
-| `AUTO_DEPLOY_VM_NAME`     | `app`     | the VM and subdomain, here `app.manta-plan.org` |
-| `AUTO_DEPLOY_GCP_PROJECT` | `my-proj` | the GCP project that hosts it            |
+```bash
+git push origin main:app
+```
 
-Delete `AUTO_DEPLOY_VM_NAME` to turn it off again. Deployments to one VM queue
-rather than overlap.
+It stays off until you set one repository variable (**Settings > Secrets and
+variables > Actions > Variables**): `AUTO_DEPLOY_GCP_PROJECT`, the GCP project
+that hosts the VM. Delete it to turn the automatic deploy off again. A push runs
+the workflow file of the pushed branch, so create `app` from a `main` that
+already has `deploy-app.yml`. Deployments to one VM queue rather than overlap.
+
+Pushing to `app` releases to the live instance, so restrict who can push to it
+in the branch settings.
 
 ### Summary
 

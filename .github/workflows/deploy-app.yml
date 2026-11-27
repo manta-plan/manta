@@ -1,0 +1,35 @@
+name: Deploy app
+
+# Deploys every push to the `app` branch to app.manta-plan.org, through
+# deploy.yml. To release, fast-forward `app` to the commit to ship:
+#
+#   git push origin main:app
+#
+# Off until the repository variable AUTO_DEPLOY_GCP_PROJECT (the GCP project
+# that hosts the VM) is set, under Settings > Secrets and variables > Actions >
+# Variables, so merging this changes nothing by itself. Delete the variable to
+# turn it off again.
+#
+# A push runs the workflow file of the pushed branch, so `app` must contain
+# this file: create it from a main that already has it.
+
+on:
+  push:
+    branches: [app]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  deploy:
+    name: Deploy to app.manta-plan.org
+    if: ${{ vars.AUTO_DEPLOY_GCP_PROJECT != '' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      # The VM and subdomain: app.manta-plan.org.
+      vm_name: app
+      gcp_project: ${{ vars.AUTO_DEPLOY_GCP_PROJECT }}
+      ref: ${{ github.sha }}
+    secrets: inherit
