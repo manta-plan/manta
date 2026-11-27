@@ -26,6 +26,7 @@ So any process can ask about it later, even after the process that started it ha
 
 A flow run's state is one of `SCHEDULED`, `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CRASHED` or `CANCELLED`, among a few others.
 Manta's run status is this state, read straight from Prefect.
+The one exception is `TIMED_OUT`, which Manta reports for a flow run that is `FAILED` because it exceeded its timeout.
 
 Prefect also has tasks, smaller tracked units inside a flow.
 Manta's flows use no tasks.
@@ -95,7 +96,8 @@ Manta reads logs from there and captures none itself.
 
 Prefect also provides retry policies, timeouts, concurrency limits per work pool, cancellation, a scheduler for repeated runs, and a UI to inspect all of it.
 Manta's code contains none of these, and should not reimplement them.
-Manta does not configure retries, timeouts or concurrency limits yet.
+Manta configures two of them: a concurrency limit on the playbooks pool, and a timeout on each flow.
+It does not configure retries yet.
 
 ## How Manta uses Prefect
 
@@ -130,6 +132,42 @@ In a container per run, that container would idle for hours.
 A restart or eviction of it would then fail the run while its steps carry on.
 A long-lived process worker costs little, because it mostly waits, and it is already running when a run arrives.
 Blocks still get a fresh container each, for isolation between steps.
+
+### How many playbooks run at once
+
+The playbooks pool has a concurrency limit, read from the `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS` variable.
+`python -m runner.deploy` sets the limit each time it runs, also on a pool that already exists.
+Prefect counts the pool's `PENDING` and `RUNNING` flow runs against the limit.
+A run started beyond the limit is still accepted, and stays `SCHEDULED` until another run reaches a final state.
+The web app shows such a run as **Queued**.
+The blocks pool has no limit of its own, because a block runs only as a step of a playbook run.
+
+### How long a run may take
+
+Each flow has a timeout, read from a variable in the process that executes the flow:
+
+| Flow           | Variable                         | Where it is read                                           |
+| -------------- | -------------------------------- | ---------------------------------------------------------- |
+| `run-block`    | `MANTA_BLOCK_TIMEOUT_SECONDS`    | The block's container, which gets it from the blocks pool   |
+| `run-playbook` | `MANTA_PLAYBOOK_TIMEOUT_SECONDS` | The playbook worker                                        |
+
+The playbook timeout covers every step of a playbook, so it must be the larger of the two.
+`python -m runner.deploy` fails when it is not, and the workers then do not start.
+
+When a block exceeds its timeout, Prefect raises an error inside the block.
+The `run-block` flow run ends as `FAILED` with the state name `TimedOut`, and its container exits and is removed.
+`PrefectBlockRunner` then raises a `TimeoutError` that names the step, so the playbook run ends the same way.
+
+When a playbook exceeds its timeout, Prefect raises the error where the playbook run waits for its current step.
+`PrefectBlockRunner` cancels that step before the run ends.
+Prefect runs a second process beside the block in its container, and that process acts on the cancellation.
+It kills the block from outside, so the container stops whatever the block is doing, and the step ends as `CANCELLED`.
+
+A timeout inside a block depends on the block's code returning to Python, which a solver may not do for a long time.
+HiGHS, the only solver the blocks use today, does.
+A block that does not is stopped by the playbook timeout instead.
+
+Either way the playbook run reaches a final state, which frees its slot in the playbooks pool.
 
 ### What the backend does
 

@@ -36,6 +36,15 @@ describe("summarizeRunStatuses", () => {
     expect(counts).toMatchObject({ total: 4, succeeded: 0, inProgress: 0, failed: 0 });
   });
 
+  it("counts a timed-out run as failed", () => {
+    const counts = summarizeRunStatuses({
+      total: 4,
+      statuses: { COMPLETED: 2, FAILED: 1, TIMED_OUT: 1 },
+    });
+
+    expect(counts).toMatchObject({ succeeded: 2, failed: 2, successRate: 50 });
+  });
+
   it("has no success rate until a run has finished", () => {
     expect(summarizeRunStatuses({ total: 0, statuses: {} }).successRate).toBeNull();
     expect(summarizeRunStatuses({ total: 2, statuses: { RUNNING: 2 } }).successRate).toBeNull();
