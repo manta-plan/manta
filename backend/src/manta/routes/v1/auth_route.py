@@ -3,6 +3,7 @@ from functools import cache
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from manta.config.guest_login_config import guest_login_enabled
 from manta.config.rate_limit_config import guest_logins_per_client_per_hour, guest_logins_per_hour
 from manta.routes.v1.requests.login_request import LoginRequest
 from manta.routes.v1.requests.refresh_token_request import RefreshTokenRequest
@@ -21,6 +22,15 @@ def _guest_limiters() -> tuple[RateLimiter, RateLimiter]:
         RateLimiter(guest_logins_per_client_per_hour(), _HOUR_SECONDS),
         RateLimiter(guest_logins_per_hour(), _HOUR_SECONDS),
     )
+
+
+def require_guest_login_enabled() -> None:
+    # 404 rather than 403: on an instance without guest logins, the endpoint
+    # doesn't exist as far as clients are concerned.
+    if not guest_login_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Guest login is disabled."
+        )
 
 
 def limit_guest_logins(request: Request) -> None:
@@ -61,7 +71,8 @@ def logout(request: RefreshTokenRequest, service: AuthService = Depends()) -> No
     "/guest",
     response_model=LoginResult,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(limit_guest_logins)],
+    # In this order, so a refused guest login doesn't count against the rate limit.
+    dependencies=[Depends(require_guest_login_enabled), Depends(limit_guest_logins)],
 )
 def login_as_guest(service: AuthService = Depends()) -> LoginResult:
     # Unauthenticated by design: it backs the "Continue as guest" button. Each

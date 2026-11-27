@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_FEEDBACK_ENDPOINT?: string;
   /** The record server's shared dev token; it ships in the bundle. */
   readonly VITE_RECORD_TOKEN?: string;
+  /** "false" hides "Continue as guest"; the backend's GUEST_LOGIN_ENABLED refuses it too. */
+  readonly VITE_GUEST_LOGIN_ENABLED?: string;
 }
 
 /** Short git commit of the build, injected by vite.config.ts. */

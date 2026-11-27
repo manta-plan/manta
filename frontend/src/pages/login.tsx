@@ -11,6 +11,10 @@ import { MantaLogo } from "../features/auth/components/manta-logo";
 // background to the photo once it loads on a slow network.
 const authBackgroundColor = "#42645e";
 
+// Off on instances that only known users may sign in to. Set at build time;
+// the backend refuses guest logins there too (GUEST_LOGIN_ENABLED).
+const isGuestLoginEnabled = import.meta.env.VITE_GUEST_LOGIN_ENABLED !== "false";
+
 export function LoginPage() {
   const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
   // Which sign-in is in flight, so only its button shows a spinner while both
@@ -128,26 +132,30 @@ export function LoginPage() {
           </AuthButton>
         </form>
 
-        <div className="my-4 flex items-center gap-3 text-[11px] tracking-wide text-slate-400 uppercase">
-          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-          or
-          <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-        </div>
+        {isGuestLoginEnabled ? (
+          <>
+            <div className="my-4 flex items-center gap-3 text-[11px] tracking-wide text-slate-400 uppercase">
+              <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+              or
+              <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+            </div>
 
-        <AuthButton
-          variant="secondary"
-          disabled={isSigningIn}
-          onClick={handleGuestSignIn}
-          icon={
-            pendingSignIn === "guest" ? (
-              <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FiUser className="size-4" aria-hidden="true" />
-            )
-          }
-        >
-          {pendingSignIn === "guest" ? "Signing in..." : "Continue as guest"}
-        </AuthButton>
+            <AuthButton
+              variant="secondary"
+              disabled={isSigningIn}
+              onClick={handleGuestSignIn}
+              icon={
+                pendingSignIn === "guest" ? (
+                  <FiRefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FiUser className="size-4" aria-hidden="true" />
+                )
+              }
+            >
+              {pendingSignIn === "guest" ? "Signing in..." : "Continue as guest"}
+            </AuthButton>
+          </>
+        ) : null}
       </section>
     </main>
   );
