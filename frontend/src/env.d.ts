@@ -9,3 +9,6 @@ interface ImportMetaEnv {
 
 /** Short git commit of the build, injected by vite.config.ts. */
 declare const __APP_VERSION__: string;
+
+/** ISO 8601 date of that commit, or "" when unknown; injected by vite.config.ts. */
+declare const __APP_COMMIT_DATE__: string;

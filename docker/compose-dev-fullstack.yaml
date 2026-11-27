@@ -23,6 +23,9 @@ services:
       # bundle (see frontend/Dockerfile) and is the server's QUACK_TOKEN.
       args:
         VITE_RECORD_TOKEN: ${QUACK_TOKEN}
+        # Shown in the About dialog; set by scripts/deploy/vm-deploy.sh.
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_COMMIT_DATE: ${GIT_COMMIT_DATE:-}
     environment:
       BACKEND_URL: http://backend:8000
       # Container port, not QUACK_SERVER_PORT (that's the host-published one).

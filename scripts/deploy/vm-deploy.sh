@@ -35,7 +35,9 @@ CADDY_VOLUME=caddy-data
 # VITE_RECORD_SERVER (localhost:5173, read by older commits) are only right
 # for a local run.
 compose() {
-  FRONTEND_PORT=$PORT \
+  GIT_COMMIT=$(git rev-parse HEAD) \
+    GIT_COMMIT_DATE=$(git log -1 --format=%cI) \
+    FRONTEND_PORT=$PORT \
     FRONTEND_HTTPS_PORT=$HTTPS_PORT \
     SITE_ADDRESS=$SITE_HOST \
     COMPOSE_PROFILES=temporary-quack-setup \

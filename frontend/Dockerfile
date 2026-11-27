@@ -11,6 +11,11 @@ COPY src src
 # token is a build arg, not runtime env. The app reaches the record server on
 # this site's own origin, which proxies it (see Caddyfile).
 ARG VITE_RECORD_TOKEN
+# The commit and date shown in the About dialog (see vite.config.ts). The build
+# context has no .git, so scripts/deploy/vm-deploy.sh passes them in; unset,
+# the dialog shows "unknown".
+ARG GIT_COMMIT
+ARG GIT_COMMIT_DATE
 RUN pnpm build
 
 # Serves the static build, forwards /v1 to BACKEND_URL and the record server's
