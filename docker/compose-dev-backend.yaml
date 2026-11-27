@@ -41,6 +41,8 @@ services:
       # the guest-login rate limit is keyed on. Trust no other peer: anyone
       # else could set that header to whatever they like.
       FORWARDED_ALLOW_IPS: 172.30.0.2
+      # Set to false by scripts/deploy/vm-deploy.sh --no-guest-login.
+      GUEST_LOGIN_ENABLED: ${GUEST_LOGIN_ENABLED:-true}
     ports:
       - "${APP_PORT}:8000"
     healthcheck:

@@ -11,6 +11,8 @@ COPY src src
 # token is a build arg, not runtime env. The app reaches the record server on
 # this site's own origin, which proxies it (see Caddyfile).
 ARG VITE_RECORD_TOKEN
+# "false" hides the "Continue as guest" button (the backend's GUEST_LOGIN_ENABLED).
+ARG VITE_GUEST_LOGIN_ENABLED
 RUN pnpm build
 
 # Serves the static build, forwards /v1 to BACKEND_URL and the record server's

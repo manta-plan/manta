@@ -3,7 +3,7 @@
 # from docker/compose-dev-fullstack.yaml, with the frontend on ports 80 and 443
 # and the temporary record server (quack-server) behind it.
 #
-#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--reset-data]' \
+#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--no-guest-login] [--reset-data]' \
 #     < scripts/deploy/vm-deploy.sh
 #
 # --site-host is the public hostname (<vm_name>.manta-plan.org), which DNS
@@ -11,6 +11,9 @@
 # Caddy gets and renews a Let's Encrypt certificate for it and serves the site
 # over HTTPS. The certificate lives in the caddy-data volume and outlives
 # redeployments.
+#
+# --no-guest-login hides "Continue as guest" and makes the backend refuse guest
+# logins (GUEST_LOGIN_ENABLED=false), so only existing users can sign in.
 #
 # --reset-data also deletes the data volumes (database, stored files, Keycloak
 # users), so the instance starts from scratch. It keeps caddy-data: Let's
@@ -25,6 +28,7 @@ OVERRIDE=/opt/manta-compose-deploy.yaml
 PORT=80
 HTTPS_PORT=443
 SITE_HOST=""
+GUEST_LOGIN_ENABLED=true
 # Compose's project name (`name:` in compose-dev-fullstack.yaml) and the
 # volume that holds Caddy's certificates.
 PROJECT=manta
@@ -38,6 +42,7 @@ compose() {
   FRONTEND_PORT=$PORT \
     FRONTEND_HTTPS_PORT=$HTTPS_PORT \
     SITE_ADDRESS=$SITE_HOST \
+    GUEST_LOGIN_ENABLED=$GUEST_LOGIN_ENABLED \
     COMPOSE_PROFILES=temporary-quack-setup \
     VITE_RECORD_SERVER=$SITE_HOST \
     docker compose \
@@ -77,11 +82,12 @@ main() {
       --sha) sha=$2 && shift 2 ;;
       --site-host) SITE_HOST=$2 && shift 2 ;;
       --reset-data) reset_data=true && shift ;;
+      --no-guest-login) GUEST_LOGIN_ENABLED=false && shift ;;
       *) echo "Unknown argument: $1" >&2 && exit 2 ;;
     esac
   done
   if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ]; then
-    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> [--reset-data]" >&2
+    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> [--no-guest-login] [--reset-data]" >&2
     exit 2
   fi
 
