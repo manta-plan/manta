@@ -114,6 +114,7 @@ name = "playbook"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "annotated-types" },
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -133,6 +134,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "annotated-types", specifier = ">=0.6" },
     { name = "datarecord", marker = "extra == 'run'", git = "https://github.com/energy-models/datarecord?rev=8889d623865e3cab80d7a18681e48a6c2536741d" },
     { name = "jsonschema", specifier = ">=4.18" },
     { name = "pydantic", specifier = ">=2" },
