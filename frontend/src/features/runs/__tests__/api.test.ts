@@ -97,6 +97,22 @@ describe("project scoped requests", () => {
       }),
     ).rejects.toThrow(/is not available in this project/);
   });
+
+  it("passes on the backend's refusal of a run beyond the user's active run limit", async () => {
+    const refusal = new ApiError(
+      429,
+      "Active run limit reached (2). Wait for one of your runs to finish, then try again.",
+    );
+    mockedPostJson.mockRejectedValue(refusal);
+
+    await expect(
+      createRun("uuid-a", {
+        playbook: "pb",
+        config: {} as never,
+        dataRecord: { name: "x", revision_uuid: revision } as never,
+      }),
+    ).rejects.toBe(refusal);
+  });
 });
 
 describe("getProjectRun", () => {

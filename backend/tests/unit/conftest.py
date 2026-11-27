@@ -33,6 +33,9 @@ class _FakeQuery:
         self.limit_value = value
         return self
 
+    def join(self, *_args, **_kwargs):
+        return self
+
     def one_or_none(self):
         return self._result
 
@@ -53,6 +56,8 @@ class _MockSession:
         self.uuid = uuid4()
         self.created_at = datetime.now(UTC)
         self._query_results = query_results or {}
+        self.queried_models: list[type] = []
+        self.execute = MagicMock()
         self.add = MagicMock(side_effect=self._assign_generated_fields)
         self.commit = MagicMock()
         self.flush = MagicMock()
@@ -60,6 +65,7 @@ class _MockSession:
 
     def query(self, model: type) -> _FakeQuery:
         self.last_query = _FakeQuery(self._query_results.get(model))
+        self.queried_models.append(model)
         return self.last_query
 
     def _assign_generated_fields(self, entity) -> None:

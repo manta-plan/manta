@@ -9,8 +9,10 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from playbook_library import library_catalogue
 from playbook_library.playbooks import library_playbooks
+from prefect.client.schemas.objects import TERMINAL_STATES
 from prefect.states import Failed
 from runner.flows import OUTPUT_ARTIFACT_KEY, TIMED_OUT_STATE_NAME, catalogue_parameter
+from sqlalchemy.dialects import postgresql
 
 from manta.entities import Project, Run
 from manta.services import run_service as run_service_module
@@ -367,6 +369,187 @@ def test_create_run_with_unknown_revision_raises_404(
         Bucket=_BUCKET, Key=f"{project.uuid}/store/layers/{_REVISION_UUID}/manifest.json"
     )
     dispatch.assert_not_called()
+
+
+def _create_run_with_active_runs(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client, limit: int, active: int
+):
+    """Creates a run for a user who already has `active` runs that are not finished, and
+    one that is, with the per-user limit at `limit`. Returns what the service returned or
+    raised, with the database, the user's earlier runs, the Prefect client and the
+    dispatch."""
+    monkeypatch.setenv("MANTA_MAX_CONCURRENT_RUNS_PER_USER", str(limit))
+    project = _existing_project()
+    runs = [_existing_run(project) for _ in range(active + 1)]
+    db = mock_db_class(query_results={Project: project, Run: runs})
+    client = MagicMock()
+    client.count_flow_runs.return_value = active
+    _patch_get_client(monkeypatch, client)
+    dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+
+    try:
+        outcome = _dispatching_service(db, mock_s3_client).create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            store_url=_store_url(project),
+            revision_uuid=_REVISION_UUID,
+            user=_existing_user(),
+        )
+    except HTTPException as refused:
+        outcome = refused
+    return SimpleNamespace(outcome=outcome, db=db, runs=runs, client=client, dispatch=dispatch)
+
+
+def test_create_run_refuses_a_run_while_the_user_is_at_the_active_run_limit(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given / When
+    created = _create_run_with_active_runs(
+        monkeypatch, mock_db_class, mock_s3_client, limit=2, active=2
+    )
+
+    # Then it is refused with a message the user can act on...
+    assert isinstance(created.outcome, HTTPException)
+    assert created.outcome.status_code == 429
+    assert created.outcome.detail == (
+        "Active run limit reached (2). Wait for one of your runs to finish, then try again."
+    )
+    # ...and no run was dispatched or persisted.
+    created.dispatch.assert_not_called()
+    created.db.add.assert_not_called()
+    created.db.commit.assert_not_called()
+
+
+def test_create_run_accepts_a_run_while_the_user_is_below_the_active_run_limit(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given / When
+    created = _create_run_with_active_runs(
+        monkeypatch, mock_db_class, mock_s3_client, limit=2, active=1
+    )
+
+    # Then
+    assert created.outcome.uuid == created.db.uuid
+    created.dispatch.assert_called_once()
+    created.db.commit.assert_called_once()
+
+
+def test_create_run_counts_the_users_runs_that_prefect_has_in_no_final_state(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given / When
+    created = _create_run_with_active_runs(
+        monkeypatch, mock_db_class, mock_s3_client, limit=2, active=1
+    )
+
+    # Then Prefect is asked about every run of the user, finished or not, and leaves
+    # out those in a final state itself
+    flow_run_filter = created.client.count_flow_runs.call_args.kwargs["flow_run_filter"]
+    assert flow_run_filter.id.any_ == [run.prefect_flow_run_id for run in created.runs]
+    assert set(flow_run_filter.state.type.not_any_) == TERMINAL_STATES
+
+
+def test_create_run_takes_the_users_run_request_lock_before_counting_their_runs(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given a database that notes which models had been queried when the lock was taken
+    monkeypatch.setenv("MANTA_MAX_CONCURRENT_RUNS_PER_USER", "2")
+    project = _existing_project()
+    user = _existing_user(user_id=7)
+    project.owner_id = user.id
+    db = mock_db_class(query_results={Project: project})
+    queried_before_lock = []
+
+    def take_lock(_statement) -> SimpleNamespace:
+        queried_before_lock.extend(db.queried_models)
+        return SimpleNamespace(scalar_one=lambda: True)
+
+    db.execute.side_effect = take_lock
+    monkeypatch.setattr(
+        run_service_module, "run_deployment", MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    )
+
+    # When
+    _dispatching_service(db, mock_s3_client).create_run(
+        project_uuid=project.uuid,
+        playbook=_LIBRARY_PLAYBOOK,
+        config=None,
+        store_url=_store_url(project),
+        revision_uuid=_REVISION_UUID,
+        user=user,
+    )
+
+    # Then an advisory lock on the user's id is tried for without waiting, and only then
+    # are their runs read
+    [lock] = [call.args[0] for call in db.execute.call_args_list]
+    sql = str(lock.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert sql == "SELECT pg_try_advisory_xact_lock(1, 7) AS pg_try_advisory_xact_lock_1"
+    assert queried_before_lock == [Project], "the lock is taken before the runs are read"
+    assert db.queried_models == [Project, Run]
+
+
+def test_create_run_refuses_a_run_while_another_request_of_the_user_holds_the_lock(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given a database in which another request of the user holds their advisory lock
+    project = _existing_project()
+    db = mock_db_class(query_results={Project: project, Run: [_existing_run(project)]})
+    db.execute.return_value.scalar_one.return_value = False
+    client = MagicMock()
+    _patch_get_client(monkeypatch, client)
+    dispatch = MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    monkeypatch.setattr(run_service_module, "run_deployment", dispatch)
+
+    # When
+    with pytest.raises(HTTPException) as refused:
+        _dispatching_service(db, mock_s3_client).create_run(
+            project_uuid=project.uuid,
+            playbook=_LIBRARY_PLAYBOOK,
+            config=None,
+            store_url=_store_url(project),
+            revision_uuid=_REVISION_UUID,
+            user=_existing_user(),
+        )
+
+    # Then it is refused at once with a message the user can act on...
+    assert refused.value.status_code == 429
+    assert refused.value.detail == (
+        "Another run of yours is still being started. Try again in a moment."
+    )
+    # ...without the user's runs being counted, and no run was dispatched or persisted.
+    assert db.queried_models == [Project], "the runs are not read without the lock"
+    client.count_flow_runs.assert_not_called()
+    dispatch.assert_not_called()
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+
+
+def test_create_run_does_not_ask_prefect_about_a_user_without_runs(
+    monkeypatch: pytest.MonkeyPatch, mock_db_class, mock_s3_client
+) -> None:
+    # Given
+    project = _existing_project()
+    client = MagicMock()
+    _patch_get_client(monkeypatch, client)
+    monkeypatch.setattr(
+        run_service_module, "run_deployment", MagicMock(return_value=SimpleNamespace(id=uuid4()))
+    )
+    service = _dispatching_service(mock_db_class(query_results={Project: project}), mock_s3_client)
+
+    # When
+    service.create_run(
+        project_uuid=project.uuid,
+        playbook=_LIBRARY_PLAYBOOK,
+        config=None,
+        store_url=_store_url(project),
+        revision_uuid=_REVISION_UUID,
+        user=_existing_user(),
+    )
+
+    # Then
+    client.count_flow_runs.assert_not_called()
 
 
 def test_get_run_returns_dto_for_a_known_run(

@@ -45,6 +45,11 @@ If it finds problems, the dialog lists every one of them, so you can fix them an
 To start again from the playbook's defaults, select **Use playbook defaults**.
 Once the settings pass the check, Manta starts the run and adds it to the **Recent runs** table.
 
+Manta limits how many unfinished runs you can have at once, counted over all of your projects.
+A run that is queued counts, as well as one that is running.
+At that limit, Manta does not start the run and shows a message that says so.
+Wait for one of your runs to finish, then select **Create run** again.
+
 ## Follow a run
 
 The **Recent runs** table lists each run with its status and the time it started.

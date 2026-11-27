@@ -28,6 +28,10 @@ DOCKER_DIR = REPO_ROOT / "docker"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 DOCKER_ENV_TEST_FILE = REPO_ROOT / "docker" / ".env.test"
 EXAMPLE_STORE = "ac-dc-meshed"
+MAX_CONCURRENT_RUNS_PER_USER = 4
+"""The app under test's MANTA_MAX_CONCURRENT_RUNS_PER_USER. Set here rather than left
+to backend/.env, whose value suits a deployment: most tests start their runs as the
+same user and several do not wait for them to finish."""
 
 
 def _print_logs(label: str, stdout: str, stderr: str) -> None:
@@ -35,6 +39,12 @@ def _print_logs(label: str, stdout: str, stderr: str) -> None:
     print(stdout)
     if stderr:
         print(f"----- {label} stderr -----\n{stderr}")
+
+
+@pytest.fixture(scope="session")
+def max_concurrent_runs_per_user() -> int:
+    """How many active runs the app under test allows one user."""
+    return MAX_CONCURRENT_RUNS_PER_USER
 
 
 @pytest.fixture(scope="session")
@@ -215,15 +225,11 @@ def kc_admin_client(keycloak_service: dict[str, str]) -> KeycloakAdmin:
     return KeycloakAdmin(connection=kc_adm_connection)
 
 
-@pytest.fixture(scope="session")
-def second_user(app_server: str, kc_admin_client: KeycloakAdmin) -> tuple[str, str]:
-    """A second, distinct identity's username and password — for asserting
-    that one user can't act on another user's resources (e.g. project ownership
-    checks). Session-scoped: created once via the Keycloak admin API, logged in once
-    so its manta user exists, and reused by every test that needs a non-owner, rather
-    than provisioning a fresh Keycloak user per test."""
-    username = f"mallory-{uuid4()}"
-    password = "mallory-password"  # noqa: S105 — test-only, ephemeral Keycloak instance
+def _create_user(app_server: str, kc_admin_client: KeycloakAdmin, name: str) -> tuple[str, str]:
+    """Creates a user via the Keycloak admin API and logs them in once, so their manta
+    user exists. Returns their username and password."""
+    username = f"{name}-{uuid4()}"
+    password = f"{name}-password"
     kc_admin_client.create_user(
         {
             "username": username,
@@ -239,6 +245,26 @@ def second_user(app_server: str, kc_admin_client: KeycloakAdmin) -> tuple[str, s
     )
     assert response.status_code == 200
     return username, password
+
+
+@pytest.fixture(scope="session")
+def second_user(app_server: str, kc_admin_client: KeycloakAdmin) -> tuple[str, str]:
+    """A second, distinct identity's username and password — for asserting
+    that one user can't act on another user's resources (e.g. project ownership
+    checks). Session-scoped: created once via the Keycloak admin API, logged in once
+    so its manta user exists, and reused by every test that needs a non-owner, rather
+    than provisioning a fresh Keycloak user per test."""
+    return _create_user(app_server, kc_admin_client, "mallory")
+
+
+@pytest.fixture
+def new_user_headers(
+    app_server: str, kc_admin_client: KeycloakAdmin, kc_oidc_client: KeycloakOpenID
+) -> dict[str, str]:
+    """The auth headers of a user created for this test alone — for a test that depends
+    on everything the user has ever done, such as how many runs they have active."""
+    token = kc_oidc_client.token(*_create_user(app_server, kc_admin_client, "trent"))
+    return {"Authorization": f"Bearer {token['access_token']}"}
 
 
 @pytest.fixture
@@ -292,6 +318,7 @@ def app_server(
         "KEYCLOAK_PORT": keycloak_service["port"],
         # Only the small store every test needs, instead of all of them.
         "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
+        "MANTA_MAX_CONCURRENT_RUNS_PER_USER": str(MAX_CONCURRENT_RUNS_PER_USER),
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input
