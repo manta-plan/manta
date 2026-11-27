@@ -171,6 +171,106 @@ in Docker too. For more on each part, see
 [backend/README.md](backend/README.md) and
 [frontend/README.md](frontend/README.md).
 
+## Testing a pull request
+
+Use this walk-through to check a change end to end in the browser, whether it
+is your own or someone else's. It takes about fifteen minutes once the stack is
+up.
+
+### 1. Start the PR's stack
+
+Check out the PR's branch (`gh pr checkout <number>`), then follow
+[Running Manta locally](#running-manta-locally) with `up --build`, so the
+images are built from that branch.
+
+The volumes keep the database, Keycloak and the example data between runs. When
+the PR touches the database, the realm or the example data, start from clean
+volumes (`down -v`, see [Stopping](#stopping)) so you test what a new user gets.
+
+### 2. Know what the app talks to
+
+For now the frontend has two dependencies that don't know about each other:
+
+| The app talks to                           | For                                                         |
+| ------------------------------------------ | ----------------------------------------------------------- |
+| Main backend (`/v1`)                       | Login, the Projects page, the Run tab (playbooks and runs)  |
+| Temporary record server (`/api`, `/quack`) | The Data Catalogue, and the Build, Inspect and Analyse tabs |
+
+> [!NOTE]
+> The record server is temporary. It is to be replaced by a real record session
+> server in the backend, and the frontend will be adjusted to match. Much of
+> this section, the split above and the list of what doesn't connect, will then
+> change, and another PR will update it.
+
+The two are linked only by the data record's name. That has consequences for
+what you see:
+
+- The record server always opens the same record for a project's tabs,
+  `BEL-pre-aggregated-incl-patches-incl-results`, whatever project you opened.
+- A run executes on a copy of the data record you pick, in the backend's own
+  storage. **The record server never sees its result**, so Inspect and Analyse
+  show the BEL record, not your run.
+- A run does not take a scenario yet: the scenario you pick is only a label.
+- Scenarios you draft on Build stay drafts, kept in your browser's local
+  storage, because there is no backend endpoint for them yet.
+- The feedback dialog talks to neither. It posts to an external endpoint set by
+  `VITE_FEEDBACK_ENDPOINT`, which the stack doesn't set, so locally the dialog
+  opens and closes but sends nothing.
+
+### 3. Walk through the app
+
+1. **Log in** at `localhost` as `manta-admin` with password `manta-admin`, or
+   choose **Continue as guest**.
+2. **Open the existing project**, "Example project", from the Projects page.
+3. **Explore Build.** Click through the Record tree, a tile or a table cell
+   to open level pages, and open the table, the map and the chart full screen.
+   Everything here only reads.
+4. **Draft a scenario.** In the Scenarios panel, create a scenario and add a
+   change to it. It appears as a draft and stays one.
+5. **Create a run** on the Run tab, with **New run**:
+   - Scenario: any
+   - Playbook: `cluster-expand-dispatch`
+   - Data record: `ac-dc-meshed`
+   - Expansion mode: `overnight`
+
+   Then click **Create Run**. This opens a draft run with its steps (blocks).
+   Click a step to change its configuration in the right sidebar. The defaults
+   are the safest choice.
+6. **Start the run** (**Start run**) and watch the steps go through to
+   completed. The Prefect UI at `localhost:4200` shows each step's flow run and
+   logs.
+7. **Open Inspect.** It shows the BEL record's results (see above), so use it
+   to check the level pages and the run-result views work.
+8. **Open Analyse** and explore its reports and widgets.
+9. **Open the feedback dialog** and check it opens, takes a message and closes.
+
+### What works today
+
+| What | Works | Not yet |
+| --- | --- | --- |
+| Playbooks | `cluster-expand-dispatch` in `overnight` mode, from the app | `expand` and the `myopic` and `perfect` modes have not been checked in the app. `expand` on `BEL-pre-aggregated` is covered through the API, see [Run a playbook through the REST API](docs/contributing/manual-run.md) |
+| Data records | `ac-dc-meshed` for a run | The other example records are listed (`model-energy`, the `BEL-*` ones) but not yet checked with a run from the app. `BEL-full-res` is large |
+| Data shown in Build, Inspect and Analyse | `BEL-pre-aggregated-incl-patches-incl-results` | Any other record, and the result of your own run |
+| Scenarios | Drafting and editing in the browser | Saving them, and running on them |
+| Login | Username and password, and guest | |
+
+If you check another playbook, record or mode, add what you found to this table
+in your PR.
+
+### If something breaks
+
+Say which PR or commit you tested, the step, and what you expected against what
+you saw, with a screenshot. For the stack's side of it:
+
+```bash
+docker compose -f docker/compose-dev-fullstack.yaml --env-file backend/.env \
+  --profile temporary-quack-setup logs --tail 100 backend
+```
+
+The same works for `frontend` (Caddy), `quack-server` and the workers. To drive
+a run without the web app, which separates a frontend fault from a backend one,
+use [Run a playbook through the REST API](docs/contributing/manual-run.md).
+
 ## Repository Structure
 
 This is a monorepo containing the backend, frontend, and local deployment
