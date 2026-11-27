@@ -1,0 +1,30 @@
+name: Deploy main
+
+# Deploys every push to main to one instance, through deploy.yml. Off until the
+# repository variables below are set (Settings > Secrets and variables >
+# Actions > Variables), so merging this changes nothing by itself:
+#
+#   AUTO_DEPLOY_VM_NAME     the VM and subdomain, e.g. `app` for app.manta-plan.org
+#   AUTO_DEPLOY_GCP_PROJECT the GCP project that hosts it
+#
+# To turn it off again, delete AUTO_DEPLOY_VM_NAME.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  deploy:
+    name: Deploy to ${{ vars.AUTO_DEPLOY_VM_NAME }}
+    if: ${{ vars.AUTO_DEPLOY_VM_NAME != '' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      vm_name: ${{ vars.AUTO_DEPLOY_VM_NAME }}
+      gcp_project: ${{ vars.AUTO_DEPLOY_GCP_PROJECT }}
+      ref: ${{ github.sha }}
+    secrets: inherit

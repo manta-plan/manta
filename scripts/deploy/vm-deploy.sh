@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Runs on the VM as root: checks out a commit and (re)starts the whole stack
 # from docker/compose-dev-fullstack.yaml, with the frontend on ports 80 and 443
-# and the temporary record server (quack-server) behind it.
+# and the temporary record server (quack-server) behind it. The VM builds
+# nothing: the commit is only checked out for its compose files and
+# backend/.env, and the images are pulled from a registry, where
+# .github/workflows/publish-images.yml pushed them tagged with the commit SHA.
 #
-#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> [--reset-data]' \
+#   scripts/deploy/gcp-ssh.sh 'sudo bash -s -- --repo <url> --sha <sha> --site-host <host> --image-prefix <prefix> [--reset-data]' \
 #     < scripts/deploy/vm-deploy.sh
+#
+# --image-prefix is the registry path the images share (ghcr.io/manta-plan),
+# followed by /manta-backend, /manta-frontend and so on.
 #
 # --site-host is the public hostname (<vm_name>.manta-plan.org), which DNS
 # already points at this VM. It becomes the frontend's SITE_ADDRESS, so its
@@ -17,14 +23,15 @@
 # Encrypt issues at most 5 certificates for the same name a week.
 #
 # This script comes from the branch the workflow runs from, not from the commit
-# being deployed. The commit must include docker/compose-deploy.yaml, the
-# frontend's HTTPS support (SITE_ADDRESS) and the quack-server service.
+# being deployed. The commit must include docker/compose-deploy.yaml.
 set -euo pipefail
 
 APP_DIR=/opt/manta
 PORT=80
 HTTPS_PORT=443
 SITE_HOST=""
+IMAGE_PREFIX=""
+IMAGE_TAG=""
 # Compose's project name (`name:` in compose-dev-fullstack.yaml) and the
 # volume that holds Caddy's certificates.
 PROJECT=manta
@@ -38,6 +45,8 @@ compose() {
     FRONTEND_HTTPS_PORT=$HTTPS_PORT \
     SITE_ADDRESS=$SITE_HOST \
     COMPOSE_PROFILES=temporary-quack-setup \
+    MANTA_IMAGE_PREFIX=$IMAGE_PREFIX \
+    IMAGE_TAG=$IMAGE_TAG \
     docker compose \
     --env-file backend/.env \
     -f docker/compose-dev-fullstack.yaml \
@@ -74,14 +83,16 @@ main() {
       --repo) repo=$2 && shift 2 ;;
       --sha) sha=$2 && shift 2 ;;
       --site-host) SITE_HOST=$2 && shift 2 ;;
+      --image-prefix) IMAGE_PREFIX=$2 && shift 2 ;;
       --reset-data) reset_data=true && shift ;;
       *) echo "Unknown argument: $1" >&2 && exit 2 ;;
     esac
   done
-  if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ]; then
-    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> [--reset-data]" >&2
+  if [ -z "$repo" ] || [ -z "$sha" ] || [ -z "$SITE_HOST" ] || [ -z "$IMAGE_PREFIX" ]; then
+    echo "Usage: vm-deploy.sh --repo <url> --sha <sha> --site-host <host> --image-prefix <prefix> [--reset-data]" >&2
     exit 2
   fi
+  IMAGE_TAG=$sha
 
   echo "==> Checking out $sha"
   git init --quiet "$APP_DIR"
@@ -96,10 +107,13 @@ main() {
     exit 1
   fi
 
-  # Build while the previous version keeps serving, so the downtime is the
-  # restart alone and a broken build takes nothing down.
-  echo "==> Building images"
-  compose build
+  # Pull while the previous version keeps serving, so the downtime is the
+  # restart alone and a missing image takes nothing down.
+  echo "==> Pulling images"
+  if ! compose pull; then
+    echo "Could not pull the images for $sha. Either the Deploy workflow's images job did not publish them, or the GHCR packages are private (they must be public: see the README, under \"Internal test deployment\")." >&2
+    exit 1
+  fi
 
   if [ "$reset_data" = true ]; then
     echo "==> Stopping the stack and deleting its data (keeping $CADDY_VOLUME)"
@@ -114,7 +128,7 @@ main() {
   # which in turn waits for every service it depends on. On a fresh volume the
   # backend first downloads the example data, which takes a few minutes.
   echo "==> Starting the stack"
-  if ! compose up --detach; then
+  if ! compose up --detach --no-build; then
     diagnostics
     exit 1
   fi
@@ -128,9 +142,8 @@ main() {
   for _ in $(seq 1 60); do
     if curl -fsS -o /dev/null --max-time 5 \
       --resolve "$SITE_HOST:$HTTPS_PORT:127.0.0.1" "$url" 2>/dev/null; then
-      # Each deployment leaves the previous images and build layers behind.
-      docker image prune --force >/dev/null
-      docker builder prune --force --filter until=168h >/dev/null
+      # Each deployment leaves the previous commit's images behind.
+      docker image prune --all --force >/dev/null
       echo "==> Deployed $sha"
       return 0
     fi

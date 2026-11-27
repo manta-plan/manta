@@ -231,14 +231,38 @@ Deployments are manual and run from GitHub: **Actions > Deploy > Run workflow**
 | `reset_data`  | delete the instance's data (database, files, users) first     |
 | `dry_run`     | only check the configuration, authentication and permissions  |
 
-The workflow creates the VM and its firewall rules if they don't exist, points
-a Cloud DNS record at it, and then runs
-[`scripts/deploy/vm-deploy.sh`](scripts/deploy/vm-deploy.sh) on the VM to check
-out `ref` and start the stack. The frontend's Caddy gets and renews a Let's
-Encrypt certificate for the hostname by itself, so nothing else needs to be
-installed or configured by hand. The certificate lives in the `caddy-data`
+The workflow builds the images in CI and pushes them to GitHub Container
+Registry as `ghcr.io/manta-plan/manta-<name>`, tagged with the commit SHA. It
+skips any image that already exists for the commit. It then creates the VM and
+its firewall rules if they don't exist, points a Cloud DNS record at it, and
+runs [`scripts/deploy/vm-deploy.sh`](scripts/deploy/vm-deploy.sh) on the VM.
+The VM builds nothing: it checks out `ref` for the compose files, pulls the
+images and starts the stack
+([`docker/compose-deploy.yaml`](docker/compose-deploy.yaml) points the services
+at them and adds restart policies). The frontend's Caddy gets and renews a
+Let's Encrypt certificate for the hostname by itself, so nothing else needs to
+be installed or configured by hand. The certificate lives in the `caddy-data`
 volume and survives redeployments, including `reset_data`. For how HTTPS is
 configured, see [docker/README.md](docker/README.md#https-on-a-domain).
+
+The VM pulls the images without logging in, so the five packages must be public.
+GitHub creates them private on the first publish: in the organisation's
+**Packages**, open each `manta-*` package, then **Package settings > Change
+visibility > Public**. This is needed once.
+
+### Deploying every push to main
+
+[`deploy-main.yml`](.github/workflows/deploy-main.yml) calls the same workflow
+on every push to `main`. It stays off until you set two repository variables
+(**Settings > Secrets and variables > Actions > Variables**):
+
+| Variable                  | Example   | Meaning                                  |
+| ------------------------- | --------- | ---------------------------------------- |
+| `AUTO_DEPLOY_VM_NAME`     | `app`     | the VM and subdomain, here `app.manta-plan.org` |
+| `AUTO_DEPLOY_GCP_PROJECT` | `my-proj` | the GCP project that hosts it            |
+
+Delete `AUTO_DEPLOY_VM_NAME` to turn it off again. Deployments to one VM queue
+rather than overlap.
 
 ### Summary
 

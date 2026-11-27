@@ -56,6 +56,13 @@ belongs there. The app calls the server on its own origin, over the page's own
 protocol, so a plain-HTTP deploy (a VM by IP) works as is, and a domain gets
 HTTPS from Caddy. No CORS settings are needed.
 
+### Deployed instances
+
+A deployed instance doesn't build anything. `compose-deploy.yaml` is layered on
+`compose-dev-fullstack.yaml` by `scripts/deploy/vm-deploy.sh`: it runs the images
+that CI pushed to GHCR (`MANTA_IMAGE_PREFIX` and `IMAGE_TAG` pick which) and adds
+restart policies. See the root README's "Internal test deployment".
+
 ### HTTPS on a domain
 
 Set `SITE_ADDRESS` in [`backend/.env`](../backend/.env) (or export it before

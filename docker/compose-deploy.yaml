@@ -1,17 +1,54 @@
-# Layered on compose-dev-fullstack.yaml by scripts/deploy/vm-deploy.sh. The dev
-# compose files have no restart policy on purpose (a crash should be visible
-# locally), but a deployed instance must come back after a reboot or a Docker
-# upgrade. This adds one to every long-lived service; the one-shot services
-# (block-image-builder-pypsa, playbooks-provision) are left alone.
+# Layered on compose-dev-fullstack.yaml by scripts/deploy/vm-deploy.sh, for a
+# deployed instance. It does two things the dev files leave out on purpose:
 #
-# A new long-lived service needs a line here.
+# - Runs prebuilt images from a registry, tagged with a commit SHA, instead of
+#   building them (publish-images.yml pushes them). Needs MANTA_IMAGE_PREFIX
+#   (e.g. ghcr.io/manta-plan) and IMAGE_TAG, and `up --no-build`.
+# - Restarts every long-lived service after a reboot or a Docker upgrade. The
+#   dev files have no restart policy so that a crash stays visible locally. The
+#   one-shot services (block-image-builder-pypsa, playbooks-provision) get no
+#   restart policy.
+#
+# A new service needs a line here, and a matching entry in publish-images.yml
+# if it has its own image.
+
+x-env-images: &env-images
+  # The block environments' images, as MANTA_ENV_IMAGES in backend/.env maps
+  # them for a local build. The services below set it themselves, because the
+  # backend reads backend/.env directly, not through compose.
+  MANTA_ENV_IMAGES: pypsa=${MANTA_IMAGE_PREFIX:?}/manta-block-pypsa:${IMAGE_TAG:?}
+
 services:
   postgres: { restart: unless-stopped }
   seaweedfs: { restart: unless-stopped }
   prefect-server: { restart: unless-stopped }
   keycloak: { restart: unless-stopped }
-  block-worker: { restart: unless-stopped }
-  playbook-worker: { restart: unless-stopped }
-  quack-server: { restart: unless-stopped }
-  backend: { restart: unless-stopped }
-  frontend: { restart: unless-stopped }
+
+  quack-server:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-quack-server:${IMAGE_TAG:?}
+    restart: unless-stopped
+
+  backend:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-backend:${IMAGE_TAG:?}
+    restart: unless-stopped
+    environment: *env-images
+
+  frontend:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-frontend:${IMAGE_TAG:?}
+    restart: unless-stopped
+
+  block-image-builder-pypsa:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-block-pypsa:${IMAGE_TAG:?}
+
+  playbooks-provision:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-runner:${IMAGE_TAG:?}
+    environment: *env-images
+
+  block-worker:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-runner:${IMAGE_TAG:?}
+    restart: unless-stopped
+
+  playbook-worker:
+    image: ${MANTA_IMAGE_PREFIX:?}/manta-runner:${IMAGE_TAG:?}
+    restart: unless-stopped
+    environment: *env-images

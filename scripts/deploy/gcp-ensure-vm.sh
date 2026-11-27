@@ -13,7 +13,7 @@ set -euo pipefail
 
 NETWORK=${GCP_NETWORK:-default}
 IMAGE_FAMILY=${GCP_IMAGE_FAMILY:-debian-13}
-# The default 10 GB cannot hold the images the stack builds (the PyPSA block
+# The default 10 GB cannot hold the images the stack runs (the PyPSA block
 # image alone is several GB), and model runs write their outputs to this disk
 # too, so leave plenty of headroom.
 BOOT_DISK_SIZE=${GCP_BOOT_DISK_SIZE:-200GB}
