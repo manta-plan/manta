@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 Manta contributors
+SPDX-FileCopyrightText: Manta contributors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
@@ -83,8 +83,11 @@ Add the header with
 and set `--license` to the licence of the file's kind:
 
 ```sh
-uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --year 2026 --license Apache-2.0 <file>
+uvx --from 'reuse[charset-normalizer]' reuse annotate --copyright "Manta contributors" --exclude-year --license Apache-2.0 <file>
 ```
+
+[`CONTRIBUTORS.md`](https://github.com/manta-plan/manta/blob/main/CONTRIBUTORS.md) lists the people that "Manta contributors" refers to.
+Add your name to it in your first pull request.
 
 A file that cannot take a comment, such as JSON, an image or a lock file,
 needs an entry in `REUSE.toml` instead. Check the whole repository with
@@ -133,7 +136,7 @@ backend/
 ### Naming
 
 Use explicit suffixes so a filename alone tells you the layer: `user_route.py`,
-`user_service.py`... Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`... 
+`user_service.py`... Same for class names: `GetUserResult`, `UserService`, `AuthMiddleware`...
 Entities are named after themselves (e.g. `user.py` / `User`), no suffix needed.
 
 ### Services & dependency injection
