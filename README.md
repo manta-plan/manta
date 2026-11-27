@@ -45,7 +45,7 @@ This builds the backend and frontend images and starts them along with
 Postgres, SeaweedFS (S3 storage), Prefect, Keycloak, the playbook workers and
 the temporary record server (`quack-server`), which serves the example data
 records: the list you pick from when creating a project, and the data the
-Model, Inspect and Report tabs read. The `--profile temporary-quack-setup`
+Build, Inspect and Analyse tabs read. The `--profile temporary-quack-setup`
 flag is what starts the record server; without it the frontend has no records
 to show.
 
@@ -59,18 +59,22 @@ example data up within a minute after that.
 
 ### 3. Open Manta
 
-Go to `localhost:5173` and log in as `manta-admin`,
-password `manta-admin`.
+Go to `localhost` (port 80) and log in as `manta-admin`,
+password `manta-admin`. Everything goes through this one address: the frontend's
+Caddy serves the app and forwards `/v1` to the backend and `/api` and `/quack`
+to the record server, so there is nothing else to configure. To use another host
+port, set `FRONTEND_PORT` in [`backend/.env`](backend/.env).
 
 The services also have their own UIs, which help when you want to see what is
 happening under the hood:
 
 | Service       | URL             | Notes                          |
 | ------------- | --------------- | ------------------------------ |
+| Backend API   | localhost:8000  | the API the app calls under `/v1` |
 | Prefect       | localhost:4200  | playbook runs and their steps  |
 | SeaweedFS     | localhost:23646 | buckets and stored files       |
 | Keycloak      | localhost:8080  | admin console, `admin`/`admin` |
-| Record server | localhost:8010  | catalogue API, token `devtoken` |
+| Record server | localhost:8010  | catalogue API, token `devtoken` (also reachable at `localhost/api`) |
 
 ### Stopping
 
@@ -101,8 +105,9 @@ When working on Manta, run the backend and frontend from source so changes
 reload on save, and keep only the supporting services in Docker.
 
 > [!NOTE]
-> The backend and frontend containers from the setup above use the same ports
-> as the dev servers. Stop them first (see [Stopping](#stopping)).
+> The backend container from the setup above uses the same port (8000) as the
+> backend dev server. Stop it first (see [Stopping](#stopping)). The frontend
+> container is on port 80, so the Vite dev server (5173) can run beside it.
 
 #### Prerequisites
 
@@ -151,14 +156,14 @@ In a third terminal:
 ```bash
 cd frontend
 pnpm install
-VITE_RECORD_SERVER=localhost:8010 VITE_RECORD_TOKEN=devtoken pnpm dev
+pnpm dev
 ```
 
-The dev server proxies `/v1` requests to the backend on `localhost:8000`. The
-two `VITE_RECORD_*` variables point the frontend straight at the record server
-(`QUACK_SERVER_PORT` and `QUACK_TOKEN` in [`backend/.env`](backend/.env));
-without them the data catalogue reports `VITE_RECORD_SERVER is not set.`
-Open `localhost:5173` and log in as above.
+The dev server proxies `/v1` requests to the backend on `localhost:8000`, and
+`/api` and `/quack` to the record server on `localhost:8010`. It reads the
+record server's port and token (`QUACK_SERVER_PORT` and `QUACK_TOKEN`) from
+[`backend/.env`](backend/.env), so no environment variables are needed. Open
+`localhost:5173` and log in as above.
 
 If you only work on the frontend, you can skip step 2 and start the services
 with `compose-dev-backend.yaml` instead (same flags), which runs the backend
