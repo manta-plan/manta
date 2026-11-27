@@ -60,13 +60,11 @@ sign off an open PR, you can add an empty commit with just the trailer.
 
 Manta aims to work with any energy modelling framework. The blocks that ship
 with it today use [PyPSA](https://pypsa.org), because building on one framework
-first gets us to a working MVP sooner. Keep PyPSA inside those blocks:
+first gets us to a working MVP sooner. Therefore:
 
 - Name PyPSA only in the blocks and playbooks that use it, in their tests and
   examples, and on the docs pages about them.
-- Everywhere else, such as `playbook/`, the backend, the frontend, the runner,
-  and docs that describe Manta in general, name the concept instead of a PyPSA
-  class or term: "a model" or "a network", not `pypsa.Network`.
+- Everywhere else, such as `playbook/`, the backend, the frontend, the runner, and docs that describe Manta in general, use "modelling framework" instead of PyPSA specifically and name the concept instead of a PyPSA class or term: "a model" or "a network", not `pypsa.Network`.
 <!-- --8<-- [end:docs-general] -->
 
 ## Backend (Python)
