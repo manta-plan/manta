@@ -74,7 +74,7 @@ happening under the hood:
 | Prefect       | localhost:4200  | playbook runs and their steps  |
 | SeaweedFS     | localhost:23646 | buckets and stored files       |
 | Keycloak      | localhost:8080  | admin console, `admin`/`admin` |
-| Record server | localhost:8010  | catalogue API, token `devtoken` (also reachable at `localhost/api`) |
+| Record server | localhost:8010  | catalogue API, token `devtoken`; reachable from this machine only, and through the app at `localhost/api` |
 
 ### Stopping
 
@@ -180,9 +180,13 @@ tooling:
 manta/
 ├── backend/           # Python/FastAPI backend — see backend/README.md
 ├── frontend/          # React/Vite frontend — see frontend/README.md
+├── runner/            # the Prefect runtime that executes playbooks — see runner/README.md
 ├── playbook/          # blocks and playbooks: the modelling framework
 ├── playbook-library/  # the blocks and playbooks Manta ships, built on PyPSA
-└── docker/            # local dev services (Postgres, SeaweedFS) — see docker/README.md
+├── docker/            # the local stack (Postgres, SeaweedFS, Prefect, Keycloak, record server) — see docker/README.md
+├── docs/              # the documentation site, built with MkDocs
+├── scripts/deploy/    # scripts the Deploy workflow runs to set up a VM
+└── tools/docs/        # helpers that generate parts of the docs site
 ```
 
 `playbook/` and `playbook-library/` are standalone Python packages that know nothing
@@ -195,6 +199,7 @@ the package-level READMEs for setup instructions:
 
 - [backend/README.md](backend/README.md) for the FastAPI backend.
 - [frontend/README.md](frontend/README.md) for the React frontend.
+- [runner/README.md](runner/README.md) for the Prefect runtime that executes playbooks.
 - [playbook/README.md](playbook/README.md) for writing blocks and playbooks.
 - [playbook-library/README.md](playbook-library/README.md) for the blocks and playbooks Manta ships.
 - [docker/README.md](docker/README.md) for local services and Docker notes.
@@ -207,82 +212,36 @@ the package-level READMEs for setup instructions:
 > instance on our own GCP project and is not a supported way to deploy Manta.
 > To try Manta yourself, see [Running Manta locally](https://github.com/manta-plan/manta/blob/main/README.md#running-manta-locally).
 
-Currently a test instance is deployed for internal purposes, in `europe-north2`
-(Stockholm). Its container name is `manta-adhoc-2` (no points for creativity).
+Currently a test instance is deployed for internal purposes on a GCP VM, at
+`https://<vm_name>.manta-plan.org`. It runs the same stack as
+[Running Manta locally](#running-manta-locally): `compose-dev-fullstack.yaml`
+with the `temporary-quack-setup` profile, so the frontend's Caddy serves the app
+on ports 80 and 443.
 
-### Setup
+### Deploying
 
-On a base Debian image, we begin by refreshing the system and installing docker. See [the official docs](https://docs.docker.com/engine/install/debian/).
+Deployments are manual and run from GitHub: **Actions > Deploy > Run workflow**
+([`deploy.yml`](.github/workflows/deploy.yml)). The inputs are:
 
-```bash
-sudo apt update # update repositories
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+| Input         | Meaning                                                       |
+| ------------- | ------------------------------------------------------------- |
+| `vm_name`     | VM name, also the subdomain (`<vm_name>.manta-plan.org`)      |
+| `gcp_project` | GCP project that hosts the VM                                 |
+| `ref`         | branch, tag or SHA to deploy (default `main`)                 |
+| `reset_data`  | delete the instance's data (database, files, users) first     |
+| `dry_run`     | only check the configuration, authentication and permissions  |
 
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/debian
-Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
-
-You need to additionally, explicitly pull down manta afterwards.
-
-```bash
-git clone https://github.com/manta-plan/manta
-```
-
-Now we can spin up the dependencies:
-
-```bash
-cd manta
-docker compose -f docker/compose-dev-services.yaml --env-file backend/.env up -d
-```
-
-Now that the dependencies are running, it's time to spin up a runtime instance.
-
-Install python, nodejs, pnpm, and uv, to allow for building and running the application.
-
-```bash
-sudo apt install nodejs npm
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-uv python install
-curl -fsSL https://get.pnpm.io/install.sh | sh -
-source ~/.bashrc # reload to get access to pnpm
-```
-
-Spin up the backend
-
-```bash
-cd backend
-uv sync
-uv run uvicorn manta.main:app --host 0.0.0.0 --port 8000
-```
-
-Build and serve the frontend, which proxies `/v1` requests to the backend on
-port 8000
-
-```bash
-cd ../frontend
-pnpm install && pnpm build
-pnpm preview --host 0.0.0.0
-```
-
-Both run in an attached mode, you can use `ctrl-z` to pause them and then `bg` to
-background the task, or use `nohup` / `disown` to detach them from your ssh process and let them live on. 
+The workflow creates the VM and its firewall rules if they don't exist, points
+a Cloud DNS record at it, and then runs
+[`scripts/deploy/vm-deploy.sh`](scripts/deploy/vm-deploy.sh) on the VM to check
+out `ref` and start the stack. The frontend's Caddy gets and renews a Let's
+Encrypt certificate for the hostname by itself, so nothing else needs to be
+installed or configured by hand. The certificate lives in the `caddy-data`
+volume and survives redeployments, including `reset_data`. For how HTTPS is
+configured, see [docker/README.md](docker/README.md#https-on-a-domain).
 
 ### Summary
 
-This is a very quick and dirty guide to spinning up an instance of manta. There
-are many many issues with this right now, but a proper deployment with terraform
-etc. is on the way.
+This is still a prototype: one VM, no backups and development credentials. A
+proper deployment with Terraform and the like is on the way.
 <!-- --8<-- [end:docs-test-deployment] -->

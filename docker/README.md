@@ -10,8 +10,13 @@ not-yet-addressed concern.
 ## Usage
 
 ```bash
+cd docker
 docker compose --env-file ../backend/.env -f compose-dev-services.yaml up
 ```
+
+The [root README](../README.md#running-manta-locally) runs the same commands
+from the repo root, as `docker compose -f docker/compose-dev-fullstack.yaml
+--env-file backend/.env ...`. Both work.
 
 Configuration (credentials, port) lives in [`backend/.env`](../backend/.env)
 — the same file the backend app reads — not here, so there's one source of
@@ -27,10 +32,12 @@ To run the app itself in containers too, use one of the files layered on top:
 docker compose --env-file ../backend/.env -f compose-dev-fullstack.yaml up --build
 ```
 
-To run the backend or frontend on the host instead (`uv run manta`,
-`pnpm dev`), stop its container first: they share ports.
+To run the backend on the host instead (`uv run manta`), stop its container
+first: they share port 8000. The frontend container is on port 80 and `pnpm dev`
+on 5173, so the two can run side by side.
 
-The frontend's data catalogue reads from the temporary **quack-server** (see
+The app is then at <http://localhost> (port 80, `FRONTEND_PORT`). The frontend's
+data catalogue reads from the temporary **quack-server** (see
 below), which only starts with its profile. Deploys therefore run:
 
 ```bash
