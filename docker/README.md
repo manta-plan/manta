@@ -100,6 +100,10 @@ on the host's loopback only), reading both that port and the token from
   nothing until the backend has started once; it picks them up within a minute.
   Set `QUACK_RECORDS_ROOT=/srv/data/records` to serve the git-ignored
   `docker/quack-server/data/records` folder instead.
+- **datarecord-session-image-builder** (in `compose-dev-backend.yaml`) builds
+  the image of the [datarecord session](../datarecord-session/README.md), which
+  the backend will start per user and project, and exits. Nothing uses the
+  image yet.
 
 ## Testing
 

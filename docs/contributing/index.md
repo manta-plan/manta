@@ -11,6 +11,7 @@ Start with the conventions below, then open the page for the part of the reposit
 - [Backend](backend.md): change the database schema, lint and test the FastAPI backend, and its coding standards.
 - [Frontend](frontend.md): format, lint, and type-check the React frontend.
 - [playbook and playbook-library](playbook.md): the rules both modelling packages keep, and how to test them.
+- [datarecord-session](datarecord-session.md): the conventions of the datarecord session service, and how to lint and test it.
 - [runner](runner.md): configure and test the Prefect runtime that executes playbooks.
 - [Documentation](docs.md): build this site, refresh the REST API reference, and find the writing rules.
 - [Run a playbook through the REST API](manual-run.md): run a playbook on real model data on the local stack, without the web app.

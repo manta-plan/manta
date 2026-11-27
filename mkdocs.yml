@@ -149,6 +149,7 @@ nav:
       - Backend: contributing/backend.md
       - Frontend: contributing/frontend.md
       - playbook and playbook-library: contributing/playbook.md
+      - datarecord-session: contributing/datarecord-session.md
       - runner: contributing/runner.md
       - Documentation: contributing/docs.md
       - Run a playbook through the REST API: contributing/manual-run.md

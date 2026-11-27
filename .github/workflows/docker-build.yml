@@ -40,3 +40,15 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+  datarecord-session:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: datarecord-session
+          push: false
+          cache-from: type=gha,scope=datarecord-session
+          cache-to: type=gha,mode=max,scope=datarecord-session

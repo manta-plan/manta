@@ -74,3 +74,12 @@ services:
         condition: service_completed_successfully
       keycloak:
         condition: service_healthy
+
+  # One-shot: builds the image of the datarecord session (../datarecord-session),
+  # the service the backend will start per user and project, and exits; it
+  # never stays running. It lives here, not in compose-dev-services.yaml, so
+  # the integration test stack's `up --wait` does not fail on its exit.
+  datarecord-session-image-builder:
+    build:
+      context: ../datarecord-session
+    command: uv run --no-sync python -c "import datarecord_session.main; print('datarecord session image ready')"

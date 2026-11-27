@@ -1,8 +1,8 @@
 # Contributing to Manta
 
 Manta is a monorepo containing a Python backend (`backend/`), a Javascript
-frontend (`frontend/`), and the modelling packages `playbook/` and
-`playbook-library/`. This document is the canonical reference for coding
+frontend (`frontend/`), the modelling packages `playbook/` and
+`playbook-library/`, and the datarecord session service (`datarecord-session/`). This document is the canonical reference for coding
 standards on the project. It applies to everyone pushing code — core team,
 energy modelers, and outside contributors alike.
 
@@ -165,6 +165,38 @@ installs far more reliably from conda-forge and a block library needs several
 environments side by side. Each package's README explains how to run its tests, and
 a change to either is expected to keep both suites green.
 <!-- --8<-- [end:docs-playbooks] -->
+
+## Datarecord session (`datarecord-session/`)
+<!-- --8<-- [start:docs-datarecord-session] -->
+
+`datarecord-session/` is the service that runs in one container per user and
+project. It opens one DuckDB connection with a datarecord workspace, serves
+read-only SQL on it over Quack (DuckDB's remote query protocol), and takes
+registrations from the backend through an internal HTTP API. The
+[datarecord-session README](https://github.com/manta-plan/manta/blob/main/datarecord-session/README.md)
+describes its settings and its API.
+
+It is not a Model-Service-Controller app, so the backend's layout and naming
+rules do not apply: `main.py` defines the internal API on one `Session` object.
+It keeps the same Ruff rules as the backend and uses uv. Every source and test
+file has the SPDX MIT header that the playbook packages use. The tests live in
+`datarecord-session/tests/`, start the session in its own process, and query it
+with a native Quack client. Run these commands from the `datarecord-session`
+folder, and install the DuckDB extensions `quack` and `httpfs` once before the
+first test run:
+
+```bash
+uv sync
+uv run python -c "import duckdb; c = duckdb.connect(); [c.install_extension(e) for e in ('quack', 'httpfs')]"
+uv run ruff check src tests
+uv run ruff format --check src tests
+uv run pytest
+```
+
+The SQL guard in `src/datarecord_session/guard.py` started as a copy of
+`docker/quack-server/app/quack.py`. Until the quack-server is removed, make
+every change to the rules of one in the other as well.
+<!-- --8<-- [end:docs-datarecord-session] -->
 
 ## Frontend
 
