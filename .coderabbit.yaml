@@ -79,6 +79,7 @@ reviews:
         instructions: >-
           Fail if new logging, error messages, API responses, or frontend state include credentials, tokens, secrets, session identifiers, or personal data such as names and emails, unless they are masked or removed.
           Fail if secrets are hard-coded or committed instead of read from the environment or a secret store.
+          Do not flag the tokens that the auth endpoints return to the caller who logs in, registers, or refreshes, or the frontend auth session code that stores and sends them back.
       - name: "Endpoints enforce authorisation"
         mode: warning
         instructions: >-
