@@ -1,10 +1,20 @@
 import os
+from dataclasses import dataclass
 from functools import lru_cache
+from uuid import UUID
 
 import boto3
 from botocore.config import Config
 from dotenv import load_dotenv
 from mypy_boto3_s3.client import S3Client
+
+S3_REGION = "eu-central-1"
+
+
+@dataclass(frozen=True)
+class S3Credential:
+    key_id: str
+    secret: str
 
 
 def s3_endpoint_url() -> str:
@@ -29,9 +39,14 @@ def get_s3_client() -> S3Client:
         # SigV4 signing requires a region even against a non-AWS endpoint;
         # SeaweedFS ignores its value. eu-central-1 to match this being an
         # EU project, should this ever point at a real AWS region.
-        region_name="eu-central-1",
+        region_name=S3_REGION,
         # Path-style URLs (http://host:port/bucket/key) instead of
         # virtual-hosted-style (http://bucket.host:port/key), which needs
         # bucket-subdomain DNS that "localhost" doesn't have.
         config=Config(s3={"addressing_style": "path"}),
     )
+
+
+def project_read_credential(project_uuid: UUID) -> S3Credential:
+    load_dotenv()
+    return S3Credential(key_id=os.environ["S3_ACCESS_KEY"], secret=os.environ["S3_SECRET_KEY"])

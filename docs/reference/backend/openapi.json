@@ -183,6 +183,276 @@
         }
       }
     },
+    "/v1/projects/{project_uuid}/datarecord-session": {
+      "post": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Open Datarecord Session",
+        "operationId": "open_datarecord_session_v1_projects__project_uuid__datarecord_session_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenDatarecordSessionResult"
+                }
+              }
+            }
+          },
+          "207": {
+            "description": "The session is open, but the replay skipped the registrations in `skipped_registrations`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenDatarecordSessionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Suspend Datarecord Session",
+        "operationId": "suspend_datarecord_session_v1_projects__project_uuid__datarecord_session_delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_uuid}/datarecord-session/registrations/{name}": {
+      "get": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Get Datarecord Session Registration",
+        "operationId": "get_datarecord_session_registration_v1_projects__project_uuid__datarecord_session_registrations__name__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatarecordSessionRegistrationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Put Datarecord Session Registration",
+        "operationId": "put_datarecord_session_registration_v1_projects__project_uuid__datarecord_session_registrations__name__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutDatarecordSessionRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatarecordSessionRegistrationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Delete Datarecord Session Registration",
+        "operationId": "delete_datarecord_session_registration_v1_projects__project_uuid__datarecord_session_registrations__name__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "summary": "Get Health",
@@ -1161,6 +1431,48 @@
         ],
         "title": "DataRecordResult"
       },
+      "DatarecordSessionRegistrationResult": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prefix": {
+            "type": "string",
+            "title": "Prefix"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "store": {
+            "type": "string",
+            "title": "Store"
+          },
+          "revision": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision"
+          },
+          "packs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Packs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "prefix",
+          "kind",
+          "store",
+          "revision",
+          "packs"
+        ],
+        "title": "DatarecordSessionRegistrationResult"
+      },
       "GetPlaybookResult": {
         "properties": {
           "name": {
@@ -1460,6 +1772,36 @@
         ],
         "title": "LoginResult"
       },
+      "OpenDatarecordSessionResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation"
+          },
+          "quack": {
+            "$ref": "#/components/schemas/QuackConnectionResult"
+          },
+          "skipped_registrations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped Registrations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "generation",
+          "quack",
+          "skipped_registrations"
+        ],
+        "title": "OpenDatarecordSessionResult"
+      },
       "PlaybookIssueResult": {
         "properties": {
           "kind": {
@@ -1729,6 +2071,57 @@
           "updated_at"
         ],
         "title": "ProjectResult"
+      },
+      "PutDatarecordSessionRegistrationRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "view",
+            "title": "Kind"
+          },
+          "store": {
+            "type": "string",
+            "title": "Store"
+          },
+          "revision": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision"
+          },
+          "packs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Packs",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "store",
+          "revision"
+        ],
+        "title": "PutDatarecordSessionRegistrationRequest"
+      },
+      "QuackConnectionResult": {
+        "properties": {
+          "uri": {
+            "type": "string",
+            "title": "Uri"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "uri",
+          "token"
+        ],
+        "title": "QuackConnectionResult"
       },
       "RefreshTokenRequest": {
         "properties": {

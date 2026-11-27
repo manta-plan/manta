@@ -43,6 +43,10 @@ services:
       FORWARDED_ALLOW_IPS: 172.30.0.2
     ports:
       - "${APP_PORT}:8000"
+    volumes:
+      # Starts a datarecord session container per user and project, as a sibling
+      # on the host's daemon (see block-worker in compose-dev-services.yaml).
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       # No curl in python:*-slim, so using `python` instead.
       test:
@@ -72,14 +76,18 @@ services:
       # a run request fails looking up a deployment that doesn't exist yet.
       playbooks-provision:
         condition: service_completed_successfully
+      # Builds the image the backend starts datarecord sessions from.
+      datarecord-session-image-builder:
+        condition: service_completed_successfully
       keycloak:
         condition: service_healthy
 
-  # One-shot: builds the image of the datarecord session (../datarecord-session),
-  # the service the backend will start per user and project, and exits; it
-  # never stays running. It lives here, not in compose-dev-services.yaml, so
-  # the integration test stack's `up --wait` does not fail on its exit.
+  # One-shot: builds the image of the datarecord session (../datarecord-session)
+  # and exits; it never stays running. The backend starts a container from that
+  # image per user and project. It lives here, not in compose-dev-services.yaml,
+  # so the integration test stack's `up --wait` does not fail on its exit.
   datarecord-session-image-builder:
     build:
       context: ../datarecord-session
+    image: ${DATARECORD_SESSION_IMAGE}
     command: uv run --no-sync python -c "import datarecord_session.main; print('datarecord session image ready')"
