@@ -5,7 +5,7 @@
 #
 #   GCP_PROJECT=my-project GCP_DNS_PROJECT=paros-491610 scripts/deploy/gcp-preflight.sh
 #
-# The roles that grant these are listed in docs/deployment.md.
+# The roles that grant these are listed in the comments below.
 set -euo pipefail
 
 : "${GCP_PROJECT:?}" "${GCP_DNS_PROJECT:?}"
@@ -88,7 +88,7 @@ check "$GCP_DNS_PROJECT" "${DNS_PERMISSIONS[@]}"
 
 echo
 if [ "$missing" -ne 0 ]; then
-  echo "::error::$account is missing permissions (see the list above). docs/deployment.md lists the roles to grant."
+  echo "::error::$account is missing permissions (see the list above). The roles to grant are listed in the comments of scripts/deploy/gcp-preflight.sh."
   exit 1
 fi
 if [ "$unchecked" -ne 0 ]; then

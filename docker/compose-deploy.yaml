@@ -1,0 +1,17 @@
+# Layered on compose-dev-fullstack.yaml by scripts/deploy/vm-deploy.sh. The dev
+# compose files have no restart policy on purpose (a crash should be visible
+# locally), but a deployed instance must come back after a reboot or a Docker
+# upgrade. This adds one to every long-lived service; the one-shot services
+# (block-image-builder-pypsa, playbooks-provision) are left alone.
+#
+# A new long-lived service needs a line here.
+services:
+  postgres: { restart: unless-stopped }
+  seaweedfs: { restart: unless-stopped }
+  prefect-server: { restart: unless-stopped }
+  keycloak: { restart: unless-stopped }
+  block-worker: { restart: unless-stopped }
+  playbook-worker: { restart: unless-stopped }
+  quack-server: { restart: unless-stopped }
+  backend: { restart: unless-stopped }
+  frontend: { restart: unless-stopped }

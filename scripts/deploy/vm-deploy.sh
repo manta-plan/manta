@@ -17,11 +17,11 @@
 # Encrypt issues at most 5 certificates for the same name a week.
 #
 # This script comes from the branch the workflow runs from, not from the commit
-# being deployed, so a branch that predates it can still be deployed.
+# being deployed. The commit must include docker/compose-deploy.yaml, the
+# frontend's HTTPS support (SITE_ADDRESS) and the quack-server service.
 set -euo pipefail
 
 APP_DIR=/opt/manta
-OVERRIDE=/opt/manta-compose-deploy.yaml
 PORT=80
 HTTPS_PORT=443
 SITE_HOST=""
@@ -31,19 +31,17 @@ PROJECT=manta
 CADDY_VOLUME=caddy-data
 
 # The temporary-quack-setup profile adds quack-server. Variables set here take
-# precedence over backend/.env, whose SITE_ADDRESS (empty, plain HTTP) and
-# VITE_RECORD_SERVER (localhost:5173, read by older commits) are only right
-# for a local run.
+# precedence over backend/.env, whose SITE_ADDRESS (empty, plain HTTP) is only
+# right for a local run.
 compose() {
   FRONTEND_PORT=$PORT \
     FRONTEND_HTTPS_PORT=$HTTPS_PORT \
     SITE_ADDRESS=$SITE_HOST \
     COMPOSE_PROFILES=temporary-quack-setup \
-    VITE_RECORD_SERVER=$SITE_HOST \
     docker compose \
     --env-file backend/.env \
     -f docker/compose-dev-fullstack.yaml \
-    -f "$OVERRIDE" \
+    -f docker/compose-deploy.yaml \
     "$@"
 }
 
@@ -93,37 +91,9 @@ main() {
   git fetch --quiet --depth 1 origin "$sha"
   git checkout --quiet --force --detach FETCH_HEAD
 
-  if [ ! -f docker/compose-dev-fullstack.yaml ]; then
-    echo "This commit has no docker/compose-dev-fullstack.yaml: it predates the backend and frontend images, and cannot be deployed this way." >&2
+  if [ ! -f docker/compose-deploy.yaml ]; then
+    echo "This commit has no docker/compose-deploy.yaml, so it predates the current deployment setup and cannot be deployed this way. Deploy a more recent commit." >&2
     exit 1
-  fi
-  # Older frontends serve plain HTTP only (no SITE_ADDRESS, no port 443, no
-  # volume for the certificate), and nothing in front of the VM adds HTTPS.
-  if ! grep -q 'SITE_ADDRESS' docker/compose-dev-fullstack.yaml; then
-    echo "This commit's frontend cannot serve HTTPS itself (no SITE_ADDRESS in docker/compose-dev-fullstack.yaml), so it cannot be deployed this way. Deploy a commit that includes it." >&2
-    exit 1
-  fi
-
-  # The dev compose files have no restart policy on purpose (a crash should be
-  # visible locally). A deployed instance must come back after a reboot or a
-  # Docker upgrade, so add one to every long-lived service; the one-shot
-  # services (the image builder, the provisioner) are left alone.
-  cat >"$OVERRIDE" <<'EOF'
-# Written by scripts/deploy/vm-deploy.sh on every deployment. Do not edit.
-services:
-  postgres: { restart: unless-stopped }
-  seaweedfs: { restart: unless-stopped }
-  prefect-server: { restart: unless-stopped }
-  keycloak: { restart: unless-stopped }
-  block-worker: { restart: unless-stopped }
-  playbook-worker: { restart: unless-stopped }
-  backend: { restart: unless-stopped }
-  frontend: { restart: unless-stopped }
-EOF
-  # Only in commits that have it: an override for a service that does not
-  # exist fails the whole compose file.
-  if grep -q '^  quack-server:' docker/compose-dev-services.yaml; then
-    echo "  quack-server: { restart: unless-stopped }" >>"$OVERRIDE"
   fi
 
   # Build while the previous version keeps serving, so the downtime is the

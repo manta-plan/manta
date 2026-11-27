@@ -2,7 +2,7 @@ name: Deploy
 
 # Deploys a Manta instance to a VM on GCP and serves it at
 # https://<vm_name>.manta-plan.org. Manual trigger only: Actions > Deploy >
-# Run workflow. Setup and usage are in docs/deployment.md.
+# Run workflow. Usage is in the README, under "Internal test deployment".
 #
 # The VM serves HTTPS itself: a Cloud DNS record points the subdomain at the
 # VM, and the frontend's Caddy gets a Let's Encrypt certificate for it.
