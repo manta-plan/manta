@@ -148,6 +148,7 @@ Both live on the object store, because a shared volume would tie every container
 `GET /v1/runs/{run_uuid}/steps` returns the state of each step.
 The backend reads the run's child flow runs from Prefect and matches each to a step by the step name it was started with.
 A step that the settings switch off is `SKIPPED`, and a step with no flow run yet is `NOT_STARTED`.
+A run or a step that exceeded its timeout is `TIMED_OUT`, not `FAILED`, so a caller can tell the two apart.
 Because each step keeps the name it has in the playbook, a drawing of the playbook can show the state of each step.
 
 `GET /v1/runs/{run_uuid}/logs` returns the log of the `run-playbook` flow run, with the run's state, so a caller knows whether the log is still growing.
@@ -164,7 +165,9 @@ Each failure stops at a known point, and each has someone who notices it:
 | The `runs` row cannot be written              | The flow run has already started and runs without a row, and the backend logs it as orphaned      | The operator, from the backend log  |
 | A pool has no worker                          | The flow run waits as `PENDING` with no end                                                       | Nobody, unless someone watches the queue |
 | A block raises an exception                   | Its `run-block` flow run fails, `PrefectBlockRunner` raises an error naming the step and its flow run, and the playbook run fails | The user, from the run's state and log |
-| The playbook worker stops during a run        | The `run-playbook` flow run is expected to crash, and a step it already started to run on without a parent. Nobody has tested this yet | The user, from the run's state      |
+| A block exceeds the block timeout             | Its `run-block` flow run ends as timed out and its container is removed, and the playbook run ends as timed out, naming the step | The user, from the run's state and log |
+| A playbook exceeds the playbook timeout       | The `run-playbook` flow run ends as timed out, and the step it was waiting for is cancelled, which stops and removes its container | The user, from the run's state      |
+| The playbook worker stops during a run        | The `run-playbook` flow run is expected to crash. A step it already started is cancelled if the flow run still gets to ask for it, and otherwise runs on without a parent until the block timeout. Nobody has tested this yet | The user, from the run's state      |
 | The backend restarts during a run             | Nothing: the run carries on, and the next request reads its state from Prefect                    | Nobody                              |
 | A block cannot reach the object store         | The block fails to read or write its record, and its step fails                                  | The user, from the run's state      |
 

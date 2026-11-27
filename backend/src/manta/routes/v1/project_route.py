@@ -3,7 +3,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
 
-from manta.entities import User
 from manta.routes.v1.requests.project_request import (
     CreateProjectRequest,
     ListProjectsRequest,
@@ -11,6 +10,7 @@ from manta.routes.v1.requests.project_request import (
 )
 from manta.services.auth_service import authenticated_user
 from manta.services.project_service import ProjectService, UpdateProjectChanges
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.project_result import ListProjectsResult, ProjectResult
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 def create_project(
     request: CreateProjectRequest,
     service: ProjectService = Depends(),
-    current_user: User = Security(authenticated_user),
+    current_user: AuthenticatedUserResult = Security(authenticated_user),
 ) -> ProjectResult:
     return service.create_project(
         name=request.name, description=request.description, owner=current_user
@@ -35,7 +35,7 @@ def create_project(
 def list_projects(
     request: Annotated[ListProjectsRequest, Query()],
     service: ProjectService = Depends(),
-    current_user: User = Security(authenticated_user),
+    current_user: AuthenticatedUserResult = Security(authenticated_user),
 ) -> ListProjectsResult:
     return service.list_projects(
         limit=request.limit,
@@ -56,7 +56,7 @@ def list_projects(
 def get_project(
     project_uuid: UUID,
     service: ProjectService = Depends(),
-    current_user: User = Security(authenticated_user),
+    current_user: AuthenticatedUserResult = Security(authenticated_user),
 ) -> ProjectResult:
     return service.get_project(project_uuid, user=current_user)
 
@@ -66,7 +66,7 @@ def update_project(
     project_uuid: UUID,
     request: UpdateProjectRequest,
     service: ProjectService = Depends(),
-    current_user: User = Security(authenticated_user),
+    current_user: AuthenticatedUserResult = Security(authenticated_user),
 ) -> ProjectResult:
     return service.update_project(
         project_uuid,
@@ -79,6 +79,6 @@ def update_project(
 def delete_project(
     project_uuid: UUID,
     service: ProjectService = Depends(),
-    current_user: User = Security(authenticated_user),
+    current_user: AuthenticatedUserResult = Security(authenticated_user),
 ) -> None:
     service.delete_project(project_uuid, user=current_user)

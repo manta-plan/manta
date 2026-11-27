@@ -167,7 +167,9 @@ Three settings bound how many runs go at once, from the first to reach for:
 2. The worker's own limit caps the flow runs one worker process takes.
 3. The number of worker replicas sets the total capacity.
 
-Manta sets none of these yet, and runs one worker of each kind.
+Manta sets the first on the playbooks pool, from the `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS` variable, and runs one worker of each kind.
+A run started beyond that limit waits in Prefect until a slot frees up.
+The blocks pool has no limit of its own.
 A long playbook holds a slot on the playbook worker for its whole length.
 So the limits of the playbook pool follow the number of playbooks expected at once, not the number of steps.
 

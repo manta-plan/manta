@@ -3,10 +3,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
 
-from manta.entities import User
 from manta.routes.v1.requests.list_runs_request import ListRunsRequest
 from manta.routes.v1.requests.run_request import CreateRunRequest
 from manta.services.auth_service import authenticated_user
+from manta.services.results.authenticated_user_result import AuthenticatedUserResult
 from manta.services.results.run_result import (
     CreateRunResult,
     GetRunLogsResult,
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 @router.post("", response_model=CreateRunResult, status_code=status.HTTP_201_CREATED)
 def create_run(
     request: CreateRunRequest,
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> CreateRunResult:
     return service.create_run(
@@ -39,7 +39,7 @@ def create_run(
 @router.get("", response_model=ListRunsResult)
 def list_runs(
     request: Annotated[ListRunsRequest, Query()],
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> ListRunsResult:
     return service.list_runs(
@@ -54,7 +54,7 @@ def list_runs(
 @router.get("/summary", response_model=GetRunSummaryResult)
 def get_run_summary(
     project_uuid: UUID,
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> GetRunSummaryResult:
     return service.get_run_summary(project_uuid, user=user)
@@ -63,7 +63,7 @@ def get_run_summary(
 @router.get("/{run_uuid}", response_model=GetRunResult)
 def get_run(
     run_uuid: UUID,
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> GetRunResult:
     return service.get_run(run_uuid, user=user)
@@ -72,7 +72,7 @@ def get_run(
 @router.get("/{run_uuid}/steps", response_model=GetRunStepsResult)
 def get_run_steps(
     run_uuid: UUID,
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> GetRunStepsResult:
     return service.get_run_steps(run_uuid, user=user)
@@ -81,7 +81,7 @@ def get_run_steps(
 @router.get("/{run_uuid}/logs", response_model=GetRunLogsResult)
 def get_run_logs(
     run_uuid: UUID,
-    user: User = Security(authenticated_user),
+    user: AuthenticatedUserResult = Security(authenticated_user),
     service: RunService = Depends(),
 ) -> GetRunLogsResult:
     return service.get_run_logs(run_uuid, user=user)
