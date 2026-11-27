@@ -54,6 +54,22 @@ export function useChartColors() {
 
 type ChartColors = ReturnType<typeof useChartColors>;
 
+const ZOOM_ACCENT = "#5699ff";
+
+/**
+ * The zoom slider's end handles: a grip 12px wide and 34px tall, drawn in a
+ * 28x40 box. The two lone points (0,0 and 28,40) draw nothing but set the
+ * box, and echarts hit-tests a handle by its box, so the grab area is
+ * 28x40px, wider than the grip. Sized by ZOOM_HANDLE_HEIGHT (px).
+ */
+export const ZOOM_HANDLE_ICON =
+  "path://M0,0M28,40" +
+  "M8,6a3,3 0 0 1 3,-3h6a3,3 0 0 1 3,3v28a3,3 0 0 1 -3,3h-6a3,3 0 0 1 -3,-3Z" +
+  "M12,14V26M16,14V26";
+export const ZOOM_HANDLE_HEIGHT = 40;
+const ZOOM_SLIDER_HEIGHT = 32;
+const ZOOM_SLIDER_BOTTOM = 6;
+
 /**
  * A time series' zoom: a slider under the chart, and dragging the plot to
  * pan. The wheel zooms only with Ctrl/Cmd held, so it still scrolls the page.
@@ -66,24 +82,32 @@ export function timeZoom(
 ): { dataZoom?: EChartsOption["dataZoom"]; gridBottom: number } {
   if (count <= 48) return { gridBottom: 8 };
   return {
-    gridBottom: 36,
+    // The handles stand out past the slider by half their extra height; keep
+    // the plot 12px clear of them.
+    gridBottom: ZOOM_SLIDER_BOTTOM + (ZOOM_SLIDER_HEIGHT + ZOOM_HANDLE_HEIGHT) / 2 + 12,
     dataZoom: [
       { type: "inside", zoomOnMouseWheel: "ctrl", moveOnMouseWheel: false, moveOnMouseMove: true },
       {
         type: "slider",
-        height: 16,
-        bottom: 6,
+        height: ZOOM_SLIDER_HEIGHT,
+        bottom: ZOOM_SLIDER_BOTTOM,
         borderColor: colors.axisLine,
         fillerColor: "rgba(86, 153, 255, 0.18)",
-        handleStyle: { color: colors.tooltipBackground, borderColor: colors.text },
+        // Ends resize (ew-resize cursor); the window between them moves (grab).
+        handleIcon: ZOOM_HANDLE_ICON,
+        handleSize: ZOOM_HANDLE_HEIGHT,
+        handleStyle: { color: colors.tooltipBackground, borderColor: colors.text, borderWidth: 1 },
         moveHandleStyle: { color: colors.axisLine },
+        emphasis: {
+          handleStyle: { color: ZOOM_ACCENT, borderColor: colors.strongText, borderWidth: 1.5 },
+        },
         dataBackground: {
           lineStyle: { color: colors.text, opacity: 0.5 },
           areaStyle: { color: colors.text, opacity: 0.12 },
         },
         selectedDataBackground: {
-          lineStyle: { color: "#5699ff" },
-          areaStyle: { color: "#5699ff", opacity: 0.2 },
+          lineStyle: { color: ZOOM_ACCENT },
+          areaStyle: { color: ZOOM_ACCENT, opacity: 0.2 },
         },
         textStyle: { color: colors.text, fontSize: 10 },
         brushSelect: false,
