@@ -83,6 +83,16 @@ export function busNodeId(bus: string, location: string): string {
   return `bus:${bus}@${location}`;
 }
 
+/** The node with this id, anywhere under `nodes`. */
+export function findTreeNode(nodes: TreeNode[], id: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = node.children ? findTreeNode(node.children, id) : null;
+    if (found) return found;
+  }
+  return null;
+}
+
 // Rows shown for a folder's children until they load.
 const SKELETON_ROWS = 3;
 
