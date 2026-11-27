@@ -11,6 +11,10 @@ class QuackConnectionResult(BaseModel):
     token: str
 
 
+class QuackUpstreamResult(BaseModel):
+    upstream: str
+
+
 class OpenDatarecordSessionResult(BaseModel):
     status: str
     generation: int

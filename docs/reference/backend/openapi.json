@@ -453,6 +453,57 @@
         }
       }
     },
+    "/v1/datarecord-session/quack-auth": {
+      "get": {
+        "tags": [
+          "datarecord-session"
+        ],
+        "summary": "Check Datarecord Session Quack Auth",
+        "operationId": "check_datarecord_session_quack_auth_v1_datarecord_session_quack_auth_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-manta-project",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Manta-Project"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Session-Upstream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The project has no active session: open it with POST first"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/health": {
       "get": {
         "summary": "Get Health",

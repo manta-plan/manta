@@ -1,6 +1,7 @@
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, Security, status
+from fastapi import APIRouter, Depends, Header, Response, Security, status
 
 from manta.entities import User
 from manta.routes.v1.requests.datarecord_session_request import (
@@ -17,6 +18,7 @@ from manta.services.results.datarecord_session_result import (
 router = APIRouter(
     prefix="/projects/{project_uuid}/datarecord-session", tags=["datarecord-session"]
 )
+quack_auth_router = APIRouter(prefix="/datarecord-session", tags=["datarecord-session"])
 
 
 @router.post(
@@ -88,3 +90,27 @@ def delete_datarecord_session_registration(
     current_user: User = Security(authenticated_user),
 ) -> None:
     service.delete_registration(project_uuid, user=current_user, name=name)
+
+
+@quack_auth_router.get(
+    "/quack-auth",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        status.HTTP_204_NO_CONTENT: {
+            "headers": {"X-Session-Upstream": {"schema": {"type": "string"}}}
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "The project has no active session: open it with POST first"
+        },
+    },
+)
+def check_datarecord_session_quack_auth(
+    x_manta_project: Annotated[UUID, Header()],
+    service: DatarecordSessionService = Depends(),
+    current_user: User = Security(authenticated_user),
+) -> Response:
+    result = service.quack_upstream(x_manta_project, user=current_user)
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT, headers={"X-Session-Upstream": result.upstream}
+    )
