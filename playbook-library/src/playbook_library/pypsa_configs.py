@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 
 from playbook.blocks import ConfigSchema, RecordDimCoord, RecordProperty
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, model_validator
 from pypsa.optimization.piecewise import PiecewiseOptions
 
 from playbook_library import linopy_configs
@@ -17,16 +17,16 @@ class _PyPSAOptimizeTransmissionLossesSchema(ConfigSchema):
     mode: Literal["secant", "tangent"] = "secant"
     """Linear approximation method."""
 
-    atol: float = 1.0
+    atol: float = Field(1.0, gt=0.0)
     """Absolute tolerance in `secant` mode."""
 
-    rtol: float = 0.1
+    rtol: float = Field(0.1, ge=0.0)
     """Relative tolerance in `secant` mode."""
 
-    max_segments: int = 20
+    max_segments: int = Field(20, ge=1)
     """Maximum number of segments in `secant` mode."""
 
-    segments: int | None = None
+    segments: int | None = Field(None, ge=1)
     """Exact number of segments in `tangent` mode"""
 
     @model_validator(mode="after")
@@ -73,7 +73,7 @@ class PyPSAOptimizeSchema(ConfigSchema):
     include_objective_constant: bool = True
     """Include the capital cost of existing assets in the objective."""
 
-    committable_big_m: float | None = None
+    committable_big_m: float | None = Field(None, gt=0.0)
     """Big-M for committable, extendable assets without `p_nom_max`. None lets PyPSA infer it."""
 
     meshed_thresholds: Sequence[int] = Field(default_factory=lambda: [30, 100, 400])
@@ -82,20 +82,18 @@ class PyPSAOptimizeSchema(ConfigSchema):
     piecewise_options: list[PiecewiseOptions] = Field(default_factory=list)
     """Overrides for piecewise constraints, each read as `y operator f(x)`."""
 
-    @computed_field
-    def solver_options(self) -> linopy_configs.HighsOptions:
-        """Settings to pass to the solver."""
-        return linopy_configs.HighsOptions()
+    solver_options: linopy_configs.HighsOptions = Field(default_factory=linopy_configs.HighsOptions)
+    """Settings to pass to the solver."""
 
 
 class PyPSAOptimizeRollingHorizonConfig(PyPSAOptimizeSchema):
     # TODO: dynamically generate this schema from the PyPSA
     # optimize.optimize_with_rolling_horizon function signature, so that we don't have
     # to maintain it manually.
-    horizon: int = 100
+    horizon: int = Field(100, ge=1)
     """Number of snapshots to consider in each iteration."""
 
-    overlap: int = 0
+    overlap: int = Field(0, ge=0)
     """Snapshots shared by two windows. The later window's results replace the earlier ones."""
 
     @model_validator(mode="after")
@@ -135,13 +133,13 @@ class PyPSAOptimizeBlockConfig(ConfigSchema):
 
 
 class LoadSheddingConfig(ConfigSchema):
-    marginal_cost: float = 100.0
+    marginal_cost: float = Field(100.0, ge=0.0)
     """The cost of shedding one unit of load, in the unit `sign` sets."""
 
-    p_nom: float = 1e9
+    p_nom: float = Field(1e9, ge=0.0)
     """The most load each bus can shed, in the unit `sign` sets."""
 
-    sign: float = 1e-3
+    sign: float = Field(1e-3, gt=0.0)
     """Scale of shed load against the model's power unit; 1e-3 turns MW into kW."""
 
 

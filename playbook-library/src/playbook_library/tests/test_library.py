@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from datarecord import Revision
 from playbook.blocks.core import SolveError
+from pydantic import ValidationError
 
 from playbook_library.myopic_capacity_expansion import MyopicCapacityExpansion
 from playbook_library.overnight_capacity_expansion import OvernightCapacityExpansion
@@ -536,6 +537,33 @@ def test_dispatch_by_a_time_aggregation_refuses_storage_each_window_cycles(
 def test_a_rolling_horizon_must_move_forward():
     with pytest.raises(Exception, match="overlap"):
         RollingHorizonDispatch.merge_config({"optimize_config": {"horizon": 4, "overlap": 4}}, {})
+
+
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        ("optimize_config.solver_options.primal_feasibility_tolerance", 1e-12),
+        ("optimize_config.solver_options.dual_feasibility_tolerance", 1e-12),
+        ("optimize_config.solver_options.random_seed", -1),
+        ("optimize_config.solver_options.random_seed", 2**31),
+        ("optimize_config.transmission_losses.atol", 0.0),
+        ("optimize_config.transmission_losses.rtol", -0.1),
+        ("optimize_config.transmission_losses.max_segments", 0),
+        ("optimize_config.transmission_losses.segments", 0),
+        ("optimize_config.committable_big_m", 0.0),
+        ("optimize_config.horizon", 0),
+        ("optimize_config.overlap", -1),
+        ("load_shedding.marginal_cost", -1.0),
+        ("load_shedding.p_nom", -1.0),
+        ("load_shedding.sign", 0.0),
+    ],
+)
+def test_a_setting_the_solve_would_refuse_is_refused_as_config(setting, value):
+    config = value
+    for key in reversed(setting.split(".")):
+        config = {key: config}
+    with pytest.raises(ValidationError, match=setting):
+        RollingHorizonDispatch.merge_config(config, {})
 
 
 @pytest.mark.parametrize(

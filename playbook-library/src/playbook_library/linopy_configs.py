@@ -5,6 +5,7 @@
 from typing import Literal
 
 from playbook.blocks.core import ConfigSchema
+from pydantic import Field
 
 
 class LinopyModelSchema(ConfigSchema):
@@ -38,9 +39,10 @@ class LinopyModelSchema(ConfigSchema):
 class HighsOptions(ConfigSchema):
     # TODO: dynamically generate this schema from the given Highs version, so that we
     # don't have to maintain it manually.
-    solver: Literal["simplex", "ipm", "hipo"] = "hipo"
+    solver: Literal["simplex", "ipx", "hipo"] = "hipo"
+    """The HiGHS algorithm: the simplex method, or the IPX or HiPO interior point method."""
     parallel: Literal["on", "off"] = "on"
-    primal_feasibility_tolerance: float = 1.0e-05
-    dual_feasibility_tolerance: float = 1.0e-05
-    random_seed: int = 123
+    primal_feasibility_tolerance: float = Field(1.0e-05, ge=1.0e-10)
+    dual_feasibility_tolerance: float = Field(1.0e-05, ge=1.0e-10)
+    random_seed: int = Field(123, ge=0, le=2147483647)
     run_crossover: Literal["on", "off"] = "off"
