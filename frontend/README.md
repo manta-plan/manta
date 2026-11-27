@@ -59,7 +59,7 @@ A project has four tabs, switched from the header or with the keys `1` to `4`
 | Build   | `/project/:id/build[/:pageId]`     | The record and its scenarios: the level pages, plus drafting scenario changes |
 | Run     | `/project/:id/run[/:runId]`        | Runs and playbooks                                                            |
 | Inspect | `/project/:id/inspect[/:pageId]`   | The same level pages over a run result                                        |
-| Analyse | `/project/:id/analyse[/:reportId]` | Reports (a placeholder for now)                                               |
+| Analyse | `/project/:id/analyse[/:reportId]` | Inspections, data pages and reports over the record and its run results       |
 
 `/project/:id` opens Build. On Build and Inspect the sidebar holds the
 Scenarios panel over the Record tree, and the main area is a **level page**

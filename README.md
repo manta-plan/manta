@@ -196,6 +196,12 @@ For now the frontend has two dependencies that don't know about each other:
 | Main backend (`/v1`)                       | Login, the Projects page, the Run tab (playbooks and runs)  |
 | Temporary record server (`/api`, `/quack`) | The Data Catalogue, and the Build, Inspect and Analyse tabs |
 
+> [!NOTE]
+> The record server is temporary. It is to be replaced by a real record session
+> server in the backend, and the frontend will be adjusted to match. Much of
+> this section, the split above and the list of what doesn't connect, will then
+> change, and another PR will update it.
+
 The two are linked only by the data record's name. That has consequences for
 what you see:
 
