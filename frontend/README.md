@@ -34,14 +34,9 @@ pnpm install
 The data records (the New Project drawer, the Data Catalog, and the data record of a run) come
 from the record server in `docker/quack-server`, which runs only with the
 `temporary-quack-setup` Compose profile (see [docker/README.md](https://github.com/manta-plan/manta/blob/main/docker/README.md#services)).
-Point the app at it in a file named `.env.local` in the `frontend` folder:
-
-```bash
-VITE_RECORD_SERVER=localhost:8010
-VITE_RECORD_TOKEN=devtoken
-```
-
-The port is `QUACK_SERVER_PORT` in `backend/.env`, and the token must match `QUACK_TOKEN` there.
+The dev server proxies `/api` and `/quack` to it on `localhost:${QUACK_SERVER_PORT}`
+(`8010`), and takes that port and the token from `QUACK_SERVER_PORT` and `QUACK_TOKEN` in
+`backend/.env`. No `.env.local` or `VITE_*` variables are needed.
 
 ## Running
 
