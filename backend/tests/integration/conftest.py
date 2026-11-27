@@ -313,6 +313,7 @@ def app_server(
         "KEYCLOAK_PORT": keycloak_service["port"],
         # Only the small store every test needs, instead of all of them.
         "EXAMPLE_DATA_STORES": EXAMPLE_STORE,
+        "DATARECORD_SESSION_SWEEP": "false",
     }
 
     process = subprocess.Popen(  # noqa: S603 — fixed args, no untrusted input

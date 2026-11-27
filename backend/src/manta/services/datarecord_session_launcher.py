@@ -37,6 +37,8 @@ class DatarecordSessionLauncher(Protocol):
 
     def stop(self, ref: str) -> None: ...
 
+    def list(self) -> set[str]: ...
+
 
 class DockerDatarecordSessionLauncher:
     def __init__(self, client: DockerClient, image: str, network: str, s3_endpoint: str) -> None:
@@ -65,6 +67,13 @@ class DockerDatarecordSessionLauncher:
             logger.info("Datarecord session container %s is already gone", ref)
             return
         logger.info("Removed datarecord session container %s", ref)
+
+    def list(self) -> set[str]:
+        containers = self.client.containers.list(
+            all=True,
+            filters={"label": f"{DATARECORD_SESSION_LABEL}.session", "network": self.network},
+        )
+        return {container.id for container in containers}
 
     def _environment(self, spec: DatarecordSessionSpec) -> dict[str, str]:
         return {

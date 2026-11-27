@@ -17,8 +17,9 @@ NETWORK = dotenv_values(Path(__file__).resolve().parents[4] / "docker" / ".env.t
 ]
 
 
+@pytest.mark.parametrize("exited", [False, True], ids=["running", "exited"])
 def test_docker_launcher_starts_a_labelled_container_on_the_network_and_removes_it(
-    docker_services: DockerCompose,
+    docker_services: DockerCompose, exited: bool
 ) -> None:
     # Given a launcher on the test stack's network, with an image the stack already has
     client = docker.from_env()
@@ -46,10 +47,16 @@ def test_docker_launcher_starts_a_labelled_container_on_the_network_and_removes_
     assert container.labels["manta.datarecord-session.session"] == str(spec.session_uuid)
     assert "DATARECORD_SESSION_STORE_ROOT=s3://manta/project/" in container.attrs["Config"]["Env"]
 
+    # When it runs on, or exits
+    if exited:
+        container.stop(timeout=0)
+
+    # Then it is listed
+    assert instance.ref in launcher.list()
+
     # When it stops, twice
     launcher.stop(instance.ref)
     launcher.stop(instance.ref)
 
     # Then it is gone
-    with pytest.raises(docker.errors.NotFound):
-        client.containers.get(instance.ref)
+    assert instance.ref not in launcher.list()

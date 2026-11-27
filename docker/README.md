@@ -110,7 +110,10 @@ on the host's loopback only), reading both that port and the token from
   [datarecord session](../datarecord-session/README.md) and exits. From that
   image the backend container starts a session per user and project on
   `${MANTA_DOCKER_NETWORK}`, through the Docker socket. A backend on the host
-  cannot reach those containers by name.
+  cannot reach those containers by name. The backend stops a session that has
+  not been used for `${DATARECORD_SESSION_MAX_IDLE_MINUTES}` (`10`) and removes
+  session containers on `${MANTA_DOCKER_NETWORK}` that no active session points
+  to (`DATARECORD_SESSION_SWEEP=false` turns both off).
 
 ## Testing
 
