@@ -4,7 +4,7 @@ from contextlib import suppress
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, status
 from playbook.blocks import RevisionRef
 from playbook.playbooks import BlockStep, NestedPlaybookStep, Playbook, parse_doc, playbook_from_doc
 
@@ -19,11 +19,14 @@ from prefect.client.schemas.filters import (
     ArtifactFilterFlowRunId,
     ArtifactFilterKey,
     FlowRunFilter,
+    FlowRunFilterId,
     FlowRunFilterParentFlowRunId,
+    FlowRunFilterState,
+    FlowRunFilterStateType,
     LogFilter,
     LogFilterFlowRunId,
 )
-from prefect.client.schemas.objects import FlowRun, StateType
+from prefect.client.schemas.objects import TERMINAL_STATES, FlowRun, StateType
 from prefect.deployments import run_deployment
 from prefect.exceptions import ObjectNotFound
 from runner.flows import (
@@ -33,10 +36,11 @@ from runner.flows import (
     catalogue_parameter,
     parse_catalogue_parameter,
 )
-from sqlalchemy import desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from manta.config.database_config import get_db_session
+from manta.config.run_limit_config import max_concurrent_runs_per_user
 from manta.entities import Project, Run
 from manta.services.errors import AuthorizationError
 from manta.services.playbook_service import PlaybookService
@@ -59,6 +63,11 @@ logger = logging.getLogger(__name__)
 
 TIMED_OUT_STATUS = "TIMED_OUT"
 """The status of a run, or of one of its steps, that exceeded its timeout."""
+
+_RUN_LIMIT_LOCK_CLASS = 1
+"""The first key of the advisory lock that admits one of a user's run requests at a time;
+the second is the user's id. Any other advisory lock in the backend needs a first key of
+its own."""
 
 
 class PrefectUnavailableError(Exception):
@@ -97,6 +106,22 @@ def _read_existing_flow_runs(flow_run_ids: list[UUID]) -> dict[UUID, FlowRun]:
             with suppress(ObjectNotFound):
                 flow_runs[flow_run_id] = client.read_flow_run(flow_run_id)
         return flow_runs
+
+
+def _count_active_flow_runs(flow_run_ids: list[UUID]) -> int:
+    """How many of the flow runs have not reached a final Prefect state. One that is
+    still queued counts, and one Prefect no longer has does not."""
+    if not flow_run_ids:
+        return 0
+    with get_client(sync_client=True) as client:
+        return client.count_flow_runs(
+            flow_run_filter=FlowRunFilter(
+                id=FlowRunFilterId(any_=flow_run_ids),
+                state=FlowRunFilterState(
+                    type=FlowRunFilterStateType(not_any_=list(TERMINAL_STATES))
+                ),
+            )
+        )
 
 
 def _read_flow_run_logs(flow_run_id: UUID) -> tuple[FlowRun, list[str]]:
@@ -285,6 +310,8 @@ class RunService:
         self.playbook_service.raise_for_config_issues(playbook, run_config)
         self._raise_for_record_issues(project, store_url, revision_uuid)
 
+        self._raise_if_at_run_limit(user)
+
         run_uuid = uuid4()
 
         flow_run = run_deployment(
@@ -346,6 +373,59 @@ class RunService:
                 status_code=404,
                 detail=f"Revision {revision_uuid} not found in {store_url!r}",
             )
+
+    def _raise_if_at_run_limit(self, user: AuthenticatedUserResult) -> None:
+        """Raises a 429 while the user has as many active runs as
+        MANTA_MAX_CONCURRENT_RUNS_PER_USER allows, counted over all of their projects.
+
+        Only one of the user's run requests is counted at a time, so a second request of
+        theirs passes only once this one has committed its run or been refused. Otherwise
+        both could pass at once."""
+        self._raise_if_run_request_in_flight(user)
+
+        limit = max_concurrent_runs_per_user()
+        if self._count_user_active_runs(user) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Active run limit reached ({limit}). "
+                    "Wait for one of your runs to finish, then try again."
+                ),
+            )
+
+    def _raise_if_run_request_in_flight(self, user: AuthenticatedUserResult) -> None:
+        """Raises a 429 while another request of the same user is between this point and
+        the end of its transaction, whether that one commits or rolls back.
+
+        It tries for a Postgres advisory lock, which is on a pair of numbers rather than
+        on a row. So nothing that reads or changes the user, or anything of theirs, waits
+        for it.
+
+        A request that finds the lock taken is refused rather than left to wait. A waiting
+        request keeps its database connection, so a burst of them from one user would
+        leave no connection for anyone else."""
+        lock = select(func.pg_try_advisory_xact_lock(_RUN_LIMIT_LOCK_CLASS, user.id))
+        if not self.db.execute(lock).scalar_one():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Another run of yours is still being started. Try again in a moment.",
+            )
+
+    def _count_user_active_runs(self, user: AuthenticatedUserResult) -> int:
+        """How many runs the user has that are not finished, over all of their projects.
+
+        Which runs are the user's is known to the database alone, and whether a run has
+        finished to Prefect alone, so the user's runs are read here and counted there."""
+        runs = self._list_user_runs(user)
+        return _count_active_flow_runs([run.prefect_flow_run_id for run in runs])
+
+    def _list_user_runs(self, user: AuthenticatedUserResult) -> list[Run]:
+        return (
+            self.db.query(Run)
+            .join(Project, Run.project_id == Project.id)
+            .filter(Project.owner_id == user.id)
+            .all()
+        )
 
     def list_runs(
         self,

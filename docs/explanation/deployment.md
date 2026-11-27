@@ -169,6 +169,7 @@ Three settings bound how many runs go at once, from the first to reach for:
 
 Manta sets the first on the playbooks pool, from the `MANTA_MAX_CONCURRENT_PLAYBOOK_RUNS` variable, and runs one worker of each kind.
 A run started beyond that limit waits in Prefect until a slot frees up.
+The backend keeps one user from filling that queue: it refuses a run from a user who already has `MANTA_MAX_CONCURRENT_RUNS_PER_USER` active runs.
 The blocks pool has no limit of its own.
 A long playbook holds a slot on the playbook worker for its whole length.
 So the limits of the playbook pool follow the number of playbooks expected at once, not the number of steps.

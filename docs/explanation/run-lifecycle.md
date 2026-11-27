@@ -49,22 +49,23 @@ The web app does not use these endpoints yet: it starts the `expand` playbook wi
 
 ## When a run starts
 
-`POST /v1/runs` does five things, in this order:
+`POST /v1/runs` does six things, in this order:
 
 1. It finds the project and refuses a user who does not own it.
 2. It finds the playbook by name in `playbook-library`, and takes the playbook's default settings when the request has none.
 3. It checks the playbook against the settings, and refuses the run with HTTP 422 and every issue if any are found.
-4. It starts a `run-playbook` flow run with the playbook document, the settings, the starting record and the catalogue, without waiting for it.
-5. It inserts a `runs` row that links the project and the playbook name to the flow run id.
+4. It counts the user's active runs, and refuses the run with HTTP 429 if they already have as many as one user may have at once.
+5. It starts a `run-playbook` flow run with the playbook document, the settings, the starting record and the catalogue, without waiting for it.
+6. It inserts a `runs` row that links the project and the playbook name to the flow run id.
 
 The request names the starting record itself, as a store URL and a revision uuid.
 The backend does not yet look up a project's model for itself.
 
 The playbook travels as its document, not as a name.
-So the run uses the playbook as it was at step 4, even if the library changes a second later.
+So the run uses the playbook as it was at step 5, even if the library changes a second later.
 The backend also reads that document back from the flow run to report the run's steps.
 
-After step 5 the backend has no part in the run.
+After step 6 the backend has no part in the run.
 Everything after it happens between Prefect, the two workers and the block containers, and carries on if the backend restarts.
 
 ## Where a playbook is checked

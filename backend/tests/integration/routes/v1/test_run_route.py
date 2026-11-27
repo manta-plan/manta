@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
 import httpx2
@@ -378,6 +379,69 @@ def test_create_run_refuses_a_config_with_issues_with_a_422(
     )
     assert runs_response.status_code == 200
     assert runs_response.json()["total"] == 0
+
+
+def test_create_run_beyond_the_users_active_run_limit_returns_429(
+    app_server: str,
+    prefect_service: dict[str, str],
+    new_user_headers: dict[str, str],
+    second_user_headers: dict[str, str],
+    example_store: Callable[[str], dict[str, dict[str, str]]],
+    max_concurrent_runs_per_user: int,
+) -> None:
+    # Given a user with two projects and no runs yet
+    limit = max_concurrent_runs_per_user
+    projects = [_create_project(app_server, new_user_headers) for _ in range(2)]
+    _wait_for_deployment_registered(prefect_service)
+    payloads = [
+        {
+            "project_uuid": project_uuid,
+            "playbook": {"name": _LIBRARY_PLAYBOOK, "config": None},
+            **example_store(project_uuid),
+        }
+        for project_uuid in projects
+    ]
+
+    def start_run(index: int) -> httpx2.Response:
+        return httpx2.post(
+            f"{app_server}/v1/runs",
+            json=payloads[index % len(payloads)],
+            headers=new_user_headers,
+            timeout=60.0,
+        )
+
+    # When they start one run more than the limit, all at once and spread over both projects
+    with ThreadPoolExecutor(max_workers=limit + 1) as pool:
+        responses = list(pool.map(start_run, range(limit + 1)))
+
+    # Then each is accepted or refused, and no more are accepted than the limit
+    at_limit = (
+        f"Active run limit reached ({limit}). Wait for one of your runs to finish, then try again."
+    )
+    in_flight = "Another run of yours is still being started. Try again in a moment."
+    accepted = [response for response in responses if response.status_code == 201]
+    refused = [response for response in responses if response.status_code == 429]
+    assert len(accepted) + len(refused) == limit + 1, [response.text for response in responses]
+    assert 1 <= len(accepted) <= limit, (
+        "a request made while another of the user's is being started is refused, "
+        "so between one and the limit are accepted"
+    )
+    assert {response.json()["detail"] for response in refused} <= {at_limit, in_flight}
+
+    # And once they have as many active runs as the limit, one more is refused for that
+    for index in range(limit - len(accepted)):
+        assert start_run(index).status_code == 201
+    over_the_limit = start_run(0)
+    assert over_the_limit.status_code == 429
+    assert over_the_limit.json()["detail"] == at_limit
+
+    # And another user can still start a run
+    other_project_uuid = _create_project(app_server, second_user_headers)
+    _create_run(app_server, other_project_uuid, example_store, second_user_headers)
+
+    # And once one of their runs has finished, the user can start another
+    _wait_for_terminal_status(app_server, accepted[0].json()["uuid"], new_user_headers)
+    _create_run(app_server, projects[0], example_store, new_user_headers)
 
 
 def test_get_run_returns_the_config_it_was_started_with(

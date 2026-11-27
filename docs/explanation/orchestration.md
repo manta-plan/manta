@@ -142,6 +142,24 @@ A run started beyond the limit is still accepted, and stays `SCHEDULED` until an
 The web app shows such a run as **Queued**.
 The blocks pool has no limit of its own, because a block runs only as a step of a playbook run.
 
+### How many runs one user has at once
+
+A queue that accepts every run lets one user fill it and hold back everyone else.
+So the backend limits the active runs of one user, to the number in the `MANTA_MAX_CONCURRENT_RUNS_PER_USER` variable.
+A run is active until its flow run reaches a final state, so a run that is still `SCHEDULED` counts.
+The backend counts over all of the user's projects, and asks Prefect for the states, because it stores none itself.
+While a user is at the limit, `POST /v1/runs` refuses their run with HTTP 429, and the web app shows the reason.
+
+Prefect has no limit per user, because it does not know which user a flow run belongs to.
+That is why this limit lives in the backend, unlike the limit on the pool.
+The backend takes a lock in its database for that user, from the count until the new run is stored.
+While one request holds the lock, the backend refuses any other request from the same user with HTTP 429.
+Two requests from one user at the same moment therefore cannot both take the last free place.
+A second request that waited for the lock instead would keep its database connection while it waited.
+A burst of requests from one user could then take every connection, and hold back everyone else.
+The lock is a Postgres advisory lock on the user's id, not a lock on a row.
+So nothing else that reads or changes the user waits for it.
+
 ### How long a run may take
 
 Each flow has a timeout, read from a variable in the process that executes the flow:
@@ -224,4 +242,5 @@ The local stack publishes the Prefect UI on `localhost:4200`, for development on
 A change to what a run does belongs in `playbook` or a block library.
 A change to where or how a step runs belongs in a work pool, a worker or an image.
 `runner` and the stack set those up.
-Retries, timeouts and limits on concurrent runs are Prefect settings, so a change to them belongs in Prefect's configuration, not in the backend.
+Retries, timeouts and the limit on concurrent playbook runs are Prefect settings, so a change to them belongs in Prefect's configuration, not in the backend.
+The limit on one user's active runs is the exception: it depends on who owns a run, which only the backend knows.
