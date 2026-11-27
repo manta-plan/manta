@@ -17,10 +17,14 @@ import {
   highlightOf,
   isMissingRelation,
   levelOnlyScope,
+  lineEndsOf,
+  mapSummaryOf,
   routePoints,
   type BranchRow,
   type BusRow,
+  type Highlight,
 } from "../map-graph-data";
+import { mapSummaryText } from "../map/map-summary";
 
 afterEach(() => setRecordCatalog(null));
 
@@ -144,15 +148,19 @@ describe("what the level highlights", () => {
       period: "2030",
       timeWindow: null,
       locations: ["BE0 1"],
+      filter: { kind: "component" as const, ctype: "Generator" },
     };
     expect(baseScope(scope)).toEqual({
       level: ALL_ENTITIES,
       period: "2030",
       timeWindow: null,
       locations: [],
+      filter: null,
     });
     expect(levelOnlyScope(scope).locations).toEqual([]);
     expect(levelOnlyScope(scope).level).toBe(scope.level);
+    // The highlight keeps the cross-tree filter: Generators at a location light only theirs.
+    expect(levelOnlyScope(scope).filter).toBe(scope.filter);
   });
 });
 
@@ -211,5 +219,88 @@ describe("isMissingRelation", () => {
     ).toBe(true);
     expect(isMissingRelation(new Error("Query timed out"))).toBe(false);
     expect(isMissingRelation(new Error("Table with name bus does not exist"))).toBe(false);
+  });
+});
+
+describe("map summary", () => {
+  const branch = (
+    entity: string,
+    location0: string,
+    location1: string,
+    ctype = "Line",
+  ): BranchRow => ({
+    entity,
+    ctype,
+    carrier: "AC",
+    bus0: location0,
+    bus1: location1,
+    location0,
+    location1,
+    capacity: null,
+    capacity_opt: null,
+  });
+  const branches = [
+    branch("L1", "BE0 1", "BE0 2"),
+    branch("L2", "BE0 2", "BE0 3"),
+    branch("K1", "BE0 1", "BE0 3", "Link"),
+  ];
+  const highlight = (lines: string[], locations: string[], members = 4): Highlight => ({
+    all: false,
+    locations: new Set(locations),
+    buses: new Set(locations),
+    lines: new Set(lines),
+    members,
+  });
+
+  it("counts far line ends the level doesn't highlight", () => {
+    expect([...lineEndsOf(highlight(["L1", "L2"], ["BE0 2"]), branches)].sort()).toEqual([
+      "BE0 1",
+      "BE0 3",
+    ]);
+    expect(lineEndsOf({ ...highlight(["L1"], []), all: true }, branches).size).toBe(0);
+    // Links aren't lines.
+    expect(lineEndsOf(highlight(["K1"], []), branches).size).toBe(0);
+  });
+
+  it("summarises buses, lines and sited entities", () => {
+    const summary = mapSummaryOf(
+      { kind: "location", location: "BE0 2" },
+      highlight(["L1"], ["BE0 2"], 202),
+      buses,
+      branches,
+      [],
+    );
+    expect(summary).toEqual({
+      buses: 1,
+      allBuses: 4,
+      lineEnds: 1,
+      lines: 1,
+      allLines: 2,
+      located: 0,
+      members: 202,
+    });
+    expect(mapSummaryText(summary, true)).toBe(
+      "1 of 4 buses, 1 line ends · 1 of 2 lines · 0 of 202 entities have their own location",
+    );
+  });
+
+  it("counts every line for All entities, one member for an entity, no siting without geometry", () => {
+    const all = mapSummaryOf(
+      { kind: "all-entities" },
+      { ...highlight([], []), all: true },
+      buses,
+      branches,
+      null,
+    );
+    expect(all).toMatchObject({ lines: 2, allLines: 2, located: null });
+    expect(mapSummaryText(all, true)).toBe("0 of 4 buses · 2 of 2 lines");
+    const one = mapSummaryOf({ kind: "entity", entity: "L1" }, highlight([], []), buses, null, [
+      { entity: "L1", ctype: "Line", carrier: null, location: null, lon: 0, lat: 0 },
+    ]);
+    expect(one).toMatchObject({ members: 1, located: 1, allLines: 0 });
+    expect(mapSummaryText(one, false)).toContain(
+      "1 of 1 entities have their own location; siting hidden",
+    );
+    expect(mapSummaryText(one, true)).toContain("; dashed lines join them to their bus");
   });
 });

@@ -7,12 +7,12 @@ import { useLevelPage } from "../level-page-context";
 import { useLevelStore, type MapGraphTab } from "../level-store";
 import { LevelGraph } from "./graph/level-graph";
 import { LevelMap } from "./map/level-map";
+import { useMapSummaryLine } from "./map/map-summary";
 
 // Map & graph, beside the table: the Map, or the Graph of buses (in
 // location mode and on a single entity), with a close button.
 
 const GRAPH_OFF = "The graph shows buses. Open a single entity or the Locations tree to use it.";
-const MAP_NOTE = "Bus regions, centroids, lines and located entities";
 
 export function MapGraph() {
   const { level } = useLevelPage();
@@ -44,9 +44,8 @@ export function MapGraph() {
             },
           ]}
         />
-        <span className="text-surface-500 min-w-0 flex-1 truncate text-[11px]">
-          {shown === "map" ? MAP_NOTE : graphNote(level)}
-        </span>
+        {/* Above the map, not over it: what the level highlights. */}
+        {shown === "map" ? <MapSummaryNote /> : <HeaderNote text={graphNote(level)} />}
         <FullscreenButton block="map-graph" />
         {/* Closing the block only makes sense in place; full screen has Exit. */}
         {!inDialog && (
@@ -71,6 +70,22 @@ export function MapGraph() {
       </div>
     </div>
   );
+}
+
+function HeaderNote({ text }: { text: string | null }) {
+  return (
+    <span
+      title={text ?? undefined}
+      className="text-surface-300 min-w-0 flex-1 truncate text-[11px]"
+    >
+      {text}
+    </span>
+  );
+}
+
+// Its own component, so the map's reads run only while the map shows.
+function MapSummaryNote() {
+  return <HeaderNote text={useMapSummaryLine()} />;
 }
 
 function graphNote(level: ReturnType<typeof useLevelPage>["level"]): string {

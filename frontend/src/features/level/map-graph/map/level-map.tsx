@@ -41,6 +41,7 @@ import { levelPageId } from "../../level";
 import { useLevelPage } from "../../level-page-context";
 import { useLevelStore } from "../../level-store";
 import {
+  lineEndsOf,
   useAreaName,
   useBranches,
   useBuses,
@@ -213,16 +214,10 @@ export function LevelMap() {
   );
   const isLit = (entity: string) =>
     Boolean(highlight && (highlight.all || highlight.lines.has(entity)));
-  const ends = useMemo(() => {
-    const found = new Set<string>();
-    if (!highlight || highlight.all) return found;
-    for (const branch of lines) {
-      if (!highlight.lines.has(branch.entity)) continue;
-      for (const location of [branch.location0, branch.location1])
-        if (!highlight.locations.has(location)) found.add(location);
-    }
-    return found;
-  }, [highlight, lines]);
+  const ends = useMemo(
+    () => (highlight ? lineEndsOf(highlight, lines) : new Set<string>()),
+    [highlight, lines],
+  );
 
   // ---------------------------------------------------------- Features
 
@@ -581,10 +576,6 @@ export function LevelMap() {
     });
   }
 
-  const memberCount = level.kind === "entity" ? 1 : (highlight?.members ?? 0);
-  const located = sites?.length ?? 0;
-  const litLines = highlight ? lines.filter((branch) => isLit(branch.entity)).length : 0;
-
   const interactive = measureMode
     ? []
     : [
@@ -872,29 +863,6 @@ export function LevelMap() {
           triggerIcon={measureMode ? undefined : LuRuler}
         />
       </Toolbar.Root>
-
-      {/* Bottom left: what the level highlights. */}
-      {highlight && buses && (
-        <div className="bg-surface-900/80 text-surface-300 pointer-events-none absolute bottom-2 left-9 z-10 flex max-w-[55%] flex-col gap-0.5 rounded px-1.5 py-1 text-[10px] leading-tight">
-          <span>
-            <b className="text-surface-100">{highlight.buses.size.toLocaleString()}</b> of{" "}
-            {buses.length.toLocaleString()} buses
-            {ends.size > 0 && `, ${ends.size.toLocaleString()} line ends`}
-          </span>
-          <span>
-            <b className="text-surface-100">{litLines.toLocaleString()}</b> of{" "}
-            {lines.length.toLocaleString()} lines
-          </span>
-          {sites !== null && (
-            <span>
-              <b className="text-surface-100">{located.toLocaleString()}</b> of{" "}
-              {memberCount.toLocaleString()} entities have their own location
-              {located > 0 &&
-                (layers.showSiting ? "; dashed lines join them to their bus" : "; siting hidden")}
-            </span>
-          )}
-        </div>
-      )}
 
       {busesData.status === "error" && (
         <div className="border-danger-500/50 bg-surface-800/95 text-surface-100 absolute inset-x-0 top-12 z-10 mx-auto w-fit rounded border px-3 py-1.5 text-[12px] shadow-lg">
